@@ -144,12 +144,19 @@ class AppGraph(private val context: Context) {
             _ui.value = _ui.value.copy(error = "$why and there is no network location. Put the crosshair on your position and tap “Start here”.")
             return
         }
+        // How far the start could be off: hand-placed crosshair ~100 m, else the fix's own accuracy.
+        val startAccuracy = when {
+            _ui.value.manualStart != null -> MANUAL_START_ACCURACY_M
+            hub.lastGood != null -> hub.lastGood?.accuracyM?.toDouble() ?: 20.0
+            else -> hub.lastNet?.accuracyM?.toDouble() ?: 500.0
+        }
         _ui.value = _ui.value.copy(planning = true, error = null)
         scope.launch {
             runCatching { router.route(from, dest) }
                 .onSuccess { route ->
                     tripLog.startTrip()
-                    engine.start(route, dest, nowMs = SystemClock.elapsedRealtime())
+                    tripLog.write("start_accuracy=${startAccuracy.toInt()}")
+                    engine.start(route, dest, nowMs = SystemClock.elapsedRealtime(), startAccuracyM = startAccuracy)
                     _ui.value = _ui.value.copy(planning = false)
                     onStarted()
                 }
@@ -197,6 +204,8 @@ class AppGraph(private val context: Context) {
         )
     }
 }
+
+private const val MANUAL_START_ACCURACY_M = 100.0
 
 private class PrefsSpeedProfileStore(context: Context) : SpeedProfileStore {
     private val prefs = context.getSharedPreferences("speed_profile", Context.MODE_PRIVATE)

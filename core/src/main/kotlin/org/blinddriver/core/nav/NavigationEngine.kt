@@ -84,6 +84,9 @@ class NavigationEngine(
     // Dead reckoning
     private var currentSpeed = 0.0
     private var drDistance = 0.0
+
+    /** Accuracy of the trip's start position; applies until GPS is first used. */
+    private var startAccuracyM = 0.0
     private var catchUp = 0.0
     private var lastCatchupFixMs = -1L
     private var cachedNet: SpeedEstimate? = null
@@ -128,7 +131,18 @@ class NavigationEngine(
 
     // ------------------------------------------------------------------ lifecycle
 
-    fun start(route: Route, destination: GeoPoint, waypoints: List<GeoPoint> = emptyList(), nowMs: Long) {
+    /**
+     * @param startAccuracyM accuracy of the position the route was planned from (e.g. a coarse cell
+     *   fix). Until the first usable GPS fix, reported uncertainty never drops below it.
+     */
+    fun start(
+        route: Route,
+        destination: GeoPoint,
+        waypoints: List<GeoPoint> = emptyList(),
+        nowMs: Long,
+        startAccuracyM: Double = 0.0,
+    ) {
+        this.startAccuracyM = startAccuracyM.coerceAtLeast(0.0)
         this.destination = destination
         this.waypoints = waypoints
         navStartMs = nowMs
@@ -803,7 +817,15 @@ class NavigationEngine(
         val arrived = remaining < t.arriveM
         val blindS = ((nowMs - if (lastGpsUseMs > 0) lastGpsUseMs else navStartMs) / 1000).toInt()
         val netFresh = pos.lastNet?.let { nowMs - it.elapsedMs < 30_000 } == true
-        val uncertainty = if (source.isGps) 15.0 else max(30.0, min(if (netFresh) 350.0 else 600.0, 25.0 + 0.08 * drDistance))
+        val uncertainty = if (source.isGps) {
+            15.0
+        } else {
+            // Drift grows ~8 % of distance dead-reckoned on top of the anchor's own error: 25 m after
+            // a GPS fix, or the start position's accuracy if GPS has not been usable yet this trip.
+            val anchor = if (lastGpsUseMs > 0) 25.0 else max(25.0, startAccuracyM)
+            val cap = max(if (netFresh) 350.0 else 600.0, anchor)
+            max(30.0, min(cap, anchor + 0.08 * drDistance))
+        }
 
         announce(next, nextStep, distToNext, arrived, blindS)
 

@@ -144,4 +144,24 @@ class EngineSimulationTest {
         assertTrue(r.spoken.any { it.contains("missed the turn") })
         assertTrue(r.reroutes >= 1, "auto reroute after the countdown")
     }
+
+    @Test
+    fun uncertaintyStartsFromCoarseStartFix() {
+        val engine = NavigationEngine(listener = object : NavListener {})
+        val route = lShapedRoute()
+        engine.start(route, route.geometry.last(), nowMs = 0, startAccuracyM = 1400.0)
+        val hub = PositioningHub(wallClock = { 0L })
+        var t = 0L
+        repeat(20) {
+            t += 500
+            engine.tick(t, hub.snapshot(t))
+        }
+        assertTrue(engine.state.uncertaintyM >= 1400.0, "uncertainty ${engine.state.uncertaintyM} must reflect the ±1400 m start")
+
+        // Without a coarse start the floor is the usual 30 m.
+        val precise = NavigationEngine(listener = object : NavListener {})
+        precise.start(route, route.geometry.last(), nowMs = 0, startAccuracyM = 5.0)
+        precise.tick(500, hub.snapshot(500))
+        assertTrue(precise.state.uncertaintyM < 100.0)
+    }
 }

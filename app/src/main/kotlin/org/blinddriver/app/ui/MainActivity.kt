@@ -135,13 +135,6 @@ private fun MainScreen(ui: UiState, g: AppGraph, hasLocation: Boolean) {
             towers = if (ui.cells.showTowers) towerLayer else null,
             onViewport = { s, w, n, e, z -> g.cells.onViewport(s, w, n, e, z) },
         )
-        if (ui.cells.showTowers) {
-            TowerLegend(
-                towerLayer,
-                ui.cells.radios,
-                Modifier.align(Alignment.BottomStart).safeDrawingPadding().padding(start = 12.dp, bottom = 84.dp),
-            )
-        }
         if (pickStart) {
             // Crosshair for choosing the start manually when no trusted position exists.
             Text("+", color = Color(0xFF1E3A5F), fontSize = 44.sp, fontWeight = FontWeight.Light, modifier = Modifier.align(Alignment.Center))
@@ -179,11 +172,18 @@ private fun MainScreen(ui: UiState, g: AppGraph, hasLocation: Boolean) {
             }
         }
 
-        Row(
-            Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(12.dp).fillMaxWidth()
-                .background(Color(0xE0101820), RoundedCornerShape(12.dp)).padding(horizontal = 8.dp),
+        // Legend and button bar stacked at the bottom, so the legend always sits just above the bar.
+        Column(
+            Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(12.dp).fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+        if (ui.cells.showTowers) TowerLegend(towerLayer, ui.cells.radios)
+        // Wraps onto a second line on narrow screens instead of pushing buttons off the edge.
+        androidx.compose.foundation.layout.FlowRow(
+            Modifier.fillMaxWidth()
+                .background(Color(0xE0101820), RoundedCornerShape(12.dp)).padding(horizontal = 8.dp, vertical = 2.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            itemVerticalAlignment = Alignment.CenterVertically,
         ) {
             if (nav.active) {
                 Button(onClick = {
@@ -204,10 +204,10 @@ private fun MainScreen(ui: UiState, g: AppGraph, hasLocation: Boolean) {
                     }
                 }
             }
-            Spacer(Modifier.weight(1f))
             FilterChip(selected = ui.simulateGpsLoss, onClick = { g.setSimulateGpsLoss(!ui.simulateGpsLoss) }, label = { Text("No GPS", softWrap = false) })
             FilterChip(selected = showCells, onClick = { showCells = !showCells }, label = { Text("Cells", softWrap = false) })
             FilterChip(selected = showLog, onClick = { showLog = !showLog }, label = { Text("Log", softWrap = false) })
+        }
         }
     }
 }
