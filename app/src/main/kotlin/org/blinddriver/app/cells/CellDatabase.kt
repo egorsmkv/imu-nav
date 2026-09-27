@@ -25,11 +25,17 @@ enum class CellSource(val table: String, val label: String) {
 }
 
 /** Offline cell tower locations from several sources, one table each. */
-class CellDatabase(context: Context) : SQLiteOpenHelper(context, "cells.db", null, 2), CellTowerDb {
+class CellDatabase(context: Context) : SQLiteOpenHelper(context, "cells.db", null, 3), CellTowerDb {
 
     override fun onCreate(db: SQLiteDatabase) {
         for (s in CellSource.entries) createTable(db, s.table)
         db.execSQL("ALTER TABLE learned ADD COLUMN updated INTEGER NOT NULL DEFAULT 0")
+        createIndexes(db)
+    }
+
+    /** (mcc, mnc, cid) lookups: cell id without area code, and LTE site (eNB) ranges. */
+    private fun createIndexes(db: SQLiteDatabase) {
+        for (s in CellSource.entries) db.execSQL("CREATE INDEX IF NOT EXISTS idx_${s.table}_cid ON ${s.table} (mcc, mnc, cid)")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -39,6 +45,7 @@ class CellDatabase(context: Context) : SQLiteOpenHelper(context, "cells.db", nul
             // Existing learned rows count as not yet uploaded.
             db.execSQL("ALTER TABLE learned ADD COLUMN updated INTEGER NOT NULL DEFAULT 1")
         }
+        if (oldVersion < 3) createIndexes(db)
     }
 
     private fun createTable(db: SQLiteDatabase, table: String) = db.execSQL(
@@ -54,23 +61,46 @@ class CellDatabase(context: Context) : SQLiteOpenHelper(context, "cells.db", nul
         }
     }
 
-    override fun lookup(keys: Collection<CellKey>): Map<CellKey, CellTower> {
-        val out = HashMap<CellKey, CellTower>()
+    /** How a cell was matched. */
+    enum class Match(val symbol: String) { EXACT("✓"), CELL_ID("≈"), SITE("◌") }
+
+    override fun lookup(keys: Collection<CellKey>): Map<CellKey, CellTower> =
+        keys.mapNotNull { k -> resolve(k)?.let { k to it.first } }.toMap()
+
+    /**
+     * Find a tower for [k], trying progressively looser matches in every source:
+     *  1. exact key;
+     *  2. same operator + cell id, any area code (operators renumber TAC/LAC over time);
+     *  3. LTE only: other sectors of the same site (eNB = ECI / 256) — same mast, so their
+     *     centroid is a good stand-in; range widened to cover them.
+     */
+    fun resolve(k: CellKey): Pair<CellTower, Match>? {
         val db = readableDatabase
-        for (k in keys) {
+        for (s in CellSource.entries) find(db, s.table, k)?.let { return it to Match.EXACT }
+        for (s in CellSource.entries) {
+            db.rawQuery(
+                "SELECT lat, lon, range, samples FROM ${s.table} WHERE mcc=? AND mnc=? AND cid=? AND radio=? ORDER BY samples DESC LIMIT 1",
+                arrayOf(k.mcc.toString(), k.mnc.toString(), k.cid.toString(), k.radio.ordinal.toString()),
+            ).use { c -> if (c.moveToFirst()) return CellTower(k, c.getDouble(0), c.getDouble(1), c.getDouble(2), c.getInt(3)) to Match.CELL_ID }
+        }
+        if (k.radio == Radio.LTE) {
+            val site = k.cid / 256
             for (s in CellSource.entries) {
-                val t = find(db, s.table, k) ?: continue
-                out[k] = t
-                break
+                val sectors = ArrayList<CellTower>()
+                db.rawQuery(
+                    "SELECT lat, lon, range, samples FROM ${s.table} WHERE mcc=? AND mnc=? AND cid BETWEEN ? AND ? AND radio=?",
+                    arrayOf(k.mcc.toString(), k.mnc.toString(), (site * 256).toString(), (site * 256 + 255).toString(), k.radio.ordinal.toString()),
+                ).use { c -> while (c.moveToNext()) sectors += CellTower(k, c.getDouble(0), c.getDouble(1), c.getDouble(2), c.getInt(3)) }
+                if (sectors.isNotEmpty()) {
+                    val lat = sectors.map { it.lat }.average()
+                    val lon = sectors.map { it.lon }.average()
+                    val spread = sectors.maxOf { org.blinddriver.core.geo.Geo.distance(lat, lon, it.lat, it.lon) }
+                    val range = sectors.maxOf { it.rangeM } + spread
+                    return CellTower(k, lat, lon, range, sectors.sumOf { it.samples }) to Match.SITE
+                }
             }
         }
-        return out
-    }
-
-    /** Which source answered for each key (for diagnostics). */
-    fun sourcesOf(keys: Collection<CellKey>): Map<CellKey, CellSource> {
-        val db = readableDatabase
-        return keys.mapNotNull { k -> CellSource.entries.firstOrNull { find(db, it.table, k) != null }?.let { k to it } }.toMap()
+        return null
     }
 
     private fun find(db: SQLiteDatabase, table: String, k: CellKey): CellTower? =

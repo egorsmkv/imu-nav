@@ -41,6 +41,8 @@ data class UiState(
     /** Start point chosen by the user when no trusted position exists (GPS spoofed/jammed, no network). */
     val manualStart: GeoPoint? = null,
     val hasTrustedPosition: Boolean = false,
+    /** Accuracy of the best trusted position, metres (null = none). */
+    val trustedAccuracyM: Double? = null,
     /** Why GPS fixes are currently rejected, for the "no trusted position" message. */
     val gpsRejectReasons: List<String> = emptyList(),
     val planning: Boolean = false,
@@ -135,7 +137,8 @@ class AppGraph(private val context: Context) {
             _ui.value = _ui.value.copy(error = "Location is turned off on this phone — turn it on in system settings")
             return
         }
-        val from = currentPosition() ?: _ui.value.manualStart ?: run {
+        // A start the user placed by hand wins over a coarse automatic fix.
+        val from = _ui.value.manualStart ?: currentPosition() ?: run {
             val why = hub.lastJudged?.takeIf { it.verdict.level == org.blinddriver.core.gnss.TrustLevel.BAD }?.verdict?.reasons
                 ?.let { "GPS is rejected (${it.joinToString()})" } ?: "No GPS fix yet"
             _ui.value = _ui.value.copy(error = "$why and there is no network location. Put the crosshair on your position and tap “Start here”.")
@@ -185,6 +188,7 @@ class AppGraph(private val context: Context) {
             jammed = hub.jammed,
             currentPosition = engine.state.position ?: currentPosition() ?: _ui.value.manualStart,
             hasTrustedPosition = currentPosition() != null,
+            trustedAccuracyM = (hub.lastGood ?: hub.lastNet)?.accuracyM?.toDouble(),
             gpsRejectReasons = hub.lastJudged?.takeIf { it.verdict.level == org.blinddriver.core.gnss.TrustLevel.BAD }?.verdict?.reasons.orEmpty(),
             simulateGpsLoss = engine.simulateGpsLoss,
             sensorWarning = sensors.sensorWarning,

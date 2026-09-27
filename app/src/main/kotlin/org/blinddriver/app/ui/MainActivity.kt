@@ -112,7 +112,8 @@ private fun MainScreen(ui: UiState, g: AppGraph, hasLocation: Boolean) {
         if (uri != null) g.cells.importFile { context.contentResolver.openInputStream(uri) }
     }
     var mapCenter by remember { mutableStateOf<org.blinddriver.core.geo.GeoPoint?>(null) }
-    val pickStart = !ui.guidance.active && !ui.hasTrustedPosition
+    // Offer manual start when there is no trusted position or only a coarse one (e.g. a single cell tower).
+    val pickStart = !ui.guidance.active && (!ui.hasTrustedPosition || (ui.trustedAccuracyM ?: 0.0) > 500.0)
     val nav = ui.guidance
 
     Box(Modifier.fillMaxSize()) {
@@ -206,6 +207,8 @@ private fun Hint(ui: UiState, hasLocation: Boolean) {
                 !ui.hasTrustedPosition && ui.gpsRejectReasons.isNotEmpty() && ui.manualStart == null ->
                     "GPS looks spoofed (${ui.gpsRejectReasons.joinToString()}). Put the crosshair on your real position and tap “Start here”."
                 !ui.hasTrustedPosition && ui.manualStart == null -> "Waiting for a first GPS or network fix… or put the crosshair on your position and tap “Start here”."
+                (ui.trustedAccuracyM ?: 0.0) > 500.0 && ui.manualStart == null && ui.destination == null ->
+                    "Position from cell towers (±${ui.trustedAccuracyM?.toInt()} m). Long-press to choose a destination; optionally refine your start with the crosshair."
                 ui.destination == null -> "Long-press the map to choose a destination."
                 else -> "Destination set. Tap Start."
             },

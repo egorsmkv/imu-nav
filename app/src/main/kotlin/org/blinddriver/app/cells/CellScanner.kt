@@ -119,11 +119,11 @@ class CellScanner(
         lastFix = fix
         if (now - lastScanLogMs >= 30_000) {
             lastScanLogMs = now
-            val known = runCatching { db.lookup(observations.map { it.key }).keys }.getOrDefault(emptySet())
+            val matches = observations.associate { it.key to runCatching { db.resolve(it.key)?.second }.getOrNull() }
             val list = observations.joinToString(" ") { o ->
-                "${o.key.radio}:${o.key.mcc}-${o.key.mnc}/${o.key.area}/${o.key.cid}${o.dbm?.let { "@$it" } ?: ""}${if (o.serving) "*" else ""}${if (o.key in known) "✓" else "?"}"
+                "${o.key.radio}:${o.key.mcc}-${o.key.mnc}/${o.key.area}/${o.key.cid}${o.dbm?.let { "@$it" } ?: ""}${if (o.serving) "*" else ""}${matches[o.key]?.symbol ?: "?"}"
             }
-            main.post { log("cell_scan seen=${observations.size} known=${known.size} $list") }
+            main.post { log("cell_scan seen=${observations.size} known=${matches.values.count { it != null }} $list") }
         }
         if (fix == null) return
         val raw = RawFix(
