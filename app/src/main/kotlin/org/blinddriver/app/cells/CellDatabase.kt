@@ -293,4 +293,7 @@ class CellDatabase(context: Context) : SQLiteOpenHelper(context, "cells.db", nul
     }
 
     fun clear(source: CellSource) = writableDatabase.execSQL("DELETE FROM ${source.table}")
+
+    /** Rebuild the file to give space freed by deletes back to the system. */
+    fun vacuum() = writableDatabase.execSQL("VACUUM")
 }

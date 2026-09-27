@@ -265,7 +265,7 @@ class CellManager(
      * BUNDLED source on first run, and again only when an app update ships a different file
      * (detected by SHA-256 of the asset).
      */
-    private fun installBundledIfNeeded() {
+    private fun installBundledIfNeeded(force: Boolean = false) {
         // The Android build un-gzips *.gz assets and drops the extension, so accept either name.
         val asset = BUNDLED_ASSETS.firstOrNull { name -> runCatching { context.assets.open(name).close() }.isSuccess } ?: return
         val hash = runCatching {
@@ -280,7 +280,7 @@ class CellManager(
                 md.digest().joinToString("") { "%02x".format(it) }
             }
         }.getOrNull() ?: return
-        if (prefs.getString("bundled_sha256", null) == hash) return
+        if (!force && prefs.getString("bundled_sha256", null) == hash) return
         runTask("Preparing built-in towers…") {
             val n = withContext(Dispatchers.IO) {
                 db.clear(CellSource.BUNDLED)
@@ -290,6 +290,36 @@ class CellManager(
             }
             prefs.edit().putString("bundled_sha256", hash).apply()
             "Built-in database ready: $n towers"
+        }
+    }
+
+    /**
+     * Delete downloaded/imported towers (all sources except, optionally, the ones this phone learned),
+     * compact the file, then re-import the database bundled with the APK.
+     */
+    fun resetDatabase(deleteLearned: Boolean) {
+        runTask("Clearing tower database…") {
+            withContext(Dispatchers.IO) {
+                for (s in CellSource.entries) {
+                    if (s == CellSource.LEARNED && !deleteLearned) continue
+                    progress("Clearing ${s.label}…")
+                    db.clear(s)
+                }
+                progress("Compacting database…")
+                db.vacuum()
+            }
+            prefs.edit()
+                .remove("bundled_sha256")
+                .putLong("last_download_s", 0) // next sync downloads the full shared dataset again
+                .apply()
+            if (deleteLearned) prefs.edit().putLong("last_upload_ms", 0).apply()
+            log("cells_reset learned_deleted=$deleteLearned")
+            "Tower database cleared${if (deleteLearned) "" else " (learned towers kept)"}"
+        }
+        // Runs after the clearing task finishes (tasks don't overlap).
+        scope.launch {
+            task?.join()
+            installBundledIfNeeded(force = true)
         }
     }
 

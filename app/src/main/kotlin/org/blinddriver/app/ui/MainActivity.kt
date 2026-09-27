@@ -412,6 +412,25 @@ private fun CellsPanel(ui: UiState, g: AppGraph, onPickFile: () -> Unit) {
             Text("Write all towers (deduplicated) to Android/data/org.blinddriver.app/files/cells-export.csv.gz", color = grey, fontSize = 12.sp)
             OutlinedButton(onClick = { mgr.exportDatabase() }, enabled = !busy) { Text("Export database", softWrap = false) }
 
+            SectionTitle("Reset")
+            Text("Delete downloaded and imported towers, then reload the built-in database shipped with the app.", color = grey, fontSize = 12.sp)
+            var confirmReset by remember { mutableStateOf(false) }
+            OutlinedButton(
+                onClick = { confirmReset = true },
+                enabled = !busy,
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFF8A80)),
+            ) { Text("Reset tower database", softWrap = false) }
+            if (confirmReset) {
+                ResetDialog(
+                    learnedCount = c.counts[CellSource.LEARNED] ?: 0,
+                    onConfirm = { deleteLearned ->
+                        confirmReset = false
+                        mgr.resetDatabase(deleteLearned)
+                    },
+                    onDismiss = { confirmReset = false },
+                )
+            }
+
             SectionTitle("Learning")
             Row(verticalAlignment = Alignment.CenterVertically) {
                 androidx.compose.material3.Switch(checked = c.learning, onCheckedChange = { mgr.setLearning(it) })
@@ -421,6 +440,28 @@ private fun CellsPanel(ui: UiState, g: AppGraph, onPickFile: () -> Unit) {
             Text("Cell data: OpenCellID contributors (CC BY-SA 4.0); Mozilla Location Service (public domain).", color = Color(0xFF78909C), fontSize = 11.sp)
         }
     }
+}
+
+@Composable
+private fun ResetDialog(learnedCount: Long, onConfirm: (deleteLearned: Boolean) -> Unit, onDismiss: () -> Unit) {
+    var deleteLearned by remember { mutableStateOf(false) }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Reset tower database?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Removes OpenCellID, Mozilla and sync-server towers, then reloads the built-in database. Downloads can be repeated later.")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.Checkbox(checked = deleteLearned, onCheckedChange = { deleteLearned = it })
+                    Text("Also delete $learnedCount towers learned by this phone (cannot be re-downloaded unless synced)")
+                }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = { onConfirm(deleteLearned) }) { Text("Reset", color = Color(0xFFD32F2F)) }
+        },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @Composable
