@@ -392,6 +392,10 @@ private fun CellsPanel(ui: UiState, g: AppGraph, onPickFile: () -> Unit) {
             }
             c.lastSync?.let { Text("Last: $it", color = grey, fontSize = 12.sp) }
 
+            SectionTitle("Export")
+            Text("Write all towers (deduplicated) to Android/data/org.blinddriver.app/files/cells-export.csv.gz", color = grey, fontSize = 12.sp)
+            OutlinedButton(onClick = { mgr.exportDatabase() }, enabled = !busy) { Text("Export database", softWrap = false) }
+
             SectionTitle("Learning")
             Row(verticalAlignment = Alignment.CenterVertically) {
                 androidx.compose.material3.Switch(checked = c.learning, onCheckedChange = { mgr.setLearning(it) })

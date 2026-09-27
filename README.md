@@ -47,7 +47,21 @@ Tower locations come from four sources, each in its own table and looked up in t
 | **Learned** | While GPS is GOOD (≤ 30 m), every visible cell's position is refined from the fix. |
 | **Mozilla** | *Download Mozilla data* streams the Mozilla Location Service final export (1.5 GB, public domain, March 2024) from archive.org, keeping only your region's MCCs; resumes after network drops, nothing large is stored. |
 
+| **Built-in** | Shipped inside the APK (`app/src/main/assets/cells/bundled-cells.csv.gz`, ~530k Ukrainian towers compiled from OpenCellID + Mozilla) and imported automatically on first launch (~20 s). Lowest priority, so anything downloaded later wins. |
+
 All imports are filtered to the configured country codes (default `255`, Ukraine).
+
+#### Updating the built-in database
+1. On a phone with the data you want (after *Download Mozilla data* / *Download OpenCellID* / syncs), open **Cells → Export database**.
+   It writes every tower once — choosing the entry lookups would use — to `Android/data/org.blinddriver.app/files/cells-export.csv.gz`.
+2. Copy it into the project and rebuild:
+   ```bash
+   adb pull /sdcard/Android/data/org.blinddriver.app/files/cells-export.csv.gz app/src/main/assets/cells/bundled-cells.csv.gz
+   ./gradlew :app:assembleRelease
+   ```
+3. Installed apps re-import it once after updating (detected by the file's SHA-256).
+
+The compiled file contains OpenCellID data and is therefore distributed under CC BY-SA 4.0 (see `assets/cells/LICENSE.txt`).
 
 ### Cell-sharing server
 Phones upload towers they learned from trusted GPS — tower positions only, never the device track —

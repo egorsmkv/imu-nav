@@ -22,10 +22,13 @@ enum class CellSource(val table: String, val label: String) {
 
     /** Mozilla Location Service final export (public domain, March 2024). */
     MOZILLA("mozilla", "Mozilla"),
+
+    /** Database shipped inside the APK (assets/cells/bundled-cells.csv.gz), imported on first run. */
+    BUNDLED("bundled", "built-in"),
 }
 
 /** Offline cell tower locations from several sources, one table each. */
-class CellDatabase(context: Context) : SQLiteOpenHelper(context, "cells.db", null, 3), CellTowerDb {
+class CellDatabase(context: Context) : SQLiteOpenHelper(context, "cells.db", null, 4), CellTowerDb {
 
     override fun onCreate(db: SQLiteDatabase) {
         for (s in CellSource.entries) createTable(db, s.table)
@@ -45,7 +48,8 @@ class CellDatabase(context: Context) : SQLiteOpenHelper(context, "cells.db", nul
             // Existing learned rows count as not yet uploaded.
             db.execSQL("ALTER TABLE learned ADD COLUMN updated INTEGER NOT NULL DEFAULT 1")
         }
-        if (oldVersion < 3) createIndexes(db)
+        if (oldVersion < 4) createTable(db, CellSource.BUNDLED.table)
+        if (oldVersion < 4) createIndexes(db)
     }
 
     private fun createTable(db: SQLiteDatabase, table: String) = db.execSQL(
@@ -208,6 +212,36 @@ class CellDatabase(context: Context) : SQLiteOpenHelper(context, "cells.db", nul
         } finally {
             db.endTransaction()
         }
+    }
+
+    /**
+     * Write every known tower once, choosing per cell the source that lookups would use
+     * (declaration order of [CellSource]), as gzip CSV in OpenCellID columns.
+     * @return towers written
+     */
+    fun exportMerged(out: java.io.OutputStream, sources: List<CellSource> = CellSource.entries, onProgress: (Long) -> Unit = {}): Long {
+        val db = readableDatabase
+        var n = 0L
+        java.util.zip.GZIPOutputStream(out, 1 shl 16).bufferedWriter().use { w ->
+            w.write(CellCsv.HEADER)
+            w.write("\n")
+            for ((i, s) in sources.withIndex()) {
+                val higher = sources.take(i)
+                val notInHigher = higher.joinToString("") { h ->
+                    " AND NOT EXISTS (SELECT 1 FROM ${h.table} h WHERE h.mcc=t.mcc AND h.mnc=t.mnc AND h.area=t.area AND h.cid=t.cid AND h.radio=t.radio)"
+                }
+                db.rawQuery("SELECT radio, mcc, mnc, area, cid, lat, lon, range, samples FROM ${s.table} t WHERE 1=1$notInHigher", null).use { c ->
+                    while (c.moveToNext()) {
+                        val key = CellKey(Radio.entries[c.getInt(0)], c.getInt(1), c.getInt(2), c.getInt(3), c.getLong(4))
+                        w.write(CellCsv.format(CellTower(key, c.getDouble(5), c.getDouble(6), c.getDouble(7), c.getInt(8))))
+                        w.write("\n")
+                        if (++n % 50_000 == 0L) onProgress(n)
+                    }
+                }
+            }
+        }
+        onProgress(n)
+        return n
     }
 
     fun clear(source: CellSource) = writableDatabase.execSQL("DELETE FROM ${source.table}")

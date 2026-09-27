@@ -1,0 +1,9 @@
+bundled-cells.csv.gz — cell tower locations for Ukraine (MCC 255), OpenCellID CSV columns.
+
+Compiled from:
+  * OpenCellID (https://opencellid.org) — © OpenCellID contributors,
+    licensed under Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0).
+  * Mozilla Location Service final cell export (March 2024) — public domain.
+
+Where both sources contain a cell, the OpenCellID entry is used. This compiled file is
+therefore distributed under CC BY-SA 4.0: https://creativecommons.org/licenses/by-sa/4.0/

@@ -76,6 +76,7 @@ class CellManager(
     init {
         scope.launch {
             reloadCounts()
+            installBundledIfNeeded()
             if (prefs.getBoolean("auto_sync", false) && System.currentTimeMillis() - prefs.getLong("last_sync_ms", 0) > AUTO_SYNC_INTERVAL_MS) sync(auto = true)
         }
     }
@@ -214,6 +215,55 @@ class CellManager(
         "Mozilla: imported $kept towers (MCC ${mccs.joinToString()})"
     }
 
+    /**
+     * Import the tower database shipped in the APK (assets/cells/bundled-cells.csv.gz) into the
+     * BUNDLED source on first run, and again only when an app update ships a different file
+     * (detected by SHA-256 of the asset).
+     */
+    private fun installBundledIfNeeded() {
+        // The Android build un-gzips *.gz assets and drops the extension, so accept either name.
+        val asset = BUNDLED_ASSETS.firstOrNull { name -> runCatching { context.assets.open(name).close() }.isSuccess } ?: return
+        val hash = runCatching {
+            context.assets.open(asset).use { input ->
+                val md = java.security.MessageDigest.getInstance("SHA-256")
+                val buf = ByteArray(1 shl 16)
+                while (true) {
+                    val n = input.read(buf)
+                    if (n < 0) break
+                    md.update(buf, 0, n)
+                }
+                md.digest().joinToString("") { "%02x".format(it) }
+            }
+        }.getOrNull() ?: return
+        if (prefs.getString("bundled_sha256", null) == hash) return
+        runTask("Preparing built-in towers…") {
+            val n = withContext(Dispatchers.IO) {
+                db.clear(CellSource.BUNDLED)
+                context.assets.open(asset).use { input ->
+                    db.importStream(CellSource.BUNDLED, input) { _, kept -> progress("Preparing built-in towers… $kept"); true }
+                }
+            }
+            prefs.edit().putString("bundled_sha256", hash).apply()
+            "Built-in database ready: $n towers"
+        }
+    }
+
+    /**
+     * Export all sources, deduplicated, to the app's external files dir
+     * (Android/data/org.blinddriver.app/files/cells-export.csv.gz) — readable over adb/USB.
+     */
+    fun exportDatabase() = runTask("Exporting…") {
+        val dir = context.getExternalFilesDir(null) ?: context.filesDir
+        val target = File(dir, "cells-export.csv.gz")
+        val tmp = File(dir, "cells-export.csv.gz.tmp")
+        val n = withContext(Dispatchers.IO) {
+            val count = tmp.outputStream().use { db.exportMerged(it) { k -> progress("Exporting… $k towers") } }
+            tmp.renameTo(target)
+            count
+        }
+        "Exported $n towers to ${target.absolutePath} (${target.length() / 1024} KB)"
+    }
+
     /** Upload learned towers, then download merged data into the SHARED source. */
     fun sync(auto: Boolean = false) {
         val url = prefs.getString("sync_url", "").orEmpty()
@@ -267,6 +317,7 @@ class CellManager(
     }
 
     companion object {
+        private val BUNDLED_ASSETS = listOf("cells/bundled-cells.csv.gz", "cells/bundled-cells.csv")
         const val MOZILLA_URL = "https://archive.org/download/MLS_Full_Cell_Export_Final/MLS-full-cell-export-final.csv.gz"
         private const val AUTO_SYNC_INTERVAL_MS = 6L * 60 * 60 * 1000
     }
