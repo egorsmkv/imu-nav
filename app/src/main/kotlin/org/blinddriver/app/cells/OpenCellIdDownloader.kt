@@ -21,9 +21,10 @@ object OpenCellIdDownloader {
             val code = conn.responseCode
             if (code !in 200..299) throw IOException("OpenCellID HTTP $code")
             val type = conn.contentType.orEmpty()
-            if (type.startsWith("text/")) {
-                // Errors (bad token, rate limit) come back as a short text/HTML page.
-                val msg = conn.inputStream.bufferedReader().use { it.readText() }.take(200)
+            if (type.startsWith("text/") || type.contains("json")) {
+                // Errors (bad token, rate limit) come back with HTTP 200 as JSON, e.g. {"status":"error","message":"INVALID_TOKEN"}.
+                val body = conn.inputStream.bufferedReader().use { it.readText() }
+                val msg = Regex("\"message\"\\s*:\\s*\"([^\"]+)\"").find(body)?.groupValues?.get(1) ?: body.take(200)
                 throw IOException("OpenCellID: $msg")
             }
             var total = 0L
@@ -38,6 +39,12 @@ object OpenCellIdDownloader {
                         onBytes(total)
                     }
                 }
+            }
+            val magic = target.inputStream().use { (it.read() shl 8) or it.read() }
+            if (magic != 0x1f8b) {
+                val head = target.readText().take(200)
+                target.delete()
+                throw IOException("OpenCellID returned no data file: $head")
             }
             return target
         } finally {

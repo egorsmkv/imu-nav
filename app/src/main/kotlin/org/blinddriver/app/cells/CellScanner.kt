@@ -34,6 +34,11 @@ class CellScanner(
     private val intervalMs: Long = 5_000,
 ) {
     private val telephony = context.getSystemService(TelephonyManager::class.java)
+    private val subscriptions = context.getSystemService(android.telephony.SubscriptionManager::class.java)
+
+    /** Latest cell list per SIM subscription (dual-SIM phones see both operators' cells). */
+    private val perSim = java.util.concurrent.ConcurrentHashMap<Int, Pair<Long, List<CellInfo>>>()
+    private var lastScanLogMs = 0L
     private val worker = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
     private var running = false
@@ -65,26 +70,61 @@ class CellScanner(
         main.removeCallbacks(poll)
     }
 
+    /** One TelephonyManager per active SIM; falls back to the default one. */
+    private fun managers(): List<Pair<Int, TelephonyManager>> {
+        val ids = runCatching {
+            val slots = if (android.os.Build.VERSION.SDK_INT >= 30) telephony.activeModemCount else @Suppress("DEPRECATION") telephony.phoneCount
+            (0 until slots).flatMap { slot ->
+                if (android.os.Build.VERSION.SDK_INT >= 34) {
+                    listOf(android.telephony.SubscriptionManager.getSubscriptionId(slot))
+                } else {
+                    @Suppress("DEPRECATION")
+                    subscriptions?.getSubscriptionIds(slot)?.toList().orEmpty()
+                }
+            }.filter { it >= 0 }.distinct()
+        }.getOrDefault(emptyList())
+        if (ids.isEmpty()) return listOf(-1 to telephony)
+        return ids.map { it to telephony.createForSubscriptionId(it) }
+    }
+
     @SuppressLint("MissingPermission")
     private fun scan() {
-        runCatching {
-            telephony.requestCellInfoUpdate(worker, object : TelephonyManager.CellInfoCallback() {
-                override fun onCellInfo(cells: MutableList<CellInfo>) = process(cells)
-                override fun onError(errorCode: Int, detail: Throwable?) {
-                    runCatching { telephony.allCellInfo }.getOrNull()?.let { process(it) }
-                }
-            })
-        }.onFailure { log("cell_scan_failed ${it.javaClass.simpleName}: ${it.message}") }
+        for ((subId, tm) in managers()) {
+            runCatching {
+                tm.requestCellInfoUpdate(worker, object : TelephonyManager.CellInfoCallback() {
+                    override fun onCellInfo(cells: MutableList<CellInfo>) = onSimCells(subId, cells)
+                    override fun onError(errorCode: Int, detail: Throwable?) {
+                        runCatching { tm.allCellInfo }.getOrNull()?.let { onSimCells(subId, it) }
+                    }
+                })
+            }.onFailure { log("cell_scan_failed sub=$subId ${it.javaClass.simpleName}: ${it.message}") }
+        }
+    }
+
+    /** Runs on the worker thread: merge this SIM's cells with other SIMs' recent ones. */
+    private fun onSimCells(subId: Int, cells: List<CellInfo>) {
+        val now = SystemClock.elapsedRealtime()
+        perSim[subId] = now to cells
+        perSim.entries.removeAll { now - it.value.first > 15_000 }
+        process(perSim.values.flatMap { it.second })
     }
 
     /** Runs on the worker thread. */
     private fun process(cells: List<CellInfo>) {
-        val observations = toObservations(cells)
+        val observations = toObservations(cells).distinctBy { it.key }
         val now = SystemClock.elapsedRealtime()
         lastObservations = observations
         lastScanMs = now
         val fix = runCatching { CellPositioner.locate(observations, db) }.getOrNull()
         lastFix = fix
+        if (now - lastScanLogMs >= 30_000) {
+            lastScanLogMs = now
+            val known = runCatching { db.lookup(observations.map { it.key }).keys }.getOrDefault(emptySet())
+            val list = observations.joinToString(" ") { o ->
+                "${o.key.radio}:${o.key.mcc}-${o.key.mnc}/${o.key.area}/${o.key.cid}${o.dbm?.let { "@$it" } ?: ""}${if (o.serving) "*" else ""}${if (o.key in known) "✓" else "?"}"
+            }
+            main.post { log("cell_scan seen=${observations.size} known=${known.size} $list") }
+        }
         if (fix == null) return
         val raw = RawFix(
             source = FixSource.CELL,

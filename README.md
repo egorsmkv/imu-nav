@@ -38,12 +38,37 @@ remaining along-track drift is repeatedly corrected by landmarks.
 | Offline cell positioning | `core/.../cells/Cells.kt`, `app/.../cells/` | Scans visible cells (LTE/GSM/UMTS/NR) every 5 s, looks them up in an on-device SQLite tower database and computes a weighted-centroid fix (serving cell, signal strength and cell size as weights; outlier towers dropped; LTE timing advance bounds single-cell accuracy). Works without Google services or internet, and is immune to GNSS jamming. Fixes enter the engine as `CELL` and stand in for network location. |
 
 ### Cell tower database
-The **Cells** panel fills the database in three ways:
-- **Import file** — an OpenCellID export (`.csv` or `.csv.gz`, e.g. `255.csv.gz` for Ukraine).
-- **Download Ukraine** — fetches that file directly with your own OpenCellID API token (free account at opencellid.org).
-- **Learn from trusted GPS** — while GPS is GOOD (accuracy ≤ 30 m), every visible cell's position is refined from the fix. No external data needed; coverage grows with driving.
+Tower locations come from four sources, each in its own table and looked up in this order:
 
-Cell data © OpenCellID contributors, licensed CC BY-SA 4.0.
+| Source | How it gets there |
+|---|---|
+| **Sync server** | Merged data downloaded from a cell-sharing server you configure (see below). |
+| **OpenCellID** | *Download OpenCellID* with your own API token, or *Import file* (`.csv` / `.csv.gz`). CC BY-SA 4.0. |
+| **Learned** | While GPS is GOOD (≤ 30 m), every visible cell's position is refined from the fix. |
+| **Mozilla** | *Download Mozilla data* streams the Mozilla Location Service final export (1.5 GB, public domain, March 2024) from archive.org, keeping only your region's MCCs; resumes after network drops, nothing large is stored. |
+
+All imports are filtered to the configured country codes (default `255`, Ukraine).
+
+### Cell-sharing server
+Phones upload towers they learned from trusted GPS — tower positions only, never the device track —
+and download everyone's merged data. Protocol (gzip CSV in OpenCellID columns):
+
+- `POST /v1/cells` — upload; `Authorization: Bearer <key>` if the server has an API key
+- `GET /v1/cells.csv.gz?mcc=255&since=<epoch seconds>` — incremental download
+- `GET /health`
+
+The reference server in `server/` has no dependencies beyond the JDK and merges contributions
+weighted by sample count:
+
+```bash
+./gradlew :server:installDist
+server/build/install/server/bin/server --port 8080 --data cells.csv.gz [--api-key KEY]
+# optionally seed it once from an export, e.g. OpenCellID/Mozilla filtered to Ukraine:
+server/build/install/server/bin/server --data cells.csv.gz --import 255.csv.gz --mcc 255
+```
+
+Put it behind HTTPS for use outside your own network; the app warns when an API key would travel over plain `http://`.
+In the app: **Cells → Sharing server**, enter the URL (and key), then *Sync now* or enable automatic sync (every 6 h and after trips).
 
 All thresholds live in `core/.../Tuning.kt` (defaults = factory preset) and `TrustConfig`.
 

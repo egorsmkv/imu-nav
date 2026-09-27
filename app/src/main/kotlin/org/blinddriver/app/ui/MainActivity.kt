@@ -49,6 +49,10 @@ import kotlinx.coroutines.delay
 import org.blinddriver.app.AppGraph
 import org.blinddriver.app.UiState
 import org.blinddriver.app.graph
+import org.blinddriver.app.cells.CellSource
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import org.blinddriver.app.service.NavService
 import org.blinddriver.core.gnss.GpsState
 import org.blinddriver.core.gnss.TrustLevel
@@ -105,7 +109,7 @@ private fun MainScreen(ui: UiState, g: AppGraph, hasLocation: Boolean) {
     var showLog by remember { mutableStateOf(false) }
     var showCells by remember { mutableStateOf(false) }
     val pickCellFile = androidx.activity.compose.rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) g.importCells { context.contentResolver.openInputStream(uri) }
+        if (uri != null) g.cells.importFile { context.contentResolver.openInputStream(uri) }
     }
     var mapCenter by remember { mutableStateOf<org.blinddriver.core.geo.GeoPoint?>(null) }
     val pickStart = !ui.guidance.active && !ui.hasTrustedPosition
@@ -278,7 +282,7 @@ private fun StatusStrip(ui: UiState) {
         val c = ui.cells
         Text(
             "cells ${c.located}/${c.seen}" + (c.accuracyM?.let { " ±${it.toInt()} m" } ?: "") +
-                "  db ${c.imported}+${c.learned}" + (if (c.imported + c.learned == 0L) " (empty — tap Cells)" else ""),
+                "  db ${c.total}" + (if (c.total == 0L) " (empty — tap Cells)" else "") + (c.busy?.let { "  · $it" } ?: ""),
             color = if (c.located > 0) Color(0xFF80CBC4) else Color(0xFFB0BEC5),
             fontSize = 12.sp,
             fontFamily = FontFamily.Monospace,
@@ -288,41 +292,117 @@ private fun StatusStrip(ui: UiState) {
 
 @Composable
 private fun CellsPanel(ui: UiState, g: AppGraph, onPickFile: () -> Unit) {
-    var token by remember { mutableStateOf(g.savedCellToken()) }
     val c = ui.cells
-    Panel {
-        Text("Offline cell-tower positioning", color = Color.White, fontWeight = FontWeight.Bold)
-        Text(
-            "Towers in database: ${c.imported} imported, ${c.learned} learned. Visible now: ${c.seen}, located: ${c.located}.",
-            color = Color(0xFFB0BEC5),
-            fontSize = 13.sp,
-        )
-        Spacer(Modifier.padding(3.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedButton(onClick = onPickFile, enabled = c.busy?.endsWith("…") != true) { Text("Import file", softWrap = false) }
-            Text(".csv / .csv.gz from OpenCellID", color = Color(0xFFB0BEC5), fontSize = 12.sp)
-        }
-        androidx.compose.material3.OutlinedTextField(
-            value = token,
-            onValueChange = { token = it },
-            label = { Text("OpenCellID API token") },
-            singleLine = true,
-            visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Button(onClick = { g.downloadCells(token) }, enabled = token.isNotBlank() && c.busy?.contains("…") != true) {
-                Text("Download Ukraine", softWrap = false)
+    val mgr = g.cells
+    var token by remember { mutableStateOf(mgr.savedToken()) }
+    var syncUrl by remember { mutableStateOf(c.syncUrl) }
+    var syncKey by remember { mutableStateOf(mgr.savedSyncKey()) }
+    var autoSync by remember { mutableStateOf(c.autoSync) }
+    var mccs by remember { mutableStateOf(c.mccs) }
+    val busy = c.busy != null
+    val grey = Color(0xFFB0BEC5)
+    Surface(color = Color(0xE0101820), shape = RoundedCornerShape(12.dp)) {
+        Column(
+            Modifier
+                .heightIn(max = 520.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text("Offline cell-tower positioning", color = Color.White, fontWeight = FontWeight.Bold)
+            Text(
+                CellSource.entries.joinToString(" · ") { "${it.label} ${c.counts[it] ?: 0}" } +
+                    "\nVisible now: ${c.seen}, located: ${c.located}" + (c.accuracyM?.let { " (±${it.toInt()} m)" } ?: ""),
+                color = grey,
+                fontSize = 13.sp,
+            )
+            c.busy?.let {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(it, color = Color(0xFFFFD500), fontSize = 13.sp, modifier = Modifier.weight(1f))
+                    if (c.busyCancellable) OutlinedButton(onClick = { mgr.cancelTask() }) { Text("Cancel", softWrap = false) }
+                }
             }
+            c.message?.let { Text(it, color = Color(0xFF80CBC4), fontSize = 13.sp) }
+
+            SectionTitle("Region")
+            androidx.compose.material3.OutlinedTextField(
+                value = mccs,
+                onValueChange = { mccs = it },
+                label = { Text("Country codes (MCC), e.g. 255 = Ukraine") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            SectionTitle("Mozilla Location Service (public domain, 2024)")
+            Text("Streams the 1.5 GB world export and keeps only your region. Use Wi-Fi; resumes after drops.", color = grey, fontSize = 12.sp)
+            Button(onClick = { mgr.saveSettings(syncUrl, syncKey, autoSync, mccs); mgr.downloadMozilla() }, enabled = !busy) {
+                Text("Download Mozilla data", softWrap = false)
+            }
+
+            SectionTitle("OpenCellID")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedButton(onClick = { mgr.saveSettings(syncUrl, syncKey, autoSync, mccs); onPickFile() }, enabled = !busy) { Text("Import file", softWrap = false) }
+                Text(".csv / .csv.gz", color = grey, fontSize = 12.sp)
+            }
+            androidx.compose.material3.OutlinedTextField(
+                value = token,
+                onValueChange = { token = it },
+                label = { Text("OpenCellID API token") },
+                singleLine = true,
+                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Button(onClick = { mgr.saveSettings(syncUrl, syncKey, autoSync, mccs); mgr.downloadOpenCellId(token) }, enabled = token.isNotBlank() && !busy) {
+                Text("Download OpenCellID", softWrap = false)
+            }
+
+            SectionTitle("Sharing server")
+            Text("Uploads towers this phone located from trusted GPS (tower positions only, never your track) and downloads everyone's merged data.", color = grey, fontSize = 12.sp)
+            androidx.compose.material3.OutlinedTextField(
+                value = syncUrl,
+                onValueChange = { syncUrl = it },
+                label = { Text("Server URL, e.g. https://cells.example.org") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            androidx.compose.material3.OutlinedTextField(
+                value = syncKey,
+                onValueChange = { syncKey = it },
+                label = { Text("API key (optional)") },
+                singleLine = true,
+                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (syncUrl.trim().startsWith("http://") && syncKey.isNotBlank()) {
+                Text("Warning: http:// sends the API key unencrypted. Use https:// outside your own network.", color = Color(0xFFFF8A80), fontSize = 12.sp)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.Switch(checked = autoSync, onCheckedChange = { autoSync = it })
+                Spacer(Modifier.width(8.dp))
+                Text("Sync automatically (every 6 h, after trips)", color = Color.White, fontSize = 13.sp)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { mgr.saveSettings(syncUrl, syncKey, autoSync, mccs) }) { Text("Save", softWrap = false) }
+                Button(onClick = { mgr.saveSettings(syncUrl, syncKey, autoSync, mccs); mgr.sync() }, enabled = syncUrl.isNotBlank() && !busy) {
+                    Text("Sync now", softWrap = false)
+                }
+            }
+            c.lastSync?.let { Text("Last: $it", color = grey, fontSize = 12.sp) }
+
+            SectionTitle("Learning")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.Switch(checked = c.learning, onCheckedChange = { mgr.setLearning(it) })
+                Spacer(Modifier.width(8.dp))
+                Text("Learn tower positions from trusted GPS", color = Color.White, fontSize = 13.sp)
+            }
+            Text("Cell data: OpenCellID contributors (CC BY-SA 4.0); Mozilla Location Service (public domain).", color = Color(0xFF78909C), fontSize = 11.sp)
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            androidx.compose.material3.Switch(checked = c.learning, onCheckedChange = { g.setCellLearning(it) })
-            Spacer(Modifier.width(8.dp))
-            Text("Learn tower positions from trusted GPS", color = Color.White, fontSize = 13.sp)
-        }
-        c.busy?.let { Text(it, color = Color(0xFFFFD500), fontSize = 13.sp) }
-        Text("Cell data © OpenCellID contributors, CC BY-SA 4.0", color = Color(0xFF78909C), fontSize = 11.sp)
     }
+}
+
+@Composable
+private fun SectionTitle(text: String) {
+    Text(text, color = Color(0xFFFFD500), fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
 }
 
 @Composable
