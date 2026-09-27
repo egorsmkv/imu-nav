@@ -169,3 +169,47 @@ object OpenCellIdCsv {
         return CellTower(CellKey(radio, mcc, mnc, area, cid), lat, lon, range, samples)
     }
 }
+
+/**
+ * Estimates a site (mast) position from the known positions of its sectors — used when the exact
+ * cell is unknown but sibling sectors of the same LTE eNB are. Crowd-sourced sector positions are
+ * noisy, so the estimate is robust:
+ *  - centre = component-wise median;
+ *  - sectors farther than max(3 × MAD, [MIN_OUTLIER_M]) from it are dropped (MAD = median distance);
+ *  - with exactly two sectors disagreeing by more than [PAIR_CONFLICT_M], the better-sampled one wins;
+ *  - range = max(median sector range, farthest kept sector from the centre).
+ */
+object CellSite {
+    const val MIN_OUTLIER_M = 500.0
+    const val PAIR_CONFLICT_M = 5_000.0
+
+    fun combine(key: CellKey, sectors: List<CellTower>): CellTower? {
+        if (sectors.isEmpty()) return null
+        if (sectors.size == 1) return sectors[0].copy(key = key)
+        if (sectors.size == 2) {
+            val (a, b) = sectors
+            if (Geo.distance(a.lat, a.lon, b.lat, b.lon) > PAIR_CONFLICT_M) {
+                return (if (a.samples >= b.samples) a else b).copy(key = key)
+            }
+        }
+        var kept = sectors
+        val lat0 = median(sectors.map { it.lat })
+        val lon0 = median(sectors.map { it.lon })
+        if (sectors.size >= 3) {
+            val dist = sectors.map { Geo.distance(lat0, lon0, it.lat, it.lon) }
+            val limit = max(3.0 * median(dist), MIN_OUTLIER_M)
+            kept = sectors.filterIndexed { i, _ -> dist[i] <= limit }.ifEmpty { sectors }
+        }
+        val lat = median(kept.map { it.lat })
+        val lon = median(kept.map { it.lon })
+        val farthest = kept.maxOf { Geo.distance(lat, lon, it.lat, it.lon) }
+        val range = max(median(kept.map { it.rangeM }), farthest)
+        return CellTower(key, lat, lon, range, kept.sumOf { it.samples })
+    }
+
+    private fun median(values: List<Double>): Double {
+        val s = values.sorted()
+        val n = s.size
+        return if (n % 2 == 1) s[n / 2] else (s[n / 2 - 1] + s[n / 2]) / 2
+    }
+}

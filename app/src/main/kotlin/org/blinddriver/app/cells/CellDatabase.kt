@@ -6,6 +6,7 @@ import android.database.sqlite.SQLiteOpenHelper
 import org.blinddriver.core.cells.CellCsv
 import org.blinddriver.core.cells.CellKey
 import org.blinddriver.core.cells.CellLearning
+import org.blinddriver.core.cells.CellSite
 import org.blinddriver.core.cells.CellTower
 import org.blinddriver.core.cells.CellTowerDb
 import org.blinddriver.core.cells.Radio
@@ -79,8 +80,8 @@ class CellDatabase(context: Context) : SQLiteOpenHelper(context, "cells.db", nul
      * Find a tower for [k], trying progressively looser matches in every source:
      *  1. exact key;
      *  2. same operator + cell id, any area code (operators renumber TAC/LAC over time);
-     *  3. LTE only: other sectors of the same site (eNB = ECI / 256) — same mast, so their
-     *     centroid is a good stand-in; range widened to cover them.
+     *  3. LTE only: other sectors of the same site (eNB = ECI / 256) — same mast, so a robust
+     *     median of their positions (outlier sectors dropped, see [CellSite]) stands in for it.
      */
     fun resolve(k: CellKey): Pair<CellTower, Match>? {
         val db = readableDatabase
@@ -99,13 +100,7 @@ class CellDatabase(context: Context) : SQLiteOpenHelper(context, "cells.db", nul
                     "SELECT lat, lon, range, samples FROM ${s.table} WHERE mcc=? AND mnc=? AND cid BETWEEN ? AND ? AND radio=?",
                     arrayOf(k.mcc.toString(), k.mnc.toString(), (site * 256).toString(), (site * 256 + 255).toString(), k.radio.ordinal.toString()),
                 ).use { c -> while (c.moveToNext()) sectors += CellTower(k, c.getDouble(0), c.getDouble(1), c.getDouble(2), c.getInt(3)) }
-                if (sectors.isNotEmpty()) {
-                    val lat = sectors.map { it.lat }.average()
-                    val lon = sectors.map { it.lon }.average()
-                    val spread = sectors.maxOf { org.blinddriver.core.geo.Geo.distance(lat, lon, it.lat, it.lon) }
-                    val range = sectors.maxOf { it.rangeM } + spread
-                    return CellTower(k, lat, lon, range, sectors.sumOf { it.samples }) to Match.SITE
-                }
+                CellSite.combine(k, sectors)?.let { return it to Match.SITE }
             }
         }
         return null

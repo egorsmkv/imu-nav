@@ -9,7 +9,23 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color as ComposeColor
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
@@ -65,6 +81,8 @@ fun NavMap(
     val longPress by rememberUpdatedState(onLongPress)
     val centerChanged by rememberUpdatedState(onCenterChanged)
     val viewportChanged by rememberUpdatedState(onViewport)
+    /** Zoom chosen with the +/- buttons; while following, it replaces the automatic zoom. */
+    var userZoom by remember { mutableStateOf<Double?>(null) }
 
     DisposableEffect(lifecycle) {
         val observer = LifecycleEventObserver { _, event ->
@@ -200,12 +218,44 @@ fun NavMap(
         if (follow) {
             map?.animateCamera(
                 CameraUpdateFactory.newCameraPosition(
-                    CameraPosition.Builder().target(LatLng(position.lat, position.lon)).zoom(if (uncertaintyM > 200) 14.5 else 16.0).bearing(bearingDeg.toDouble()).build()
+                    CameraPosition.Builder().target(LatLng(position.lat, position.lon)).zoom(userZoom ?: if (uncertaintyM > 200) 14.5 else 16.0).bearing(bearingDeg.toDouble()).build()
                 ),
                 450,
             )
         }
     }
 
-    AndroidView(factory = { mapView }, modifier = modifier)
+    fun zoomBy(delta: Double) {
+        val m = map ?: return
+        val z = (m.cameraPosition.zoom + delta).coerceIn(m.minZoomLevel, m.maxZoomLevel)
+        userZoom = z
+        m.animateCamera(CameraUpdateFactory.zoomTo(z), 250)
+    }
+
+    Box(modifier) {
+        AndroidView(factory = { mapView }, modifier = Modifier.fillMaxSize())
+        Column(
+            Modifier.align(Alignment.CenterEnd).padding(end = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            ZoomButton("+", "Zoom in") { zoomBy(1.0) }
+            ZoomButton("−", "Zoom out") { zoomBy(-1.0) }
+        }
+    }
+}
+
+@Composable
+private fun ZoomButton(label: String, description: String, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = CircleShape,
+        color = ComposeColor(0xE0101820),
+        contentColor = ComposeColor.White,
+        shadowElevation = 4.dp,
+        modifier = Modifier.size(48.dp).semantics { contentDescription = description },
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(label, fontSize = 26.sp, fontWeight = FontWeight.Medium)
+        }
+    }
 }
