@@ -53,6 +53,18 @@ Requirements: JDK 17+, Android SDK 36.
 ./gradlew :app:assembleDebug  # app/build/outputs/apk/debug/app-debug.apk
 ```
 
+Release builds are signed from `keystore.properties` in the project root (gitignored):
+
+```properties
+storeFile=keystore/release.jks
+storePassword=...
+keyAlias=blinddriver
+keyPassword=...
+```
+
+Keep a backup of the keystore: Android only installs updates signed with the same key.
+Without `keystore.properties`, `assembleRelease` produces an unsigned APK.
+
 Usage: long-press the map to set a destination, tap **Start**. The **No GPS** chip ignores GPS
 to try dead reckoning with real sensors; **Log** shows the engine's decisions
 (`turn_hold`, `turn_snap`, `net_back`, `blind_deviation`, …). Trip logs are written to

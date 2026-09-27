@@ -103,6 +103,8 @@ class MainActivity : ComponentActivity() {
 private fun MainScreen(ui: UiState, g: AppGraph, hasLocation: Boolean) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var showLog by remember { mutableStateOf(false) }
+    var mapCenter by remember { mutableStateOf<org.blinddriver.core.geo.GeoPoint?>(null) }
+    val pickStart = !ui.guidance.active && !ui.hasTrustedPosition
     val nav = ui.guidance
 
     Box(Modifier.fillMaxSize()) {
@@ -115,15 +117,30 @@ private fun MainScreen(ui: UiState, g: AppGraph, hasLocation: Boolean) {
             follow = nav.active,
             onLongPress = { if (!nav.active) g.setDestination(it) },
             modifier = Modifier.fillMaxSize(),
+            onCenterChanged = { mapCenter = it },
         )
+        if (pickStart) {
+            // Crosshair for choosing the start manually when no trusted position exists.
+            Text("+", color = Color(0xFF1E3A5F), fontSize = 44.sp, fontWeight = FontWeight.Light, modifier = Modifier.align(Alignment.Center))
+        }
 
         Column(Modifier.safeDrawingPadding().padding(12.dp).fillMaxWidth()) {
+            if (!ui.locationEnabled) {
+                LocationOffCard(onOpenSettings = {
+                    context.startActivity(android.content.Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                })
+                Spacer(Modifier.padding(4.dp))
+            }
             if (nav.active) GuidanceCard(ui) else Hint(ui, hasLocation)
             Spacer(Modifier.padding(4.dp))
             StatusStrip(ui)
             if (nav.blindDeviation) {
                 Spacer(Modifier.padding(4.dp))
                 DeviationCard(nav.blindDeviationSecLeft, onConfirm = { g.engine.confirmDeviation(android.os.SystemClock.elapsedRealtime()) }, onDismiss = { g.engine.dismissDeviation(android.os.SystemClock.elapsedRealtime()) })
+            }
+            ui.sensorWarning?.let {
+                Spacer(Modifier.padding(4.dp))
+                Panel { Text(it, color = Color(0xFFFFCC80), fontSize = 12.sp) }
             }
             ui.error?.let {
                 Spacer(Modifier.padding(4.dp))
@@ -148,13 +165,21 @@ private fun MainScreen(ui: UiState, g: AppGraph, hasLocation: Boolean) {
                 }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F), contentColor = Color.White)) { Text("Stop") }
                 OutlinedButton(onClick = { g.engine.requestManualReroute() }, enabled = !nav.rerouting) { Text(if (nav.rerouting) "Routing…" else "Reroute") }
             } else {
-                Button(onClick = { g.startNavigation { NavService.start(context) } }, enabled = ui.destination != null && !ui.planning && hasLocation) {
+                Button(
+                    onClick = { g.startNavigation { NavService.start(context) } },
+                    enabled = ui.destination != null && !ui.planning && hasLocation && (ui.hasTrustedPosition || ui.manualStart != null),
+                ) {
                     Text(if (ui.planning) "Planning…" else "Start")
+                }
+                if (pickStart) {
+                    OutlinedButton(onClick = { mapCenter?.let { g.setManualStart(it) } }) {
+                        Text(if (ui.manualStart == null) "Start here" else "Move start", softWrap = false)
+                    }
                 }
             }
             Spacer(Modifier.weight(1f))
-            FilterChip(selected = ui.simulateGpsLoss, onClick = { g.setSimulateGpsLoss(!ui.simulateGpsLoss) }, label = { Text("No GPS") })
-            FilterChip(selected = showLog, onClick = { showLog = !showLog }, label = { Text("Log") })
+            FilterChip(selected = ui.simulateGpsLoss, onClick = { g.setSimulateGpsLoss(!ui.simulateGpsLoss) }, label = { Text("No GPS", softWrap = false) })
+            FilterChip(selected = showLog, onClick = { showLog = !showLog }, label = { Text("Log", softWrap = false) })
         }
     }
 }
@@ -165,6 +190,9 @@ private fun Hint(ui: UiState, hasLocation: Boolean) {
         Text(
             when {
                 !hasLocation -> "Location permission is required."
+                !ui.hasTrustedPosition && ui.gpsRejectReasons.isNotEmpty() && ui.manualStart == null ->
+                    "GPS looks spoofed (${ui.gpsRejectReasons.joinToString()}). Put the crosshair on your real position and tap “Start here”."
+                !ui.hasTrustedPosition && ui.manualStart == null -> "Waiting for a first GPS or network fix… or put the crosshair on your position and tap “Start here”."
                 ui.destination == null -> "Long-press the map to choose a destination."
                 else -> "Destination set. Tap Start."
             },
@@ -238,6 +266,16 @@ private fun StatusStrip(ui: UiState) {
             fontSize = 12.sp,
             fontFamily = FontFamily.Monospace,
         )
+    }
+}
+
+@Composable
+private fun LocationOffCard(onOpenSettings: () -> Unit) {
+    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFB71C1C))) {
+        Column(Modifier.padding(12.dp)) {
+            Text("Location is turned off on this phone. No GPS or network fixes can arrive.", color = Color.White)
+            Button(onClick = onOpenSettings) { Text("Open location settings") }
+        }
     }
 }
 

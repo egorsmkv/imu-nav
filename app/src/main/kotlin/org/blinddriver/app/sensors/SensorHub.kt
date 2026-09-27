@@ -45,6 +45,18 @@ class SensorHub(
     private val rotation = FloatArray(9)
     private var gyro: FloatArray? = null
     private var linearAcc: FloatArray? = null
+    private val gravity = FloatArray(3)
+    private var gravityInit = false
+
+    /** Human-readable description of missing sensors, null if the phone has everything. */
+    val sensorWarning: String? = run {
+        val missing = listOf(
+            Sensor.TYPE_GYROSCOPE to "gyroscope",
+            Sensor.TYPE_ROTATION_VECTOR to "rotation vector",
+            Sensor.TYPE_MAGNETIC_FIELD to "compass",
+        ).filter { sensorManager.getDefaultSensor(it.first) == null }.map { it.second }
+        if (missing.isEmpty()) null else "No ${missing.joinToString()}: gyro turn detection off, stop detection from accelerometer only"
+    }
 
     private val gpsListener = LocationListener { hub.onFix(it.toRawFix(FixSource.GPS)) }
     private val netListener = LocationListener { hub.onFix(it.toRawFix(FixSource.NET)) }
@@ -110,6 +122,7 @@ class SensorHub(
                 Sensor.TYPE_GYROSCOPE -> gyro = e.values.clone()
                 Sensor.TYPE_LINEAR_ACCELERATION -> linearAcc = e.values.clone()
                 Sensor.TYPE_ROTATION_VECTOR -> onRotation(e.values)
+                Sensor.TYPE_ACCELEROMETER -> onRawAccel(e.values)
             }
         }
     }
@@ -136,6 +149,26 @@ class SensorHub(
         onImu(ImuSample(now, heading, yawRate, linearAcc, g))
     }
 
+    /**
+     * Fallback for phones without gyro / rotation vector: estimate gravity with a ~1 s low-pass
+     * filter and subtract it. Enough for the stop/resume detector; no heading or yaw rate.
+     */
+    private fun onRawAccel(v: FloatArray) {
+        if (!gravityInit) {
+            v.copyInto(gravity)
+            gravityInit = true
+        }
+        val linear = FloatArray(3)
+        for (i in 0..2) {
+            gravity[i] = 0.98f * gravity[i] + 0.02f * v[i]
+            linear[i] = v[i] - gravity[i]
+        }
+        onImu(ImuSample(SystemClock.elapsedRealtime(), null, null, linear, null))
+    }
+
+    /** False when the user switched Location off system-wide: no provider will deliver fixes. */
+    val locationEnabled: Boolean get() = locationManager.isLocationEnabled
+
     @SuppressLint("MissingPermission")
     fun start() {
         if (running) return
@@ -153,7 +186,13 @@ class SensorHub(
             .onFailure { Log.w(TAG, "gnss status: $it") }
         runCatching { locationManager.registerGnssMeasurementsCallback(gnssMeasurementsCallback, handler) }
             .onFailure { Log.w(TAG, "gnss measurements: $it") }
-        for (type in listOf(Sensor.TYPE_ROTATION_VECTOR, Sensor.TYPE_GYROSCOPE, Sensor.TYPE_LINEAR_ACCELERATION)) {
+        sensorWarning?.let { log("sensors: $it") }
+        val types = if (sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR) != null) {
+            listOf(Sensor.TYPE_ROTATION_VECTOR, Sensor.TYPE_GYROSCOPE, Sensor.TYPE_LINEAR_ACCELERATION)
+        } else {
+            listOf(Sensor.TYPE_ACCELEROMETER)
+        }
+        for (type in types) {
             sensorManager.getDefaultSensor(type)?.let {
                 sensorManager.registerListener(sensorListener, it, SensorManager.SENSOR_DELAY_GAME, handler)
             }

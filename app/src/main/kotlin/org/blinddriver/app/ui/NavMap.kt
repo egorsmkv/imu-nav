@@ -50,6 +50,7 @@ fun NavMap(
     follow: Boolean,
     onLongPress: (GeoPoint) -> Unit,
     modifier: Modifier = Modifier,
+    onCenterChanged: (GeoPoint) -> Unit = {},
 ) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -57,6 +58,7 @@ fun NavMap(
     var map by remember { mutableStateOf<MapLibreMap?>(null) }
     var style by remember { mutableStateOf<Style?>(null) }
     val longPress by rememberUpdatedState(onLongPress)
+    val centerChanged by rememberUpdatedState(onCenterChanged)
 
     DisposableEffect(lifecycle) {
         val observer = LifecycleEventObserver { _, event ->
@@ -77,6 +79,9 @@ fun NavMap(
         mapView.getMapAsync { m ->
             map = m
             m.cameraPosition = CameraPosition.Builder().target(KYIV).zoom(12.0).build()
+            m.addOnCameraIdleListener {
+                m.cameraPosition.target?.let { centerChanged(GeoPoint(it.latitude, it.longitude)) }
+            }
             m.addOnMapLongClickListener { latLng ->
                 longPress(GeoPoint(latLng.latitude, latLng.longitude))
                 true

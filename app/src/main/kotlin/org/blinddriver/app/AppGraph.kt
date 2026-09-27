@@ -35,9 +35,17 @@ data class UiState(
     val jammed: Boolean = false,
     val currentPosition: GeoPoint? = null,
     val destination: GeoPoint? = null,
+    /** Start point chosen by the user when no trusted position exists (GPS spoofed/jammed, no network). */
+    val manualStart: GeoPoint? = null,
+    val hasTrustedPosition: Boolean = false,
+    /** Why GPS fixes are currently rejected, for the "no trusted position" message. */
+    val gpsRejectReasons: List<String> = emptyList(),
     val planning: Boolean = false,
     val error: String? = null,
     val simulateGpsLoss: Boolean = false,
+    val sensorWarning: String? = null,
+    /** System-wide Location switch; when off, Android delivers no fixes to any app. */
+    val locationEnabled: Boolean = true,
     val log: List<String> = emptyList(),
 )
 
@@ -85,8 +93,16 @@ class AppGraph(private val context: Context) {
     private val _ui = MutableStateFlow(UiState())
     val ui: StateFlow<UiState> = _ui.asStateFlow()
 
-    /** Best current position for planning: good GPS, else network, else nothing. */
-    fun currentPosition(): GeoPoint? = hub.lastGood?.point ?: hub.lastNet?.point ?: hub.lastFused?.point
+    /**
+     * Best trusted position for planning: a GOOD GPS fix, else a network fix. The fused provider is
+     * deliberately ignored — Android builds it largely from GPS, so it inherits spoofed positions.
+     */
+    fun currentPosition(): GeoPoint? = hub.lastGood?.point ?: hub.lastNet?.point
+
+    fun setManualStart(p: GeoPoint?) {
+        tripLog.write("manual_start ${p?.let { "%.5f %.5f".format(it.lat, it.lon) }}")
+        _ui.value = _ui.value.copy(manualStart = p, error = null)
+    }
 
     fun setDestination(p: GeoPoint) {
         _ui.value = _ui.value.copy(destination = p, error = null)
@@ -94,14 +110,17 @@ class AppGraph(private val context: Context) {
 
     fun startNavigation(onStarted: () -> Unit) {
         val dest = _ui.value.destination ?: return
-        val trusted = currentPosition()
-        // Last resort: an untrusted GPS fix. A spoofed start only yields a visibly wrong route.
-        val from = trusted ?: hub.lastJudged?.fix?.point ?: run {
-            _ui.value = _ui.value.copy(error = "No position yet — wait for GPS or network")
+        if (!sensors.locationEnabled) {
+            _ui.value = _ui.value.copy(error = "Location is turned off on this phone — turn it on in system settings")
             return
         }
-        val warning = if (trusted == null) "Planned from an untrusted GPS fix (${hub.lastJudged?.verdict?.reasons?.joinToString()}) — check the start point" else null
-        _ui.value = _ui.value.copy(planning = true, error = warning)
+        val from = currentPosition() ?: _ui.value.manualStart ?: run {
+            val why = hub.lastJudged?.takeIf { it.verdict.level == org.blinddriver.core.gnss.TrustLevel.BAD }?.verdict?.reasons
+                ?.let { "GPS is rejected (${it.joinToString()})" } ?: "No GPS fix yet"
+            _ui.value = _ui.value.copy(error = "$why and there is no network location. Put the crosshair on your position and tap “Start here”.")
+            return
+        }
+        _ui.value = _ui.value.copy(planning = true, error = null)
         scope.launch {
             runCatching { router.route(from, dest) }
                 .onSuccess { route ->
@@ -140,8 +159,12 @@ class AppGraph(private val context: Context) {
             lastVerdict = hub.lastJudged?.verdict,
             gnss = hub.gnss,
             jammed = hub.jammed,
-            currentPosition = engine.state.position ?: currentPosition(),
+            currentPosition = engine.state.position ?: currentPosition() ?: _ui.value.manualStart,
+            hasTrustedPosition = currentPosition() != null,
+            gpsRejectReasons = hub.lastJudged?.takeIf { it.verdict.level == org.blinddriver.core.gnss.TrustLevel.BAD }?.verdict?.reasons.orEmpty(),
             simulateGpsLoss = engine.simulateGpsLoss,
+            sensorWarning = sensors.sensorWarning,
+            locationEnabled = sensors.locationEnabled,
             log = tripLog.recent.takeLast(30),
         )
     }
