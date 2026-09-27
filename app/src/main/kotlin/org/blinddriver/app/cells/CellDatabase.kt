@@ -28,7 +28,7 @@ enum class CellSource(val table: String, val label: String) {
 }
 
 /** Offline cell tower locations from several sources, one table each. */
-class CellDatabase(context: Context) : SQLiteOpenHelper(context, "cells.db", null, 4), CellTowerDb {
+class CellDatabase(context: Context) : SQLiteOpenHelper(context, "cells.db", null, 5), CellTowerDb {
 
     override fun onCreate(db: SQLiteDatabase) {
         for (s in CellSource.entries) createTable(db, s.table)
@@ -38,7 +38,11 @@ class CellDatabase(context: Context) : SQLiteOpenHelper(context, "cells.db", nul
 
     /** (mcc, mnc, cid) lookups: cell id without area code, and LTE site (eNB) ranges. */
     private fun createIndexes(db: SQLiteDatabase) {
-        for (s in CellSource.entries) db.execSQL("CREATE INDEX IF NOT EXISTS idx_${s.table}_cid ON ${s.table} (mcc, mnc, cid)")
+        for (s in CellSource.entries) {
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_${s.table}_cid ON ${s.table} (mcc, mnc, cid)")
+            // Map display: towers inside the visible bounding box.
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_${s.table}_latlon ON ${s.table} (lat, lon)")
+        }
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -49,7 +53,7 @@ class CellDatabase(context: Context) : SQLiteOpenHelper(context, "cells.db", nul
             db.execSQL("ALTER TABLE learned ADD COLUMN updated INTEGER NOT NULL DEFAULT 1")
         }
         if (oldVersion < 4) createTable(db, CellSource.BUNDLED.table)
-        if (oldVersion < 4) createIndexes(db)
+        if (oldVersion < 5) createIndexes(db)
     }
 
     private fun createTable(db: SQLiteDatabase, table: String) = db.execSQL(
@@ -242,6 +246,50 @@ class CellDatabase(context: Context) : SQLiteOpenHelper(context, "cells.db", nul
         }
         onProgress(n)
         return n
+    }
+
+    /**
+     * Towers inside a bounding box, one per cell (highest-priority source wins).
+     * When the box holds more than [limit] towers, they are thinned on a grid (one tower per grid
+     * square) so the sample covers the whole view evenly instead of one band of the index order.
+     * @return towers with their source, and whether the result was thinned
+     */
+    fun towersIn(south: Double, west: Double, north: Double, east: Double, limit: Int): Pair<List<Pair<CellTower, CellSource>>, Boolean> {
+        val db = readableDatabase
+        val box = arrayOf(south.toString(), north.toString(), west.toString(), east.toString())
+        val where = "lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?"
+        val total = CellSource.entries.sumOf { s ->
+            db.rawQuery("SELECT COUNT(*) FROM ${s.table} WHERE $where", box).use { if (it.moveToFirst()) it.getLong(0) else 0L }
+        }
+        val thinned = total > limit
+        val grid = kotlin.math.sqrt(limit.toDouble()).toInt().coerceAtLeast(1)
+        val dLat = ((north - south) / grid).coerceAtLeast(1e-9)
+        val dLon = ((east - west) / grid).coerceAtLeast(1e-9)
+        val seen = LinkedHashMap<CellKey, Pair<CellTower, CellSource>>()
+        val occupied = HashSet<Long>()
+        for (s in CellSource.entries) {
+            val sql = if (thinned) {
+                // One row per grid square (SQLite returns the row that holds MIN()).
+                "SELECT radio, mcc, mnc, area, cid, lat, lon, range, MIN(samples) FROM ${s.table} WHERE $where " +
+                    "GROUP BY CAST((lat - $south) / $dLat AS INTEGER), CAST((lon - $west) / $dLon AS INTEGER)"
+            } else {
+                "SELECT radio, mcc, mnc, area, cid, lat, lon, range, samples FROM ${s.table} WHERE $where"
+            }
+            db.rawQuery(sql, box).use { c ->
+                while (c.moveToNext()) {
+                    val key = CellKey(Radio.entries[c.getInt(0)], c.getInt(1), c.getInt(2), c.getInt(3), c.getLong(4))
+                    if (key in seen) continue
+                    val lat = c.getDouble(5)
+                    val lon = c.getDouble(6)
+                    if (thinned) {
+                        val cell = ((lat - south) / dLat).toLong() * 100_000 + ((lon - west) / dLon).toLong()
+                        if (!occupied.add(cell)) continue
+                    }
+                    seen[key] = CellTower(key, lat, lon, c.getDouble(7), c.getInt(8)) to s
+                }
+            }
+        }
+        return seen.values.take(limit) to thinned
     }
 
     fun clear(source: CellSource) = writableDatabase.execSQL("DELETE FROM ${source.table}")

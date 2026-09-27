@@ -23,6 +23,9 @@ import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
+import org.blinddriver.app.cells.TowerLayer
+import org.blinddriver.core.cells.CellTower
+import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.layers.CircleLayer
 import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.Property
@@ -51,6 +54,8 @@ fun NavMap(
     onLongPress: (GeoPoint) -> Unit,
     modifier: Modifier = Modifier,
     onCenterChanged: (GeoPoint) -> Unit = {},
+    towers: TowerLayer? = null,
+    onViewport: (south: Double, west: Double, north: Double, east: Double, zoom: Double) -> Unit = { _, _, _, _, _ -> },
 ) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -59,6 +64,7 @@ fun NavMap(
     var style by remember { mutableStateOf<Style?>(null) }
     val longPress by rememberUpdatedState(onLongPress)
     val centerChanged by rememberUpdatedState(onCenterChanged)
+    val viewportChanged by rememberUpdatedState(onViewport)
 
     DisposableEffect(lifecycle) {
         val observer = LifecycleEventObserver { _, event ->
@@ -79,8 +85,13 @@ fun NavMap(
         mapView.getMapAsync { m ->
             map = m
             m.cameraPosition = CameraPosition.Builder().target(KYIV).zoom(12.0).build()
+            fun reportViewport() {
+                val b = m.projection.visibleRegion.latLngBounds
+                viewportChanged(b.latitudeSouth, b.longitudeWest, b.latitudeNorth, b.longitudeEast, m.cameraPosition.zoom)
+            }
             m.addOnCameraIdleListener {
                 m.cameraPosition.target?.let { centerChanged(GeoPoint(it.latitude, it.longitude)) }
+                reportViewport()
             }
             m.addOnMapLongClickListener { latLng ->
                 longPress(GeoPoint(latLng.latitude, latLng.longitude))
@@ -90,6 +101,37 @@ fun NavMap(
                 s.addSource(GeoJsonSource("route"))
                 s.addSource(GeoJsonSource("marker"))
                 s.addSource(GeoJsonSource("dest"))
+                s.addSource(GeoJsonSource("towers"))
+                s.addSource(GeoJsonSource("towers-visible"))
+                // Cell towers, coloured by radio technology; drawn under the route and marker.
+                s.addLayer(
+                    CircleLayer("towers-dot", "towers").withProperties(
+                        PropertyFactory.circleColor(
+                            Expression.match(
+                                Expression.get("radio"),
+                                Expression.color(Color.GRAY),
+                                Expression.stop("GSM", Expression.color(Color.parseColor("#8E24AA"))),
+                                Expression.stop("UMTS", Expression.color(Color.parseColor("#FB8C00"))),
+                                Expression.stop("LTE", Expression.color(Color.parseColor("#00897B"))),
+                                Expression.stop("NR", Expression.color(Color.parseColor("#E53935"))),
+                            )
+                        ),
+                        PropertyFactory.circleRadius(
+                            Expression.interpolate(Expression.linear(), Expression.zoom(), Expression.stop(11, 2f), Expression.stop(16, 6f))
+                        ),
+                        PropertyFactory.circleOpacity(0.75f),
+                        PropertyFactory.circleStrokeColor(Color.WHITE),
+                        PropertyFactory.circleStrokeWidth(0.5f),
+                    )
+                )
+                s.addLayer(
+                    CircleLayer("towers-visible-ring", "towers-visible").withProperties(
+                        PropertyFactory.circleColor(Color.TRANSPARENT),
+                        PropertyFactory.circleRadius(11f),
+                        PropertyFactory.circleStrokeColor(Color.parseColor("#D32F2F")),
+                        PropertyFactory.circleStrokeWidth(3f),
+                    )
+                )
                 s.addLayer(
                     LineLayer("route-line", "route").withProperties(
                         PropertyFactory.lineColor(Color.parseColor("#1E88E5")),
@@ -115,6 +157,7 @@ fun NavMap(
                     )
                 )
                 style = s
+                reportViewport()
             }
         }
     }
@@ -128,6 +171,17 @@ fun NavMap(
             val line = LineString.fromLngLats(route.geometry.map { Point.fromLngLat(it.lon, it.lat) })
             src.setGeoJson(Feature.fromGeometry(line))
         }
+    }
+
+    LaunchedEffect(style, towers) {
+        val st = style ?: return@LaunchedEffect
+        fun features(list: List<CellTower>) = FeatureCollection.fromFeatures(
+            list.map { t ->
+                Feature.fromGeometry(Point.fromLngLat(t.lon, t.lat)).also { it.addStringProperty("radio", t.key.radio.name) }
+            }
+        )
+        st.getSourceAs<GeoJsonSource>("towers")?.setGeoJson(features(towers?.towers.orEmpty()))
+        st.getSourceAs<GeoJsonSource>("towers-visible")?.setGeoJson(features(towers?.visible.orEmpty()))
     }
 
     LaunchedEffect(style, destination) {

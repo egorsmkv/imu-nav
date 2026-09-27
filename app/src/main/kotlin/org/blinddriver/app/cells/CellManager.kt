@@ -19,6 +19,16 @@ import java.io.File
 import java.io.InputStream
 import kotlin.coroutines.coroutineContext
 
+/** Towers to draw on the map for the current viewport. */
+data class TowerLayer(
+    val towers: List<CellTower> = emptyList(),
+    /** Towers of the cells the phone sees right now (exact or site match). */
+    val visible: List<CellTower> = emptyList(),
+    val truncated: Boolean = false,
+    /** Map is zoomed out too far to show towers. */
+    val zoomTooLow: Boolean = false,
+)
+
 /** Offline cell positioning status for the UI. */
 data class CellStatus(
     val seen: Int = 0,
@@ -26,6 +36,7 @@ data class CellStatus(
     val accuracyM: Double? = null,
     val counts: Map<CellSource, Long> = emptyMap(),
     val learning: Boolean = true,
+    val showTowers: Boolean = false,
     val hasToken: Boolean = false,
     val mccs: String = "255",
     val syncUrl: String = "",
@@ -59,6 +70,11 @@ class CellManager(
 
     private val _status = MutableStateFlow(CellStatus())
     val status: StateFlow<CellStatus> = _status.asStateFlow()
+
+    private val _towerLayer = MutableStateFlow(TowerLayer())
+    val towerLayer: StateFlow<TowerLayer> = _towerLayer.asStateFlow()
+    private var towerJob: Job? = null
+    private var lastViewport: DoubleArray? = null
 
     val scanner = CellScanner(
         context,
@@ -94,6 +110,7 @@ class CellManager(
                 located = fix?.towersUsed ?: 0,
                 accuracyM = fix?.accuracyM,
                 learning = prefs.getBoolean("learning", true),
+                showTowers = prefs.getBoolean("show_towers", false),
                 hasToken = prefs.getString("token", "").orEmpty().isNotBlank(),
                 mccs = mccText(),
                 syncUrl = prefs.getString("sync_url", "").orEmpty(),
@@ -115,6 +132,34 @@ class CellManager(
     fun savedSyncKey(): String = prefs.getString("sync_key", "").orEmpty()
 
     fun setLearning(on: Boolean) = prefs.edit().putBoolean("learning", on).apply()
+
+    fun setShowTowers(on: Boolean) {
+        prefs.edit().putBoolean("show_towers", on).apply()
+        refresh()
+        val v = lastViewport
+        if (on && v != null) onViewport(v[0], v[1], v[2], v[3], v[4]) else if (!on) _towerLayer.value = TowerLayer()
+    }
+
+    /** Map camera settled: load towers for the visible area (debounced by cancelling the previous query). */
+    fun onViewport(south: Double, west: Double, north: Double, east: Double, zoom: Double) {
+        lastViewport = doubleArrayOf(south, west, north, east, zoom)
+        if (!prefs.getBoolean("show_towers", false)) return
+        towerJob?.cancel()
+        if (zoom < MIN_TOWER_ZOOM) {
+            _towerLayer.value = TowerLayer(visible = visibleTowers(), zoomTooLow = true)
+            return
+        }
+        towerJob = scope.launch {
+            val layer = withContext(Dispatchers.IO) {
+                val (rows, truncated) = db.towersIn(south, west, north, east, MAX_TOWERS_ON_MAP)
+                TowerLayer(rows.map { it.first }, visibleTowers(), truncated)
+            }
+            _towerLayer.value = layer
+        }
+    }
+
+    private fun visibleTowers(): List<CellTower> =
+        scanner.lastObservations.mapNotNull { runCatching { db.resolve(it.key)?.first }.getOrNull() }
 
     fun saveSettings(syncUrl: String, syncKey: String, autoSync: Boolean, mccs: String) {
         prefs.edit()
@@ -317,6 +362,8 @@ class CellManager(
     }
 
     companion object {
+        const val MIN_TOWER_ZOOM = 11.0
+        const val MAX_TOWERS_ON_MAP = 4000
         private val BUNDLED_ASSETS = listOf("cells/bundled-cells.csv.gz", "cells/bundled-cells.csv")
         const val MOZILLA_URL = "https://archive.org/download/MLS_Full_Cell_Export_Final/MLS-full-cell-export-final.csv.gz"
         private const val AUTO_SYNC_INTERVAL_MS = 6L * 60 * 60 * 1000

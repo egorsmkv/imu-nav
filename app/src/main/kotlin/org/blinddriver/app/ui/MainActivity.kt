@@ -50,6 +50,9 @@ import org.blinddriver.app.AppGraph
 import org.blinddriver.app.UiState
 import org.blinddriver.app.graph
 import org.blinddriver.app.cells.CellSource
+import org.blinddriver.app.cells.TowerLayer
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -115,6 +118,7 @@ private fun MainScreen(ui: UiState, g: AppGraph, hasLocation: Boolean) {
     // Offer manual start when there is no trusted position or only a coarse one (e.g. a single cell tower).
     val pickStart = !ui.guidance.active && (!ui.hasTrustedPosition || (ui.trustedAccuracyM ?: 0.0) > 500.0)
     val nav = ui.guidance
+    val towerLayer by g.cells.towerLayer.collectAsStateWithLifecycle()
 
     Box(Modifier.fillMaxSize()) {
         NavMap(
@@ -127,7 +131,15 @@ private fun MainScreen(ui: UiState, g: AppGraph, hasLocation: Boolean) {
             onLongPress = { if (!nav.active) g.setDestination(it) },
             modifier = Modifier.fillMaxSize(),
             onCenterChanged = { mapCenter = it },
+            towers = if (ui.cells.showTowers) towerLayer else null,
+            onViewport = { s, w, n, e, z -> g.cells.onViewport(s, w, n, e, z) },
         )
+        if (ui.cells.showTowers) {
+            TowerLegend(
+                towerLayer,
+                Modifier.align(Alignment.BottomStart).safeDrawingPadding().padding(start = 12.dp, bottom = 84.dp),
+            )
+        }
         if (pickStart) {
             // Crosshair for choosing the start manually when no trusted position exists.
             Text("+", color = Color(0xFF1E3A5F), fontSize = 44.sp, fontWeight = FontWeight.Light, modifier = Modifier.align(Alignment.Center))
@@ -313,6 +325,10 @@ private fun CellsPanel(ui: UiState, g: AppGraph, onPickFile: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text("Offline cell-tower positioning", color = Color.White, fontWeight = FontWeight.Bold)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.Checkbox(checked = c.showTowers, onCheckedChange = { mgr.setShowTowers(it) })
+                Text("Show all cell towers on map", color = Color.White, fontSize = 14.sp)
+            }
             Text(
                 CellSource.entries.joinToString(" · ") { "${it.label} ${c.counts[it] ?: 0}" } +
                     "\nVisible now: ${c.seen}, located: ${c.located}" + (c.accuracyM?.let { " (±${it.toInt()} m)" } ?: ""),
@@ -403,6 +419,28 @@ private fun CellsPanel(ui: UiState, g: AppGraph, onPickFile: () -> Unit) {
                 Text("Learn tower positions from trusted GPS", color = Color.White, fontSize = 13.sp)
             }
             Text("Cell data: OpenCellID contributors (CC BY-SA 4.0); Mozilla Location Service (public domain).", color = Color(0xFF78909C), fontSize = 11.sp)
+        }
+    }
+}
+
+@Composable
+private fun TowerLegend(layer: TowerLayer, modifier: Modifier = Modifier) {
+    Surface(color = Color(0xE0101820), shape = RoundedCornerShape(10.dp), modifier = modifier) {
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                listOf("GSM" to Color(0xFF8E24AA), "UMTS" to Color(0xFFFB8C00), "LTE" to Color(0xFF00897B), "5G" to Color(0xFFE53935)).forEach { (name, color) ->
+                    Box(Modifier.size(9.dp).background(color, androidx.compose.foundation.shape.CircleShape))
+                    Text(name, color = Color.White, fontSize = 11.sp)
+                }
+                Box(Modifier.size(10.dp).border(2.dp, Color(0xFFD32F2F), androidx.compose.foundation.shape.CircleShape))
+                Text("seen now", color = Color.White, fontSize = 11.sp)
+            }
+            val note = when {
+                layer.zoomTooLow -> "Zoom in to see towers"
+                layer.truncated -> "Sample of ${layer.towers.size} towers — zoom in for all"
+                else -> "${layer.towers.size} towers in view"
+            }
+            Text(note, color = Color(0xFFB0BEC5), fontSize = 11.sp)
         }
     }
 }
