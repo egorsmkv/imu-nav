@@ -9,6 +9,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.blinddriver.app.cells.CellDatabase
+import org.blinddriver.app.cells.CellScanner
+import org.blinddriver.app.cells.OpenCellIdDownloader
 import org.blinddriver.app.routing.OsrmRouter
 import org.blinddriver.app.routing.Router
 import org.blinddriver.app.sensors.SensorHub
@@ -47,6 +51,20 @@ data class UiState(
     /** System-wide Location switch; when off, Android delivers no fixes to any app. */
     val locationEnabled: Boolean = true,
     val log: List<String> = emptyList(),
+    val cells: CellStatus = CellStatus(),
+)
+
+/** Offline cell positioning status for the UI. */
+data class CellStatus(
+    val seen: Int = 0,
+    val located: Int = 0,
+    val accuracyM: Double? = null,
+    val imported: Long = 0,
+    val learned: Long = 0,
+    val learning: Boolean = true,
+    val hasToken: Boolean = false,
+    /** Import / download progress or result message. */
+    val busy: String? = null,
 )
 
 /** Process-wide object graph. All engine access happens on the main thread. */
@@ -92,6 +110,112 @@ class AppGraph(private val context: Context) {
 
     private val _ui = MutableStateFlow(UiState())
     val ui: StateFlow<UiState> = _ui.asStateFlow()
+
+    // ---------------------------------------------------------------- offline cell positioning
+
+    private val cellPrefs = context.getSharedPreferences("cells", Context.MODE_PRIVATE)
+    val cellDb = CellDatabase(context)
+    private var lastCellLogMs = 0L
+    private var lastLearnedFixMs = -1L
+    private var cellCounts = CellDatabase.Counts(0, 0)
+
+    val cellScanner = CellScanner(
+        context,
+        cellDb,
+        onFix = { raw, fix ->
+            hub.onFix(raw)
+            if (raw.elapsedMs - lastCellLogMs >= 30_000) {
+                lastCellLogMs = raw.elapsedMs
+                tripLog.write("cell_fix towers=${fix.towersUsed}/${fix.towersSeen} acc=${fix.accuracyM.toInt()} %.5f %.5f".format(fix.lat, fix.lon))
+            }
+        },
+        log = tripLog::write,
+    )
+
+    init {
+        scope.launch { reloadCellCounts() }
+    }
+
+    fun startSensing() {
+        sensors.start()
+        cellScanner.start()
+    }
+
+    fun stopSensing() {
+        sensors.stop()
+        cellScanner.stop()
+    }
+
+    private suspend fun reloadCellCounts() {
+        cellCounts = withContext(Dispatchers.IO) { cellDb.counts() }
+        refresh()
+    }
+
+    private fun setCellBusy(msg: String?) {
+        _ui.value = _ui.value.copy(cells = _ui.value.cells.copy(busy = msg))
+    }
+
+    /** Import an OpenCellID CSV / CSV.GZ picked by the user. */
+    fun importCells(open: () -> java.io.InputStream?) {
+        scope.launch {
+            setCellBusy("Importing…")
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    val input = open() ?: error("cannot open file")
+                    input.use { cellDb.importOpenCellId(it) { n -> scope.launch { setCellBusy("Importing… $n towers") } } }
+                }
+            }
+            result.onSuccess { tripLog.write("cells_imported n=$it") }.onFailure { tripLog.write("cells_import_failed ${it.message}") }
+            reloadCellCounts()
+            setCellBusy(result.fold({ "Imported $it towers" }, { "Import failed: ${it.message}" }))
+        }
+    }
+
+    /** Download and import the OpenCellID export for [mcc] (255 = Ukraine) using the user's token. */
+    fun downloadCells(token: String, mcc: Int = 255) {
+        if (token.isBlank()) return
+        cellPrefs.edit().putString("token", token.trim()).apply()
+        scope.launch {
+            setCellBusy("Downloading…")
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    val file = java.io.File(context.cacheDir, "ocid-$mcc.csv.gz")
+                    OpenCellIdDownloader.download(token, mcc, file) { b -> scope.launch { setCellBusy("Downloading… ${b / 1024} KB") } }
+                    scope.launch { setCellBusy("Importing…") }
+                    val n = file.inputStream().use { cellDb.importOpenCellId(it) { n -> scope.launch { setCellBusy("Importing… $n towers") } } }
+                    file.delete()
+                    n
+                }
+            }
+            result.onSuccess { tripLog.write("cells_downloaded mcc=$mcc n=$it") }.onFailure { tripLog.write("cells_download_failed ${it.message}") }
+            reloadCellCounts()
+            setCellBusy(result.fold({ "Downloaded and imported $it towers" }, { "Download failed: ${it.message}" }))
+        }
+    }
+
+    fun savedCellToken(): String = cellPrefs.getString("token", "").orEmpty()
+
+    fun setCellLearning(on: Boolean) {
+        cellPrefs.edit().putBoolean("learning", on).apply()
+        refresh()
+    }
+
+    /** Record where visible cells are whenever we have a fresh, accurate GOOD GPS fix. */
+    private fun maybeLearnCells() {
+        if (!cellPrefs.getBoolean("learning", true)) return
+        val good = hub.lastGood ?: return
+        if (good.elapsedMs == lastLearnedFixMs) return
+        val acc = good.accuracyM ?: return
+        val obs = cellScanner.lastObservations
+        if (acc > 30f || obs.isEmpty() || kotlin.math.abs(cellScanner.lastScanMs - good.elapsedMs) > 10_000) return
+        // One sample per ~20 s is plenty and keeps database writes low.
+        if (lastLearnedFixMs > 0 && good.elapsedMs - lastLearnedFixMs < 20_000) return
+        lastLearnedFixMs = good.elapsedMs
+        scope.launch {
+            withContext(Dispatchers.IO) { cellDb.learn(obs.map { it.key }, good.lat, good.lon, acc.toDouble()) }
+            reloadCellCounts()
+        }
+    }
 
     /**
      * Best trusted position for planning: a GOOD GPS fix, else a network fix. The fused provider is
@@ -153,7 +277,18 @@ class AppGraph(private val context: Context) {
     }
 
     fun refresh() {
+        maybeLearnCells()
+        val cellFix = cellScanner.lastFix
         _ui.value = _ui.value.copy(
+            cells = _ui.value.cells.copy(
+                seen = cellScanner.lastObservations.size,
+                located = cellFix?.towersUsed ?: 0,
+                accuracyM = cellFix?.accuracyM,
+                imported = cellCounts.imported,
+                learned = cellCounts.learned,
+                learning = cellPrefs.getBoolean("learning", true),
+                hasToken = savedCellToken().isNotBlank(),
+            ),
             guidance = engine.state,
             gpsState = hub.gpsState,
             lastVerdict = hub.lastJudged?.verdict,

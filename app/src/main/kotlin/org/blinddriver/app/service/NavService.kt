@@ -40,7 +40,7 @@ class NavService : LifecycleService() {
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "blinddriver:nav")
             .apply { acquire(6 * 60 * 60 * 1000L) }
         val g = graph
-        g.sensors.start()
+        g.startSensing()
         if (loop == null) {
             loop = lifecycleScope.launch {
                 var n = 0

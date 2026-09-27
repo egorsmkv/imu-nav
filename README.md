@@ -35,6 +35,16 @@ remaining along-track drift is repeatedly corrected by landmarks.
 | Network gate | `core/.../nav/NetworkTracker.kt` | Feasibility gate for network fixes (reachable at 150 km/h) with re-anchoring. |
 | Android glue | `app/` | `SensorHub` (LocationManager, GnssStatus, GnssMeasurements/AGC, sensors), `OsrmRouter`, foreground `NavService`, TTS, Compose + MapLibre UI. |
 
+| Offline cell positioning | `core/.../cells/Cells.kt`, `app/.../cells/` | Scans visible cells (LTE/GSM/UMTS/NR) every 5 s, looks them up in an on-device SQLite tower database and computes a weighted-centroid fix (serving cell, signal strength and cell size as weights; outlier towers dropped; LTE timing advance bounds single-cell accuracy). Works without Google services or internet, and is immune to GNSS jamming. Fixes enter the engine as `CELL` and stand in for network location. |
+
+### Cell tower database
+The **Cells** panel fills the database in three ways:
+- **Import file** — an OpenCellID export (`.csv` or `.csv.gz`, e.g. `255.csv.gz` for Ukraine).
+- **Download Ukraine** — fetches that file directly with your own OpenCellID API token (free account at opencellid.org).
+- **Learn from trusted GPS** — while GPS is GOOD (accuracy ≤ 30 m), every visible cell's position is refined from the fix. No external data needed; coverage grows with driving.
+
+Cell data © OpenCellID contributors, licensed CC BY-SA 4.0.
+
 All thresholds live in `core/.../Tuning.kt` (defaults = factory preset) and `TrustConfig`.
 
 ### Turn hold — the key trick

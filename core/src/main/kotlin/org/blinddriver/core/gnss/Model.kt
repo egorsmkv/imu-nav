@@ -2,7 +2,14 @@ package org.blinddriver.core.gnss
 
 import org.blinddriver.core.geo.GeoPoint
 
-enum class FixSource { GPS, NET, FUSED }
+enum class FixSource {
+    GPS,
+    NET,
+    FUSED,
+
+    /** Computed on-device from visible cell towers and an offline tower database. */
+    CELL,
+}
 
 /** A location fix as reported by the platform, before any trust decision. */
 data class RawFix(

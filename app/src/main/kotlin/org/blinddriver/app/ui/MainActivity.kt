@@ -61,7 +61,7 @@ class MainActivity : ComponentActivity() {
 
     private val permissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
         hasLocation = result[Manifest.permission.ACCESS_FINE_LOCATION] == true
-        if (hasLocation) graph.sensors.start()
+        if (hasLocation) graph.startSensing()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -90,12 +90,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        if (hasLocation) graph.sensors.start()
+        if (hasLocation) graph.startSensing()
     }
 
     override fun onStop() {
         super.onStop()
-        if (!graph.engine.state.active) graph.sensors.stop()
+        if (!graph.engine.state.active) graph.stopSensing()
     }
 }
 
@@ -103,6 +103,10 @@ class MainActivity : ComponentActivity() {
 private fun MainScreen(ui: UiState, g: AppGraph, hasLocation: Boolean) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var showLog by remember { mutableStateOf(false) }
+    var showCells by remember { mutableStateOf(false) }
+    val pickCellFile = androidx.activity.compose.rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) g.importCells { context.contentResolver.openInputStream(uri) }
+    }
     var mapCenter by remember { mutableStateOf<org.blinddriver.core.geo.GeoPoint?>(null) }
     val pickStart = !ui.guidance.active && !ui.hasTrustedPosition
     val nav = ui.guidance
@@ -146,6 +150,10 @@ private fun MainScreen(ui: UiState, g: AppGraph, hasLocation: Boolean) {
                 Spacer(Modifier.padding(4.dp))
                 Text(it, color = Color(0xFFFF8A80), fontSize = 13.sp)
             }
+            if (showCells) {
+                Spacer(Modifier.padding(4.dp))
+                CellsPanel(ui, g, onPickFile = { pickCellFile.launch(arrayOf("*/*")) })
+            }
             if (showLog) {
                 Spacer(Modifier.padding(4.dp))
                 LogPanel(ui.log)
@@ -179,6 +187,7 @@ private fun MainScreen(ui: UiState, g: AppGraph, hasLocation: Boolean) {
             }
             Spacer(Modifier.weight(1f))
             FilterChip(selected = ui.simulateGpsLoss, onClick = { g.setSimulateGpsLoss(!ui.simulateGpsLoss) }, label = { Text("No GPS", softWrap = false) })
+            FilterChip(selected = showCells, onClick = { showCells = !showCells }, label = { Text("Cells", softWrap = false) })
             FilterChip(selected = showLog, onClick = { showLog = !showLog }, label = { Text("Log", softWrap = false) })
         }
     }
@@ -266,6 +275,53 @@ private fun StatusStrip(ui: UiState) {
             fontSize = 12.sp,
             fontFamily = FontFamily.Monospace,
         )
+        val c = ui.cells
+        Text(
+            "cells ${c.located}/${c.seen}" + (c.accuracyM?.let { " ±${it.toInt()} m" } ?: "") +
+                "  db ${c.imported}+${c.learned}" + (if (c.imported + c.learned == 0L) " (empty — tap Cells)" else ""),
+            color = if (c.located > 0) Color(0xFF80CBC4) else Color(0xFFB0BEC5),
+            fontSize = 12.sp,
+            fontFamily = FontFamily.Monospace,
+        )
+    }
+}
+
+@Composable
+private fun CellsPanel(ui: UiState, g: AppGraph, onPickFile: () -> Unit) {
+    var token by remember { mutableStateOf(g.savedCellToken()) }
+    val c = ui.cells
+    Panel {
+        Text("Offline cell-tower positioning", color = Color.White, fontWeight = FontWeight.Bold)
+        Text(
+            "Towers in database: ${c.imported} imported, ${c.learned} learned. Visible now: ${c.seen}, located: ${c.located}.",
+            color = Color(0xFFB0BEC5),
+            fontSize = 13.sp,
+        )
+        Spacer(Modifier.padding(3.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedButton(onClick = onPickFile, enabled = c.busy?.endsWith("…") != true) { Text("Import file", softWrap = false) }
+            Text(".csv / .csv.gz from OpenCellID", color = Color(0xFFB0BEC5), fontSize = 12.sp)
+        }
+        androidx.compose.material3.OutlinedTextField(
+            value = token,
+            onValueChange = { token = it },
+            label = { Text("OpenCellID API token") },
+            singleLine = true,
+            visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Button(onClick = { g.downloadCells(token) }, enabled = token.isNotBlank() && c.busy?.contains("…") != true) {
+                Text("Download Ukraine", softWrap = false)
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            androidx.compose.material3.Switch(checked = c.learning, onCheckedChange = { g.setCellLearning(it) })
+            Spacer(Modifier.width(8.dp))
+            Text("Learn tower positions from trusted GPS", color = Color.White, fontSize = 13.sp)
+        }
+        c.busy?.let { Text(it, color = Color(0xFFFFD500), fontSize = 13.sp) }
+        Text("Cell data © OpenCellID contributors, CC BY-SA 4.0", color = Color(0xFF78909C), fontSize = 11.sp)
     }
 }
 

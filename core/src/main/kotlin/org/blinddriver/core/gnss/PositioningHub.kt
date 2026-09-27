@@ -41,6 +41,8 @@ class PositioningHub(
         private set
     var lastFused: RawFix? = null
         private set
+    var lastCell: RawFix? = null
+        private set
     var compassDeg: Float? = null
         private set
     var gpsState = GpsState.LOST
@@ -62,6 +64,17 @@ class PositioningHub(
             }
             FixSource.FUSED -> {
                 lastFused = fix
+                return null
+            }
+            FixSource.CELL -> {
+                lastCell = fix
+                // Offline cell fixes stand in for network location unless a fresher/better platform fix exists.
+                val net = lastNet
+                if (net == null || net.source == FixSource.CELL || fix.elapsedMs - net.elapsedMs > 10_000 ||
+                    (fix.accuracyM ?: Float.MAX_VALUE) < (net.accuracyM ?: Float.MAX_VALUE)
+                ) {
+                    lastNet = fix
+                }
                 return null
             }
             FixSource.GPS -> Unit
