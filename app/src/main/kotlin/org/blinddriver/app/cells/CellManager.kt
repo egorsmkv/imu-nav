@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.blinddriver.core.cells.CellSyncClient
+import org.blinddriver.core.cells.Radio
 import org.blinddriver.core.cells.CellTower
 import org.blinddriver.core.cells.ResumableHttpInputStream
 import org.blinddriver.core.gnss.PositioningHub
@@ -37,6 +38,8 @@ data class CellStatus(
     val counts: Map<CellSource, Long> = emptyMap(),
     val learning: Boolean = true,
     val showTowers: Boolean = false,
+    /** Cell types used for positioning and drawn on the map. */
+    val radios: Set<Radio> = CellManager.DEFAULT_RADIOS,
     val hasToken: Boolean = false,
     val mccs: String = "255",
     val syncUrl: String = "",
@@ -87,6 +90,7 @@ class CellManager(
             }
         },
         log = log,
+        enabledRadios = ::enabledRadios,
     )
 
     init {
@@ -95,6 +99,18 @@ class CellManager(
             installBundledIfNeeded()
             if (prefs.getBoolean("auto_sync", false) && System.currentTimeMillis() - prefs.getLong("last_sync_ms", 0) > AUTO_SYNC_INTERVAL_MS) sync(auto = true)
         }
+    }
+
+    fun enabledRadios(): Set<Radio> =
+        prefs.getString("radios", null)?.split(',')?.mapNotNull { n -> Radio.entries.firstOrNull { it.name == n } }?.toSet()
+            ?: DEFAULT_RADIOS
+
+    fun setRadioEnabled(radio: Radio, on: Boolean) {
+        val set = if (on) enabledRadios() + radio else enabledRadios() - radio
+        prefs.edit().putString("radios", set.joinToString(",") { it.name }).apply()
+        log("cell_radios ${set.joinToString(",") { it.name }}")
+        refresh()
+        lastViewport?.let { v -> onViewport(v[0], v[1], v[2], v[3], v[4]) }
     }
 
     private fun mccSet(): Set<Int> = mccText().split(',', ' ').mapNotNull { it.trim().toIntOrNull() }.toSet().ifEmpty { setOf(255) }
@@ -106,7 +122,8 @@ class CellManager(
         val fix = scanner.lastFix
         _status.update {
             it.copy(
-                seen = scanner.lastObservations.size,
+                seen = scanner.lastUsable.size,
+                radios = enabledRadios(),
                 located = fix?.towersUsed ?: 0,
                 accuracyM = fix?.accuracyM,
                 learning = prefs.getBoolean("learning", true),
@@ -151,7 +168,7 @@ class CellManager(
         }
         towerJob = scope.launch {
             val layer = withContext(Dispatchers.IO) {
-                val (rows, truncated) = db.towersIn(south, west, north, east, MAX_TOWERS_ON_MAP)
+                val (rows, truncated) = db.towersIn(south, west, north, east, MAX_TOWERS_ON_MAP, enabledRadios())
                 TowerLayer(rows.map { it.first }, visibleTowers(), truncated)
             }
             _towerLayer.value = layer
@@ -159,7 +176,7 @@ class CellManager(
     }
 
     private fun visibleTowers(): List<CellTower> =
-        scanner.lastObservations.mapNotNull { runCatching { db.resolve(it.key)?.first }.getOrNull() }
+        scanner.lastUsable.mapNotNull { runCatching { db.resolve(it.key)?.first }.getOrNull() }
 
     fun saveSettings(syncUrl: String, syncKey: String, autoSync: Boolean, mccs: String) {
         prefs.edit()
@@ -392,6 +409,8 @@ class CellManager(
     }
 
     companion object {
+        /** LTE and 5G cells are small and well located; 2G/3G cells are large and give coarse fixes. */
+        val DEFAULT_RADIOS: Set<Radio> = setOf(Radio.LTE, Radio.NR)
         const val MIN_TOWER_ZOOM = 11.0
         const val MAX_TOWERS_ON_MAP = 4000
         private val BUNDLED_ASSETS = listOf("cells/bundled-cells.csv.gz", "cells/bundled-cells.csv")

@@ -249,10 +249,18 @@ class CellDatabase(context: Context) : SQLiteOpenHelper(context, "cells.db", nul
      * square) so the sample covers the whole view evenly instead of one band of the index order.
      * @return towers with their source, and whether the result was thinned
      */
-    fun towersIn(south: Double, west: Double, north: Double, east: Double, limit: Int): Pair<List<Pair<CellTower, CellSource>>, Boolean> {
+    fun towersIn(
+        south: Double,
+        west: Double,
+        north: Double,
+        east: Double,
+        limit: Int,
+        radios: Set<Radio> = Radio.entries.toSet(),
+    ): Pair<List<Pair<CellTower, CellSource>>, Boolean> {
+        if (radios.isEmpty()) return emptyList<Pair<CellTower, CellSource>>() to false
         val db = readableDatabase
         val box = arrayOf(south.toString(), north.toString(), west.toString(), east.toString())
-        val where = "lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?"
+        val where = "lat BETWEEN ? AND ? AND lon BETWEEN ? AND ? AND radio IN (${radios.joinToString(",") { it.ordinal.toString() }})"
         val total = CellSource.entries.sumOf { s ->
             db.rawQuery("SELECT COUNT(*) FROM ${s.table} WHERE $where", box).use { if (it.moveToFirst()) it.getLong(0) else 0L }
         }

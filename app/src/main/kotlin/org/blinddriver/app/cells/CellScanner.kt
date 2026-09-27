@@ -31,6 +31,8 @@ class CellScanner(
     private val db: CellDatabase,
     private val onFix: (RawFix, CellFix) -> Unit,
     private val log: (String) -> Unit,
+    /** Cell types used for positioning; others are still recorded for learning. */
+    private val enabledRadios: () -> Set<Radio> = { Radio.entries.toSet() },
     private val intervalMs: Long = 5_000,
 ) {
     private val telephony = context.getSystemService(TelephonyManager::class.java)
@@ -43,7 +45,11 @@ class CellScanner(
     private val main = Handler(Looper.getMainLooper())
     private var running = false
 
-    /** Cells seen in the latest scan and when; used for learning tower positions. */
+    /** Cells of enabled types seen in the latest scan (the ones used for positioning). */
+    @Volatile var lastUsable: List<CellObservation> = emptyList()
+        private set
+
+    /** All cells seen in the latest scan and when; used for learning tower positions. */
     @Volatile var lastObservations: List<CellObservation> = emptyList()
         private set
     @Volatile var lastScanMs = 0L
@@ -115,13 +121,16 @@ class CellScanner(
         val now = SystemClock.elapsedRealtime()
         lastObservations = observations
         lastScanMs = now
-        val fix = runCatching { CellPositioner.locate(observations, db) }.getOrNull()
+        val radios = enabledRadios()
+        val usable = observations.filter { it.key.radio in radios }
+        lastUsable = usable
+        val fix = runCatching { CellPositioner.locate(usable, db) }.getOrNull()
         lastFix = fix
         if (now - lastScanLogMs >= 30_000) {
             lastScanLogMs = now
             val matches = observations.associate { it.key to runCatching { db.resolve(it.key)?.second }.getOrNull() }
             val list = observations.joinToString(" ") { o ->
-                "${o.key.radio}:${o.key.mcc}-${o.key.mnc}/${o.key.area}/${o.key.cid}${o.dbm?.let { "@$it" } ?: ""}${if (o.serving) "*" else ""}${matches[o.key]?.symbol ?: "?"}"
+                "${o.key.radio}:${o.key.mcc}-${o.key.mnc}/${o.key.area}/${o.key.cid}${o.dbm?.let { "@$it" } ?: ""}${if (o.serving) "*" else ""}${matches[o.key]?.symbol ?: "?"}${if (o.key.radio in radios) "" else "(off)"}"
             }
             main.post { log("cell_scan seen=${observations.size} known=${matches.values.count { it != null }} $list") }
         }

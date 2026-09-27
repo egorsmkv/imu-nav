@@ -8,3 +8,4 @@ local.properties
 captures/
 keystore/
 keystore.properties
+dist/

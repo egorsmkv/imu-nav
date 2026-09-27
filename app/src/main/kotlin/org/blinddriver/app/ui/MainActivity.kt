@@ -50,6 +50,7 @@ import org.blinddriver.app.AppGraph
 import org.blinddriver.app.UiState
 import org.blinddriver.app.graph
 import org.blinddriver.app.cells.CellSource
+import org.blinddriver.core.cells.Radio
 import org.blinddriver.app.cells.TowerLayer
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.size
@@ -137,6 +138,7 @@ private fun MainScreen(ui: UiState, g: AppGraph, hasLocation: Boolean) {
         if (ui.cells.showTowers) {
             TowerLegend(
                 towerLayer,
+                ui.cells.radios,
                 Modifier.align(Alignment.BottomStart).safeDrawingPadding().padding(start = 12.dp, bottom = 84.dp),
             )
         }
@@ -329,6 +331,17 @@ private fun CellsPanel(ui: UiState, g: AppGraph, onPickFile: () -> Unit) {
                 androidx.compose.material3.Checkbox(checked = c.showTowers, onCheckedChange = { mgr.setShowTowers(it) })
                 Text("Show all cell towers on map", color = Color.White, fontSize = 14.sp)
             }
+            Text("Cell types used for positioning and shown on the map", color = grey, fontSize = 12.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                RADIO_CHOICES.forEach { (radio, label) ->
+                    FilterChip(
+                        selected = radio in c.radios,
+                        onClick = { mgr.setRadioEnabled(radio, radio !in c.radios) },
+                        label = { Text(label, softWrap = false) },
+                    )
+                }
+            }
+            if (c.radios.isEmpty()) Text("No cell types selected — cell positioning is off.", color = Color(0xFFFF8A80), fontSize = 12.sp)
             Text(
                 CellSource.entries.joinToString(" · ") { "${it.label} ${c.counts[it] ?: 0}" } +
                     "\nVisible now: ${c.seen}, located: ${c.located}" + (c.accuracyM?.let { " (±${it.toInt()} m)" } ?: ""),
@@ -442,6 +455,8 @@ private fun CellsPanel(ui: UiState, g: AppGraph, onPickFile: () -> Unit) {
     }
 }
 
+private val RADIO_CHOICES = listOf(Radio.GSM to "2G", Radio.UMTS to "3G", Radio.LTE to "4G", Radio.NR to "5G")
+
 @Composable
 private fun ResetDialog(learnedCount: Long, onConfirm: (deleteLearned: Boolean) -> Unit, onDismiss: () -> Unit) {
     var deleteLearned by remember { mutableStateOf(false) }
@@ -465,11 +480,16 @@ private fun ResetDialog(learnedCount: Long, onConfirm: (deleteLearned: Boolean) 
 }
 
 @Composable
-private fun TowerLegend(layer: TowerLayer, modifier: Modifier = Modifier) {
+private fun TowerLegend(layer: TowerLayer, radios: Set<Radio>, modifier: Modifier = Modifier) {
     Surface(color = Color(0xE0101820), shape = RoundedCornerShape(10.dp), modifier = modifier) {
         Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                listOf("GSM" to Color(0xFF8E24AA), "UMTS" to Color(0xFFFB8C00), "LTE" to Color(0xFF00897B), "5G" to Color(0xFFE53935)).forEach { (name, color) ->
+                listOf(
+                    Triple(Radio.GSM, "2G", Color(0xFF8E24AA)),
+                    Triple(Radio.UMTS, "3G", Color(0xFFFB8C00)),
+                    Triple(Radio.LTE, "4G", Color(0xFF00897B)),
+                    Triple(Radio.NR, "5G", Color(0xFFE53935)),
+                ).filter { it.first in radios }.forEach { (_, name, color) ->
                     Box(Modifier.size(9.dp).background(color, androidx.compose.foundation.shape.CircleShape))
                     Text(name, color = Color.White, fontSize = 11.sp)
                 }
