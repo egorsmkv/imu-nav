@@ -39,6 +39,7 @@ import org.blinddriver.core.nav.EnglishPhrases
 import org.blinddriver.core.nav.GuidanceState
 import org.blinddriver.core.nav.NavListener
 import org.blinddriver.core.nav.NavigationEngine
+import org.blinddriver.core.nav.NavigationMethod
 import org.blinddriver.core.nav.UkrainianPhrases
 import org.blinddriver.core.route.TravelMode
 import org.blinddriver.core.speed.SpeedProfile
@@ -156,6 +157,17 @@ class AppGraph(private val context: Context) {
         tripLog.write("travel_mode $mode")
     }
 
+    /** Fallback used when GPS is unavailable; hybrid preserves the original app behaviour. */
+    val navigationMethod = MutableStateFlow(
+        NavigationMethod.entries.firstOrNull { it.name == modePrefs.getString("navigation_method", null) } ?: NavigationMethod.HYBRID,
+    )
+
+    fun setNavigationMethod(method: NavigationMethod) {
+        modePrefs.edit { putString("navigation_method", method.name) }
+        navigationMethod.value = method
+        tripLog.write("navigation_method $method")
+    }
+
     /** Engine thresholds (factory defaults; see [Tuning]). */
     val tuning = MutableStateFlow(Tuning.DEFAULT)
 
@@ -204,6 +216,7 @@ class AppGraph(private val context: Context) {
     /** The dead-reckoning navigator (pure Kotlin, in the `core` module). */
     val engine: NavigationEngine = NavigationEngine(
         tuning = { tuning.value },
+        navigationMethod = { navigationMethod.value },
         speedProfile = SpeedProfile(PrefsSpeedProfileStore(context)),
         phrases = phrasesFor(),
         listener = listener,

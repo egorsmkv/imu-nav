@@ -46,6 +46,7 @@ import kotlin.math.min
  */
 class NavigationEngine(
     private val tuning: () -> Tuning = { Tuning.DEFAULT },
+    private val navigationMethod: () -> NavigationMethod = { NavigationMethod.HYBRID },
     private val speedProfile: SpeedProfile = SpeedProfile(),
     /** Spoken phrase set; may be switched at runtime (language change). */
     var phrases: Phrases = UkrainianPhrases,
@@ -84,6 +85,7 @@ class NavigationEngine(
     private var navStartMs = 0L
     private var lastTickMs = -1L
     private var source = PositionSource.NONE
+    private var activeNavigationMethod = navigationMethod()
 
     // GPS
     private var lastGpsProcessedMs = -1L
@@ -100,6 +102,8 @@ class NavigationEngine(
     // Dead reckoning
     private var currentSpeed = 0.0
     private var drDistance = 0.0
+    private var lastCellProcessedMs = -1L
+    private var cellAccuracyM = 0.0
 
     /** Accuracy of the trip's start position; applies until GPS is first used. */
     private var startAccuracyM = 0.0
@@ -162,6 +166,9 @@ class NavigationEngine(
         lastGpsProcessedMs = -1L
         lastGpsSpeed = null
         source = PositionSource.NONE
+        activeNavigationMethod = navigationMethod()
+        lastCellProcessedMs = -1L
+        cellAccuracyM = 0.0
         gpsLostAnnounced = false
         installRoute(route, nowMs)
         log("nav_start len=${route.length.toInt()} mode=$mode")
@@ -244,6 +251,7 @@ class NavigationEngine(
         usedSignals.clear()
         announced.clear()
         net.reset()
+        lastCellProcessedMs = -1L
         motionHistory.clear()
         clearHold()
         motion.resetHoldAccumulator()
@@ -270,8 +278,11 @@ class NavigationEngine(
         lastTickMs = nowMs
         recovery.update(pos.jammed, pos.gpsState == GpsState.LOST || simulateGpsLoss, nowMs)
 
-        processNetwork(car, pos.lastNet, nowMs)
-        if (lastGpsUseMs == 0L || nowMs - lastGpsUseMs >= 3000) netBack(car, nowMs)
+        updateNavigationMethod()
+        if (activeNavigationMethod == NavigationMethod.HYBRID) {
+            processNetwork(car, pos.lastNet, nowMs)
+            if (lastGpsUseMs == 0L || nowMs - lastGpsUseMs >= 3000) netBack(car, nowMs)
+        }
 
         val gps = if (simulateGpsLoss) null else pos.lastUsableGps
         val usedGps = gps != null && gps.fix.elapsedMs > lastGpsProcessedMs && handleGps(car, gps, nowMs, dt)
@@ -280,11 +291,28 @@ class NavigationEngine(
             if (lastGpsUseMs > 0 && nowMs - lastGpsUseMs < 3000 && source.isGps) {
                 if (smoother.valid) car.moveTo(smoother.follow(car.s, nowMs, dt, snap = false))
             } else {
-                deadReckon(car, pos, nowMs, dt)
+                when (activeNavigationMethod) {
+                    NavigationMethod.DEAD_RECKONING -> deadReckon(car, pos, networkFix = null, nowMs, dt)
+                    NavigationMethod.CELL_TOWERS -> useCellPosition(car, pos.lastCell, nowMs)
+                    NavigationMethod.HYBRID -> deadReckon(car, pos, pos.lastNet, nowMs, dt)
+                }
             }
         }
         deviationTick(nowMs)
         publish(car, pos, nowMs)
+    }
+
+    /** Reset method-specific history when the user changes the fallback while navigating. */
+    private fun updateNavigationMethod() {
+        val selected = navigationMethod()
+        if (selected == activeNavigationMethod) return
+        activeNavigationMethod = selected
+        net.reset()
+        lastNetProcessedMs = -1L
+        lastCellProcessedMs = -1L
+        cachedNet = null
+        catchUp = 0.0
+        log("nav_method method=$selected")
     }
 
     // ------------------------------------------------------------------ GPS
@@ -355,7 +383,7 @@ class NavigationEngine(
         val far = proj.offsetM > config.offRouteM
         if (fast) {
             if (offRouteFastSinceMs < 0) offRouteFastSinceMs = nowMs
-            if (nowMs - offRouteFastSinceMs >= config.offRouteFastHoldMs) declareOffRoute(fix, "fast course_diff=${courseDiff?.toInt()}")
+            if (nowMs - offRouteFastSinceMs >= config.offRouteFastHoldMs) declareOffRoute(fix, "fast course_diff=${courseDiff.toInt()}")
         } else {
             offRouteFastSinceMs = -1L
         }
@@ -387,7 +415,7 @@ class NavigationEngine(
      * No usable GPS: move the marker by estimated speed × time, then apply every correction we
      * have (turns seen by the gyro, compass, traffic signals, network fixes).
      */
-    private fun deadReckon(car: RouteCursor, pos: PositioningSnapshot, nowMs: Long, dt: Double) {
+    private fun deadReckon(car: RouteCursor, pos: PositioningSnapshot, networkFix: RawFix?, nowMs: Long, dt: Double) {
         val config = settings()
         val (speedMps, stopped) = when (mode) {
             TravelMode.CAR -> drivingMotion(car, nowMs, config)
@@ -406,15 +434,38 @@ class NavigationEngine(
 
         if (config.signalSnap && stopped && !wasStopped) signalSnap(car)
         wasStopped = stopped
-        bandCorrection(car, pos.lastNet, nowMs, dt, stopped)
+        bandCorrection(car, networkFix, nowMs, dt, stopped)
 
         source = if (stopped) {
             PositionSource.DR_STOPPED
         } else {
             applyCatchUp(car, dt)
-            val netFresh = pos.lastNet?.let { nowMs - it.elapsedMs < 30_000 } == true
+            val netFresh = networkFix?.let { nowMs - it.elapsedMs < 30_000 } == true
             if (netFresh) PositionSource.DR_NET else PositionSource.DR
         }
+    }
+
+    /**
+     * Cell-only fallback: put the marker at the latest cell fix projected onto the planned route.
+     * The marker intentionally stays there between scans instead of borrowing dead reckoning.
+     */
+    private fun useCellPosition(car: RouteCursor, fix: RawFix?, nowMs: Long) {
+        if (fix == null || nowMs - fix.elapsedMs !in 0..CELL_FIX_MAX_AGE_MS) {
+            currentSpeed = 0.0
+            source = PositionSource.NONE
+            return
+        }
+        if (fix.elapsedMs != lastCellProcessedMs) {
+            val projection = car.route.project(fix.point, car.s, 250.0, 2500.0, 120.0)
+            car.moveTo(projection.s)
+            lastCellProcessedMs = fix.elapsedMs
+            cellAccuracyM = fix.accuracyM?.toDouble() ?: DEFAULT_CELL_ACCURACY_M
+            drDistance = 0.0
+            catchUp = 0.0
+            log("cell_position s=${projection.s.toInt()} off=${projection.offsetM.toInt()} acc=${cellAccuracyM.toInt()}")
+        }
+        currentSpeed = 0.0
+        source = PositionSource.CELL
     }
 
     /** Car: fused speed (GPS / route prior / network) scaled by the IMU motion factor. Returns (speed, stopped). */
@@ -929,15 +980,19 @@ class NavigationEngine(
         val remaining = route.length - s
         val arrived = remaining < config.arriveM
         val blindS = ((nowMs - if (lastGpsUseMs > 0) lastGpsUseMs else navStartMs) / 1000).toInt()
-        val netFresh = pos.lastNet?.let { nowMs - it.elapsedMs < 30_000 } == true
-        val uncertainty = if (source.isGps) {
-            15.0
-        } else {
-            // Drift grows ~8 % of distance dead-reckoned on top of the anchor's own error: 25 m after
-            // a GPS fix, or the start position's accuracy if GPS has not been usable yet this trip.
-            val anchor = if (lastGpsUseMs > 0) 25.0 else max(25.0, startAccuracyM)
-            val cap = max(if (netFresh) 350.0 else 600.0, anchor)
-            max(30.0, min(cap, anchor + 0.08 * drDistance))
+        val netFresh = activeNavigationMethod == NavigationMethod.HYBRID && pos.lastNet?.let { nowMs - it.elapsedMs < 30_000 } == true
+        val uncertainty = when {
+            source.isGps -> 15.0
+
+            source == PositionSource.CELL -> cellAccuracyM
+
+            else -> {
+                // Drift grows ~8 % of distance dead-reckoned on top of the anchor's own error: 25 m after
+                // a GPS fix, or the start position's accuracy if GPS has not been usable yet this trip.
+                val anchor = if (lastGpsUseMs > 0) 25.0 else max(25.0, startAccuracyM)
+                val cap = max(if (netFresh) 350.0 else 600.0, anchor)
+                max(30.0, min(cap, anchor + 0.08 * drDistance))
+            }
         }
 
         announce(next, nextStep, distToNext, arrived, blindS)
@@ -1077,5 +1132,11 @@ class NavigationEngine(
 
         /** Typical walking pace, used on phones without a step detector. */
         private const val WALKING_SPEED_MPS = 1.3
+
+        /** A cell estimate older than this no longer counts as a current position. */
+        private const val CELL_FIX_MAX_AGE_MS = 30_000L
+
+        /** Conservative fallback when a cell fix did not report an accuracy radius. */
+        private const val DEFAULT_CELL_ACCURACY_M = 5_000.0
     }
 }

@@ -74,9 +74,11 @@ class CellsTest {
         val hub = PositioningHub(wallClock = { 0L })
         hub.onFix(RawFix(FixSource.CELL, 0, 1000, 50.45, 30.52, accuracyM = 600f))
         assertEquals(FixSource.CELL, hub.lastNet?.source)
+        assertEquals(1000L, hub.snapshot(1000).lastCell?.elapsedMs)
         hub.onFix(RawFix(FixSource.NET, 0, 2000, 50.45, 30.52, accuracyM = 40f))
         hub.onFix(RawFix(FixSource.CELL, 0, 3000, 50.45, 30.52, accuracyM = 600f))
         assertEquals(FixSource.NET, hub.lastNet?.source, "fresh, more accurate platform fix is kept")
+        assertEquals(3000L, hub.snapshot(3000).lastCell?.elapsedMs, "cell-only mode still receives its own latest fix")
         hub.onFix(RawFix(FixSource.CELL, 0, 20_000, 50.45, 30.52, accuracyM = 600f))
         assertEquals(FixSource.CELL, hub.lastNet?.source, "stale platform fix is replaced")
     }

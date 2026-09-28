@@ -98,6 +98,7 @@ import org.blinddriver.app.power.PowerMode
 import org.blinddriver.app.power.PowerProfile
 import org.blinddriver.core.cells.Radio
 import org.blinddriver.core.geo.GeoPoint
+import org.blinddriver.core.nav.NavigationMethod
 import org.blinddriver.core.search.PhotonServer
 import java.text.NumberFormat
 import java.util.Locale
@@ -205,6 +206,35 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
 
             // ---------------- Map start
             MapStartSection(app, ui)
+
+            // ---------------- Navigation without GPS
+            SectionHeader(stringResource(R.string.sec_navigation_method))
+            val navigationMethod by app.navigationMethod.collectAsStateWithLifecycle()
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.navigation_method_title)) },
+                supportingContent = {
+                    Column {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            NavigationMethod.entries.forEach { method ->
+                                FilterChip(
+                                    selected = navigationMethod == method,
+                                    onClick = { app.setNavigationMethod(method) },
+                                    label = { Text(navigationMethodName(method)) },
+                                )
+                            }
+                        }
+                        Text(
+                            stringResource(
+                                when (navigationMethod) {
+                                    NavigationMethod.DEAD_RECKONING -> R.string.navigation_method_dr_summary
+                                    NavigationMethod.CELL_TOWERS -> R.string.navigation_method_cells_summary
+                                    NavigationMethod.HYBRID -> R.string.navigation_method_hybrid_summary
+                                },
+                            ),
+                        )
+                    }
+                },
+            )
 
             // ---------------- Battery
             SectionHeader(stringResource(R.string.sec_power))
@@ -508,6 +538,16 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
         )
     }
 }
+
+/** Localised name of a navigation fallback method. */
+@Composable
+private fun navigationMethodName(method: NavigationMethod): String = stringResource(
+    when (method) {
+        NavigationMethod.DEAD_RECKONING -> R.string.navigation_method_dr
+        NavigationMethod.CELL_TOWERS -> R.string.navigation_method_cells
+        NavigationMethod.HYBRID -> R.string.navigation_method_hybrid
+    },
+)
 
 /** Localised name of a power mode. */
 @Composable

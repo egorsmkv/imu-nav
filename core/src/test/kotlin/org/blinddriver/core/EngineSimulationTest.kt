@@ -10,6 +10,7 @@ import org.blinddriver.core.nav.EnglishPhrases
 import org.blinddriver.core.nav.GuidanceState
 import org.blinddriver.core.nav.NavListener
 import org.blinddriver.core.nav.NavigationEngine
+import org.blinddriver.core.nav.NavigationMethod
 import org.blinddriver.core.nav.PositionSource
 import org.blinddriver.core.route.Route
 import org.blinddriver.core.route.Step
@@ -162,5 +163,54 @@ class EngineSimulationTest {
         precise.start(route, route.geometry.last(), nowMs = 0, startAccuracyM = 5.0)
         precise.tick(500, hub.snapshot(500))
         assertTrue(precise.state.uncertaintyM < 100.0)
+    }
+
+    @Test
+    fun cellTowerMethodFollowsCellFixAndReportsItsAccuracy() {
+        val hub = PositioningHub(wallClock = { 1_000L })
+        val engine = NavigationEngine(navigationMethod = { NavigationMethod.CELL_TOWERS }, listener = object : NavListener {})
+        val route = lShapedRoute()
+        engine.start(route, route.geometry.last(), nowMs = 0)
+        val cellPoint = truthPoint(600.0)
+        hub.onFix(
+            RawFix(
+                source = FixSource.CELL,
+                timeMs = 1_000L,
+                elapsedMs = 1_000L,
+                lat = cellPoint.lat,
+                lon = cellPoint.lon,
+                accuracyM = 420f,
+            ),
+        )
+
+        engine.tick(1_000L, hub.snapshot(1_000L))
+
+        assertEquals(PositionSource.CELL, engine.state.source)
+        assertEquals(600.0, engine.state.s, 5.0)
+        assertEquals(420.0, engine.state.uncertaintyM, 0.1)
+    }
+
+    @Test
+    fun deadReckoningMethodIgnoresCellPositionCorrections() {
+        val hub = PositioningHub(wallClock = { 1_000L })
+        val engine = NavigationEngine(navigationMethod = { NavigationMethod.DEAD_RECKONING }, listener = object : NavListener {})
+        val route = lShapedRoute()
+        engine.start(route, route.geometry.last(), nowMs = 0)
+        val cellPoint = truthPoint(600.0)
+        hub.onFix(
+            RawFix(
+                source = FixSource.CELL,
+                timeMs = 1_000L,
+                elapsedMs = 1_000L,
+                lat = cellPoint.lat,
+                lon = cellPoint.lon,
+                accuracyM = 420f,
+            ),
+        )
+
+        engine.tick(1_000L, hub.snapshot(1_000L))
+
+        assertEquals(PositionSource.DR, engine.state.source)
+        assertEquals(0.0, engine.state.s, 0.1)
     }
 }

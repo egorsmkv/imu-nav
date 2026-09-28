@@ -114,5 +114,6 @@ fun sourceLabel(res: Resources, source: PositionSource): String = res.getString(
         PositionSource.DR -> R.string.src_dr
         PositionSource.DR_NET -> R.string.src_dr_net
         PositionSource.DR_STOPPED -> R.string.src_stopped
+        PositionSource.CELL -> R.string.src_cells
     },
 )

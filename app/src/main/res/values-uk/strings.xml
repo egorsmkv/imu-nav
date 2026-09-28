@@ -120,6 +120,14 @@
 
     <!-- Налаштування -->
     <string name="settings_title">Налаштування</string>
+    <string name="sec_navigation_method">Навігація без GPS</string>
+    <string name="navigation_method_title">Резервний метод</string>
+    <string name="navigation_method_dr">Числення шляху</string>
+    <string name="navigation_method_cells">Вишки зв’язку</string>
+    <string name="navigation_method_hybrid">Гібридний</string>
+    <string name="navigation_method_dr_summary">Використовує швидкість, датчики руху й дані маршруту. Позиції за вишками не вносять поправок.</string>
+    <string name="navigation_method_cells_summary">Використовує приблизні позиції за вишками, прив’язані до маршруту, і утримує позицію між скануваннями.</string>
+    <string name="navigation_method_hybrid_summary">Поєднує безперервне числення шляху з поправками за вишками й мережею. Рекомендовано.</string>
     <string name="sec_cells">Вишки зв’язку</string>
     <string name="cells_show_map">Показувати вишки на карті</string>
     <string name="cells_types">Типи мереж</string>

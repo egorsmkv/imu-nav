@@ -19,8 +19,8 @@ remaining along-track drift is repeatedly corrected by landmarks.
                                                                 ▼
                  NavigationEngine.tick() every 500 ms: route cursor s
                  GPS usable → project fix onto route (smoothed)
-                 else       → s += v·dt·motionFactor
-                 corrections: turn-hold + gyro confirm, turn-signature matching,
+                 else       → selected fallback: dead reckoning, cell towers, or hybrid
+                 hybrid corrections: turn-hold + gyro confirm, turn-signature matching,
                  compass snap, stop-at-signal snap, network band / catch-up / pull-back
                  deviation: GPS off-route, U-turn, missed turn, network off-route
 ```
@@ -219,14 +219,17 @@ per second × stride, and the stride (0.72 m to start) is learned while GPS is t
 corrections are off (turn hold, gyro turn matching, compass snap, U-turn and missed-turn detection,
 traffic-signal and speed-bump rules — they assume a phone fixed in a car holder), off-route and
 arrival distances are tighter (`Tuning.forWalking()`), and maneuvers are announced at 150 / 50 / 15 m.
-Cell-tower and network corrections still apply. Step counting needs the *Physical activity*
+Cell-tower and network corrections apply when the Hybrid fallback is selected. Step counting needs the *Physical activity*
 permission (asked when choosing *Walk*); without it or without a step sensor, a 1.3 m/s pace is
 assumed while the phone is moving. Walk recordings contain the steps, so the replay tool works for them too.
 
 Usage: long-press the map to choose a destination and tap **Start**. If GPS is untrusted and there is
 no cell fix, pan the crosshair onto your position and tap **Start here** first. Tap the status pill for
 positioning diagnostics (satellites, spoofing reasons, cells, *Simulate GPS loss*, trip log); the gear
-opens **Settings** (cell types, tower sources, sharing server, learning, database, diagnostics, about).
+opens **Settings**. **Settings → Navigation without GPS** selects dead reckoning only, cell-tower
+positions only (held between scans), or the recommended hybrid that dead-reckons continuously and
+uses cell/network fixes to constrain drift. Trusted GPS remains preferred in all three modes.
+Other settings cover cell types, tower sources, sharing, learning, the database, diagnostics and about.
 The map opens at the phone's last GPS position (spoofed or out-of-area fixes are ignored) or, if set in
 **Settings → Map start**, at a fixed place (typed coordinates, your position or the map centre).
 The interface and voice follow the phone's language (Ukrainian or English) unless changed in

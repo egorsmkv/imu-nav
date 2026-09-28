@@ -13,6 +13,8 @@ data class PositioningSnapshot(
     /** Most recent GOOD GPS fix (reroute anchor). */
     val lastGoodGps: RawFix?,
     val lastNet: RawFix?,
+    /** Most recent fix computed locally from the offline cell-tower database. */
+    val lastCell: RawFix?,
     val gpsState: GpsState,
     val jammed: Boolean,
     val compassDeg: Float?,
@@ -173,6 +175,6 @@ class PositioningHub(trustConfig: TrustConfig = TrustConfig(), area: ServiceArea
     /** Everything the engine needs for one tick, as an immutable value. */
     fun snapshot(nowMs: Long): PositioningSnapshot {
         updateGpsState(nowMs)
-        return PositioningSnapshot(lastUsable, lastGood, lastNet, gpsState, jammed, compassDeg)
+        return PositioningSnapshot(lastUsable, lastGood, lastNet, lastCell, gpsState, jammed, compassDeg)
     }
 }

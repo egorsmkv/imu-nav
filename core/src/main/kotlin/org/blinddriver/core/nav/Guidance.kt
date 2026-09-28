@@ -7,6 +7,18 @@ import org.blinddriver.core.route.TravelMode
 import java.util.Locale
 import kotlin.math.roundToInt
 
+/** How navigation continues when no trusted GPS fix is available. */
+enum class NavigationMethod {
+    /** Advance from speed, time, motion sensors and route knowledge without cell corrections. */
+    DEAD_RECKONING,
+
+    /** Follow route-projected fixes computed from the offline cell-tower database. */
+    CELL_TOWERS,
+
+    /** Dead reckon continuously while cell/network fixes constrain accumulated drift. */
+    HYBRID,
+}
+
 /** Where the current position estimate comes from ([label] is shown in the UI and logs). */
 enum class PositionSource(val label: String) {
     NONE("—"),
@@ -25,6 +37,9 @@ enum class PositionSource(val label: String) {
 
     /** Dead reckoning, and the sensors say the car is standing still. */
     DR_STOPPED("DR⏸"),
+
+    /** A coarse fix computed locally from visible cell towers. */
+    CELL("CELL"),
     ;
 
     val isGps: Boolean get() = this == GPS || this == GPS_SUSPECT
