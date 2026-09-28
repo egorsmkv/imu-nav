@@ -20,6 +20,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import org.blinddriver.app.MapStartPrefs
 import org.blinddriver.app.cells.TowerLayer
+import org.blinddriver.app.maps.mapStyle
 import org.blinddriver.core.cells.CellTower
 import org.blinddriver.core.geo.GeoPoint
 import org.blinddriver.core.route.Route
@@ -44,9 +45,6 @@ import org.maplibre.geojson.Point
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.pow
-
-private const val STYLE_LIGHT = "https://tiles.openfreemap.org/styles/liberty"
-private const val STYLE_DARK = "https://tiles.openfreemap.org/styles/dark"
 
 /** Imperative handle for map buttons (zoom, re-center) living outside the map composable. */
 @Stable
@@ -106,12 +104,17 @@ fun NavMap(
     initialZoom: Double = 12.0,
     /** Zoom while following the position (closer when walking). */
     followZoomDefault: Double = 16.0,
+    /** Style of the installed offline map pack; null = online map. */
+    offlineStyleJson: String? = null,
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current.density
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val mapView = remember { MapView(context).apply { onCreate(null) } }
     var style by remember { mutableStateOf<Style?>(null) }
+
+    /** The map once MapLibre has created it (before any style is loaded). */
+    var loadedMap by remember { mutableStateOf<MapLibreMap?>(null) }
     val longPress by rememberUpdatedState(onLongPress)
     val centerChanged by rememberUpdatedState(onCenterChanged)
     val viewportChanged by rememberUpdatedState(onViewport)
@@ -165,11 +168,20 @@ fun NavMap(
                 longPress(GeoPoint(latLng.latitude, latLng.longitude))
                 true
             }
-            m.setStyle(Style.Builder().fromUri(if (dark) STYLE_DARK else STYLE_LIGHT)) { s ->
-                addLayers(s)
-                style = s
-                reportViewport()
-            }
+            loadedMap = m
+        }
+    }
+
+    // (Re)load the style when the map is ready, the theme changes, or an offline pack is installed or removed.
+    // Changing the style drops our own layers, so they are added again; the effects below re-run on the new style.
+    LaunchedEffect(loadedMap, offlineStyleJson, dark) {
+        val m = loadedMap ?: return@LaunchedEffect
+        style = null
+        m.setStyle(mapStyle(offlineStyleJson, dark)) { s ->
+            addLayers(s)
+            style = s
+            val b = m.projection.visibleRegion.latLngBounds
+            viewportChanged(b.latitudeSouth, b.longitudeWest, b.latitudeNorth, b.longitudeEast, m.cameraPosition.zoom)
         }
     }
 

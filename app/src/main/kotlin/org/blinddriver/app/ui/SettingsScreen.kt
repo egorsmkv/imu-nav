@@ -29,6 +29,7 @@ import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.Translate
@@ -92,6 +93,7 @@ import org.blinddriver.app.MapStartPrefs
 import org.blinddriver.app.R
 import org.blinddriver.app.UiState
 import org.blinddriver.app.cells.CellSource
+import org.blinddriver.app.maps.OfflineMapStatus
 import org.blinddriver.app.power.PowerMode
 import org.blinddriver.app.power.PowerProfile
 import org.blinddriver.core.cells.Radio
@@ -136,6 +138,8 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
     }
     LaunchedEffect(c.message) { c.message?.let { snackbar.showSnackbar(it) } }
     LaunchedEffect(routing.message) { routing.message?.let { snackbar.showSnackbar(it) } }
+    val offlineMap by app.offlineMap.status.collectAsStateWithLifecycle()
+    LaunchedEffect(offlineMap.message) { offlineMap.message?.let { snackbar.showSnackbar(it) } }
 
     Scaffold(
         modifier = Modifier.nestedScroll(scroll.nestedScrollConnection),
@@ -300,6 +304,9 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
             SwitchItem(stringResource(R.string.routing_allow_online), stringResource(R.string.routing_allow_online_summary), routing.allowOnline) {
                 app.offlineRouting.setAllowOnline(it)
             }
+
+            // ---------------- Offline map display (tiles pack + route corridors)
+            OfflineMapSection(app, offlineMap)
 
             // ---------------- Address search (online fallback server)
             SearchServerSection(app, onlineAllowed = routing.allowOnline)
@@ -563,6 +570,66 @@ private fun Field(value: String, onChange: (String) -> Unit, label: String, plac
         keyboardOptions = KeyboardOptions(keyboardType = if (secret) KeyboardType.Password else keyboard),
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
     )
+}
+
+/**
+ * Settings → Offline map: a downloadable map pack for the whole country, and automatic saving of
+ * the map along each planned route (for when there is no pack).
+ */
+@Composable
+private fun OfflineMapSection(app: AppGraph, state: OfflineMapStatus) {
+    val context = LocalContext.current
+    val pickZip = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) app.offlineMap.importZip { context.contentResolver.openInputStream(uri) }
+    }
+    var url by remember(state.packUrl) { mutableStateOf(state.packUrl) }
+    val pack = state.pack
+
+    SectionHeader(stringResource(R.string.sec_offline_map))
+    ListItem(
+        headlineContent = {
+            Text(
+                if (pack == null) {
+                    stringResource(R.string.offline_map_none)
+                } else {
+                    stringResource(R.string.offline_map_pack, pack.name, (pack.sizeBytes / 1_048_576).toInt(), pack.builtAt.take(10))
+                },
+            )
+        },
+        supportingContent = { if (pack == null) Text(stringResource(R.string.offline_map_none_hint)) },
+        leadingContent = { Icon(Icons.Filled.Map, contentDescription = null) },
+    )
+    state.busy?.let { busy ->
+        Column(Modifier.padding(horizontal = 16.dp)) {
+            LinearProgressIndicator(Modifier.fillMaxWidth())
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(busy, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                TextButton(onClick = { app.offlineMap.cancel() }) { Text(stringResource(R.string.action_cancel)) }
+            }
+        }
+    }
+    Field(url, { url = it }, stringResource(R.string.offline_map_url), "https://…/map-ukraine.zip", keyboard = KeyboardType.Uri)
+    FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Button(onClick = { app.offlineMap.download(url) }, enabled = url.isNotBlank() && state.busy == null) {
+            Text(stringResource(R.string.action_download))
+        }
+        OutlinedButton(onClick = { pickZip.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) }, enabled = state.busy == null) {
+            Text(stringResource(R.string.routing_import))
+        }
+        if (pack != null) {
+            TextButton(onClick = { app.offlineMap.remove() }, enabled = state.busy == null) {
+                Text(stringResource(R.string.routing_remove), color = MaterialTheme.colorScheme.error)
+            }
+        }
+    }
+    if (pack != null) {
+        SwitchItem(stringResource(R.string.offline_map_use), stringResource(R.string.offline_map_use_summary), state.useOffline) { app.offlineMap.setUseOffline(it) }
+    }
+    SwitchItem(
+        stringResource(R.string.corridor_title),
+        state.corridorText ?: stringResource(if (state.offlineInUse) R.string.corridor_summary_pack else R.string.corridor_summary),
+        state.corridor,
+    ) { app.offlineMap.setCorridorEnabled(it) }
 }
 
 /**

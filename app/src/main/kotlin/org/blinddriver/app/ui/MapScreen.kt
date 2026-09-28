@@ -134,6 +134,7 @@ fun MapScreen(ui: UiState, app: AppGraph, hasLocation: Boolean, onRequestPermiss
     val towerLayer by app.cells.towerLayer.collectAsStateWithLifecycle()
     val power by app.powerProfile.collectAsStateWithLifecycle()
     val travelMode by app.travelMode.collectAsStateWithLifecycle()
+    val offlineMapStatus by app.offlineMap.status.collectAsStateWithLifecycle()
     val activityPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         app.tripLog.write("activity_permission granted=$granted")
     }
@@ -206,6 +207,7 @@ fun MapScreen(ui: UiState, app: AppGraph, hasLocation: Boolean, onRequestPermiss
                 initialCenter = startView.point,
                 initialZoom = startView.zoom,
                 followZoomDefault = if (nav.travelMode == TravelMode.FOOT) 17.5 else 16.0,
+                offlineStyleJson = if (offlineMapStatus.offlineInUse) app.offlineMap.styleJson(dark) else null,
             )
         }
 

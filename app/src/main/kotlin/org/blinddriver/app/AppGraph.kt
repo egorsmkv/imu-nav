@@ -1,6 +1,7 @@
 package org.blinddriver.app
 
 import android.content.Context
+import android.content.res.Configuration
 import android.os.SystemClock
 import androidx.core.content.edit
 import kotlinx.coroutines.CoroutineScope
@@ -13,6 +14,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.blinddriver.app.cells.CellManager
 import org.blinddriver.app.cells.CellStatus
+import org.blinddriver.app.maps.OfflineMap
 import org.blinddriver.app.power.PowerMode
 import org.blinddriver.app.power.PowerPolicy
 import org.blinddriver.app.power.PowerProfile
@@ -125,6 +127,12 @@ class AppGraph(private val context: Context) {
     /** Offline GraphHopper pack first; OSRM online only as an allowed fallback. */
     val offlineRouting = OfflineRouting(context, scope, tripLog::write)
 
+    /** Offline map display: a downloaded map pack, and maps saved along planned routes. */
+    val offlineMap = OfflineMap(context, scope, tripLog::write)
+
+    /** Is the phone in dark mode? (Decides which map style a route download uses.) */
+    private fun darkTheme(): Boolean = (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+
     /** Address search: the pack's offline index, Photon online when allowed. */
     val search = PlaceSearch(context, { offlineRouting.searchDb }, { offlineRouting.status.value.allowOnline })
     private val router: Router = SmartRouter(
@@ -182,6 +190,7 @@ class AppGraph(private val context: Context) {
                     .onSuccess {
                         engine.setRoute(it, SystemClock.elapsedRealtime())
                         trips.onRoute(it)
+                        offlineMap.saveCorridor(it, darkTheme())
                     }
                     .onFailure {
                         tripLog.write("reroute_failed ${it.message}")
@@ -343,6 +352,7 @@ class AppGraph(private val context: Context) {
                     tripLog.write("start_accuracy=${startAccuracy.toInt()}")
                     engine.start(route, dest, nowMs = SystemClock.elapsedRealtime(), startAccuracyM = startAccuracy, mode = mode)
                     trips.begin(route, dest, emptyList(), startAccuracy, mode)
+                    offlineMap.saveCorridor(route, darkTheme())
                     applyPower()
                     _ui.value = _ui.value.copy(planning = false)
                     onStarted()

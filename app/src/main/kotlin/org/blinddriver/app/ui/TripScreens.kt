@@ -68,6 +68,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.blinddriver.app.AppGraph
 import org.blinddriver.app.R
+import org.blinddriver.app.maps.mapStyle
 import org.blinddriver.app.trips.TripSummary
 import org.blinddriver.app.trips.TripTracks
 import org.blinddriver.app.trips.extractTracks
@@ -208,7 +209,7 @@ fun TripDetailScreen(app: AppGraph, trip: TripSummary, onBack: () -> Unit) {
                         Text(stringResource(R.string.trip_loading), style = MaterialTheme.typography.bodySmall)
                     }
                 } else {
-                    TrackMap(t.gps, t.engine, matched.orEmpty(), Modifier.fillMaxSize())
+                    TrackMap(t.gps, t.engine, matched.orEmpty(), Modifier.fillMaxSize(), offlineStyle = app.offlineMap::styleJson)
                 }
             }
             Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -303,7 +304,7 @@ private fun LegendDot(color: Color, label: String) {
 
 /** Read-only map showing a trip's tracks, zoomed to fit them. */
 @Composable
-private fun TrackMap(gps: List<GeoPoint>, engine: List<GeoPoint>, matched: List<GeoPoint>, modifier: Modifier) {
+private fun TrackMap(gps: List<GeoPoint>, engine: List<GeoPoint>, matched: List<GeoPoint>, modifier: Modifier, offlineStyle: (dark: Boolean) -> String? = { null }) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val dark = isSystemInDarkTheme()
@@ -335,7 +336,7 @@ private fun TrackMap(gps: List<GeoPoint>, engine: List<GeoPoint>, matched: List<
     LaunchedEffect(mapView) {
         mapView.getMapAsync { m ->
             m.uiSettings.isLogoEnabled = false
-            m.setStyle(Style.Builder().fromUri(if (dark) "https://tiles.openfreemap.org/styles/dark" else "https://tiles.openfreemap.org/styles/liberty")) { s ->
+            m.setStyle(mapStyle(offlineStyle(dark), dark)) { s ->
                 for ((id, color, width) in listOf(Triple("matched", "#1A73E8", 7f), Triple("gps", "#1E8E3E", 4f), Triple("engine", "#D93025", 3f))) {
                     s.addSource(GeoJsonSource(id))
                     s.addLayer(
