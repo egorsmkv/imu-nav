@@ -20,6 +20,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.filled.DeleteForever
@@ -128,6 +129,39 @@ fun SettingsScreen(ui: UiState, g: AppGraph, onBack: () -> Unit, onOpenLog: () -
                     }
                 }
             }
+
+            // ---------------- Language
+            SectionHeader(stringResource(R.string.sec_language))
+            val language by g.language.collectAsStateWithLifecycle()
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.language_title)) },
+                supportingContent = {
+                    Column {
+                        Text(stringResource(R.string.language_hint))
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            org.blinddriver.app.AppLanguage.CHOICES.forEach { choice ->
+                                val label = when (choice) {
+                                    org.blinddriver.app.AppLanguage.UKRAINIAN -> "Українська"
+                                    org.blinddriver.app.AppLanguage.ENGLISH -> "English"
+                                    else -> stringResource(R.string.language_system)
+                                }
+                                FilterChip(
+                                    selected = language == choice,
+                                    onClick = {
+                                        if (language != choice) {
+                                            save()
+                                            g.setLanguage(choice)
+                                            (context as? android.app.Activity)?.recreate()
+                                        }
+                                    },
+                                    label = { Text(label) },
+                                )
+                            }
+                        }
+                    }
+                },
+                leadingContent = { Icon(androidx.compose.material.icons.Icons.Filled.Translate, contentDescription = null) },
+            )
 
             // ---------------- Offline routing
             SectionHeader(stringResource(R.string.sec_routing))

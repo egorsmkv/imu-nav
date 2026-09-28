@@ -210,6 +210,10 @@
 
     <!-- Offline routing -->
     <string name="sec_routing">Offline routing</string>
+    <string name="sec_language">Language</string>
+    <string name="language_title">App and voice language</string>
+    <string name="language_hint">Screens and spoken prompts.</string>
+    <string name="language_system">Phone default</string>
     <string name="routing_none">No offline map installed — routes need the internet</string>
     <string name="routing_pack">%1$s · %2$d MB · built %3$s</string>
     <string name="routing_coverage">Covers %1$.2f–%2$.2f° N, %3$.2f–%4$.2f° E</string>

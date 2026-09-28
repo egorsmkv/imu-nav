@@ -36,6 +36,8 @@ class MainActivity : ComponentActivity() {
         arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.POST_NOTIFICATIONS)
     )
 
+    override fun attachBaseContext(newBase: android.content.Context) = super.attachBaseContext(org.blinddriver.app.AppLanguage.wrap(newBase))
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()

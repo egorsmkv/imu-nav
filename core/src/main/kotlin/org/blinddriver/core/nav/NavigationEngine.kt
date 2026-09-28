@@ -43,7 +43,8 @@ import kotlin.math.min
 class NavigationEngine(
     private val tuning: () -> Tuning = { Tuning.DEFAULT },
     private val speedProfile: SpeedProfile = SpeedProfile(),
-    private val phrases: Phrases = UkrainianPhrases,
+    /** Spoken phrase set; may be switched at runtime (language change). */
+    var phrases: Phrases = UkrainianPhrases,
     private val listener: NavListener,
     /** Extra traffic-calming points (speed bumps) to consider on every route. */
     private val trafficCalming: List<GeoPoint> = emptyList(),

@@ -128,18 +128,22 @@ object TripFormat {
         val magic = (buffered.read() shl 8) or buffered.read()
         buffered.reset()
         val stream = if (magic == 0x1f8b) GZIPInputStream(buffered) else buffered
-        val out = ArrayList<TripEvent>()
-        val reader = BufferedReader(stream.reader())
+        // Decompress into memory first: readers buffer ahead and would drop the tail on an EOF error.
+        val bytes = java.io.ByteArrayOutputStream()
+        val buf = ByteArray(1 shl 14)
         try {
             while (true) {
-                val line = reader.readLine() ?: break
-                decode(line)?.let { out += it }
+                val n = stream.read(buf)
+                if (n < 0) break
+                bytes.write(buf, 0, n)
             }
         } catch (_: java.io.IOException) {
-            // Truncated stream: keep what was read (the last partial line is dropped by decode()).
+            // Truncated stream: keep what was decompressed (a partial last line fails to decode).
         } finally {
-            runCatching { reader.close() }
+            runCatching { stream.close() }
         }
+        val out = ArrayList<TripEvent>()
+        BufferedReader(bytes.toString(Charsets.UTF_8).reader()).lineSequence().forEach { line -> decode(line)?.let { out += it } }
         return out
     }
 

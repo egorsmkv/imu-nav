@@ -208,6 +208,10 @@
 
     <!-- Офлайн-маршрути -->
     <string name="sec_routing">Офлайн-маршрути</string>
+    <string name="sec_language">Мова</string>
+    <string name="language_title">Мова застосунку та голосу</string>
+    <string name="language_hint">Екрани та голосові підказки.</string>
+    <string name="language_system">Як у телефоні</string>
     <string name="routing_none">Офлайн-карту не встановлено — для маршрутів потрібен інтернет</string>
     <string name="routing_pack">%1$s · %2$d МБ · створено %3$s</string>
     <string name="routing_coverage">Охоплює %1$.2f–%2$.2f° пн. ш., %3$.2f–%4$.2f° сх. д.</string>

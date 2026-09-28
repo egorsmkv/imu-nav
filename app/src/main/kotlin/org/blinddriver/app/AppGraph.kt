@@ -66,9 +66,21 @@ data class UiState(
 class AppGraph(private val context: Context) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val tripLog = TripLog(context)
-    /** UI and voice follow the phone's language: Ukrainian on Ukrainian phones, English otherwise. */
-    private val ukrainian = java.util.Locale.getDefault().language == "uk"
-    private val voice = Voice(context, if (ukrainian) java.util.Locale.forLanguageTag("uk-UA") else java.util.Locale.getDefault())
+    /** UI and voice language: the in-app choice, or the phone's language by default. */
+    private val ukrainian get() = AppLanguage.isUkrainian(context)
+    private val voice = Voice(context, AppLanguage.locale(AppLanguage.get(context)))
+    val language = MutableStateFlow(AppLanguage.get(context))
+
+    /** Switch UI + voice language; the activity recreates itself to pick up new resources. */
+    fun setLanguage(choice: String) {
+        AppLanguage.set(context, choice)
+        language.value = choice
+        voice.setLocale(AppLanguage.locale(choice))
+        engine.phrases = phrasesFor()
+        tripLog.write("language $choice")
+    }
+
+    private fun phrasesFor() = if (ukrainian) org.blinddriver.core.nav.UkrainianPhrases else org.blinddriver.core.nav.EnglishPhrases
     /** Offline GraphHopper pack first; OSRM online only as an allowed fallback. */
     val offlineRouting = OfflineRouting(context, scope, tripLog::write)
     /** Address search: the pack's offline index, Photon online when allowed. */
@@ -102,7 +114,7 @@ class AppGraph(private val context: Context) {
     val engine: NavigationEngine = NavigationEngine(
         tuning = { tuning.value },
         speedProfile = SpeedProfile(PrefsSpeedProfileStore(context)),
-        phrases = if (ukrainian) org.blinddriver.core.nav.UkrainianPhrases else org.blinddriver.core.nav.EnglishPhrases,
+        phrases = phrasesFor(),
         listener = listener,
     )
 

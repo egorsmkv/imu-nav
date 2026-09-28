@@ -7,6 +7,8 @@ class BlindDriverApp : Application() {
     lateinit var graph: AppGraph
         private set
 
+    override fun attachBaseContext(base: android.content.Context) = super.attachBaseContext(AppLanguage.wrap(base))
+
     override fun onCreate() {
         super.onCreate()
         MapLibre.getInstance(this)

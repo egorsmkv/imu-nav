@@ -56,8 +56,9 @@ cp graph-ukraine/pack.json app/src/main/assets/routing/pack.json
 ```
 On first start the app unpacks it in the background (~20 s for Ukraine) and uses it. It is only
 reinstalled when an update ships a newer pack, and stays removed if the user removes it (Settings
-offers *Install built-in map*). The APK grows by the zip size (~250 MB for Ukraine, over Google
-Play's 200 MB base-APK limit — fine for sideloading); both files are gitignored.
+offers *Install built-in map*). The APK grows by the zip size (~300 MB for Ukraine including the
+search index, making the APK ~350 MB — over Google Play's 200 MB base-APK limit, fine for
+sideloading); both files are gitignored.
 
 Packs can also be installed at runtime with **Import pack** (the `.zip`) or **Download** from any HTTP(S) URL — the
 zip is unpacked while it streams, and interrupted downloads resume. The graph is memory-mapped, so
@@ -66,6 +67,34 @@ large regions do not need a large heap.
 Android cannot compile GraphHopper's custom models at runtime (Janino generates JVM bytecode), so
 `PhoneGraphHopper` builds the same weighting from plain code; `GraphSpec` holds everything the
 builder and the phone must agree on, and `OfflineGraphTest` checks both give identical routes.
+
+### Address search
+Routing packs also contain `search.db`, an SQLite FTS4 index of settlements, streets and house
+numbers built from the same OSM extract (~87 MB for Ukraine; skip with `--no-addresses` or
+`--no-search`). Queries like `Хрещатик 22`, `Київ Хрещатик`, `вул. Шевченка, Львів` or `Буча`
+work offline in a few milliseconds; street-type words are ignored and results near you rank first.
+When the offline index finds nothing and online use is allowed, Photon (OpenStreetMap) is asked.
+
+### Trips: history, recording, restore and replay
+Every navigation is recorded to `files/trips/trip-<time>.rec.gz` in app storage — all fixes, IMU
+samples, satellite/AGC status, routes and the engine's own estimates (gzip text, flushed every 2 s).
+
+- **History** (clock icon on the map) lists trips with totals; a trip shows its trusted-GPS track and
+  the engine's estimate on a map, distance, duration, moving time, time/distance without GPS and the
+  largest uncertainty. *Snap to roads* map-matches the drive with GraphHopper.
+- **Surviving the app being killed:** the active trip is saved every 10 s. If Android or the user kills
+  the app mid-trip, the next start (within 3 h) restores the route and position — widening the
+  uncertainty for the time lost — restarts the foreground service and keeps recording into the same
+  file (a recording cut off by the kill is salvaged first). Accept the battery-optimisation exemption
+  when offered (Settings → Diagnostics) so this is rare.
+- **Replay tool:** re-runs recordings through the engine on a computer, optionally hiding GPS after
+  N seconds, and compares the engine against the real (trusted GPS) track:
+  ```bash
+  ./gradlew :replay:run --args="path/to/trips --hide-gps-after 60,300 --out replay-out"
+  ```
+  `--set key=value,...` overrides `Tuning` fields and `--ukraine` enables the service-area check.
+  It writes `summary.txt` (median / p95 / max error with and without GPS), `errors-*.csv` per trip and
+  `compare-*.geojson` (real vs. engine tracks) for any GeoJSON viewer.
 
 ### Cell tower database
 Tower locations come from four sources, each in its own table and looked up in this order:
@@ -101,17 +130,29 @@ and download everyone's merged data. Protocol (gzip CSV in OpenCellID columns):
 - `GET /v1/cells.csv.gz?mcc=255&since=<epoch seconds>` — incremental download
 - `GET /health`
 
-The reference server in `server/` has no dependencies beyond the JDK and merges contributions
-weighted by sample count:
+The reference server in `server/` has no dependencies beyond the JDK. It is built to resist
+**poisoning** (a phone or a script uploading fake tower positions):
+
+- Every upload carries an `X-Device-Id`; contributions are stored per device (at most 50 samples each).
+- A tower's position is a **one-device-one-vote weighted median**, so one device cannot outvote others
+  by uploading many samples; positions far from the consensus (MAD-based) are dropped as outliers.
+- A new tower is published only after `--min-devices` (default 2) independent devices agree, or if it
+  came from the seed import (which counts as a strong vote).
+- Rows outside the service area, jumps > 5 km from the consensus, and absurd ranges are rejected.
+- Rate limits per device and per IP, and a cap on new device ids per IP per day.
 
 ```bash
 ./gradlew :server:installDist
-server/build/install/server/bin/server --port 8080 --data cells.csv.gz [--api-key KEY]
+server/build/install/server/bin/server --port 8080 --data cells.csv.gz [--api-key KEY] \
+    [--min-devices 2] [--max-samples 50] [--area ukraine|any] \
+    [--tls-keystore server.p12 --tls-password PASS]
 # optionally seed it once from an export, e.g. OpenCellID/Mozilla filtered to Ukraine:
 server/build/install/server/bin/server --data cells.csv.gz --import 255.csv.gz --mcc 255
 ```
 
-Put it behind HTTPS for use outside your own network; the app warns when an API key would travel over plain `http://`.
+With `--tls-keystore` (PKCS12) the server speaks HTTPS itself; otherwise put it behind a TLS proxy
+for use outside your own network. The app warns when an API key would travel over plain `http://`.
+Data files from servers before 0.6.0 (no per-device column) are not compatible — re-seed them.
 In the app: **Cells → Sharing server**, enter the URL (and key), then *Sync now* or enable automatic sync (every 6 h and after trips).
 
 All thresholds live in `core/.../Tuning.kt` (defaults = factory preset) and `TrustConfig`.
@@ -128,7 +169,7 @@ gyro turn is matched against route turns 400 m behind … 300 m ahead (turn-sign
 Requirements: JDK 17+, Android SDK 36.
 
 ```bash
-./gradlew :core:test          # pure-Kotlin engine tests, incl. simulated GPS-denied drives
+./gradlew test                # engine, routing/search, server and replay tests
 ./gradlew :app:assembleDebug  # app/build/outputs/apk/debug/app-debug.apk
 ```
 
@@ -148,8 +189,9 @@ Usage: long-press the map to choose a destination and tap **Start**. If GPS is u
 no cell fix, pan the crosshair onto your position and tap **Start here** first. Tap the status pill for
 positioning diagnostics (satellites, spoofing reasons, cells, *Simulate GPS loss*, trip log); the gear
 opens **Settings** (cell types, tower sources, sharing server, learning, database, diagnostics, about).
-The interface and voice follow the phone's language (Ukrainian or English) and its light/dark theme.
-Trip logs are written to `files/logs/` in app storage.
+The interface and voice follow the phone's language (Ukrainian or English) unless changed in
+**Settings → Language**, and the phone's light/dark theme. Text trip logs are written to
+`files/logs/`, trip recordings to `files/trips/` in app storage.
 
 ## Status and limitations
 
@@ -157,8 +199,8 @@ Trip logs are written to `files/logs/` in app storage.
   speed plan stay inactive. The OSRM fallback uses the public demo server — self-host it for real use.
 - The service area defaults to a coarse Ukraine outline (`ServiceArea.UKRAINE_COARSE`); fixes
   outside it are rejected as spoofed. Change it in `AppGraph` to use the app elsewhere.
-- Free-drive (no route) dead reckoning, speed cameras, saved places and settings UI are not
-  implemented yet; `Tuning` already carries the camera parameters.
+- Free-drive (no route) dead reckoning, speed cameras and saved places are not implemented yet;
+  `Tuning` already carries the camera parameters.
 - The engine differs from the analysed app in a few places: the gyro bias estimate is applied to
   turn integration, and projections compute exact arc-length.
 - Not road-tested. Treat as a research prototype, never as a safety system.

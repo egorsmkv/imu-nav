@@ -5,7 +5,12 @@ import android.speech.tts.TextToSpeech
 import java.util.Locale
 
 /** Thin TextToSpeech wrapper; urgent phrases interrupt whatever is being said. */
-class Voice(context: Context, private val locale: Locale = Locale.forLanguageTag("uk-UA")) {
+class Voice(context: Context, private var locale: Locale = Locale.forLanguageTag("uk-UA")) {
+    fun setLocale(l: Locale) {
+        locale = l
+        if (ready) configure()
+    }
+
     private var ready = false
     private val pending = ArrayList<String>()
     private val tts: TextToSpeech = TextToSpeech(context.applicationContext) { status ->
