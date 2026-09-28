@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="notification_channel">Навігація</string>
+    <string name="notification_title">Навігація триває</string>
+
+    <!-- Одиниці -->
+    <string name="unit_m">%1$d м</string>
+    <string name="unit_km">%1$.1f км</string>
+    <string name="unit_min">%1$d хв</string>
+    <string name="unit_h_min">%1$d год %2$d хв</string>
+    <string name="unit_kmh">%1$d км/год</string>
+    <string name="accuracy_pm">±%1$s</string>
+
+    <!-- Картка очікування -->
+    <string name="idle_title_choose">Куди їдемо?</string>
+    <string name="idle_hint_long_press">Утримуйте палець на карті, щоб обрати пункт призначення</string>
+    <string name="idle_title_ready">Пункт призначення обрано</string>
+    <string name="idle_waiting_position">Визначаємо вашу позицію…</string>
+    <string name="idle_position_gps">Позиція за GPS, %1$s</string>
+    <string name="idle_position_cell">Позиція за вишками зв’язку, %1$s</string>
+    <string name="idle_position_manual">Точку старту встановлено на карті</string>
+    <string name="idle_gps_spoofed">Схоже, GPS підмінено або заглушено — його ігноруємо</string>
+    <string name="idle_set_start_hint">Посуньте карту так, щоб приціл був на вашій позиції, і натисніть «Старт тут»</string>
+    <string name="action_start">Поїхали</string>
+    <string name="action_set_start">Старт тут</string>
+    <string name="action_move_start">Перенести старт</string>
+    <string name="planning">Прокладаємо маршрут…</string>
+
+    <!-- Навігація -->
+    <string name="action_stop">Стоп</string>
+    <string name="action_reroute">Перебудувати</string>
+    <string name="rerouting">Перебудова…</string>
+    <string name="arrived">Ви прибули</string>
+    <string name="action_done">Готово</string>
+    <string name="nav_arrival_at">Прибуття о %1$s</string>
+    <string name="then">Далі</string>
+    <string name="speed_limit_cd">Обмеження швидкості %1$d</string>
+
+    <!-- Маневри -->
+    <string name="mv_turn_left">Поверніть ліворуч</string>
+    <string name="mv_turn_right">Поверніть праворуч</string>
+    <string name="mv_slight_left">Плавно ліворуч</string>
+    <string name="mv_slight_right">Плавно праворуч</string>
+    <string name="mv_sharp_left">Різко ліворуч</string>
+    <string name="mv_sharp_right">Різко праворуч</string>
+    <string name="mv_uturn">Розверніться</string>
+    <string name="mv_straight">Прямо</string>
+    <string name="mv_roundabout_exit">На кільці %1$d-й з’їзд</string>
+    <string name="mv_roundabout">В’їжджайте на кільце</string>
+    <string name="mv_keep_left">Тримайтеся лівіше</string>
+    <string name="mv_keep_right">Тримайтеся правіше</string>
+    <string name="mv_merge">Приєднайтеся до руху</string>
+    <string name="mv_ramp_left">З’їзд ліворуч</string>
+    <string name="mv_ramp_right">З’їзд праворуч</string>
+    <string name="mv_arrive">Пункт призначення</string>
+    <string name="mv_onto">на %1$s</string>
+
+    <!-- Джерела позиції -->
+    <string name="src_none">Позиція невідома</string>
+    <string name="src_gps">GPS</string>
+    <string name="src_gps_suspect">GPS (неперевірений)</string>
+    <string name="src_dr">Розрахункова</string>
+    <string name="src_dr_net">Розрахункова + мережа</string>
+    <string name="src_stopped">Зупинка</string>
+    <string name="src_cells">Вишки зв’язку</string>
+
+    <!-- Стан GPS -->
+    <string name="gps_ok">GPS у нормі</string>
+    <string name="gps_weak">GPS слабкий</string>
+    <string name="gps_lost">GPS втрачено</string>
+    <string name="gps_rejected">GPS відхилено</string>
+    <string name="gps_jammed">Виявлено глушіння</string>
+
+    <!-- Банери -->
+    <string name="location_off_title">Геолокацію вимкнено</string>
+    <string name="location_off_text">Поки геолокацію вимкнено, Android не передає жодних координат.</string>
+    <string name="action_turn_on">Увімкнути</string>
+    <string name="permission_title">Потрібен доступ до геолокації</string>
+    <string name="permission_text">Для навігації застосунку потрібна точна геолокація.</string>
+    <string name="action_allow">Дозволити</string>
+    <string name="error_location_off">Геолокацію на телефоні вимкнено</string>
+    <string name="error_no_position">Немає достовірної позиції. Наведіть приціл на своє місце й натисніть «Старт тут».</string>
+
+    <!-- Діалог відхилення -->
+    <string name="deviation_title">Зійшли з маршруту?</string>
+    <string name="deviation_text">Автоматична перебудова через %1$d с.</string>
+    <string name="action_reroute_now">Перебудувати зараз</string>
+    <string name="action_on_route">Я на маршруті</string>
+
+    <!-- Керування картою -->
+    <string name="cd_zoom_in">Наблизити</string>
+    <string name="cd_zoom_out">Віддалити</string>
+    <string name="cd_recenter">Центрувати</string>
+    <string name="cd_towers">Вишки на карті</string>
+    <string name="cd_settings">Налаштування</string>
+    <string name="cd_back">Назад</string>
+    <string name="legend_seen_now">видно зараз</string>
+    <string name="legend_count">Вишок: %1$d</string>
+    <string name="legend_sample">Вибірка з %1$d — наблизьте, щоб побачити всі</string>
+    <string name="legend_zoom_in">Наблизьте, щоб побачити вишки</string>
+
+    <!-- Діагностика -->
+    <string name="diag_title">Позиціонування</string>
+    <string name="diag_source">Джерело позиції</string>
+    <string name="diag_uncertainty">Похибка</string>
+    <string name="diag_without_gps">Без GPS</string>
+    <string name="diag_seconds">%1$d с</string>
+    <string name="diag_gps">GPS</string>
+    <string name="diag_last_fix">Остання позиція GPS</string>
+    <string name="verdict_good">Достовірна</string>
+    <string name="verdict_suspect">Сумнівна</string>
+    <string name="verdict_bad">Відхилена</string>
+    <string name="diag_reasons">Причини</string>
+    <string name="diag_satellites">Супутники: використано / видно</string>
+    <string name="diag_signal">Сигнал (C/N0)</string>
+    <string name="diag_agc">Підсилення приймача (AGC)</string>
+    <string name="diag_cells">Вишки: знайдено / видно</string>
+    <string name="diag_sensors">Датчики</string>
+    <string name="diag_sensors_full">Гіроскоп і компас доступні</string>
+    <string name="diag_open_log">Журнал поїздки</string>
+
+    <!-- Налаштування -->
+    <string name="settings_title">Налаштування</string>
+    <string name="sec_cells">Вишки зв’язку</string>
+    <string name="cells_show_map">Показувати вишки на карті</string>
+    <string name="cells_types">Типи мереж</string>
+    <string name="cells_types_hint">Використовуються для позиціонування й показуються на карті</string>
+    <string name="cells_none_warning">Не обрано жодного типу — позиціонування за вишками вимкнено</string>
+    <string name="cells_region">Коди країн (MCC)</string>
+    <string name="cells_region_hint">255 = Україна; кілька кодів — через кому</string>
+    <string name="cells_total">У базі %1$s вишок</string>
+    <string name="src_label_shared">сервер обміну</string>
+    <string name="src_label_ocid">OpenCellID</string>
+    <string name="src_label_learned">вивчені</string>
+    <string name="src_label_mozilla">Mozilla</string>
+    <string name="src_label_bundled">вбудовані</string>
+
+    <string name="sec_sources">Джерела даних</string>
+    <string name="mozilla_title">Mozilla Location Service</string>
+    <string name="mozilla_summary">Відкриті дані (2024). Завантажує ~1,5 ГБ і зберігає лише ваш регіон — використовуйте Wi-Fi.</string>
+    <string name="ocid_title">OpenCellID</string>
+    <string name="ocid_summary">Завантаження за вашим API-токеном або імпорт файлу .csv / .csv.gz</string>
+    <string name="ocid_token">API-токен</string>
+    <string name="action_download">Завантажити</string>
+    <string name="action_import_file">Імпорт файлу</string>
+    <string name="action_cancel">Скасувати</string>
+
+    <string name="sec_sync">Сервер обміну</string>
+    <string name="sync_summary">Надсилає вишки, визначені цим телефоном (лише координати вишок, ніколи не ваш маршрут), і завантажує спільні дані.</string>
+    <string name="sync_url">Адреса сервера</string>
+    <string name="sync_key">API-ключ (необов’язково)</string>
+    <string name="sync_http_warning">http:// передає ключ без шифрування — поза власною мережею використовуйте https://</string>
+    <string name="sync_auto">Синхронізувати автоматично</string>
+    <string name="sync_auto_summary">Кожні 6 годин і після поїздок</string>
+    <string name="action_save">Зберегти</string>
+    <string name="action_sync_now">Синхронізувати</string>
+    <string name="sync_last">Остання синхронізація: %1$s</string>
+
+    <string name="sec_learning">Навчання</string>
+    <string name="learning_title">Вивчати розташування вишок</string>
+    <string name="learning_summary">Записує видимі вишки, коли GPS достовірний</string>
+
+    <string name="sec_database">База вишок</string>
+    <string name="action_export">Експортувати базу</string>
+    <string name="export_summary">Зберігає всі вишки у Android/data/org.blinddriver.app/files/cells-export.csv.gz</string>
+    <string name="action_reset">Скинути базу вишок</string>
+    <string name="reset_summary">Видалити завантажені вишки й відновити вбудовану базу</string>
+    <string name="reset_title">Скинути базу вишок?</string>
+    <string name="reset_text">Буде видалено вишки OpenCellID, Mozilla та сервера обміну, після чого відновиться вбудована база. Завантаження можна повторити пізніше.</string>
+    <string name="reset_learned">Також видалити вишки, вивчені цим телефоном (%1$d)</string>
+    <string name="action_reset_confirm">Скинути</string>
+
+    <string name="sec_diagnostics">Діагностика</string>
+    <string name="trip_log">Журнал поїздки</string>
+    <string name="trip_log_empty">Записів поки немає</string>
+    <string name="simulate_gps_loss">Імітувати втрату GPS</string>
+    <string name="simulate_gps_loss_summary">Ігнорувати GPS, щоб перевірити навігацію без нього</string>
+
+    <string name="sec_about">Про застосунок</string>
+    <string name="about_version">Версія %1$s</string>
+    <string name="about_credits">Дані вишок: учасники OpenCellID (CC BY-SA 4.0) і Mozilla Location Service (суспільне надбання). Карти © учасники OpenStreetMap, OpenFreeMap. Маршрути: OSRM.</string>
+    <string name="about_disclaimer">Дослідницький прототип. Ніколи не покладайтеся на нього як на систему безпеки.</string>
+
+    <!-- Фонові завдання -->
+    <string name="task_importing">Імпорт… %1$d з %2$d рядків</string>
+    <string name="task_imported">Імпортовано вишок: %1$d</string>
+    <string name="task_downloading_ocid">Завантаження OpenCellID… %1$d КБ</string>
+    <string name="task_importing_towers">Імпорт… вишок: %1$d</string>
+    <string name="task_ocid_done">OpenCellID: імпортовано вишок: %1$d</string>
+    <string name="task_connecting">З’єднання…</string>
+    <string name="task_mozilla_progress">Mozilla: %1$d з %2$d МБ (%3$d%%)</string>
+    <string name="task_mozilla_done">Mozilla: імпортовано вишок: %1$d</string>
+    <string name="task_syncing">Синхронізація…</string>
+    <string name="task_uploading">Надсилаємо вишки: %1$d…</string>
+    <string name="task_downloading_shared">Завантажуємо спільні вишки…</string>
+    <string name="task_sync_done">Синхронізація: надіслано %1$d, отримано %2$d вишок</string>
+    <string name="task_sync_no_url">Спершу вкажіть адресу сервера</string>
+    <string name="task_exporting">Експорт… вишок: %1$d</string>
+    <string name="task_exported">Експортовано вишок: %1$d (%2$d КБ)</string>
+    <string name="task_clearing">Очищуємо базу вишок…</string>
+    <string name="task_compacting">Стискаємо базу…</string>
+    <string name="task_cleared">Базу вишок очищено</string>
+    <string name="task_cleared_kept">Базу вишок очищено (вивчені вишки збережено)</string>
+    <string name="task_bundled_progress">Готуємо вбудовані вишки… %1$d</string>
+    <string name="task_bundled_done">Вбудована база готова: %1$d вишок</string>
+    <string name="task_cancelled">Скасовано</string>
+    <string name="task_failed">Помилка: %1$s</string>
+</resources>

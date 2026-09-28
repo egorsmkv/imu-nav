@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.blinddriver.app.R
 import org.blinddriver.core.cells.CellSyncClient
 import org.blinddriver.core.cells.Radio
 import org.blinddriver.core.cells.CellTower
@@ -66,6 +67,8 @@ class CellManager(
     private val log: (String) -> Unit,
 ) {
     private val prefs = context.getSharedPreferences("cells", Context.MODE_PRIVATE)
+
+    private fun str(id: Int, vararg args: Any): String = context.getString(id, *args)
     val db = CellDatabase(context)
     private var lastCellLogMs = 0L
     private var lastLearnedFixMs = -1L
@@ -197,11 +200,11 @@ class CellManager(
             val msg = try {
                 block()
             } catch (e: kotlinx.coroutines.CancellationException) {
-                "Cancelled"
+                str(R.string.task_cancelled)
             } catch (e: InterruptedException) {
-                "Cancelled"
+                str(R.string.task_cancelled)
             } catch (e: Exception) {
-                "Failed: ${e.message}"
+                str(R.string.task_failed, e.message ?: e.javaClass.simpleName)
             }
             log("cells_task ${msg.lowercase()}")
             reloadCounts()
@@ -218,38 +221,38 @@ class CellManager(
     }
 
     /** Import an OpenCellID / Mozilla CSV (plain or gzip) picked by the user, filtered to the configured MCCs. */
-    fun importFile(open: () -> InputStream?) = runTask("Importing…", cancellable = true) {
+    fun importFile(open: () -> InputStream?) = runTask(str(R.string.task_importing_towers, 0), cancellable = true) {
         val ctx = coroutineContext
         val mccs = mccSet()
         val kept = withContext(Dispatchers.IO) {
             (open() ?: error("cannot open file")).use { input ->
                 db.importStream(CellSource.OPENCELLID, input, mccs) { read, kept ->
-                    progress("Importing… $kept of $read rows")
+                    progress(str(R.string.task_importing, kept, read))
                     ctx.isActive
                 }
             }
         }
-        "Imported $kept towers (MCC ${mccs.joinToString()})"
+        str(R.string.task_imported, kept)
     }
 
     /** Download and import the OpenCellID export for the first configured MCC with the user's token. */
     fun downloadOpenCellId(token: String) {
         if (token.isBlank()) return
         prefs.edit().putString("token", token.trim()).apply()
-        runTask("Downloading OpenCellID…") {
+        runTask(str(R.string.task_downloading_ocid, 0)) {
             var total = 0L
             for (mcc in mccSet()) {
                 total += withContext(Dispatchers.IO) {
                     val file = File(context.cacheDir, "ocid-$mcc.csv.gz")
                     try {
-                        OpenCellIdDownloader.download(token, mcc, file) { b -> progress("Downloading OpenCellID $mcc… ${b / 1024} KB") }
-                        file.inputStream().use { db.importStream(CellSource.OPENCELLID, it) { _, kept -> progress("Importing… $kept towers"); true } }
+                        OpenCellIdDownloader.download(token, mcc, file) { b -> progress(str(R.string.task_downloading_ocid, (b / 1024).toInt())) }
+                        file.inputStream().use { db.importStream(CellSource.OPENCELLID, it) { _, kept -> progress(str(R.string.task_importing_towers, kept)); true } }
                     } finally {
                         file.delete()
                     }
                 }
             }
-            "OpenCellID: imported $total towers"
+            str(R.string.task_ocid_done, total)
         }
     }
 
@@ -258,7 +261,7 @@ class CellManager(
      * keeping only the configured MCCs. Nothing large is written to storage; the download resumes
      * automatically after network drops.
      */
-    fun downloadMozilla() = runTask("Connecting to archive.org…", cancellable = true) {
+    fun downloadMozilla() = runTask(str(R.string.task_connecting), cancellable = true) {
         val ctx = coroutineContext
         val mccs = mccSet()
         val kept = withContext(Dispatchers.IO) {
@@ -266,15 +269,15 @@ class CellManager(
             val input = ResumableHttpInputStream(MOZILLA_URL, onProgress = { bytes, total ->
                 if (bytes - lastReport >= 4L * 1024 * 1024) {
                     lastReport = bytes
-                    val pct = if (total > 0) " (${bytes * 100 / total}%)" else ""
-                    progress("Mozilla: ${bytes / (1024 * 1024)} of ${total / (1024 * 1024)} MB$pct")
+                    val pct = if (total > 0) (bytes * 100 / total).toInt() else 0
+                    progress(str(R.string.task_mozilla_progress, (bytes / (1024 * 1024)).toInt(), (total / (1024 * 1024)).toInt(), pct))
                 }
             })
             input.use {
                 db.importStream(CellSource.MOZILLA, it, mccs) { _, _ -> ctx.isActive }
             }
         }
-        "Mozilla: imported $kept towers (MCC ${mccs.joinToString()})"
+        str(R.string.task_mozilla_done, kept)
     }
 
     /**
@@ -298,15 +301,15 @@ class CellManager(
             }
         }.getOrNull() ?: return
         if (!force && prefs.getString("bundled_sha256", null) == hash) return
-        runTask("Preparing built-in towers…") {
+        runTask(str(R.string.task_bundled_progress, 0)) {
             val n = withContext(Dispatchers.IO) {
                 db.clear(CellSource.BUNDLED)
                 context.assets.open(asset).use { input ->
-                    db.importStream(CellSource.BUNDLED, input) { _, kept -> progress("Preparing built-in towers… $kept"); true }
+                    db.importStream(CellSource.BUNDLED, input) { _, kept -> progress(str(R.string.task_bundled_progress, kept)); true }
                 }
             }
             prefs.edit().putString("bundled_sha256", hash).apply()
-            "Built-in database ready: $n towers"
+            str(R.string.task_bundled_done, n)
         }
     }
 
@@ -315,14 +318,14 @@ class CellManager(
      * compact the file, then re-import the database bundled with the APK.
      */
     fun resetDatabase(deleteLearned: Boolean) {
-        runTask("Clearing tower database…") {
+        runTask(str(R.string.task_clearing)) {
             withContext(Dispatchers.IO) {
                 for (s in CellSource.entries) {
                     if (s == CellSource.LEARNED && !deleteLearned) continue
-                    progress("Clearing ${s.label}…")
+                    progress(str(R.string.task_clearing))
                     db.clear(s)
                 }
-                progress("Compacting database…")
+                progress(str(R.string.task_compacting))
                 db.vacuum()
             }
             prefs.edit()
@@ -331,7 +334,7 @@ class CellManager(
                 .apply()
             if (deleteLearned) prefs.edit().putLong("last_upload_ms", 0).apply()
             log("cells_reset learned_deleted=$deleteLearned")
-            "Tower database cleared${if (deleteLearned) "" else " (learned towers kept)"}"
+            str(if (deleteLearned) R.string.task_cleared else R.string.task_cleared_kept)
         }
         // Runs after the clearing task finishes (tasks don't overlap).
         scope.launch {
@@ -344,35 +347,35 @@ class CellManager(
      * Export all sources, deduplicated, to the app's external files dir
      * (Android/data/org.blinddriver.app/files/cells-export.csv.gz) — readable over adb/USB.
      */
-    fun exportDatabase() = runTask("Exporting…") {
+    fun exportDatabase() = runTask(str(R.string.task_exporting, 0)) {
         val dir = context.getExternalFilesDir(null) ?: context.filesDir
         val target = File(dir, "cells-export.csv.gz")
         val tmp = File(dir, "cells-export.csv.gz.tmp")
         val n = withContext(Dispatchers.IO) {
-            val count = tmp.outputStream().use { db.exportMerged(it) { k -> progress("Exporting… $k towers") } }
+            val count = tmp.outputStream().use { db.exportMerged(it) { k -> progress(str(R.string.task_exporting, k)) } }
             tmp.renameTo(target)
             count
         }
-        "Exported $n towers to ${target.absolutePath} (${target.length() / 1024} KB)"
+        str(R.string.task_exported, n, (target.length() / 1024).toInt())
     }
 
     /** Upload learned towers, then download merged data into the SHARED source. */
     fun sync(auto: Boolean = false) {
         val url = prefs.getString("sync_url", "").orEmpty()
         if (url.isBlank()) {
-            if (!auto) _status.update { it.copy(message = "Set a sync server URL first") }
+            if (!auto) _status.update { it.copy(message = str(R.string.task_sync_no_url)) }
             return
         }
-        runTask(if (auto) "Auto-sync…" else "Syncing…") {
+        runTask(str(R.string.task_syncing)) {
             val started = System.currentTimeMillis()
             val client = CellSyncClient(url, savedSyncKey())
             val (uploaded, downloaded) = withContext(Dispatchers.IO) {
                 val pending = db.learnedSince(prefs.getLong("last_upload_ms", 0))
-                progress("Uploading ${pending.size} learned towers…")
+                progress(str(R.string.task_uploading, pending.size))
                 val up = client.upload(pending)
                 prefs.edit().putLong("last_upload_ms", started).apply()
 
-                progress("Downloading shared towers…")
+                progress(str(R.string.task_downloading_shared))
                 val batch = ArrayList<CellTower>()
                 val since = prefs.getLong("last_download_s", 0)
                 client.download(mccSet(), since) { batch += it }
@@ -380,7 +383,7 @@ class CellManager(
                 prefs.edit().putLong("last_download_s", started / 1000 - 60).apply()
                 up to batch.size
             }
-            val msg = "Sync: sent $uploaded, received $downloaded towers"
+            val msg = str(R.string.task_sync_done, uploaded, downloaded)
             prefs.edit().putLong("last_sync_ms", started)
                 .putString("last_sync_msg", "$msg (${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(started))})").apply()
             msg

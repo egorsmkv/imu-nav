@@ -114,10 +114,12 @@ keyPassword=...
 Keep a backup of the keystore: Android only installs updates signed with the same key.
 Without `keystore.properties`, `assembleRelease` produces an unsigned APK.
 
-Usage: long-press the map to set a destination, tap **Start**. The **No GPS** chip ignores GPS
-to try dead reckoning with real sensors; **Log** shows the engine's decisions
-(`turn_hold`, `turn_snap`, `net_back`, `blind_deviation`, …). Trip logs are written to
-`files/logs/` in app storage.
+Usage: long-press the map to choose a destination and tap **Start**. If GPS is untrusted and there is
+no cell fix, pan the crosshair onto your position and tap **Start here** first. Tap the status pill for
+positioning diagnostics (satellites, spoofing reasons, cells, *Simulate GPS loss*, trip log); the gear
+opens **Settings** (cell types, tower sources, sharing server, learning, database, diagnostics, about).
+The interface and voice follow the phone's language (Ukrainian or English) and its light/dark theme.
+Trip logs are written to `files/logs/` in app storage.
 
 ## Status and limitations
 

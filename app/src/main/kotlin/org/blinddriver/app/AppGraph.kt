@@ -43,6 +43,8 @@ data class UiState(
     val hasTrustedPosition: Boolean = false,
     /** Accuracy of the best trusted position, metres (null = none). */
     val trustedAccuracyM: Double? = null,
+    /** The trusted position comes from a GOOD GPS fix (else from cell/network). */
+    val trustedFromGps: Boolean = false,
     /** Why GPS fixes are currently rejected, for the "no trusted position" message. */
     val gpsRejectReasons: List<String> = emptyList(),
     val planning: Boolean = false,
@@ -60,7 +62,9 @@ data class UiState(
 class AppGraph(private val context: Context) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val tripLog = TripLog(context)
-    private val voice = Voice(context)
+    /** UI and voice follow the phone's language: Ukrainian on Ukrainian phones, English otherwise. */
+    private val ukrainian = java.util.Locale.getDefault().language == "uk"
+    private val voice = Voice(context, if (ukrainian) java.util.Locale.forLanguageTag("uk-UA") else java.util.Locale.getDefault())
     private val router: Router = OsrmRouter()
 
     val tuning = MutableStateFlow(Tuning.DEFAULT)
@@ -87,6 +91,7 @@ class AppGraph(private val context: Context) {
     val engine: NavigationEngine = NavigationEngine(
         tuning = { tuning.value },
         speedProfile = SpeedProfile(PrefsSpeedProfileStore(context)),
+        phrases = if (ukrainian) org.blinddriver.core.nav.UkrainianPhrases else org.blinddriver.core.nav.EnglishPhrases,
         listener = listener,
     )
 
@@ -127,21 +132,23 @@ class AppGraph(private val context: Context) {
         _ui.value = _ui.value.copy(manualStart = p, error = null)
     }
 
-    fun setDestination(p: GeoPoint) {
+    fun clearError() {
+        _ui.value = _ui.value.copy(error = null)
+    }
+
+    fun setDestination(p: GeoPoint?) {
         _ui.value = _ui.value.copy(destination = p, error = null)
     }
 
     fun startNavigation(onStarted: () -> Unit) {
         val dest = _ui.value.destination ?: return
         if (!sensors.locationEnabled) {
-            _ui.value = _ui.value.copy(error = "Location is turned off on this phone — turn it on in system settings")
+            _ui.value = _ui.value.copy(error = context.getString(R.string.error_location_off))
             return
         }
         // A start the user placed by hand wins over a coarse automatic fix.
         val from = _ui.value.manualStart ?: currentPosition() ?: run {
-            val why = hub.lastJudged?.takeIf { it.verdict.level == org.blinddriver.core.gnss.TrustLevel.BAD }?.verdict?.reasons
-                ?.let { "GPS is rejected (${it.joinToString()})" } ?: "No GPS fix yet"
-            _ui.value = _ui.value.copy(error = "$why and there is no network location. Put the crosshair on your position and tap “Start here”.")
+            _ui.value = _ui.value.copy(error = context.getString(R.string.error_no_position))
             return
         }
         // How far the start could be off: hand-placed crosshair ~100 m, else the fix's own accuracy.
@@ -196,6 +203,7 @@ class AppGraph(private val context: Context) {
             currentPosition = engine.state.position ?: currentPosition() ?: _ui.value.manualStart,
             hasTrustedPosition = currentPosition() != null,
             trustedAccuracyM = (hub.lastGood ?: hub.lastNet)?.accuracyM?.toDouble(),
+            trustedFromGps = hub.lastGood != null,
             gpsRejectReasons = hub.lastJudged?.takeIf { it.verdict.level == org.blinddriver.core.gnss.TrustLevel.BAD }?.verdict?.reasons.orEmpty(),
             simulateGpsLoss = engine.simulateGpsLoss,
             sensorWarning = sensors.sensorWarning,

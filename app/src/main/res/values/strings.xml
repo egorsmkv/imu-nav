@@ -1,6 +1,210 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Blind Driver</string>
+    <string name="app_name" translatable="false">Blind Driver</string>
     <string name="notification_channel">Navigation</string>
     <string name="notification_title">Navigating</string>
+
+    <!-- Units -->
+    <string name="unit_m">%1$d m</string>
+    <string name="unit_km">%1$.1f km</string>
+    <string name="unit_min">%1$d min</string>
+    <string name="unit_h_min">%1$d h %2$d min</string>
+    <string name="unit_kmh">%1$d km/h</string>
+    <string name="accuracy_pm">±%1$s</string>
+
+    <!-- Idle card -->
+    <string name="idle_title_choose">Where to?</string>
+    <string name="idle_hint_long_press">Long-press the map to choose a destination</string>
+    <string name="idle_title_ready">Destination selected</string>
+    <string name="idle_waiting_position">Waiting for your position…</string>
+    <string name="idle_position_gps">Position from GPS, %1$s</string>
+    <string name="idle_position_cell">Position from cell towers, %1$s</string>
+    <string name="idle_position_manual">Start point set on the map</string>
+    <string name="idle_gps_spoofed">GPS looks spoofed or jammed — it is being ignored</string>
+    <string name="idle_set_start_hint">Move the map so the crosshair is on your position, then tap “Start here”</string>
+    <string name="action_start">Start</string>
+    <string name="action_set_start">Start here</string>
+    <string name="action_move_start">Move start</string>
+    <string name="planning">Planning route…</string>
+
+    <!-- Navigation -->
+    <string name="action_stop">Stop</string>
+    <string name="action_reroute">Reroute</string>
+    <string name="rerouting">Rerouting…</string>
+    <string name="arrived">You have arrived</string>
+    <string name="action_done">Done</string>
+    <string name="nav_arrival_at">Arrive %1$s</string>
+    <string name="then">Then</string>
+    <string name="speed_limit_cd">Speed limit %1$d</string>
+
+    <!-- Maneuvers -->
+    <string name="mv_turn_left">Turn left</string>
+    <string name="mv_turn_right">Turn right</string>
+    <string name="mv_slight_left">Bear left</string>
+    <string name="mv_slight_right">Bear right</string>
+    <string name="mv_sharp_left">Sharp left</string>
+    <string name="mv_sharp_right">Sharp right</string>
+    <string name="mv_uturn">Make a U-turn</string>
+    <string name="mv_straight">Continue straight</string>
+    <string name="mv_roundabout_exit">At the roundabout, take exit %1$d</string>
+    <string name="mv_roundabout">Enter the roundabout</string>
+    <string name="mv_keep_left">Keep left</string>
+    <string name="mv_keep_right">Keep right</string>
+    <string name="mv_merge">Merge</string>
+    <string name="mv_ramp_left">Take the ramp on the left</string>
+    <string name="mv_ramp_right">Take the ramp on the right</string>
+    <string name="mv_arrive">Arrive at destination</string>
+    <string name="mv_onto">onto %1$s</string>
+
+    <!-- Position sources -->
+    <string name="src_none">No position</string>
+    <string name="src_gps">GPS</string>
+    <string name="src_gps_suspect">GPS (unverified)</string>
+    <string name="src_dr">Estimated</string>
+    <string name="src_dr_net">Estimated + network</string>
+    <string name="src_stopped">Stopped</string>
+    <string name="src_cells">Cell towers</string>
+
+    <!-- GPS state -->
+    <string name="gps_ok">GPS OK</string>
+    <string name="gps_weak">GPS weak</string>
+    <string name="gps_lost">GPS lost</string>
+    <string name="gps_rejected">GPS rejected</string>
+    <string name="gps_jammed">Jamming detected</string>
+
+    <!-- Banners -->
+    <string name="location_off_title">Location is off</string>
+    <string name="location_off_text">Android delivers no positions while Location is switched off.</string>
+    <string name="action_turn_on">Turn on</string>
+    <string name="permission_title">Location access needed</string>
+    <string name="permission_text">The app needs precise location to navigate.</string>
+    <string name="action_allow">Allow</string>
+    <string name="error_location_off">Location is turned off on this phone</string>
+    <string name="error_no_position">No trusted position. Put the crosshair on your position and tap “Start here”.</string>
+
+    <!-- Deviation dialog -->
+    <string name="deviation_title">Left the route?</string>
+    <string name="deviation_text">Rerouting automatically in %1$d s.</string>
+    <string name="action_reroute_now">Reroute now</string>
+    <string name="action_on_route">I\'m on the route</string>
+
+    <!-- Map controls -->
+    <string name="cd_zoom_in">Zoom in</string>
+    <string name="cd_zoom_out">Zoom out</string>
+    <string name="cd_recenter">Re-center</string>
+    <string name="cd_towers">Cell towers on map</string>
+    <string name="cd_settings">Settings</string>
+    <string name="cd_back">Back</string>
+    <string name="legend_seen_now">seen now</string>
+    <string name="legend_count">%1$d towers</string>
+    <string name="legend_sample">Sample of %1$d — zoom in for all</string>
+    <string name="legend_zoom_in">Zoom in to see towers</string>
+
+    <!-- Diagnostics sheet -->
+    <string name="diag_title">Positioning</string>
+    <string name="diag_source">Position source</string>
+    <string name="diag_uncertainty">Uncertainty</string>
+    <string name="diag_without_gps">Without GPS</string>
+    <string name="diag_seconds">%1$d s</string>
+    <string name="diag_gps">GPS</string>
+    <string name="diag_last_fix">Last GPS fix</string>
+    <string name="verdict_good">Trusted</string>
+    <string name="verdict_suspect">Suspicious</string>
+    <string name="verdict_bad">Rejected</string>
+    <string name="diag_reasons">Why</string>
+    <string name="diag_satellites">Satellites used / visible</string>
+    <string name="diag_signal">Signal (C/N0)</string>
+    <string name="diag_agc">Receiver gain (AGC)</string>
+    <string name="diag_cells">Cells located / seen</string>
+    <string name="diag_sensors">Sensors</string>
+    <string name="diag_sensors_full">Gyroscope and compass available</string>
+    <string name="diag_open_log">Open trip log</string>
+    <string name="none">—</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="sec_cells">Cell towers</string>
+    <string name="cells_show_map">Show towers on map</string>
+    <string name="cells_types">Cell types</string>
+    <string name="cells_types_hint">Used for positioning and shown on the map</string>
+    <string name="cells_none_warning">No type selected — cell positioning is off</string>
+    <string name="cells_region">Country codes (MCC)</string>
+    <string name="cells_region_hint">255 = Ukraine; separate several with commas</string>
+    <string name="cells_total">%1$s towers in the database</string>
+    <string name="src_label_shared">sharing server</string>
+    <string name="src_label_ocid">OpenCellID</string>
+    <string name="src_label_learned">learned</string>
+    <string name="src_label_mozilla">Mozilla</string>
+    <string name="src_label_bundled">built-in</string>
+
+    <string name="sec_sources">Data sources</string>
+    <string name="mozilla_title">Mozilla Location Service</string>
+    <string name="mozilla_summary">Public-domain export (2024). Streams ~1.5 GB and keeps only your region — use Wi-Fi.</string>
+    <string name="ocid_title">OpenCellID</string>
+    <string name="ocid_summary">Download with your API token, or import a .csv / .csv.gz file</string>
+    <string name="ocid_token">API token</string>
+    <string name="action_download">Download</string>
+    <string name="action_import_file">Import file</string>
+    <string name="action_cancel">Cancel</string>
+
+    <string name="sec_sync">Sharing server</string>
+    <string name="sync_summary">Uploads towers located by this phone (tower positions only, never your route) and downloads everyone\'s merged data.</string>
+    <string name="sync_url">Server URL</string>
+    <string name="sync_key">API key (optional)</string>
+    <string name="sync_http_warning">http:// sends the API key unencrypted — use https:// outside your own network</string>
+    <string name="sync_auto">Sync automatically</string>
+    <string name="sync_auto_summary">Every 6 hours and after trips</string>
+    <string name="action_save">Save</string>
+    <string name="action_sync_now">Sync now</string>
+    <string name="sync_last">Last sync: %1$s</string>
+
+    <string name="sec_learning">Learning</string>
+    <string name="learning_title">Learn tower positions</string>
+    <string name="learning_summary">Records visible cells whenever GPS is trusted</string>
+
+    <string name="sec_database">Tower database</string>
+    <string name="action_export">Export database</string>
+    <string name="export_summary">Saves all towers to Android/data/org.blinddriver.app/files/cells-export.csv.gz</string>
+    <string name="action_reset">Reset tower database</string>
+    <string name="reset_summary">Delete downloaded towers and reload the built-in database</string>
+    <string name="reset_title">Reset tower database?</string>
+    <string name="reset_text">Removes OpenCellID, Mozilla and sharing-server towers, then reloads the built-in database. Downloads can be repeated later.</string>
+    <string name="reset_learned">Also delete %1$d towers learned by this phone</string>
+    <string name="action_reset_confirm">Reset</string>
+
+    <string name="sec_diagnostics">Diagnostics</string>
+    <string name="trip_log">Trip log</string>
+    <string name="trip_log_empty">No entries yet</string>
+    <string name="simulate_gps_loss">Simulate GPS loss</string>
+    <string name="simulate_gps_loss_summary">Ignore GPS to test navigation without it</string>
+
+    <string name="sec_about">About</string>
+    <string name="about_version">Version %1$s</string>
+    <string name="about_credits">Cell data: OpenCellID contributors (CC BY-SA 4.0) and Mozilla Location Service (public domain). Maps © OpenStreetMap contributors, OpenFreeMap. Routing: OSRM.</string>
+    <string name="about_disclaimer">Research prototype. Never rely on it as a safety system.</string>
+
+    <!-- Background tasks -->
+    <string name="task_importing">Importing… %1$d of %2$d rows</string>
+    <string name="task_imported">Imported %1$d towers</string>
+    <string name="task_downloading_ocid">Downloading OpenCellID… %1$d KB</string>
+    <string name="task_importing_towers">Importing… %1$d towers</string>
+    <string name="task_ocid_done">OpenCellID: imported %1$d towers</string>
+    <string name="task_connecting">Connecting…</string>
+    <string name="task_mozilla_progress">Mozilla: %1$d of %2$d MB (%3$d%%)</string>
+    <string name="task_mozilla_done">Mozilla: imported %1$d towers</string>
+    <string name="task_syncing">Syncing…</string>
+    <string name="task_uploading">Uploading %1$d towers…</string>
+    <string name="task_downloading_shared">Downloading shared towers…</string>
+    <string name="task_sync_done">Sync: sent %1$d, received %2$d towers</string>
+    <string name="task_sync_no_url">Set a server URL first</string>
+    <string name="task_exporting">Exporting… %1$d towers</string>
+    <string name="task_exported">Exported %1$d towers (%2$d KB)</string>
+    <string name="task_clearing">Clearing tower database…</string>
+    <string name="task_compacting">Compacting database…</string>
+    <string name="task_cleared">Tower database cleared</string>
+    <string name="task_cleared_kept">Tower database cleared (learned towers kept)</string>
+    <string name="task_bundled_progress">Preparing built-in towers… %1$d</string>
+    <string name="task_bundled_done">Built-in database ready: %1$d towers</string>
+    <string name="task_cancelled">Cancelled</string>
+    <string name="task_failed">Failed: %1$s</string>
 </resources>

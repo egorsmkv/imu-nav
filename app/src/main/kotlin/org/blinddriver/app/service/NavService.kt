@@ -19,6 +19,9 @@ import kotlinx.coroutines.launch
 import org.blinddriver.app.R
 import org.blinddriver.app.graph
 import org.blinddriver.app.ui.MainActivity
+import org.blinddriver.app.ui.formatDistance
+import org.blinddriver.app.ui.formatDuration
+import org.blinddriver.app.ui.instructionLine
 import org.blinddriver.core.nav.NavigationEngine
 
 /**
@@ -64,9 +67,11 @@ class NavService : LifecycleService() {
 
     private fun updateNotification() {
         val st = graph.engine.state
-        val text = buildString {
-            st.nextStep?.let { append("${it.modifier ?: it.type} ${st.distToNextM.toInt()} m · ") }
-            append("${st.source.label} ±${st.uncertaintyM.toInt()} m")
+        val step = st.nextStep
+        val text = when {
+            st.arrived -> getString(R.string.arrived)
+            step != null -> formatDistance(resources, st.distToNextM) + " · " + instructionLine(resources, step)
+            else -> formatDuration(resources, st.remainingS)
         }
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(text))
     }

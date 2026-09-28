@@ -13,8 +13,8 @@ android {
         applicationId = "org.blinddriver.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.2.1"
+        versionCode = 4
+        versionName = "0.3.0"
     }
 
     // Release signing: create keystore.properties (see README) — it and the keystore are gitignored.
@@ -67,6 +67,7 @@ dependencies {
     implementation(libs.compose.ui)
     implementation(libs.compose.material3)
     implementation(libs.compose.ui.tooling.preview)
+    implementation(libs.compose.material.icons.extended)
 
     implementation(libs.maplibre.android)
 }
