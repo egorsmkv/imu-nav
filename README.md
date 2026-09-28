@@ -175,6 +175,9 @@ Requirements: JDK 17+, Android SDK 36.
 
 ### Code checks
 
+Contributor (and AI coding agent) guidelines — conventions, architecture rules, known pitfalls and
+the definition of done — are in [`AGENTS.md`](AGENTS.md).
+
 ```bash
 ./gradlew check           # everything below plus all tests — run before sending changes
 ./gradlew spotlessApply   # auto-format Kotlin and Gradle files (ktlint)
