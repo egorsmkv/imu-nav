@@ -81,6 +81,7 @@ class CellManager(
     val towerLayer: StateFlow<TowerLayer> = _towerLayer.asStateFlow()
     private var towerJob: Job? = null
     private var lastViewport: DoubleArray? = null
+    private var lastQuery: DoubleArray? = null
 
     val scanner = CellScanner(
         context,
@@ -113,6 +114,7 @@ class CellManager(
         prefs.edit().putString("radios", set.joinToString(",") { it.name }).apply()
         log("cell_radios ${set.joinToString(",") { it.name }}")
         refresh()
+        lastQuery = null
         lastViewport?.let { v -> onViewport(v[0], v[1], v[2], v[3], v[4]) }
     }
 
@@ -143,6 +145,7 @@ class CellManager(
 
     private suspend fun reloadCounts() {
         val counts = withContext(Dispatchers.IO) { db.counts() }
+        lastQuery = null // the database changed: the next viewport must re-query
         _status.update { it.copy(counts = counts) }
     }
 
@@ -162,6 +165,7 @@ class CellManager(
         prefs.edit().putBoolean("show_towers", on).apply()
         refresh()
         val v = lastViewport
+        lastQuery = null
         if (on && v != null) onViewport(v[0], v[1], v[2], v[3], v[4]) else if (!on) _towerLayer.value = TowerLayer()
     }
 
@@ -169,14 +173,23 @@ class CellManager(
     fun onViewport(south: Double, west: Double, north: Double, east: Double, zoom: Double) {
         lastViewport = doubleArrayOf(south, west, north, east, zoom)
         if (!prefs.getBoolean("show_towers", false)) return
+        // While the camera follows the car it settles every tick; skip queries that would return the same towers.
+        val q = lastQuery
+        if (q != null && south >= q[0] && west >= q[1] && north <= q[2] && east <= q[3] && kotlin.math.abs(zoom - q[4]) < 0.5 && !_towerLayer.value.truncated) return
+        // Query a margin around the view so small moves stay inside it.
+        val padLat = (north - south) * 0.5
+        val padLon = (east - west) * 0.5
+        lastQuery = if (zoom >= MIN_TOWER_ZOOM) doubleArrayOf(south - padLat, west - padLon, north + padLat, east + padLon, zoom) else null
         towerJob?.cancel()
         if (zoom < MIN_TOWER_ZOOM) {
-            _towerLayer.value = TowerLayer(visible = visibleTowers(), zoomTooLow = true)
+            towerJob = scope.launch {
+                _towerLayer.value = TowerLayer(visible = withContext(Dispatchers.IO) { visibleTowers() }, zoomTooLow = true)
+            }
             return
         }
         towerJob = scope.launch {
             val layer = withContext(Dispatchers.IO) {
-                val (rows, truncated) = db.towersIn(south, west, north, east, MAX_TOWERS_ON_MAP, enabledRadios())
+                val (rows, truncated) = db.towersIn(south - padLat, west - padLon, north + padLat, east + padLon, MAX_TOWERS_ON_MAP, enabledRadios())
                 TowerLayer(rows.map { it.first }, visibleTowers(), truncated)
             }
             _towerLayer.value = layer

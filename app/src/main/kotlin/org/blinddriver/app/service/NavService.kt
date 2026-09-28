@@ -65,6 +65,8 @@ class NavService : LifecycleService() {
         super.onDestroy()
     }
 
+    private var lastText: String? = null
+
     private fun updateNotification() {
         val st = graph.engine.state
         val step = st.nextStep
@@ -73,6 +75,8 @@ class NavService : LifecycleService() {
             step != null -> formatDistance(resources, st.distToNextM) + " · " + instructionLine(resources, step)
             else -> formatDuration(resources, st.remainingS)
         }
+        if (text == lastText) return // posting an unchanged notification still costs IPC and wakes System UI
+        lastText = text
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(text))
     }
 

@@ -16,6 +16,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
+import org.blinddriver.app.power.PowerProfile
 import org.blinddriver.core.gnss.FixSource
 import org.blinddriver.core.gnss.PositioningHub
 import org.blinddriver.core.gnss.RawFix
@@ -60,7 +61,6 @@ class SensorHub(
 
     private val gpsListener = LocationListener { hub.onFix(it.toRawFix(FixSource.GPS)) }
     private val netListener = LocationListener { hub.onFix(it.toRawFix(FixSource.NET)) }
-    private val fusedListener = LocationListener { hub.onFix(it.toRawFix(FixSource.FUSED)) }
 
     private val gnssStatusCallback = object : GnssStatus.Callback() {
         override fun onSatelliteStatusChanged(status: GnssStatus) {
@@ -169,6 +169,65 @@ class SensorHub(
     /** False when the user switched Location off system-wide: no provider will deliver fixes. */
     val locationEnabled: Boolean get() = locationManager.isLocationEnabled
 
+    /** What is currently registered; [configure] only touches what changed. */
+    private var profile: PowerProfile = PowerProfile.BALANCED
+    private var navigating = false
+    private var imuConfig: Pair<Int, Boolean>? = null
+    private var netMinMs = -1L
+    private var measurements = false
+    private var lastSummary = ""
+
+    /**
+     * Apply a power profile. While [navigating] the IMU runs at the profile's rate (turn and stop
+     * detection); otherwise only orientation at a low rate (compass plausibility check, gyro bias).
+     */
+    fun configure(p: PowerProfile, navigating: Boolean) {
+        profile = p
+        this.navigating = navigating
+        if (running) applyConfig()
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun applyConfig() {
+        val p = profile
+        if (netMinMs != p.networkMinMs) {
+            locationManager.removeUpdates(netListener)
+            runCatching { locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, p.networkMinMs, 0f, netListener, Looper.getMainLooper()) }
+                .onFailure { Log.w(TAG, "network: $it") }
+            netMinMs = p.networkMinMs
+        }
+        // Never drop the jamming indicator while it reports jamming: the state would freeze.
+        val wantMeasurements = p.gnssMeasurements || hub.jammed
+        if (measurements != wantMeasurements) {
+            if (wantMeasurements) {
+                runCatching { locationManager.registerGnssMeasurementsCallback(gnssMeasurementsCallback, handler) }
+                    .onFailure { Log.w(TAG, "gnss measurements: $it") }
+            } else {
+                locationManager.unregisterGnssMeasurementsCallback(gnssMeasurementsCallback)
+            }
+            measurements = wantMeasurements
+        }
+        val imu = (if (navigating) p.imuPeriodUs else IDLE_IMU_PERIOD_US) to navigating
+        if (imuConfig != imu) {
+            sensorManager.unregisterListener(sensorListener)
+            val hasRotation = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR) != null
+            val types = when {
+                hasRotation && navigating -> listOf(Sensor.TYPE_ROTATION_VECTOR, Sensor.TYPE_GYROSCOPE, Sensor.TYPE_LINEAR_ACCELERATION)
+                hasRotation -> listOf(Sensor.TYPE_ROTATION_VECTOR, Sensor.TYPE_GYROSCOPE)
+                navigating -> listOf(Sensor.TYPE_ACCELEROMETER)
+                else -> emptyList() // accelerometer-only phones: nothing useful without a route
+            }
+            if (!navigating) linearAcc = null
+            for (type in types) {
+                sensorManager.getDefaultSensor(type)?.let { sensorManager.registerListener(sensorListener, it, imu.first, handler) }
+            }
+            imuConfig = imu
+        }
+        val summary = "power ${p.name} nav=$navigating imu_hz=${1_000_000 / imu.first} net_ms=${p.networkMinMs} agc=$measurements"
+        if (summary != lastSummary) log(summary)
+        lastSummary = summary
+    }
+
     @SuppressLint("MissingPermission")
     fun start() {
         if (running) return
@@ -176,27 +235,11 @@ class SensorHub(
         injectAssistance("start")
         runCatching { locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0L, 0f, gpsListener, Looper.getMainLooper()) }
             .onFailure { Log.w(TAG, "gps: $it") }
-        runCatching { locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 0L, 0f, netListener, Looper.getMainLooper()) }
-            .onFailure { Log.w(TAG, "network: $it") }
-        if (Build.VERSION.SDK_INT >= 31) {
-            runCatching { locationManager.requestLocationUpdates(LocationManager.FUSED_PROVIDER, 0L, 0f, fusedListener, Looper.getMainLooper()) }
-                .onFailure { Log.w(TAG, "fused: $it") }
-        }
+        // The fused provider is not requested: it is built largely from GPS and inherits spoofed positions.
         runCatching { locationManager.registerGnssStatusCallback(gnssStatusCallback, handler) }
             .onFailure { Log.w(TAG, "gnss status: $it") }
-        runCatching { locationManager.registerGnssMeasurementsCallback(gnssMeasurementsCallback, handler) }
-            .onFailure { Log.w(TAG, "gnss measurements: $it") }
         sensorWarning?.let { log("sensors: $it") }
-        val types = if (sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR) != null) {
-            listOf(Sensor.TYPE_ROTATION_VECTOR, Sensor.TYPE_GYROSCOPE, Sensor.TYPE_LINEAR_ACCELERATION)
-        } else {
-            listOf(Sensor.TYPE_ACCELEROMETER)
-        }
-        for (type in types) {
-            sensorManager.getDefaultSensor(type)?.let {
-                sensorManager.registerListener(sensorListener, it, SensorManager.SENSOR_DELAY_GAME, handler)
-            }
-        }
+        applyConfig()
     }
 
     fun stop() {
@@ -204,10 +247,12 @@ class SensorHub(
         running = false
         locationManager.removeUpdates(gpsListener)
         locationManager.removeUpdates(netListener)
-        locationManager.removeUpdates(fusedListener)
         locationManager.unregisterGnssStatusCallback(gnssStatusCallback)
-        locationManager.unregisterGnssMeasurementsCallback(gnssMeasurementsCallback)
+        if (measurements) locationManager.unregisterGnssMeasurementsCallback(gnssMeasurementsCallback)
         sensorManager.unregisterListener(sensorListener)
+        netMinMs = -1L
+        measurements = false
+        imuConfig = null
     }
 
     /** Ask the GNSS chip to refresh assistance data (ephemeris, time) — speeds up recovery after jamming. */
@@ -234,5 +279,7 @@ class SensorHub(
 
     private companion object {
         const val TAG = "SensorHub"
+        /** 5 Hz: enough for heading and gyro-bias learning when no route is being followed. */
+        const val IDLE_IMU_PERIOD_US = 200_000
     }
 }

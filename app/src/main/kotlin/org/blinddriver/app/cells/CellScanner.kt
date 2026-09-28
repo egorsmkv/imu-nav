@@ -33,7 +33,8 @@ class CellScanner(
     private val log: (String) -> Unit,
     /** Cell types used for positioning; others are still recorded for learning. */
     private val enabledRadios: () -> Set<Radio> = { Radio.entries.toSet() },
-    private val intervalMs: Long = 5_000,
+    /** Scan period; re-read after every scan so power-mode changes apply at once. */
+    var intervalMs: () -> Long = { 5_000 },
 ) {
     private val telephony = context.getSystemService(TelephonyManager::class.java)
     private val subscriptions = context.getSystemService(android.telephony.SubscriptionManager::class.java)
@@ -61,7 +62,7 @@ class CellScanner(
         override fun run() {
             if (!running) return
             scan()
-            main.postDelayed(this, intervalMs)
+            main.postDelayed(this, intervalMs())
         }
     }
 

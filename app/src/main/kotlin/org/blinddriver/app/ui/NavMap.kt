@@ -38,6 +38,7 @@ import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
 import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.pow
 
@@ -92,6 +93,10 @@ fun NavMap(
     /** Heights (px) covered by overlays at the top and bottom; the camera centres between them. */
     insetTopPx: Int = 0,
     insetBottomPx: Int = 0,
+    /** Frame-rate cap (power mode); lower = less GPU work while the camera follows the car. */
+    maxFps: Int = 60,
+    /** Glide the camera between positions, or jump (one frame per update instead of a 450 ms animation). */
+    animateCamera: Boolean = true,
 ) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -212,16 +217,20 @@ fun NavMap(
         )
     }
 
+    LaunchedEffect(maxFps) { mapView.setMaximumFps(maxFps) }
+
     LaunchedEffect(style, position, bearingDeg, following, controller.followZoom) {
         val m = controller.map ?: return@LaunchedEffect
         if (!following || position == null || style == null) return@LaunchedEffect
         val zoom = controller.followZoom ?: 16.0
-        m.animateCamera(
-            CameraUpdateFactory.newCameraPosition(
-                CameraPosition.Builder().target(LatLng(position.lat, position.lon)).zoom(zoom).bearing(bearingDeg.toDouble()).build()
-            ),
-            450,
-        )
+        val cam = m.cameraPosition
+        val target = LatLng(position.lat, position.lon)
+        // Standing still: don't redraw the map for sub-metre / sub-degree changes.
+        val moved = cam.target?.distanceTo(target) ?: Double.MAX_VALUE
+        val turned = abs(((bearingDeg - cam.bearing + 540.0) % 360.0) - 180.0)
+        if (moved < 1.0 && turned < 2.0 && abs(cam.zoom - zoom) < 0.01) return@LaunchedEffect
+        val update = CameraUpdateFactory.newCameraPosition(CameraPosition.Builder().target(target).zoom(zoom).bearing(bearingDeg.toDouble()).build())
+        if (animateCamera) m.animateCamera(update, 450) else m.moveCamera(update)
     }
 
     AndroidView(factory = { mapView }, modifier = modifier)

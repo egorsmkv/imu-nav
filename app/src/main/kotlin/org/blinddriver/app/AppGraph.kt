@@ -138,7 +138,50 @@ class AppGraph(private val context: Context) {
 
     val cells = CellManager(context, scope, hub, tripLog::write)
 
+    // ---------------------------------------------------------------- power
+
+    val power = org.blinddriver.app.power.PowerPolicy(context)
+    private val _powerProfile = MutableStateFlow(power.resolve())
+    /** The profile in effect (AUTO already resolved). */
+    val powerProfile: StateFlow<org.blinddriver.app.power.PowerProfile> = _powerProfile.asStateFlow()
+    val powerMode = MutableStateFlow(power.mode)
+    val keepScreenOn = MutableStateFlow(power.keepScreenOn)
+    /** True while an activity shows the app; UI state is not rebuilt for an invisible screen. */
+    @Volatile var uiVisible = false
+    private var tickCount = 0L
+
+    init {
+        cells.scanner.intervalMs = {
+            val p = _powerProfile.value
+            when {
+                !engine.state.active -> if (hub.lastGood != null) p.cellScanIdleMs else p.cellScanNoGpsMs
+                hub.gpsState == org.blinddriver.core.gnss.GpsState.OK -> p.cellScanGoodGpsMs
+                else -> p.cellScanNoGpsMs
+            }
+        }
+    }
+
+    fun setPowerMode(mode: org.blinddriver.app.power.PowerMode) {
+        power.mode = mode
+        powerMode.value = mode
+        tripLog.write("power_mode $mode")
+        applyPower()
+    }
+
+    fun setKeepScreenOn(on: Boolean) {
+        power.keepScreenOn = on
+        keepScreenOn.value = on
+    }
+
+    /** Re-evaluate the profile (battery level / charger / battery saver for AUTO) and apply it. */
+    fun applyPower() {
+        val p = power.resolve()
+        _powerProfile.value = p
+        sensors.configure(p, navigating = engine.state.active)
+    }
+
     fun startSensing() {
+        applyPower()
         sensors.start()
         cells.scanner.start()
     }
@@ -194,6 +237,7 @@ class AppGraph(private val context: Context) {
                     tripLog.write("start_accuracy=${startAccuracy.toInt()}")
                     engine.start(route, dest, nowMs = SystemClock.elapsedRealtime(), startAccuracyM = startAccuracy)
                     trips.begin(route, dest, emptyList(), startAccuracy)
+                    applyPower()
                     _ui.value = _ui.value.copy(planning = false)
                     onStarted()
                 }
@@ -204,6 +248,7 @@ class AppGraph(private val context: Context) {
     fun stopNavigation() {
         trips.end(arrived = engine.state.arrived)
         engine.stop()
+        applyPower()
         tripLog.endTrip()
         cells.maybeAutoSync()
         refresh()
@@ -220,11 +265,20 @@ class AppGraph(private val context: Context) {
         val now = SystemClock.elapsedRealtime()
         engine.tick(now, hub.snapshot(now))
         trips.onTick(now)
-        refresh()
+        tickCount++
+        // Battery level / charger / battery saver change slowly: re-check AUTO once a minute.
+        if (tickCount % 120 == 0L) applyPower()
+        val p = _powerProfile.value
+        if (uiVisible && tickCount % p.uiEveryTicks == 0L) refresh()
+        else if (tickCount % 10 == 0L) refresh() // keep learning and the notification data fresh
     }
 
     fun refresh() {
         cells.refresh()
+        if (!uiVisible) {
+            _ui.value = _ui.value.copy(guidance = engine.state)
+            return
+        }
         _ui.value = _ui.value.copy(
             cells = cells.status.value,
             guidance = engine.state,

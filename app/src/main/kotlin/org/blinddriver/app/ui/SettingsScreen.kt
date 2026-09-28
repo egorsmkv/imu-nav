@@ -163,6 +163,47 @@ fun SettingsScreen(ui: UiState, g: AppGraph, onBack: () -> Unit, onOpenLog: () -
                 leadingContent = { Icon(androidx.compose.material.icons.Icons.Filled.Translate, contentDescription = null) },
             )
 
+            // ---------------- Battery
+            SectionHeader(stringResource(R.string.sec_power))
+            val powerMode by g.powerMode.collectAsStateWithLifecycle()
+            val profile by g.powerProfile.collectAsStateWithLifecycle()
+            val screenOn by g.keepScreenOn.collectAsStateWithLifecycle()
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.power_title)) },
+                supportingContent = {
+                    Column {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            org.blinddriver.app.power.PowerMode.entries.forEach { m ->
+                                FilterChip(selected = powerMode == m, onClick = { g.setPowerMode(m) }, label = { Text(powerModeName(m)) })
+                            }
+                        }
+                        Text(
+                            stringResource(
+                                when (powerMode) {
+                                    org.blinddriver.app.power.PowerMode.AUTO -> R.string.power_auto_hint
+                                    org.blinddriver.app.power.PowerMode.PERFORMANCE -> R.string.power_performance_hint
+                                    org.blinddriver.app.power.PowerMode.BALANCED -> R.string.power_balanced_hint
+                                    org.blinddriver.app.power.PowerMode.SAVER -> R.string.power_saver_hint
+                                }
+                            )
+                        )
+                        if (powerMode == org.blinddriver.app.power.PowerMode.AUTO) {
+                            val active = when (profile) {
+                                org.blinddriver.app.power.PowerProfile.PERFORMANCE -> org.blinddriver.app.power.PowerMode.PERFORMANCE
+                                org.blinddriver.app.power.PowerProfile.SAVER -> org.blinddriver.app.power.PowerMode.SAVER
+                                else -> org.blinddriver.app.power.PowerMode.BALANCED
+                            }
+                            Text(
+                                stringResource(R.string.power_auto_now, powerModeName(active), g.power.batteryPercent()?.let { "$it %" } ?: "—"),
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+                },
+                leadingContent = { Icon(androidx.compose.material.icons.Icons.Filled.BatteryChargingFull, contentDescription = null) },
+            )
+            SwitchItem(stringResource(R.string.power_screen_on), stringResource(R.string.power_screen_on_summary), screenOn) { g.setKeepScreenOn(it) }
+
             // ---------------- Offline routing
             SectionHeader(stringResource(R.string.sec_routing))
             val pack = routing.pack
@@ -380,6 +421,16 @@ fun SettingsScreen(ui: UiState, g: AppGraph, onBack: () -> Unit, onOpenLog: () -
         )
     }
 }
+
+@Composable
+private fun powerModeName(m: org.blinddriver.app.power.PowerMode): String = stringResource(
+    when (m) {
+        org.blinddriver.app.power.PowerMode.AUTO -> R.string.power_auto
+        org.blinddriver.app.power.PowerMode.PERFORMANCE -> R.string.power_performance
+        org.blinddriver.app.power.PowerMode.BALANCED -> R.string.power_balanced
+        org.blinddriver.app.power.PowerMode.SAVER -> R.string.power_saver
+    }
+)
 
 @Composable
 private fun sourceName(s: CellSource): String = stringResource(

@@ -90,7 +90,11 @@ class TripManager(
     private val activeFile = File(dir, "active.json")
 
     private var recorder: TripRecorder? = null
-    private var id: String? = null
+    /** Recording and state files are written here, never on the main thread; one thread keeps event order. */
+    private val io = java.util.concurrent.Executors.newSingleThreadExecutor()
+    /** [route] encoded once per route change (it can be large), reused by every [persist]. */
+    private var routeEncoded = ""
+    @Volatile private var id: String? = null
     private var recordingName = ""
     private var startWall = 0L
     private var destination: GeoPoint? = null
@@ -123,6 +127,7 @@ class TripManager(
         this.waypoints = waypoints
         this.startAccuracy = startAccuracyM
         this.route = route
+        routeEncoded = RouteCodec.encode(route)
         drivenM = 0.0; movingS = 0.0; blindS = 0.0; blindM = 0.0; maxUnc = 0.0; reroutes = 0
         lastTickMs = -1L
         openRecorder(append = false)
@@ -136,13 +141,14 @@ class TripManager(
     fun onRoute(route: Route) {
         if (!active) return
         this.route = route
+        routeEncoded = RouteCodec.encode(route)
         reroutes++
         record(TripEvent.RouteSet(SystemClock.elapsedRealtime(), route))
         persist(force = true)
     }
 
     fun onImu(sample: ImuSample) {
-        recorder?.record(TripEvent.Imu(sample))
+        if (recorder != null) record(TripEvent.Imu(sample))
     }
 
     /** Called every engine tick while navigating. */
@@ -169,9 +175,10 @@ class TripManager(
     fun end(arrived: Boolean) {
         val tripId = id ?: return
         record(TripEvent.Stop(SystemClock.elapsedRealtime()))
-        recorder?.close()
+        recorder?.let { r -> io.execute { r.close() } }
         recorder = null
-        activeFile.delete()
+        hub.recorder = null
+        io.execute { activeFile.delete() }
         val end = System.currentTimeMillis()
         val summary = TripSummary(
             tripId, startWall, end, destination, arrived, drivenM, (end - startWall) / 1000.0, movingS, blindS, blindM,
@@ -180,7 +187,8 @@ class TripManager(
         id = null
         // Skip accidental starts (no movement at all) to keep the history meaningful.
         if (summary.drivenM < 50 && summary.durationS < 120) {
-            File(dir, recordingName).delete()
+            val name = recordingName
+            io.execute { File(dir, name).delete() }
             log("trip_discarded $tripId")
             return
         }
@@ -211,6 +219,7 @@ class TripManager(
         waypoints = o.optJSONArray("via")?.let { a -> (0 until a.length() step 2).map { GeoPoint(a.getDouble(it), a.getDouble(it + 1)) } }.orEmpty()
         startAccuracy = o.optDouble("startAcc", 0.0)
         route = restoredRoute
+        routeEncoded = o.getString("route")
         drivenM = o.optDouble("driven"); movingS = o.optDouble("moving"); blindS = o.optDouble("blindS"); blindM = o.optDouble("blindM")
         maxUnc = o.optDouble("maxUnc"); reroutes = o.optInt("reroutes")
         lastTickMs = -1L
@@ -242,10 +251,14 @@ class TripManager(
             .put("destLat", d.lat).put("destLon", d.lon).put("via", JSONArray(waypoints.flatMap { listOf(it.lat, it.lon) }))
             .put("startAcc", startAccuracy).put("s", engine.progressS).put("unc", st.uncertaintyM)
             .put("driven", drivenM).put("moving", movingS).put("blindS", blindS).put("blindM", blindM)
-            .put("maxUnc", maxUnc).put("reroutes", reroutes).put("route", RouteCodec.encode(r))
-        val tmp = File(dir, "active.json.tmp")
-        tmp.writeText(o.toString())
-        tmp.renameTo(activeFile)
+            .put("maxUnc", maxUnc).put("reroutes", reroutes).put("route", routeEncoded.ifEmpty { RouteCodec.encode(r) })
+        val text = o.toString()
+        io.execute {
+            if (id == null) return@execute // the trip ended meanwhile
+            val tmp = File(dir, "active.json.tmp")
+            tmp.writeText(text)
+            tmp.renameTo(activeFile)
+        }
     }
 
     // ------------------------------------------------------------------ recording + history
@@ -253,11 +266,12 @@ class TripManager(
     private fun openRecorder(append: Boolean) {
         recorder?.close()
         recorder = runCatching { TripRecorder.open(File(dir, recordingName), append) }.onFailure { log("trip_record_failed ${it.message}") }.getOrNull()
-        hub.recorder = { e -> recorder?.record(e) }
+        hub.recorder = { e -> record(e) }
     }
 
     private fun record(e: TripEvent) {
-        recorder?.record(e)
+        val r = recorder ?: return
+        io.execute { r.record(e) }
     }
 
     fun recordingFile(t: TripSummary): File = File(dir, t.recording)

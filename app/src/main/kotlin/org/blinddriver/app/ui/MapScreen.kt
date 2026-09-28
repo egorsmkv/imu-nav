@@ -112,6 +112,7 @@ fun MapScreen(
     val nav = ui.guidance
     val controller = remember { MapController() }
     val towerLayer by g.cells.towerLayer.collectAsStateWithLifecycle()
+    val power by g.powerProfile.collectAsStateWithLifecycle()
     val routing by g.offlineRouting.status.collectAsStateWithLifecycle()
     var mapCenter by remember { mutableStateOf<GeoPoint?>(null) }
     var following by remember { mutableStateOf(true) }
@@ -169,6 +170,8 @@ fun MapScreen(
                 modifier = Modifier.fillMaxSize(),
                 insetTopPx = topInsetPx,
                 insetBottomPx = bottomInsetPx,
+                maxFps = power.mapMaxFps,
+                animateCamera = power.animateCamera,
             )
         }
 

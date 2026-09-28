@@ -59,11 +59,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        graph.uiVisible = true
         if (hasLocation) graph.startSensing()
     }
 
     override fun onStop() {
         super.onStop()
+        graph.uiVisible = false
         if (!graph.engine.state.active) graph.stopSensing()
     }
 }
@@ -81,7 +83,8 @@ private fun AppRoot(g: AppGraph, hasLocation: Boolean, requestPermission: () -> 
             delay(1000)
         }
     }
-    LaunchedEffect(ui.guidance.active) { keepScreenOn(ui.guidance.active) }
+    val screenOnSetting by g.keepScreenOn.collectAsStateWithLifecycle()
+    LaunchedEffect(ui.guidance.active, screenOnSetting) { keepScreenOn(ui.guidance.active && screenOnSetting) }
 
     BackHandler(enabled = screen != Screen.MAP) {
         screen = when (screen) {
