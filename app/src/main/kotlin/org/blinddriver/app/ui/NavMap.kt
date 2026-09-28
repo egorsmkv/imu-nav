@@ -45,7 +45,6 @@ import kotlin.math.pow
 
 private const val STYLE_LIGHT = "https://tiles.openfreemap.org/styles/liberty"
 private const val STYLE_DARK = "https://tiles.openfreemap.org/styles/dark"
-private val KYIV = LatLng(50.4501, 30.5234)
 
 /** Imperative handle for map buttons (zoom, re-center) living outside the map composable. */
 @Stable
@@ -98,6 +97,9 @@ fun NavMap(
     maxFps: Int = 60,
     /** Glide the camera between positions, or jump (one frame per update instead of a 450 ms animation). */
     animateCamera: Boolean = true,
+    /** Where the camera starts before any position is known (Settings → Map start). */
+    initialCenter: GeoPoint = org.blinddriver.app.MapStartPrefs.KYIV,
+    initialZoom: Double = 12.0,
 ) {
     val context = LocalContext.current
     val density = androidx.compose.ui.platform.LocalDensity.current.density
@@ -131,7 +133,7 @@ fun NavMap(
             m.uiSettings.isRotateGesturesEnabled = true
             m.uiSettings.isAttributionEnabled = true
             m.uiSettings.isLogoEnabled = false
-            m.cameraPosition = CameraPosition.Builder().target(KYIV).zoom(12.0).build()
+            m.cameraPosition = CameraPosition.Builder().target(LatLng(initialCenter.lat, initialCenter.lon)).zoom(initialZoom).build()
             fun reportViewport() {
                 val b = m.projection.visibleRegion.latLngBounds
                 viewportChanged(b.latitudeSouth, b.longitudeWest, b.latitudeNorth, b.longitudeEast, m.cameraPosition.zoom)

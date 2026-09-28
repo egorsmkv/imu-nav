@@ -205,6 +205,8 @@ Usage: long-press the map to choose a destination and tap **Start**. If GPS is u
 no cell fix, pan the crosshair onto your position and tap **Start here** first. Tap the status pill for
 positioning diagnostics (satellites, spoofing reasons, cells, *Simulate GPS loss*, trip log); the gear
 opens **Settings** (cell types, tower sources, sharing server, learning, database, diagnostics, about).
+The map opens at the phone's last GPS position (spoofed or out-of-area fixes are ignored) or, if set in
+**Settings → Map start**, at a fixed place (typed coordinates, your position or the map centre).
 The interface and voice follow the phone's language (Ukrainian or English) unless changed in
 **Settings → Language**, and the phone's light/dark theme. Text trip logs are written to
 `files/logs/`, trip recordings to `files/trips/` in app storage.

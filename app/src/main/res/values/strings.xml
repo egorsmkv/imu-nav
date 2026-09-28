@@ -207,6 +207,17 @@
 
     <!-- Offline routing -->
     <string name="sec_routing">Offline routing</string>
+    <string name="sec_map_start">Map start</string>
+    <string name="map_start_title">Where the map opens</string>
+    <string name="map_start_gps">My position (GPS)</string>
+    <string name="map_start_fixed">Fixed place</string>
+    <string name="map_start_gps_hint">Opens at the phone\'s last GPS position (or the last position the app trusted), then moves to the first trusted fix. Spoofed or out-of-area fixes are ignored.</string>
+    <string name="map_start_fixed_hint">Always opens at this place. The re-centre button still shows your position.</string>
+    <string name="map_start_coords">Latitude, longitude</string>
+    <string name="map_start_coords_invalid">Enter two numbers, e.g. 50.4501, 30.5234</string>
+    <string name="map_start_use_position">Use my position</string>
+    <string name="map_start_use_center">Use map centre</string>
+    <string name="action_apply">Apply</string>
     <string name="sec_power">Battery</string>
     <string name="power_title">Power mode</string>
     <string name="power_auto">Auto</string>

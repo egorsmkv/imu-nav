@@ -114,6 +114,9 @@ fun MapScreen(ui: UiState, g: AppGraph, hasLocation: Boolean, onRequestPermissio
     var following by remember { mutableStateOf(true) }
     var showDiagnostics by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
+    // Opening view: the last known GPS / trusted position, or the fixed place from Settings.
+    val startView = remember { g.mapStart.initialView() }
+    val startMode by g.mapStartMode.collectAsStateWithLifecycle()
     var centeredOnce by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     var topInsetPx by remember { mutableStateOf(0) }
@@ -128,10 +131,11 @@ fun MapScreen(ui: UiState, g: AppGraph, hasLocation: Boolean, onRequestPermissio
     }
 
     LaunchedEffect(nav.active) { if (nav.active) following = true }
-    // Jump to the first known position once, so the map opens where the user is.
+    // GPS mode: jump to the first live trusted position once, so the map shows where the user is.
+    // Fixed mode keeps the chosen place; the re-centre button still goes to the position.
     LaunchedEffect(ui.currentPosition != null) {
         val p = ui.currentPosition
-        if (!centeredOnce && p != null && !nav.active) {
+        if (!centeredOnce && p != null && !nav.active && startMode == org.blinddriver.app.MapStartMode.GPS) {
             centeredOnce = true
             controller.moveTo(p, 14.0)
         }
@@ -160,7 +164,10 @@ fun MapScreen(ui: UiState, g: AppGraph, hasLocation: Boolean, onRequestPermissio
                 following = nav.active && following,
                 towers = if (ui.cells.showTowers) towerLayer else null,
                 onLongPress = { if (!nav.active) g.setDestination(it) },
-                onCenterChanged = { mapCenter = it },
+                onCenterChanged = {
+                    mapCenter = it
+                    g.lastMapCenter = it
+                },
                 onViewport = { s, w, n, e, z -> g.cells.onViewport(s, w, n, e, z) },
                 onUserPan = { if (nav.active) following = false },
                 modifier = Modifier.fillMaxSize(),
@@ -168,6 +175,8 @@ fun MapScreen(ui: UiState, g: AppGraph, hasLocation: Boolean, onRequestPermissio
                 insetBottomPx = bottomInsetPx,
                 maxFps = power.mapMaxFps,
                 animateCamera = power.animateCamera,
+                initialCenter = startView.point,
+                initialZoom = startView.zoom,
             )
         }
 

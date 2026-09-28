@@ -205,6 +205,17 @@
 
     <!-- Офлайн-маршрути -->
     <string name="sec_routing">Офлайн-маршрути</string>
+    <string name="sec_map_start">Початок карти</string>
+    <string name="map_start_title">Де відкривається карта</string>
+    <string name="map_start_gps">Моя позиція (GPS)</string>
+    <string name="map_start_fixed">Вибране місце</string>
+    <string name="map_start_gps_hint">Відкривається на останній GPS-позиції телефона (або останній позиції, якій застосунок довіряв), потім переходить до першої достовірної. Підроблені позиції та позиції поза зоною ігноруються.</string>
+    <string name="map_start_fixed_hint">Завжди відкривається тут. Кнопка центрування й далі показує вашу позицію.</string>
+    <string name="map_start_coords">Широта, довгота</string>
+    <string name="map_start_coords_invalid">Введіть два числа, напр. 50.4501, 30.5234</string>
+    <string name="map_start_use_position">Моя позиція</string>
+    <string name="map_start_use_center">Центр карти</string>
+    <string name="action_apply">Застосувати</string>
     <string name="sec_power">Батарея</string>
     <string name="power_title">Режим живлення</string>
     <string name="power_auto">Авто</string>

@@ -93,7 +93,24 @@ class AppGraph(private val context: Context) {
     val tuning = MutableStateFlow(Tuning.DEFAULT)
 
     /** Fixes outside this area are treated as spoofed. Set to [ServiceArea.EVERYWHERE] to use the app elsewhere. */
-    val hub = PositioningHub(area = ServiceArea.UKRAINE_COARSE).also { it.log = tripLog::write }
+    val serviceArea: ServiceArea = ServiceArea.UKRAINE_COARSE
+    val hub = PositioningHub(area = serviceArea).also { it.log = tripLog::write }
+
+    /** Where the map opens (Settings → Map start). */
+    val mapStart = MapStartPrefs(context, serviceArea)
+    val mapStartMode = MutableStateFlow(mapStart.mode)
+    val mapStartFixed = MutableStateFlow(mapStart.fixed)
+
+    /** Centre of the map as last seen by the map screen, for "use map centre" in Settings. */
+    @Volatile var lastMapCenter: GeoPoint? = null
+
+    fun setMapStart(mode: MapStartMode, fixed: GeoPoint?) {
+        mapStart.mode = mode
+        mapStart.fixed = fixed
+        mapStartMode.value = mode
+        mapStartFixed.value = fixed
+        tripLog.write("map_start $mode ${fixed?.let { "%.5f %.5f".format(it.lat, it.lon) }.orEmpty()}")
+    }
 
     private val listener = object : NavListener {
         override fun onSay(text: String, urgent: Boolean) = voice.speak(text, urgent)
@@ -283,6 +300,7 @@ class AppGraph(private val context: Context) {
 
     fun refresh() {
         cells.refresh()
+        hub.lastGood?.let { mapStart.rememberTrusted(it.point) }
         if (!uiVisible) {
             _ui.value = _ui.value.copy(guidance = engine.state)
             return

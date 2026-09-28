@@ -25,6 +25,7 @@ import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.Warning
@@ -168,6 +169,9 @@ fun SettingsScreen(ui: UiState, g: AppGraph, onBack: () -> Unit, onOpenLog: () -
                 },
                 leadingContent = { Icon(androidx.compose.material.icons.Icons.Filled.Translate, contentDescription = null) },
             )
+
+            // ---------------- Map start
+            MapStartSection(g, ui)
 
             // ---------------- Battery
             SectionHeader(stringResource(R.string.sec_power))
@@ -523,6 +527,77 @@ private fun Field(value: String, onChange: (String) -> Unit, label: String, plac
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
     )
 }
+
+/** Settings → Map start: open the map at the phone's position, or at a fixed place. */
+@Composable
+private fun MapStartSection(g: AppGraph, ui: UiState) {
+    val mode by g.mapStartMode.collectAsStateWithLifecycle()
+    val fixed by g.mapStartFixed.collectAsStateWithLifecycle()
+    var text by remember(fixed) { mutableStateOf(fixed?.let { formatLatLon(it) }.orEmpty()) }
+    val parsed = org.blinddriver.app.MapStartPrefs.parse(text)
+    val position = ui.currentPosition.takeIf { ui.hasTrustedPosition }
+
+    SectionHeader(stringResource(R.string.sec_map_start))
+    ListItem(
+        headlineContent = { Text(stringResource(R.string.map_start_title)) },
+        supportingContent = {
+            Column {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = mode == org.blinddriver.app.MapStartMode.GPS,
+                        onClick = { g.setMapStart(org.blinddriver.app.MapStartMode.GPS, fixed) },
+                        label = { Text(stringResource(R.string.map_start_gps)) },
+                    )
+                    FilterChip(
+                        selected = mode == org.blinddriver.app.MapStartMode.FIXED,
+                        onClick = {
+                            // Picking "fixed" without a place yet: start from where the user is or looks.
+                            val p = fixed ?: position ?: g.lastMapCenter
+                            g.setMapStart(org.blinddriver.app.MapStartMode.FIXED, p)
+                        },
+                        label = { Text(stringResource(R.string.map_start_fixed)) },
+                    )
+                }
+                Text(
+                    stringResource(
+                        if (mode == org.blinddriver.app.MapStartMode.GPS) R.string.map_start_gps_hint else R.string.map_start_fixed_hint,
+                    ),
+                )
+            }
+        },
+        leadingContent = { Icon(androidx.compose.material.icons.Icons.Filled.Place, contentDescription = null) },
+    )
+    if (mode != org.blinddriver.app.MapStartMode.FIXED) return
+
+    OutlinedTextField(
+        value = text,
+        onValueChange = { text = it },
+        label = { Text(stringResource(R.string.map_start_coords)) },
+        placeholder = { Text("50.4501, 30.5234") },
+        singleLine = true,
+        isError = text.isNotBlank() && parsed == null,
+        supportingText = { if (text.isNotBlank() && parsed == null) Text(stringResource(R.string.map_start_coords_invalid)) },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+    )
+    FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Button(
+            onClick = { parsed?.let { g.setMapStart(org.blinddriver.app.MapStartMode.FIXED, it) } },
+            enabled =
+            parsed != null && formatLatLon(parsed) != fixed?.let { formatLatLon(it) },
+        ) {
+            Text(stringResource(R.string.action_apply))
+        }
+        OutlinedButton(onClick = { position?.let { g.setMapStart(org.blinddriver.app.MapStartMode.FIXED, it) } }, enabled = position != null) {
+            Text(stringResource(R.string.map_start_use_position))
+        }
+        OutlinedButton(onClick = { g.lastMapCenter?.let { g.setMapStart(org.blinddriver.app.MapStartMode.FIXED, it) } }, enabled = g.lastMapCenter != null) {
+            Text(stringResource(R.string.map_start_use_center))
+        }
+    }
+}
+
+private fun formatLatLon(p: org.blinddriver.core.geo.GeoPoint) = String.format(java.util.Locale.US, "%.5f, %.5f", p.lat, p.lon)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
