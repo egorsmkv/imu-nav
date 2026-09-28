@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.res.Configuration
 import android.content.res.Resources
 import android.os.LocaleList
+import androidx.core.content.edit
 import java.util.Locale
 
 /**
@@ -19,8 +20,7 @@ object AppLanguage {
     private const val PREFS = "language"
     private const val KEY = "tag"
 
-    fun get(context: Context): String =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, SYSTEM) ?: SYSTEM
+    fun get(context: Context): String = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, SYSTEM) ?: SYSTEM
 
     /** The locale in effect for [choice]. */
     fun locale(choice: String): Locale = when (choice) {
@@ -43,7 +43,7 @@ object AppLanguage {
 
     /** Save [choice] and switch the application's resources; activities must be recreated afterwards. */
     fun set(context: Context, choice: String) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, choice).commit()
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putString(KEY, choice) }
         val locale = locale(choice)
         Locale.setDefault(locale)
         val res = context.applicationContext.resources

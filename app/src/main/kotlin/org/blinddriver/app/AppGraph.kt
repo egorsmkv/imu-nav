@@ -2,6 +2,7 @@ package org.blinddriver.app
 
 import android.content.Context
 import android.os.SystemClock
+import androidx.core.content.edit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -12,13 +13,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.blinddriver.app.cells.CellManager
 import org.blinddriver.app.cells.CellStatus
+import org.blinddriver.app.routing.OfflineRouting
 import org.blinddriver.app.routing.OsrmRouter
 import org.blinddriver.app.routing.Router
-import org.blinddriver.app.routing.OfflineRouting
 import org.blinddriver.app.routing.SmartRouter
+import org.blinddriver.app.sensors.SensorHub
 import org.blinddriver.app.service.NavService
 import org.blinddriver.app.trips.TripManager
-import org.blinddriver.app.sensors.SensorHub
 import org.blinddriver.app.voice.Voice
 import org.blinddriver.core.Tuning
 import org.blinddriver.core.geo.GeoPoint
@@ -61,11 +62,11 @@ data class UiState(
     val cells: CellStatus = CellStatus(),
 )
 
-
 /** Process-wide object graph. All engine access happens on the main thread. */
 class AppGraph(private val context: Context) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val tripLog = TripLog(context)
+
     /** UI and voice language: the in-app choice, or the phone's language by default. */
     private val ukrainian get() = AppLanguage.isUkrainian(context)
     private val voice = Voice(context, AppLanguage.locale(AppLanguage.get(context)))
@@ -81,8 +82,10 @@ class AppGraph(private val context: Context) {
     }
 
     private fun phrasesFor() = if (ukrainian) org.blinddriver.core.nav.UkrainianPhrases else org.blinddriver.core.nav.EnglishPhrases
+
     /** Offline GraphHopper pack first; OSRM online only as an allowed fallback. */
     val offlineRouting = OfflineRouting(context, scope, tripLog::write)
+
     /** Address search: the pack's offline index, Photon online when allowed. */
     val search = org.blinddriver.app.search.PlaceSearch(context, { offlineRouting.searchDb }, { offlineRouting.status.value.allowOnline })
     private val router: Router = SmartRouter(offlineRouting, OsrmRouter(), tripLog::write) { context.getString(R.string.routing_no_coverage) }
@@ -142,10 +145,12 @@ class AppGraph(private val context: Context) {
 
     val power = org.blinddriver.app.power.PowerPolicy(context)
     private val _powerProfile = MutableStateFlow(power.resolve())
+
     /** The profile in effect (AUTO already resolved). */
     val powerProfile: StateFlow<org.blinddriver.app.power.PowerProfile> = _powerProfile.asStateFlow()
     val powerMode = MutableStateFlow(power.mode)
     val keepScreenOn = MutableStateFlow(power.keepScreenOn)
+
     /** True while an activity shows the app; UI state is not rebuilt for an invisible screen. */
     @Volatile var uiVisible = false
     private var tickCount = 0L
@@ -269,8 +274,11 @@ class AppGraph(private val context: Context) {
         // Battery level / charger / battery saver change slowly: re-check AUTO once a minute.
         if (tickCount % 120 == 0L) applyPower()
         val p = _powerProfile.value
-        if (uiVisible && tickCount % p.uiEveryTicks == 0L) refresh()
-        else if (tickCount % 10 == 0L) refresh() // keep learning and the notification data fresh
+        if (uiVisible && tickCount % p.uiEveryTicks == 0L) {
+            refresh()
+        } else if (tickCount % 10 == 0L) {
+            refresh() // keep learning and the notification data fresh
+        }
     }
 
     fun refresh() {
@@ -320,11 +328,11 @@ private class PrefsSpeedProfileStore(context: Context) : SpeedProfileStore {
     )
 
     override fun save(state: SpeedProfile.State) {
-        prefs.edit()
-            .putFloat("city_ratio", state.cityRatio.toFloat())
-            .putFloat("hwy_ratio", state.highwayRatio.toFloat())
-            .putInt("city_n", state.cityN)
-            .putInt("hwy_n", state.highwayN)
-            .apply()
+        prefs.edit {
+            putFloat("city_ratio", state.cityRatio.toFloat())
+            putFloat("hwy_ratio", state.highwayRatio.toFloat())
+            putInt("city_n", state.cityN)
+            putInt("hwy_n", state.highwayN)
+        }
     }
 }

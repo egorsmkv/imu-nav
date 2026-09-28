@@ -53,8 +53,10 @@ class CellScanner(
     /** All cells seen in the latest scan and when; used for learning tower positions. */
     @Volatile var lastObservations: List<CellObservation> = emptyList()
         private set
+
     @Volatile var lastScanMs = 0L
         private set
+
     @Volatile var lastFix: CellFix? = null
         private set
 
@@ -80,7 +82,12 @@ class CellScanner(
     /** One TelephonyManager per active SIM; falls back to the default one. */
     private fun managers(): List<Pair<Int, TelephonyManager>> {
         val ids = runCatching {
-            val slots = if (android.os.Build.VERSION.SDK_INT >= 30) telephony.activeModemCount else @Suppress("DEPRECATION") telephony.phoneCount
+            val slots = if (android.os.Build.VERSION.SDK_INT >= 30) {
+                telephony.activeModemCount
+            } else {
+                @Suppress("DEPRECATION")
+                telephony.phoneCount
+            }
             (0 until slots).flatMap { slot ->
                 if (android.os.Build.VERSION.SDK_INT >= 34) {
                     listOf(android.telephony.SubscriptionManager.getSubscriptionId(slot))
@@ -98,12 +105,15 @@ class CellScanner(
     private fun scan() {
         for ((subId, tm) in managers()) {
             runCatching {
-                tm.requestCellInfoUpdate(worker, object : TelephonyManager.CellInfoCallback() {
-                    override fun onCellInfo(cells: MutableList<CellInfo>) = onSimCells(subId, cells)
-                    override fun onError(errorCode: Int, detail: Throwable?) {
-                        runCatching { tm.allCellInfo }.getOrNull()?.let { onSimCells(subId, it) }
-                    }
-                })
+                tm.requestCellInfoUpdate(
+                    worker,
+                    object : TelephonyManager.CellInfoCallback() {
+                        override fun onCellInfo(cells: MutableList<CellInfo>) = onSimCells(subId, cells)
+                        override fun onError(errorCode: Int, detail: Throwable?) {
+                            runCatching { tm.allCellInfo }.getOrNull()?.let { onSimCells(subId, it) }
+                        }
+                    },
+                )
             }.onFailure { log("cell_scan_failed sub=$subId ${it.javaClass.simpleName}: ${it.message}") }
         }
     }
@@ -131,7 +141,9 @@ class CellScanner(
             lastScanLogMs = now
             val matches = observations.associate { it.key to runCatching { db.resolve(it.key)?.second }.getOrNull() }
             val list = observations.joinToString(" ") { o ->
-                "${o.key.radio}:${o.key.mcc}-${o.key.mnc}/${o.key.area}/${o.key.cid}${o.dbm?.let { "@$it" } ?: ""}${if (o.serving) "*" else ""}${matches[o.key]?.symbol ?: "?"}${if (o.key.radio in radios) "" else "(off)"}"
+                "${o.key.radio}:${o.key.mcc}-${o.key.mnc}/${o.key.area}/${o.key.cid}${o.dbm?.let {
+                    "@$it"
+                } ?: ""}${if (o.serving) "*" else ""}${matches[o.key]?.symbol ?: "?"}${if (o.key.radio in radios) "" else "(off)"}"
             }
             main.post { log("cell_scan seen=${observations.size} known=${matches.values.count { it != null }} $list") }
         }
@@ -176,29 +188,40 @@ class CellScanner(
                         timingAdvance = s.timingAdvance.takeIf(::valid),
                     )
                 }
+
                 is CellInfoGsm -> {
                     val id = c.cellIdentity
                     if (!valid(id.cid) || !valid(id.lac)) return@mapNotNull null
                     CellObservation(CellKey(Radio.GSM, mcc, mnc, id.lac, id.cid.toLong()), c.cellSignalStrength.dbm.takeIf(::valid), c.isRegistered)
                 }
+
                 is CellInfoWcdma -> {
                     val id = c.cellIdentity
                     if (!valid(id.cid) || !valid(id.lac)) return@mapNotNull null
                     CellObservation(CellKey(Radio.UMTS, mcc, mnc, id.lac, id.cid.toLong()), c.cellSignalStrength.dbm.takeIf(::valid), c.isRegistered)
                 }
+
                 is CellInfoNr -> {
                     val id = c.cellIdentity as CellIdentityNr
                     if (id.nci == CellInfo.UNAVAILABLE_LONG || !valid(id.tac)) return@mapNotNull null
                     val s = c.cellSignalStrength as CellSignalStrengthNr
                     CellObservation(CellKey(Radio.NR, mcc, mnc, id.tac, id.nci), s.ssRsrp.takeIf(::valid) ?: s.dbm.takeIf(::valid), c.isRegistered)
                 }
+
                 else -> null
             }
         }
     }
 
     private fun operator(c: CellInfo): Pair<Int?, Int?> {
-        val id = c.cellIdentity
+        // CellInfo.getCellIdentity() exists only since API 30; the typed subclasses have it since API 17/29.
+        val id: Any? = when (c) {
+            is CellInfoLte -> c.cellIdentity
+            is CellInfoGsm -> c.cellIdentity
+            is CellInfoWcdma -> c.cellIdentity
+            is CellInfoNr -> c.cellIdentity
+            else -> null
+        }
         val mcc = when (id) {
             is android.telephony.CellIdentityLte -> id.mccString
             is android.telephony.CellIdentityGsm -> id.mccString

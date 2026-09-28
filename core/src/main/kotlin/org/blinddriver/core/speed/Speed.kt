@@ -67,8 +67,7 @@ class NetSpeedEstimator {
     }
 
     /** Try short windows first for responsiveness, fall back to 90 s. */
-    fun estimate(nowMs: Long): SpeedEstimate? =
-        estimate(nowMs, 30_000, 15.0) ?: estimate(nowMs, 40_000, 20.0) ?: strictEstimate(nowMs)
+    fun estimate(nowMs: Long): SpeedEstimate? = estimate(nowMs, 30_000, 15.0) ?: estimate(nowMs, 40_000, 20.0) ?: strictEstimate(nowMs)
 
     fun strictEstimate(nowMs: Long): SpeedEstimate? = estimate(nowMs, 90_000, 30.0)
 

@@ -40,8 +40,7 @@ class EngineSimulationTest {
         return Route(pts, steps, 160.0, maxspeedKmh = List(pts.size - 1) { 50 })
     }
 
-    private fun truthPoint(d: Double): GeoPoint =
-        if (d <= 800) proj.toGeo(0.0, d) else proj.toGeo(minOf(d - 800, 800.0), 800.0)
+    private fun truthPoint(d: Double): GeoPoint = if (d <= 800) proj.toGeo(0.0, d) else proj.toGeo(minOf(d - 800, 800.0), 800.0)
 
     private class Result(val state: GuidanceState, val truthD: Double, val logs: List<String>, val spoken: List<String>, val reroutes: Int, val maxSBeforeTurn: Double)
 

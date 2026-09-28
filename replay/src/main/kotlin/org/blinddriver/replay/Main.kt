@@ -55,7 +55,10 @@ fun main(args: Array<String>) {
         }
     }
     print(summary)
-    outDir?.let { File(it, "summary.txt").writeText(summary.toString()); println("report written to ${it.absolutePath}") }
+    outDir?.let {
+        File(it, "summary.txt").writeText(summary.toString())
+        println("report written to ${it.absolutePath}")
+    }
 }
 
 private fun applyOverrides(base: Tuning, spec: String?): Tuning {
@@ -78,7 +81,7 @@ private fun errorsCsv(r: ReplayResult): String = buildString {
                 Locale.US, "%.1f,%.6f,%.6f,%.6f,%.6f,%.1f,%.1f,%.1f,%.0f,%s,%d",
                 (s.elapsedMs - t0) / 1000.0, s.engine.lat, s.engine.lon, s.truth.lat, s.truth.lon, s.alongErrorM, s.errorM,
                 s.truthOffRouteM, s.uncertaintyM, s.source.label, if (s.blind) 1 else 0,
-            )
+            ),
         )
     }
 }

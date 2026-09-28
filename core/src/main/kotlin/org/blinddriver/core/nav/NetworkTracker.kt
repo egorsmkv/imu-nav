@@ -85,8 +85,7 @@ class NetworkTracker {
         return GateResult.REJECTED
     }
 
-    private fun reachable(from: Anchor, t: Double, s: Double, acc: Double): Boolean =
-        abs(s - from.s) <= max(0.0, t - from.tS) * MAX_SPEED_MPS + from.acc + acc
+    private fun reachable(from: Anchor, t: Double, s: Double, acc: Double): Boolean = abs(s - from.s) <= max(0.0, t - from.tS) * MAX_SPEED_MPS + from.acc + acc
 
     private fun slope(points: List<Anchor>): Double {
         val tMean = points.sumOf { it.tS } / points.size

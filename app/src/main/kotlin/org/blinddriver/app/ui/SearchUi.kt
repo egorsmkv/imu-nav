@@ -46,6 +46,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -71,7 +72,7 @@ fun SearchPill(onClick: () -> Unit, modifier: Modifier = Modifier) {
 /** Full-screen search: type-ahead offline results (online fallback), recent picks when empty. */
 @Composable
 fun SearchScreen(search: PlaceSearch, near: GeoPoint?, onPick: (SearchResult) -> Unit, onClose: () -> Unit) {
-    val res = LocalContext.current.resources
+    val res = LocalResources.current
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
@@ -112,13 +113,25 @@ fun SearchScreen(search: PlaceSearch, near: GeoPoint?, onPick: (SearchResult) ->
             )
             if (loading) LinearProgressIndicator(Modifier.fillMaxWidth()) else HorizontalDivider()
             if (!search.hasOffline) {
-                Text(stringResource(R.string.search_offline_missing), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp))
+                Text(
+                    stringResource(R.string.search_offline_missing),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(16.dp),
+                )
             }
             val showRecent = query.trim().length < 2
             val list = if (showRecent) search.recent() else results
             LazyColumn(Modifier.fillMaxSize()) {
                 if (showRecent && list.isNotEmpty()) {
-                    item { Text(stringResource(R.string.search_recent), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(16.dp)) }
+                    item {
+                        Text(
+                            stringResource(R.string.search_recent),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(16.dp),
+                        )
+                    }
                 }
                 if (!showRecent && !loading && list.isEmpty()) {
                     item { Text(stringResource(R.string.search_no_results), modifier = Modifier.padding(24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -129,7 +142,8 @@ fun SearchScreen(search: PlaceSearch, near: GeoPoint?, onPick: (SearchResult) ->
                         headlineContent = { Text(r.title) },
                         supportingContent = {
                             val parts = listOfNotNull(
-                                r.subtitle.takeIf { it.isNotBlank() && r.kind != ResultKind.PLACE }, kindLabel,
+                                r.subtitle.takeIf { it.isNotBlank() && r.kind != ResultKind.PLACE },
+                                kindLabel,
                                 r.distanceM?.let { formatDistance(res, it) },
                                 if (r.source == "online") stringResource(R.string.search_online_badge) else null,
                             )

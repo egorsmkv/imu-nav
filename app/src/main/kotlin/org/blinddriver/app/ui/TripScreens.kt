@@ -1,6 +1,5 @@
 package org.blinddriver.app.ui
 
-import android.graphics.Color as AColor
 import android.text.format.DateFormat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -54,9 +53,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.graphics.toColorInt
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -83,6 +85,7 @@ import org.maplibre.android.style.sources.GeoJsonSource
 import org.maplibre.geojson.Feature
 import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
+import android.graphics.Color as AColor
 
 private val GpsGreen = Color(0xFF1E8E3E)
 private val EngineRed = Color(0xFFD93025)
@@ -91,7 +94,7 @@ private val MatchedBlue = Color(0xFF1A73E8)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryScreen(g: AppGraph, onBack: () -> Unit, onOpen: (TripSummary) -> Unit) {
-    val res = LocalContext.current.resources
+    val res = LocalResources.current
     val trips by g.trips.history.collectAsStateWithLifecycle()
     Scaffold(
         topBar = {
@@ -114,7 +117,13 @@ fun HistoryScreen(g: AppGraph, onBack: () -> Unit, onOpen: (TripSummary) -> Unit
                     Column(Modifier.padding(20.dp)) {
                         Text(formatDistance(res, t.drivenM), style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
                         Text(
-                            stringResource(R.string.history_totals, t.trips, formatDuration(res, t.durationS), stringResource(R.string.history_blind_total, formatDistance(res, t.blindM))),
+                            pluralStringResource(
+                                R.plurals.history_totals,
+                                t.trips,
+                                t.trips,
+                                formatDuration(res, t.durationS),
+                                stringResource(R.string.history_blind_total, formatDistance(res, t.blindM)),
+                            ),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
@@ -129,7 +138,7 @@ fun HistoryScreen(g: AppGraph, onBack: () -> Unit, onOpen: (TripSummary) -> Unit
 @Composable
 private fun TripRow(t: TripSummary, onClick: () -> Unit) {
     val context = LocalContext.current
-    val res = context.resources
+    val res = LocalResources.current
     val date = DateFormat.getMediumDateFormat(context).format(java.util.Date(t.startWallMs)) + " " +
         DateFormat.getTimeFormat(context).format(java.util.Date(t.startWallMs))
     val blindPct = if (t.durationS > 0) (t.blindS / t.durationS * 100).toInt().coerceIn(0, 100) else 0
@@ -151,7 +160,7 @@ private fun TripRow(t: TripSummary, onClick: () -> Unit) {
 @Composable
 fun TripDetailScreen(g: AppGraph, trip: TripSummary, onBack: () -> Unit) {
     val context = LocalContext.current
-    val res = context.resources
+    val res = LocalResources.current
     val scope = rememberCoroutineScope()
     var tracks by remember { mutableStateOf<TripTracks?>(null) }
     var matched by remember { mutableStateOf<List<GeoPoint>?>(null) }
@@ -170,8 +179,10 @@ fun TripDetailScreen(g: AppGraph, trip: TripSummary, onBack: () -> Unit) {
         topBar = {
             TopAppBar(
                 title = {
-                    Text(DateFormat.getMediumDateFormat(context).format(java.util.Date(trip.startWallMs)) + " " +
-                        DateFormat.getTimeFormat(context).format(java.util.Date(trip.startWallMs)))
+                    Text(
+                        DateFormat.getMediumDateFormat(context).format(java.util.Date(trip.startWallMs)) + " " +
+                            DateFormat.getTimeFormat(context).format(java.util.Date(trip.startWallMs)),
+                    )
                 },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.cd_back)) } },
                 actions = { IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Filled.Delete, stringResource(R.string.action_delete)) } },
@@ -248,7 +259,11 @@ fun TripDetailScreen(g: AppGraph, trip: TripSummary, onBack: () -> Unit) {
             onDismissRequest = { confirmDelete = false },
             title = { Text(stringResource(R.string.trip_delete_title)) },
             confirmButton = {
-                TextButton(onClick = { confirmDelete = false; g.trips.delete(trip); onBack() }) {
+                TextButton(onClick = {
+                    confirmDelete = false
+                    g.trips.delete(trip)
+                    onBack()
+                }) {
                     Text(stringResource(R.string.action_delete), color = MaterialTheme.colorScheme.error)
                 }
             },
@@ -313,12 +328,12 @@ private fun TrackMap(gps: List<GeoPoint>, engine: List<GeoPoint>, matched: List<
                     s.addSource(GeoJsonSource(id))
                     s.addLayer(
                         LineLayer("$id-line", id).withProperties(
-                            PropertyFactory.lineColor(AColor.parseColor(color)),
+                            PropertyFactory.lineColor(color.toColorInt()),
                             PropertyFactory.lineWidth(width),
                             PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
                             PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
                             PropertyFactory.lineOpacity(if (id == "matched") 0.6f else 0.9f),
-                        ).also { if (id == "engine") it.setProperties(PropertyFactory.lineDasharray(arrayOf(2f, 1.5f))) }
+                        ).also { if (id == "engine") it.setProperties(PropertyFactory.lineDasharray(arrayOf(2f, 1.5f))) },
                     )
                 }
                 mapRef = m
@@ -331,8 +346,11 @@ private fun TrackMap(gps: List<GeoPoint>, engine: List<GeoPoint>, matched: List<
         val s = style ?: return@LaunchedEffect
         fun set(id: String, pts: List<GeoPoint>) {
             val src = s.getSourceAs<GeoJsonSource>(id) ?: return
-            if (pts.size < 2) src.setGeoJson(org.maplibre.geojson.FeatureCollection.fromFeatures(emptyList()))
-            else src.setGeoJson(Feature.fromGeometry(LineString.fromLngLats(pts.map { Point.fromLngLat(it.lon, it.lat) })))
+            if (pts.size < 2) {
+                src.setGeoJson(org.maplibre.geojson.FeatureCollection.fromFeatures(emptyList()))
+            } else {
+                src.setGeoJson(Feature.fromGeometry(LineString.fromLngLats(pts.map { Point.fromLngLat(it.lon, it.lat) })))
+            }
         }
         set("gps", gps)
         set("engine", engine)

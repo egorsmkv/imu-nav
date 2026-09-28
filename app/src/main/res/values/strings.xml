@@ -96,7 +96,6 @@
     <string name="cd_settings">Settings</string>
     <string name="cd_back">Back</string>
     <string name="legend_seen_now">seen now</string>
-    <string name="legend_count">%1$d towers</string>
     <string name="legend_sample">Sample of %1$d — zoom in for all</string>
     <string name="legend_zoom_in">Zoom in to see towers</string>
 
@@ -119,7 +118,7 @@
     <string name="diag_sensors">Sensors</string>
     <string name="diag_sensors_full">Gyroscope and compass available</string>
     <string name="diag_open_log">Open trip log</string>
-    <string name="none">—</string>
+    <string name="none" translatable="false">—</string>
 
     <!-- Settings -->
     <string name="settings_title">Settings</string>
@@ -154,7 +153,6 @@
     <string name="sync_http_warning">http:// sends the API key unencrypted — use https:// outside your own network</string>
     <string name="sync_auto">Sync automatically</string>
     <string name="sync_auto_summary">Every 6 hours and after trips</string>
-    <string name="action_save">Save</string>
     <string name="action_sync_now">Sync now</string>
     <string name="sync_last">Last sync: %1$s</string>
 
@@ -169,7 +167,6 @@
     <string name="reset_summary">Delete downloaded towers and reload the built-in database</string>
     <string name="reset_title">Reset tower database?</string>
     <string name="reset_text">Removes OpenCellID, Mozilla and sharing-server towers, then reloads the built-in database. Downloads can be repeated later.</string>
-    <string name="reset_learned">Also delete %1$d towers learned by this phone</string>
     <string name="action_reset_confirm">Reset</string>
 
     <string name="sec_diagnostics">Diagnostics</string>
@@ -184,27 +181,27 @@
     <string name="about_disclaimer">Research prototype. Never rely on it as a safety system.</string>
 
     <!-- Background tasks -->
-    <string name="task_importing">Importing… %1$d of %2$d rows</string>
-    <string name="task_imported">Imported %1$d towers</string>
+    <string name="task_importing">Importing… kept %1$d, read %2$d</string>
+    <string name="task_imported">Towers imported: %1$d</string>
     <string name="task_downloading_ocid">Downloading OpenCellID… %1$d KB</string>
-    <string name="task_importing_towers">Importing… %1$d towers</string>
-    <string name="task_ocid_done">OpenCellID: imported %1$d towers</string>
+    <string name="task_importing_towers">Importing… towers: %1$d</string>
+    <string name="task_ocid_done">OpenCellID: towers imported: %1$d</string>
     <string name="task_connecting">Connecting…</string>
     <string name="task_mozilla_progress">Mozilla: %1$d of %2$d MB (%3$d%%)</string>
-    <string name="task_mozilla_done">Mozilla: imported %1$d towers</string>
+    <string name="task_mozilla_done">Mozilla: towers imported: %1$d</string>
     <string name="task_syncing">Syncing…</string>
-    <string name="task_uploading">Uploading %1$d towers…</string>
+    <string name="task_uploading">Uploading towers: %1$d…</string>
     <string name="task_downloading_shared">Downloading shared towers…</string>
-    <string name="task_sync_done">Sync: sent %1$d, received %2$d towers</string>
+    <string name="task_sync_done">Sync: towers sent %1$d, received %2$d</string>
     <string name="task_sync_no_url">Set a server URL first</string>
-    <string name="task_exporting">Exporting… %1$d towers</string>
-    <string name="task_exported">Exported %1$d towers (%2$d KB)</string>
+    <string name="task_exporting">Exporting… towers: %1$d</string>
+    <string name="task_exported">Towers exported: %1$d (%2$d KB)</string>
     <string name="task_clearing">Clearing tower database…</string>
     <string name="task_compacting">Compacting database…</string>
     <string name="task_cleared">Tower database cleared</string>
     <string name="task_cleared_kept">Tower database cleared (learned towers kept)</string>
     <string name="task_bundled_progress">Preparing built-in towers… %1$d</string>
-    <string name="task_bundled_done">Built-in database ready: %1$d towers</string>
+    <string name="task_bundled_done">Built-in database ready, towers: %1$d</string>
     <string name="task_cancelled">Cancelled</string>
     <string name="task_failed">Failed: %1$s</string>
 
@@ -216,7 +213,7 @@
     <string name="power_performance">Max accuracy</string>
     <string name="power_balanced">Balanced</string>
     <string name="power_saver">Battery saver</string>
-    <string name="power_auto_hint">Max accuracy on a charger, battery saver below 20 % or when the phone\'s battery saver is on, balanced otherwise.</string>
+    <string name="power_auto_hint" formatted="false">Max accuracy on a charger, battery saver below 20 % or when the phone\'s battery saver is on, balanced otherwise.</string>
     <string name="power_auto_now">Now: %1$s · battery %2$s</string>
     <string name="power_performance_hint">Sensors at 50 Hz, cell scans every 5 s, smooth 60 fps map. Best dead reckoning, highest drain.</string>
     <string name="power_balanced_hint">Sensors at 25 Hz, cell scans every 5–10 s, 30 fps map. Recommended.</string>
@@ -250,7 +247,6 @@
     <string name="history_title">Trip history</string>
     <string name="cd_history">Trip history</string>
     <string name="history_empty">No trips yet. Finished trips appear here with their stats.</string>
-    <string name="history_totals">%1$d trips · %2$s · %3$s</string>
     <string name="history_blind_total">%1$s driven without GPS</string>
     <string name="trip_line">%1$s · %2$s · %3$d%% without GPS</string>
     <string name="trip_arrived">Arrived</string>
@@ -295,4 +291,16 @@
     <string name="kind_quarter">quarter</string>
     <string name="kind_neighbourhood">neighbourhood</string>
     <string name="cd_clear">Clear</string>
+    <plurals name="legend_count">
+        <item quantity="one">%1$d tower</item>
+        <item quantity="other">%1$d towers</item>
+    </plurals>
+    <plurals name="reset_learned">
+        <item quantity="one">Also delete the %1$d tower learned by this phone</item>
+        <item quantity="other">Also delete %1$d towers learned by this phone</item>
+    </plurals>
+    <plurals name="history_totals">
+        <item quantity="one">%1$d trip · %2$s · %3$s</item>
+        <item quantity="other">%1$d trips · %2$s · %3$s</item>
+    </plurals>
 </resources>

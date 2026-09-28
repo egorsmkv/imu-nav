@@ -51,8 +51,7 @@ class LocalProjection(val origin: GeoPoint) {
     fun x(p: GeoPoint): Double = (p.lon - origin.lon) * mPerDegLon
     fun y(p: GeoPoint): Double = (p.lat - origin.lat) * Geo.M_PER_DEG_LAT
 
-    fun toGeo(x: Double, y: Double): GeoPoint =
-        GeoPoint(origin.lat + y / Geo.M_PER_DEG_LAT, origin.lon + x / mPerDegLon)
+    fun toGeo(x: Double, y: Double): GeoPoint = GeoPoint(origin.lat + y / Geo.M_PER_DEG_LAT, origin.lon + x / mPerDegLon)
 }
 
 /** Simple polygon (ring of lon/lat vertices) with a bounding box pre-check. */
@@ -117,9 +116,9 @@ fun interface ServiceArea {
                         28.2, 45.45, 28.9, 46.3, 29.9, 46.55, 29.2, 47.1, 29.6, 47.9, 27.6, 48.45,
                         26.6, 48.3, 25.2, 47.75, 24.1, 47.9, 22.9, 48.05, 22.15, 48.4, 22.6, 49.1,
                         23.6, 50.4, 24.05, 50.85,
-                    )
-                )
-            )
+                    ),
+                ),
+            ),
         )
     }
 }

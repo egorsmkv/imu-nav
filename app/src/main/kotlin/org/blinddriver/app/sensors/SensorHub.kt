@@ -32,12 +32,7 @@ import kotlin.math.sqrt
  *
  * All callbacks are delivered on the main looper.
  */
-class SensorHub(
-    context: Context,
-    private val hub: PositioningHub,
-    private val onImu: (ImuSample) -> Unit,
-    private val log: (String) -> Unit,
-) {
+class SensorHub(context: Context, private val hub: PositioningHub, private val onImu: (ImuSample) -> Unit, private val log: (String) -> Unit) {
     private val locationManager = context.getSystemService(LocationManager::class.java)
     private val sensorManager = context.getSystemService(SensorManager::class.java)
     private val handler = Handler(Looper.getMainLooper())
@@ -274,11 +269,17 @@ class SensorHub(
         accuracyM = if (hasAccuracy()) accuracy else null,
         verticalAccuracyM = if (hasVerticalAccuracy()) verticalAccuracyMeters else null,
         speedAccuracyMps = if (hasSpeedAccuracy()) speedAccuracyMetersPerSecond else null,
-        isMock = if (Build.VERSION.SDK_INT >= 31) isMock else @Suppress("DEPRECATION") isFromMockProvider,
+        isMock = if (Build.VERSION.SDK_INT >= 31) {
+            isMock
+        } else {
+            @Suppress("DEPRECATION")
+            isFromMockProvider
+        },
     )
 
     private companion object {
         const val TAG = "SensorHub"
+
         /** 5 Hz: enough for heading and gyro-bias learning when no route is being followed. */
         const val IDLE_IMU_PERIOD_US = 200_000
     }

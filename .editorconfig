@@ -1,0 +1,27 @@
+# Code style for ktlint (run via Spotless: ./gradlew spotlessCheck / spotlessApply) and IDEs.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{kt,kts}]
+ktlint_code_style = intellij_idea
+max_line_length = 180
+# Allow trailing commas but do not require them everywhere.
+ij_kotlin_allow_trailing_comma = true
+ij_kotlin_allow_trailing_comma_on_call_site = true
+# Compose: composable functions are PascalCase.
+ktlint_function_naming_ignore_when_annotated_with = Composable
+# Files are named after their topic (Format.kt, BuildGraph.kt) — same as detekt's MatchingDeclarationName.
+ktlint_standard_filename = disabled
+
+[*.{xml,json,yml,md}]
+indent_size = 2
+
+[*.xml]
+indent_size = 4

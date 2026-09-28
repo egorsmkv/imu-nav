@@ -81,7 +81,11 @@ object AddressSearch {
                 val hits = runCatching { db.addresses(st.id, number) }.getOrDefault(emptyList())
                 for (a in hits.take(2)) {
                     out += -1e9 + (dist(a.lat, a.lon) ?: 0.0) to SearchResult(
-                        ResultKind.ADDRESS, "${st.name}, ${a.number}", st.placeName.orEmpty(), GeoPoint(a.lat, a.lon), dist(a.lat, a.lon),
+                        ResultKind.ADDRESS,
+                        "${st.name}, ${a.number}",
+                        st.placeName.orEmpty(),
+                        GeoPoint(a.lat, a.lon),
+                        dist(a.lat, a.lon),
                     )
                 }
             }

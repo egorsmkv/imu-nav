@@ -53,6 +53,6 @@ fun main(args: Array<String>) {
     println(
         "[cells] ${if (tls != null) "https" else "http"} on port ${server.port}: ${store.size} published towers, " +
             "${store.contributionCount} contributions; uploads ${if (apiKey.isNullOrBlank()) "open" else "require API key"}, " +
-            "publish after ${policy.minDevices} device(s)"
+            "publish after ${policy.minDevices} device(s)",
     )
 }

@@ -3,6 +3,7 @@ package org.blinddriver.app.cells
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import androidx.core.database.sqlite.transaction
 import org.blinddriver.core.cells.CellCsv
 import org.blinddriver.core.cells.CellKey
 import org.blinddriver.core.cells.CellLearning
@@ -29,7 +30,9 @@ enum class CellSource(val table: String, val label: String) {
 }
 
 /** Offline cell tower locations from several sources, one table each. */
-class CellDatabase(context: Context) : SQLiteOpenHelper(context, "cells.db", null, 5), CellTowerDb {
+class CellDatabase(context: Context) :
+    SQLiteOpenHelper(context, "cells.db", null, 5),
+    CellTowerDb {
 
     override fun onCreate(db: SQLiteDatabase) {
         for (s in CellSource.entries) createTable(db, s.table)
@@ -60,7 +63,7 @@ class CellDatabase(context: Context) : SQLiteOpenHelper(context, "cells.db", nul
     private fun createTable(db: SQLiteDatabase, table: String) = db.execSQL(
         "CREATE TABLE IF NOT EXISTS $table (radio INTEGER NOT NULL, mcc INTEGER NOT NULL, mnc INTEGER NOT NULL, area INTEGER NOT NULL, " +
             "cid INTEGER NOT NULL, lat REAL NOT NULL, lon REAL NOT NULL, range REAL NOT NULL, samples INTEGER NOT NULL, " +
-            "PRIMARY KEY (mcc, mnc, area, cid, radio)) WITHOUT ROWID"
+            "PRIMARY KEY (mcc, mnc, area, cid, radio)) WITHOUT ROWID",
     )
 
     fun counts(): Map<CellSource, Long> {
@@ -73,8 +76,7 @@ class CellDatabase(context: Context) : SQLiteOpenHelper(context, "cells.db", nul
     /** How a cell was matched. */
     enum class Match(val symbol: String) { EXACT("✓"), CELL_ID("≈"), SITE("◌") }
 
-    override fun lookup(keys: Collection<CellKey>): Map<CellKey, CellTower> =
-        keys.mapNotNull { k -> resolve(k)?.let { k to it.first } }.toMap()
+    override fun lookup(keys: Collection<CellKey>): Map<CellKey, CellTower> = keys.mapNotNull { k -> resolve(k)?.let { k to it.first } }.toMap()
 
     /**
      * Find a tower for [k], trying progressively looser matches in every source:
@@ -106,17 +108,15 @@ class CellDatabase(context: Context) : SQLiteOpenHelper(context, "cells.db", nul
         return null
     }
 
-    private fun find(db: SQLiteDatabase, table: String, k: CellKey): CellTower? =
-        db.rawQuery(
-            "SELECT lat, lon, range, samples FROM $table WHERE mcc=? AND mnc=? AND area=? AND cid=? AND radio=?",
-            arrayOf(k.mcc.toString(), k.mnc.toString(), k.area.toString(), k.cid.toString(), k.radio.ordinal.toString()),
-        ).use { c -> if (c.moveToFirst()) CellTower(k, c.getDouble(0), c.getDouble(1), c.getDouble(2), c.getInt(3)) else null }
+    private fun find(db: SQLiteDatabase, table: String, k: CellKey): CellTower? = db.rawQuery(
+        "SELECT lat, lon, range, samples FROM $table WHERE mcc=? AND mnc=? AND area=? AND cid=? AND radio=?",
+        arrayOf(k.mcc.toString(), k.mnc.toString(), k.area.toString(), k.cid.toString(), k.radio.ordinal.toString()),
+    ).use { c -> if (c.moveToFirst()) CellTower(k, c.getDouble(0), c.getDouble(1), c.getDouble(2), c.getInt(3)) else null }
 
     /** Update learned towers for every cell heard at a trusted position. */
     fun learn(keys: Collection<CellKey>, lat: Double, lon: Double, accuracyM: Double, nowMs: Long = System.currentTimeMillis()) {
         val db = writableDatabase
-        db.beginTransaction()
-        try {
+        db.transaction {
             for (k in keys) {
                 val t = CellLearning.update(find(db, CellSource.LEARNED.table, k), k, lat, lon, accuracyM)
                 db.execSQL(
@@ -124,9 +124,6 @@ class CellDatabase(context: Context) : SQLiteOpenHelper(context, "cells.db", nul
                     arrayOf<Any>(t.key.radio.ordinal, t.key.mcc, t.key.mnc, t.key.area, t.key.cid, t.lat, t.lon, t.rangeM, t.samples, nowMs),
                 )
             }
-            db.setTransactionSuccessful()
-        } finally {
-            db.endTransaction()
         }
     }
 
@@ -151,20 +148,14 @@ class CellDatabase(context: Context) : SQLiteOpenHelper(context, "cells.db", nul
      * @param onProgress called every batch with (rows read, rows kept); return false to cancel
      * @return rows kept
      */
-    fun importStream(
-        source: CellSource,
-        input: InputStream,
-        mccs: Set<Int>? = null,
-        onProgress: (read: Long, kept: Long) -> Boolean = { _, _ -> true },
-    ): Long {
+    fun importStream(source: CellSource, input: InputStream, mccs: Set<Int>? = null, onProgress: (read: Long, kept: Long) -> Boolean = { _, _ -> true }): Long {
         val db = writableDatabase
         val stmt = db.compileStatement(
-            "INSERT OR REPLACE INTO ${source.table} (radio, mcc, mnc, area, cid, lat, lon, range, samples) VALUES (?,?,?,?,?,?,?,?,?)"
+            "INSERT OR REPLACE INTO ${source.table} (radio, mcc, mnc, area, cid, lat, lon, range, samples) VALUES (?,?,?,?,?,?,?,?,?)",
         )
         var read = 0L
         var kept = 0L
-        db.beginTransaction()
-        try {
+        db.transaction {
             CellCsv.read(input) { t ->
                 read++
                 if (mccs == null || t.key.mcc in mccs) {
@@ -182,15 +173,14 @@ class CellDatabase(context: Context) : SQLiteOpenHelper(context, "cells.db", nul
                     kept++
                 }
                 if (read % 50_000 == 0L) {
+                    // Commit in chunks. Open the next transaction before a possible cancel so the
+                    // enclosing transaction {} always has one to end.
                     db.setTransactionSuccessful()
                     db.endTransaction()
-                    if (!onProgress(read, kept)) throw InterruptedException("cancelled")
                     db.beginTransaction()
+                    if (!onProgress(read, kept)) throw InterruptedException("cancelled")
                 }
             }
-            db.setTransactionSuccessful()
-        } finally {
-            db.endTransaction()
         }
         onProgress(read, kept)
         return kept
@@ -199,17 +189,13 @@ class CellDatabase(context: Context) : SQLiteOpenHelper(context, "cells.db", nul
     fun upsert(source: CellSource, towers: List<CellTower>) {
         if (towers.isEmpty()) return
         val db = writableDatabase
-        db.beginTransaction()
-        try {
+        db.transaction {
             for (t in towers) {
                 db.execSQL(
                     "INSERT OR REPLACE INTO ${source.table} (radio, mcc, mnc, area, cid, lat, lon, range, samples) VALUES (?,?,?,?,?,?,?,?,?)",
                     arrayOf<Any>(t.key.radio.ordinal, t.key.mcc, t.key.mnc, t.key.area, t.key.cid, t.lat, t.lon, t.rangeM, t.samples),
                 )
             }
-            db.setTransactionSuccessful()
-        } finally {
-            db.endTransaction()
         }
     }
 

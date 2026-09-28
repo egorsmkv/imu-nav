@@ -2,6 +2,7 @@ package org.blinddriver.app.search
 
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
+import androidx.core.content.edit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.blinddriver.core.geo.Geo
@@ -22,14 +23,17 @@ import java.net.URLEncoder
 import java.util.Locale
 
 /** Read-only SQLite access to a pack's `search.db`. */
-class AndroidSearchDb(file: File) : SearchDb, AutoCloseable {
+class AndroidSearchDb(file: File) :
+    SearchDb,
+    AutoCloseable {
     private val db = SQLiteDatabase.openDatabase(file.absolutePath, null, SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.NO_LOCALIZED_COLLATORS)
 
-    override fun places(match: String, limit: Int): List<PlaceRow> =
-        db.rawQuery(
-            "SELECT p.id,p.name,p.kind,p.lat,p.lon,p.population FROM place_fts f JOIN place p ON p.id=f.rowid WHERE place_fts MATCH ? LIMIT ?",
-            arrayOf(match, limit.toString()),
-        ).use { c -> generateSequence { if (c.moveToNext()) PlaceRow(c.getLong(0), c.getString(1), c.getString(2), c.getDouble(3), c.getDouble(4), c.getInt(5)) else null }.toList() }
+    override fun places(match: String, limit: Int): List<PlaceRow> = db.rawQuery(
+        "SELECT p.id,p.name,p.kind,p.lat,p.lon,p.population FROM place_fts f JOIN place p ON p.id=f.rowid WHERE place_fts MATCH ? LIMIT ?",
+        arrayOf(match, limit.toString()),
+    ).use { c ->
+        generateSequence { if (c.moveToNext()) PlaceRow(c.getLong(0), c.getString(1), c.getString(2), c.getDouble(3), c.getDouble(4), c.getInt(5)) else null }.toList()
+    }
 
     override fun streets(match: String, limit: Int, placeIds: Collection<Long>?): List<StreetRow> {
         val filter = placeIds?.takeIf { it.isNotEmpty() }?.let { " AND s.place_id IN (${it.joinToString(",")})" }.orEmpty()
@@ -44,11 +48,10 @@ class AndroidSearchDb(file: File) : SearchDb, AutoCloseable {
         }
     }
 
-    override fun addresses(streetId: Long, number: String): List<AddressRow> =
-        db.rawQuery(
-            "SELECT number,lat,lon FROM addr WHERE street_id=? AND (number=? OR number LIKE ?) LIMIT 5",
-            arrayOf(streetId.toString(), number, "$number %"),
-        ).use { c -> generateSequence { if (c.moveToNext()) AddressRow(c.getString(0), c.getDouble(1), c.getDouble(2)) else null }.toList() }
+    override fun addresses(streetId: Long, number: String): List<AddressRow> = db.rawQuery(
+        "SELECT number,lat,lon FROM addr WHERE street_id=? AND (number=? OR number LIKE ?) LIMIT 5",
+        arrayOf(streetId.toString(), number, "$number %"),
+    ).use { c -> generateSequence { if (c.moveToNext()) AddressRow(c.getString(0), c.getDouble(1), c.getDouble(2)) else null }.toList() }
 
     override fun close() = db.close()
 }
@@ -83,7 +86,7 @@ class PlaceSearch(context: Context, private val offlineDb: () -> SearchDb?, priv
         val list = (listOf(r) + recent()).distinctBy { it.title to it.subtitle }.take(10)
         val a = JSONArray()
         list.forEach { a.put(JSONObject().put("k", it.kind.name).put("t", it.title).put("s", it.subtitle).put("lat", it.point.lat).put("lon", it.point.lon)) }
-        prefs.edit().putString("recent", a.toString()).apply()
+        prefs.edit { putString("recent", a.toString()) }
     }
 
     // ------------------------------------------------------------------ online fallback

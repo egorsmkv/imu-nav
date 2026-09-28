@@ -35,15 +35,22 @@ data class ReplaySample(
 )
 
 data class ReplayStats(val count: Int, val meanM: Double, val medianM: Double, val p95M: Double, val maxM: Double, val rmsM: Double) {
-    override fun toString() = if (count == 0) "n=0" else
+    override fun toString() = if (count == 0) {
+        "n=0"
+    } else {
         "n=$count mean=${meanM.roundToInt()} median=${medianM.roundToInt()} p95=${p95M.roundToInt()} max=${maxM.roundToInt()} rms=${rmsM.roundToInt()} m"
+    }
 
     companion object {
         fun of(values: List<Double>): ReplayStats {
             if (values.isEmpty()) return ReplayStats(0, 0.0, 0.0, 0.0, 0.0, 0.0)
             val s = values.sorted()
             return ReplayStats(
-                s.size, s.average(), s[s.size / 2], s[((s.size - 1) * 0.95).toInt()], s.last(),
+                s.size,
+                s.average(),
+                s[s.size / 2],
+                s[((s.size - 1) * 0.95).toInt()],
+                s.last(),
                 sqrt(s.sumOf { it * it } / s.size),
             )
         }
@@ -59,7 +66,7 @@ data class ReplayResult(
     val blind: ReplayStats,
     /** Along-track error while GPS was used (sanity check; should be small). */
     val withGps: ReplayStats,
-    /** Along-track error at the end of each blind stretch. */
+    /** Trusted GPS positions and the engine's positions at the same ticks (for maps). */
     val truthTrack: List<GeoPoint>,
     val engineTrack: List<GeoPoint>,
 ) {
@@ -81,17 +88,29 @@ data class ReplayResult(
  * @param hideGpsAfterS stop giving GPS to the engine this many seconds after navigation starts,
  *   to measure dead reckoning against the (still recorded) real track; null = replay as recorded.
  */
-class TripReplayer(
-    private val tuning: Tuning = Tuning.DEFAULT,
-    private val area: ServiceArea = ServiceArea.EVERYWHERE,
-) {
+class TripReplayer(private val tuning: Tuning = Tuning.DEFAULT, private val area: ServiceArea = ServiceArea.EVERYWHERE) {
     fun replay(events: List<TripEvent>, hideGpsAfterS: Double? = null): ReplayResult {
         val sorted = events.sortedBy { it.elapsedMs }
-        val log = ArrayList<String>()
-        var clockOffset = 0L
-        var nowElapsed = sorted.firstOrNull()?.elapsedMs ?: 0L
-        val hub = PositioningHub(area = area, wallClock = { nowElapsed + clockOffset })
-        val engine = NavigationEngine(
+        val session = Session(sorted.firstOrNull()?.elapsedMs ?: 0L, hideGpsAfterS)
+        var nextTick = Long.MIN_VALUE
+        for (e in sorted) {
+            if (nextTick == Long.MIN_VALUE) nextTick = e.elapsedMs
+            while (nextTick <= e.elapsedMs) {
+                session.tick(nextTick)
+                nextTick += NavigationEngine.TICK_MS
+            }
+            session.apply(e)
+        }
+        return session.result(sorted)
+    }
+
+    /** State of one replay run: the pipeline under test plus what has been measured so far. */
+    private inner class Session(startElapsedMs: Long, private val hideGpsAfterS: Double?) {
+        private var clockOffset = 0L
+        private var nowElapsed = startElapsedMs
+        private val log = ArrayList<String>()
+        private val hub = PositioningHub(area = area, wallClock = { nowElapsed + clockOffset })
+        private val engine = NavigationEngine(
             tuning = { tuning },
             speedProfile = SpeedProfile(),
             listener = object : NavListener {
@@ -100,14 +119,13 @@ class TripReplayer(
                 }
             },
         )
-        val samples = ArrayList<ReplaySample>()
-        val truthTrack = ArrayList<GeoPoint>()
-        val engineTrack = ArrayList<GeoPoint>()
-        var navStartMs: Long? = null
-        var blindFrom: Long? = null
-        var pendingStart: TripEvent.Start? = null
-        var lastTruth: RawFix? = null
-        var nextTick = Long.MIN_VALUE
+        private val samples = ArrayList<ReplaySample>()
+        private val truthTrack = ArrayList<GeoPoint>()
+        private val engineTrack = ArrayList<GeoPoint>()
+        private var navStartMs: Long? = null
+        private var blindFrom: Long? = null
+        private var pendingStart: TripEvent.Start? = null
+        private var lastTruth: RawFix? = null
 
         fun tick(t: Long) {
             nowElapsed = t
@@ -130,52 +148,62 @@ class TripReplayer(
             engineTrack += pos
         }
 
-        for (e in sorted) {
-            if (nextTick == Long.MIN_VALUE) nextTick = e.elapsedMs
-            while (nextTick <= e.elapsedMs) {
-                tick(nextTick)
-                nextTick += NavigationEngine.TICK_MS
-            }
+        fun apply(e: TripEvent) {
             nowElapsed = e.elapsedMs
             when (e) {
-                is TripEvent.Fix -> {
-                    if (e.fix.source == FixSource.GPS && clockOffset == 0L) clockOffset = e.fix.timeMs - e.fix.elapsedMs
-                    val verdict = hub.onFix(e.fix)
-                    if (e.fix.source == FixSource.GPS && verdict?.level == TrustLevel.GOOD) lastTruth = e.fix
-                }
+                is TripEvent.Fix -> onFix(e.fix)
+
                 is TripEvent.Imu -> {
                     hub.onOrientation(e.sample.headingDeg, e.sample.yawRateDegS, e.elapsedMs)
                     engine.onImu(e.sample, hub.gyroBias.biasDegS)
                 }
+
                 is TripEvent.Gnss -> hub.onGnssStatus(e.visible, e.used, e.meanCn0Used, e.cn0SpreadUsed, e.meanCn0Visible, e.dualFrequencyUsed, e.elapsedMs)
+
                 is TripEvent.Agc -> hub.onAgc(e.agcDb, e.elapsedMs)
+
                 is TripEvent.Start -> pendingStart = e
-                is TripEvent.RouteSet -> {
-                    val start = pendingStart
-                    if (engine.route == null && start != null) {
-                        engine.start(e.route, start.destination, start.waypoints, e.elapsedMs, start.startAccuracyM)
-                        navStartMs = e.elapsedMs
-                    } else {
-                        engine.setRoute(e.route, e.elapsedMs)
-                    }
-                }
+
+                is TripEvent.RouteSet -> onRoute(e)
+
                 is TripEvent.Stop -> engine.stop()
+
                 is TripEvent.Estimate -> Unit
             }
         }
-        val first = sorted.firstOrNull()?.elapsedMs ?: 0L
-        val last = sorted.lastOrNull()?.elapsedMs ?: 0L
-        // Only compare while the car was on the planned route; off-route stretches are reroutes, not DR error.
-        val onRoute = samples.filter { it.truthOffRouteM < 60.0 }
-        return ReplayResult(
-            samples = samples,
-            log = log,
-            durationS = (last - first) / 1000.0,
-            blindFromMs = blindFrom?.let { it - (navStartMs ?: it) },
-            blind = ReplayStats.of(onRoute.filter { it.blind }.map { it.alongErrorM }),
-            withGps = ReplayStats.of(onRoute.filter { !it.blind }.map { it.alongErrorM }),
-            truthTrack = truthTrack,
-            engineTrack = engineTrack,
-        )
+
+        private fun onFix(fix: RawFix) {
+            if (fix.source == FixSource.GPS && clockOffset == 0L) clockOffset = fix.timeMs - fix.elapsedMs
+            val verdict = hub.onFix(fix)
+            // Ground truth = GPS fixes the classifier itself trusts.
+            if (fix.source == FixSource.GPS && verdict?.level == TrustLevel.GOOD) lastTruth = fix
+        }
+
+        private fun onRoute(e: TripEvent.RouteSet) {
+            val start = pendingStart
+            if (engine.route == null && start != null) {
+                engine.start(e.route, start.destination, start.waypoints, e.elapsedMs, start.startAccuracyM)
+                navStartMs = e.elapsedMs
+            } else {
+                engine.setRoute(e.route, e.elapsedMs)
+            }
+        }
+
+        fun result(sorted: List<TripEvent>): ReplayResult {
+            val first = sorted.firstOrNull()?.elapsedMs ?: 0L
+            val last = sorted.lastOrNull()?.elapsedMs ?: 0L
+            // Only compare while the car was on the planned route; off-route stretches are reroutes, not DR error.
+            val onRoute = samples.filter { it.truthOffRouteM < 60.0 }
+            return ReplayResult(
+                samples = samples,
+                log = log,
+                durationS = (last - first) / 1000.0,
+                blindFromMs = blindFrom?.let { it - (navStartMs ?: it) },
+                blind = ReplayStats.of(onRoute.filter { it.blind }.map { it.alongErrorM }),
+                withGps = ReplayStats.of(onRoute.filter { !it.blind }.map { it.alongErrorM }),
+                truthTrack = truthTrack,
+                engineTrack = engineTrack,
+            )
+        }
     }
 }

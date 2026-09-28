@@ -1,6 +1,7 @@
 package org.blinddriver.app.routing
 
 import android.content.Context
+import androidx.core.content.edit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -50,7 +51,7 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
         private set
 
     private val _status = MutableStateFlow(
-        OfflineRoutingStatus(allowOnline = prefs.getBoolean("allow_online", true), packUrl = prefs.getString("pack_url", "").orEmpty())
+        OfflineRoutingStatus(allowOnline = prefs.getBoolean("allow_online", true), packUrl = prefs.getString("pack_url", "").orEmpty()),
     )
     val status: StateFlow<OfflineRoutingStatus> = _status.asStateFlow()
 
@@ -83,7 +84,7 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
     /** Unpack the pack shipped with the app (also offered in Settings after it was removed). */
     fun installBundled() {
         val bundled = bundledInfo ?: return
-        prefs.edit().remove("bundled_declined").apply()
+        prefs.edit { remove("bundled_declined") }
         runTask(str(R.string.routing_preparing_builtin, 0, (bundled.sizeBytes / 1_048_576).toInt())) {
             withContext(Dispatchers.IO) {
                 context.assets.open(BUNDLED_ZIP).use { install(it, totalBytes = bundled.sizeBytes) }
@@ -130,12 +131,12 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
     }
 
     fun setAllowOnline(on: Boolean) {
-        prefs.edit().putBoolean("allow_online", on).apply()
+        prefs.edit { putBoolean("allow_online", on) }
         _status.update { it.copy(allowOnline = on) }
     }
 
     fun setPackUrl(url: String) {
-        prefs.edit().putString("pack_url", url.trim()).apply()
+        prefs.edit { putString("pack_url", url.trim()) }
         _status.update { it.copy(packUrl = url.trim()) }
     }
 
@@ -167,7 +168,7 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
 
     fun remove() = runTask(str(R.string.routing_removing)) {
         // Do not silently reinstall the bundled pack the user just removed.
-        bundledInfo?.let { prefs.edit().putString("bundled_declined", it.builtAt).apply() }
+        bundledInfo?.let { prefs.edit { putString("bundled_declined", it.builtAt) } }
         withContext(Dispatchers.IO) {
             synchronized(this@OfflineRouting) {
                 graph?.close()
@@ -184,7 +185,10 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
     /** Unzip into a staging folder, validate, then atomically replace the current pack. */
     private suspend fun install(input: InputStream, totalBytes: Long = 0): String {
         val ctx = coroutineContext
-        val staging = File(root, "staging").apply { deleteRecursively(); mkdirs() }
+        val staging = File(root, "staging").apply {
+            deleteRecursively()
+            mkdirs()
+        }
         var bytes = 0L
         ZipInputStream(input.buffered(1 shl 16)).use { zip ->
             val buf = ByteArray(1 shl 16)
@@ -202,8 +206,11 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
                     }
                 }
                 progress(
-                    if (totalBytes > 0) str(R.string.routing_preparing_builtin, (bytes / 1_048_576).toInt(), (totalBytes / 1_048_576).toInt())
-                    else str(R.string.routing_installing, (bytes / 1_048_576).toInt())
+                    if (totalBytes > 0) {
+                        str(R.string.routing_preparing_builtin, (bytes / 1_048_576).toInt(), (totalBytes / 1_048_576).toInt())
+                    } else {
+                        str(R.string.routing_installing, (bytes / 1_048_576).toInt())
+                    },
                 )
             }
         }
@@ -237,15 +244,15 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
             _status.update { it.copy(busy = start, message = null) }
             val msg = try {
                 block()
-            } catch (e: kotlinx.coroutines.CancellationException) {
+            } catch (_: kotlinx.coroutines.CancellationException) {
                 str(R.string.task_cancelled)
-            } catch (e: InterruptedException) {
+            } catch (_: InterruptedException) {
                 str(R.string.task_cancelled)
-            } catch (e: Exception) {
+            } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
                 log("offline_routing_task_failed ${e.javaClass.simpleName}: ${e.message}")
                 android.util.Log.w("OfflineRouting", "task failed", e)
                 str(R.string.task_failed, e.message ?: e.javaClass.simpleName)
-            } catch (e: Throwable) {
+            } catch (@Suppress("TooGenericExceptionCaught") e: Throwable) {
                 // e.g. NoSuchMethodError / VerifyError from a library on this Android version.
                 log("offline_routing_task_error ${e.javaClass.simpleName}: ${e.message}")
                 android.util.Log.e("OfflineRouting", "task error", e)
@@ -261,19 +268,15 @@ private const val BUNDLED_ZIP = "routing/pack.zip"
 private const val BUNDLED_INFO = "routing/pack.json"
 
 /** Offline first; online OSRM only when allowed and the offline pack cannot answer. */
-class SmartRouter(
-    private val offline: OfflineRouting,
-    private val online: Router,
-    private val log: (String) -> Unit,
-    private val noOfflineMessage: () -> String,
-) : Router {
+class SmartRouter(private val offline: OfflineRouting, private val online: Router, private val log: (String) -> Unit, private val noOfflineMessage: () -> String) : Router {
     override suspend fun route(from: GeoPoint, to: GeoPoint, via: List<GeoPoint>): Route {
         val points = listOf(from) + via + to
         val allowOnline = offline.status.value.allowOnline
         if (offline.covers(points)) {
             try {
                 return offline.route(points).also { log("route_via offline len=${it.length.toInt()}") }
-            } catch (e: Exception) {
+            } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
+                // GraphHopper throws plain RuntimeExceptions (no path, point not found, …).
                 log("offline_route_failed ${e.message}")
                 if (!allowOnline) throw e
             }

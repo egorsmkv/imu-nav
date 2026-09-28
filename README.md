@@ -173,6 +173,22 @@ Requirements: JDK 17+, Android SDK 36.
 ./gradlew :app:assembleDebug  # app/build/outputs/apk/debug/app-debug.apk
 ```
 
+### Code checks
+
+```bash
+./gradlew check           # everything below plus all tests — run before sending changes
+./gradlew spotlessApply   # auto-format Kotlin and Gradle files (ktlint)
+```
+
+| Tool | Task | Config |
+|---|---|---|
+| **ktlint** (via Spotless) — formatting and style | `spotlessCheck` / `spotlessApply` | `.editorconfig` (IntelliJ style, 180 columns) |
+| **detekt** — complexity, exception handling, naming, bug patterns | `detekt` | `config/detekt.yml` (defaults + documented adjustments) |
+| **Android Lint** — API levels, resources, translations, Compose, manifest | `:app:lintRelease` | `app/lint.xml`; warnings are errors |
+
+Reports land in `*/build/reports/detekt/` and `app/build/reports/lint-results-release.html`.
+Exceptions are kept few and commented where they are configured; prefer fixing over suppressing.
+
 Release builds are signed from `keystore.properties` in the project root (gitignored):
 
 ```properties

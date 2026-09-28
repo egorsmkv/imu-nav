@@ -70,21 +70,34 @@ object TripFormat {
 
     fun encode(e: TripEvent): String = when (e) {
         is TripEvent.Fix -> e.fix.let { f ->
-            listOf("F", f.elapsedMs, f.source.name, f.timeMs, n(f.lat), n(f.lon), n(f.altitudeM), n(f.speedMps), n(f.bearingDeg), n(f.accuracyM),
-                n(f.verticalAccuracyM), n(f.speedAccuracyMps), if (f.isMock) 1 else 0).joinToString(",")
+            listOf(
+                "F", f.elapsedMs, f.source.name, f.timeMs, n(f.lat), n(f.lon), n(f.altitudeM), n(f.speedMps), n(f.bearingDeg), n(f.accuracyM),
+                n(f.verticalAccuracyM), n(f.speedAccuracyMps), if (f.isMock) 1 else 0,
+            ).joinToString(",")
         }
+
         is TripEvent.Imu -> e.sample.let { s ->
             val a = s.linearAcc
             val g = s.gyro
-            listOf("I", s.elapsedMs, n(s.headingDeg), n(s.yawRateDegS), n(a?.getOrNull(0)), n(a?.getOrNull(1)), n(a?.getOrNull(2)),
-                n(g?.getOrNull(0)), n(g?.getOrNull(1)), n(g?.getOrNull(2))).joinToString(",")
+            listOf(
+                "I", s.elapsedMs, n(s.headingDeg), n(s.yawRateDegS), n(a?.getOrNull(0)), n(a?.getOrNull(1)), n(a?.getOrNull(2)),
+                n(g?.getOrNull(0)), n(g?.getOrNull(1)), n(g?.getOrNull(2)),
+            ).joinToString(",")
         }
+
         is TripEvent.Gnss -> listOf("S", e.elapsedMs, e.visible, e.used, n(e.meanCn0Used), n(e.cn0SpreadUsed), n(e.meanCn0Visible), e.dualFrequencyUsed).joinToString(",")
+
         is TripEvent.Agc -> listOf("A", e.elapsedMs, n(e.agcDb)).joinToString(",")
-        is TripEvent.Start -> (listOf("D", e.elapsedMs, n(e.destination.lat), n(e.destination.lon), n(e.startAccuracyM)) +
-            e.waypoints.flatMap { listOf(n(it.lat), n(it.lon)) }).joinToString(",")
+
+        is TripEvent.Start -> (
+            listOf("D", e.elapsedMs, n(e.destination.lat), n(e.destination.lon), n(e.startAccuracyM)) +
+                e.waypoints.flatMap { listOf(n(it.lat), n(it.lon)) }
+            ).joinToString(",")
+
         is TripEvent.RouteSet -> "R,${e.elapsedMs},${RouteCodec.encode(e.route)}"
+
         is TripEvent.Stop -> "X,${e.elapsedMs}"
+
         is TripEvent.Estimate -> listOf("E", e.elapsedMs, n(e.lat), n(e.lon), String.format(Locale.US, "%.1f", e.s), e.uncertaintyM.toInt(), e.source).joinToString(",")
     }
 
@@ -97,22 +110,32 @@ object TripFormat {
         return runCatching {
             when (f[0]) {
                 "F" -> TripEvent.Fix(
-                    RawFix(FixSource.valueOf(f[2]), f[3].toLong(), t, f[4].toDouble(), f[5].toDouble(), d(6), fl(7), fl(8), fl(9), fl(10), fl(11), f.getOrNull(12) == "1")
+                    RawFix(FixSource.valueOf(f[2]), f[3].toLong(), t, f[4].toDouble(), f[5].toDouble(), d(6), fl(7), fl(8), fl(9), fl(10), fl(11), f.getOrNull(12) == "1"),
                 )
+
                 "I" -> {
                     val acc = if (f.getOrNull(4).isNullOrEmpty()) null else floatArrayOf(fl(4)!!, fl(5)!!, fl(6)!!)
                     val gyro = if (f.getOrNull(7).isNullOrEmpty()) null else floatArrayOf(fl(7)!!, fl(8)!!, fl(9)!!)
                     TripEvent.Imu(ImuSample(t, fl(2), fl(3), acc, gyro))
                 }
+
                 "S" -> TripEvent.Gnss(t, f[2].toInt(), f[3].toInt(), fl(4), fl(5), fl(6), f[7].toInt())
+
                 "A" -> TripEvent.Agc(t, fl(2))
+
                 "D" -> TripEvent.Start(
-                    t, GeoPoint(f[2].toDouble(), f[3].toDouble()),
-                    (5 until f.size - 1 step 2).map { GeoPoint(f[it].toDouble(), f[it + 1].toDouble()) }, d(4) ?: 0.0,
+                    t,
+                    GeoPoint(f[2].toDouble(), f[3].toDouble()),
+                    (5 until f.size - 1 step 2).map { GeoPoint(f[it].toDouble(), f[it + 1].toDouble()) },
+                    d(4) ?: 0.0,
                 )
+
                 "R" -> TripEvent.RouteSet(t, RouteCodec.decode(f[2]))
+
                 "X" -> TripEvent.Stop(t)
+
                 "E" -> TripEvent.Estimate(t, f[2].toDouble(), f[3].toDouble(), f[4].toDouble(), f[5].toDouble(), f.getOrNull(6).orEmpty())
+
                 else -> null
             }
         }.getOrNull()
@@ -208,8 +231,15 @@ object RouteCodec {
     fun encode(r: Route): String {
         val geom = r.geometry.joinToString(";") { String.format(Locale.US, "%.6f:%.6f", it.lat, it.lon) }
         val steps = r.steps.joinToString(";") { s ->
-            listOf(esc(s.type), esc(s.modifier.orEmpty()), esc(s.name), String.format(Locale.US, "%.1f", s.distanceM),
-                String.format(Locale.US, "%.1f", s.durationS), s.geometryIndex, s.roundaboutExit ?: "").joinToString("~")
+            listOf(
+                esc(s.type),
+                esc(s.modifier.orEmpty()),
+                esc(s.name),
+                String.format(Locale.US, "%.1f", s.distanceM),
+                String.format(Locale.US, "%.1f", s.durationS),
+                s.geometryIndex,
+                s.roundaboutExit ?: "",
+            ).joinToString("~")
         }
         val limits = r.maxspeedKmh.joinToString(":") { it?.toString().orEmpty() }
         val signals = r.signals.joinToString(";") { String.format(Locale.US, "%.6f:%.6f", it.lat, it.lon) }
@@ -218,13 +248,19 @@ object RouteCodec {
 
     fun decode(s: String): Route {
         val p = s.split('|')
-        val geometry = p[1].split(';').filter { it.isNotEmpty() }.map { val (a, b) = it.split(':'); GeoPoint(a.toDouble(), b.toDouble()) }
+        val geometry = p[1].split(';').filter { it.isNotEmpty() }.map {
+            val (a, b) = it.split(':')
+            GeoPoint(a.toDouble(), b.toDouble())
+        }
         val steps = p[2].split(';').filter { it.isNotEmpty() }.map { st ->
             val f = st.split('~')
             Step(unesc(f[0]), unesc(f[1]).ifEmpty { null }, unesc(f[2]), f[3].toDouble(), f[4].toDouble(), f[5].toInt(), f.getOrNull(6)?.toIntOrNull())
         }
         val limits = p.getOrNull(3).orEmpty().let { if (it.isEmpty()) emptyList() else it.split(':').map { v -> v.toIntOrNull() } }
-        val signals = p.getOrNull(4).orEmpty().split(';').filter { it.isNotEmpty() }.map { val (a, b) = it.split(':'); GeoPoint(a.toDouble(), b.toDouble()) }
+        val signals = p.getOrNull(4).orEmpty().split(';').filter { it.isNotEmpty() }.map {
+            val (a, b) = it.split(':')
+            GeoPoint(a.toDouble(), b.toDouble())
+        }
         return Route(geometry, steps, p[0].toDouble(), limits, signals, unesc(p.getOrNull(5).orEmpty()))
     }
 }

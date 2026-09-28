@@ -1,20 +1,21 @@
 package org.blinddriver.app.cells
 
 import android.content.Context
+import androidx.core.content.edit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.blinddriver.app.R
 import org.blinddriver.core.cells.CellSyncClient
-import org.blinddriver.core.cells.Radio
 import org.blinddriver.core.cells.CellTower
+import org.blinddriver.core.cells.Radio
 import org.blinddriver.core.cells.ResumableHttpInputStream
 import org.blinddriver.core.gnss.PositioningHub
 import java.io.File
@@ -60,12 +61,7 @@ data class CellStatus(
  * Owns the offline cell pipeline: scanning, the multi-source tower database, learning from trusted
  * GPS, OpenCellID / Mozilla imports and two-way sync with a cell-sharing server.
  */
-class CellManager(
-    private val context: Context,
-    private val scope: CoroutineScope,
-    private val hub: PositioningHub,
-    private val log: (String) -> Unit,
-) {
+class CellManager(private val context: Context, private val scope: CoroutineScope, private val hub: PositioningHub, private val log: (String) -> Unit) {
     private val prefs = context.getSharedPreferences("cells", Context.MODE_PRIVATE)
 
     private fun str(id: Int, vararg args: Any): String = context.getString(id, *args)
@@ -105,13 +101,12 @@ class CellManager(
         }
     }
 
-    fun enabledRadios(): Set<Radio> =
-        prefs.getString("radios", null)?.split(',')?.mapNotNull { n -> Radio.entries.firstOrNull { it.name == n } }?.toSet()
-            ?: DEFAULT_RADIOS
+    fun enabledRadios(): Set<Radio> = prefs.getString("radios", null)?.split(',')?.mapNotNull { n -> Radio.entries.firstOrNull { it.name == n } }?.toSet()
+        ?: DEFAULT_RADIOS
 
     fun setRadioEnabled(radio: Radio, on: Boolean) {
         val set = if (on) enabledRadios() + radio else enabledRadios() - radio
-        prefs.edit().putString("radios", set.joinToString(",") { it.name }).apply()
+        prefs.edit { putString("radios", set.joinToString(",") { it.name }) }
         log("cell_radios ${set.joinToString(",") { it.name }}")
         refresh()
         lastQuery = null
@@ -153,20 +148,24 @@ class CellManager(
 
     /** Random, install-scoped identifier sent to the sharing server (not tied to the phone or user). */
     private fun deviceId(): String = prefs.getString("device_id", null) ?: java.util.UUID.randomUUID().toString().also {
-        prefs.edit().putString("device_id", it).apply()
+        prefs.edit { putString("device_id", it) }
     }
 
     fun savedToken(): String = prefs.getString("token", "").orEmpty()
     fun savedSyncKey(): String = prefs.getString("sync_key", "").orEmpty()
 
-    fun setLearning(on: Boolean) = prefs.edit().putBoolean("learning", on).apply()
+    fun setLearning(on: Boolean) = prefs.edit { putBoolean("learning", on) }
 
     fun setShowTowers(on: Boolean) {
-        prefs.edit().putBoolean("show_towers", on).apply()
+        prefs.edit { putBoolean("show_towers", on) }
         refresh()
         val v = lastViewport
         lastQuery = null
-        if (on && v != null) onViewport(v[0], v[1], v[2], v[3], v[4]) else if (!on) _towerLayer.value = TowerLayer()
+        if (on && v != null) {
+            onViewport(v[0], v[1], v[2], v[3], v[4])
+        } else if (!on) {
+            _towerLayer.value = TowerLayer()
+        }
     }
 
     /** Map camera settled: load towers for the visible area (debounced by cancelling the previous query). */
@@ -175,7 +174,7 @@ class CellManager(
         if (!prefs.getBoolean("show_towers", false)) return
         // While the camera follows the car it settles every tick; skip queries that would return the same towers.
         val q = lastQuery
-        if (q != null && south >= q[0] && west >= q[1] && north <= q[2] && east <= q[3] && kotlin.math.abs(zoom - q[4]) < 0.5 && !_towerLayer.value.truncated) return
+        if (q != null && q.contains(south, west, north, east) && kotlin.math.abs(zoom - q[4]) < 0.5 && !_towerLayer.value.truncated) return
         // Query a margin around the view so small moves stay inside it.
         val padLat = (north - south) * 0.5
         val padLon = (east - west) * 0.5
@@ -196,16 +195,18 @@ class CellManager(
         }
     }
 
-    private fun visibleTowers(): List<CellTower> =
-        scanner.lastUsable.mapNotNull { runCatching { db.resolve(it.key)?.first }.getOrNull() }
+    /** This query box (south, west, north, east, zoom) covers the given bounds. */
+    private fun DoubleArray.contains(south: Double, west: Double, north: Double, east: Double) = south >= this[0] && west >= this[1] && north <= this[2] && east <= this[3]
+
+    private fun visibleTowers(): List<CellTower> = scanner.lastUsable.mapNotNull { runCatching { db.resolve(it.key)?.first }.getOrNull() }
 
     fun saveSettings(syncUrl: String, syncKey: String, autoSync: Boolean, mccs: String) {
-        prefs.edit()
-            .putString("sync_url", syncUrl.trim())
-            .putString("sync_key", syncKey.trim())
-            .putBoolean("auto_sync", autoSync)
-            .putString("mccs", mccs.trim().ifEmpty { "255" })
-            .apply()
+        prefs.edit {
+            putString("sync_url", syncUrl.trim())
+            putString("sync_key", syncKey.trim())
+            putBoolean("auto_sync", autoSync)
+            putString("mccs", mccs.trim().ifEmpty { "255" })
+        }
         refresh()
     }
 
@@ -217,16 +218,22 @@ class CellManager(
             _status.update { it.copy(busy = start, busyCancellable = cancellable, message = null) }
             val msg = try {
                 block()
-            } catch (e: kotlinx.coroutines.CancellationException) {
+            } catch (_: kotlinx.coroutines.CancellationException) {
                 str(R.string.task_cancelled)
-            } catch (e: InterruptedException) {
+            } catch (_: InterruptedException) {
                 str(R.string.task_cancelled)
-            } catch (e: Exception) {
+            } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
+                // Task boundary: any failure (I/O, SQLite, parsing) is reported to the user, not crashed on.
+                android.util.Log.w("CellManager", "task failed", e)
                 str(R.string.task_failed, e.message ?: e.javaClass.simpleName)
             }
             log("cells_task ${msg.lowercase()}")
-            reloadCounts()
-            _status.update { it.copy(busy = null, busyCancellable = false, message = msg) }
+            // After a cancel this coroutine is cancelled: without NonCancellable, reloadCounts() would
+            // throw immediately and the busy indicator would never clear.
+            withContext(kotlinx.coroutines.NonCancellable) {
+                reloadCounts()
+                _status.update { it.copy(busy = null, busyCancellable = false, message = msg) }
+            }
         }
     }
 
@@ -256,7 +263,7 @@ class CellManager(
     /** Download and import the OpenCellID export for the first configured MCC with the user's token. */
     fun downloadOpenCellId(token: String) {
         if (token.isBlank()) return
-        prefs.edit().putString("token", token.trim()).apply()
+        prefs.edit { putString("token", token.trim()) }
         runTask(str(R.string.task_downloading_ocid, 0)) {
             var total = 0L
             for (mcc in mccSet()) {
@@ -264,7 +271,12 @@ class CellManager(
                     val file = File(context.cacheDir, "ocid-$mcc.csv.gz")
                     try {
                         OpenCellIdDownloader.download(token, mcc, file) { b -> progress(str(R.string.task_downloading_ocid, (b / 1024).toInt())) }
-                        file.inputStream().use { db.importStream(CellSource.OPENCELLID, it) { _, kept -> progress(str(R.string.task_importing_towers, kept)); true } }
+                        file.inputStream().use {
+                            db.importStream(CellSource.OPENCELLID, it) { _, kept ->
+                                progress(str(R.string.task_importing_towers, kept))
+                                true
+                            }
+                        }
                     } finally {
                         file.delete()
                     }
@@ -323,10 +335,13 @@ class CellManager(
             val n = withContext(Dispatchers.IO) {
                 db.clear(CellSource.BUNDLED)
                 context.assets.open(asset).use { input ->
-                    db.importStream(CellSource.BUNDLED, input) { _, kept -> progress(str(R.string.task_bundled_progress, kept)); true }
+                    db.importStream(CellSource.BUNDLED, input) { _, kept ->
+                        progress(str(R.string.task_bundled_progress, kept))
+                        true
+                    }
                 }
             }
-            prefs.edit().putString("bundled_sha256", hash).apply()
+            prefs.edit { putString("bundled_sha256", hash) }
             str(R.string.task_bundled_done, n)
         }
     }
@@ -346,11 +361,11 @@ class CellManager(
                 progress(str(R.string.task_compacting))
                 db.vacuum()
             }
-            prefs.edit()
-                .remove("bundled_sha256")
-                .putLong("last_download_s", 0) // next sync downloads the full shared dataset again
-                .apply()
-            if (deleteLearned) prefs.edit().putLong("last_upload_ms", 0).apply()
+            prefs.edit {
+                remove("bundled_sha256")
+                putLong("last_download_s", 0) // next sync downloads the full shared dataset again
+            }
+            if (deleteLearned) prefs.edit { putLong("last_upload_ms", 0) }
             log("cells_reset learned_deleted=$deleteLearned")
             str(if (deleteLearned) R.string.task_cleared else R.string.task_cleared_kept)
         }
@@ -391,19 +406,21 @@ class CellManager(
                 val pending = db.learnedSince(prefs.getLong("last_upload_ms", 0))
                 progress(str(R.string.task_uploading, pending.size))
                 val up = client.upload(pending)
-                prefs.edit().putLong("last_upload_ms", started).apply()
+                prefs.edit { putLong("last_upload_ms", started) }
 
                 progress(str(R.string.task_downloading_shared))
                 val batch = ArrayList<CellTower>()
                 val since = prefs.getLong("last_download_s", 0)
                 client.download(mccSet(), since) { batch += it }
                 db.upsert(CellSource.SHARED, batch)
-                prefs.edit().putLong("last_download_s", started / 1000 - 60).apply()
+                prefs.edit { putLong("last_download_s", started / 1000 - 60) }
                 up to batch.size
             }
             val msg = str(R.string.task_sync_done, uploaded, downloaded)
-            prefs.edit().putLong("last_sync_ms", started)
-                .putString("last_sync_msg", "$msg (${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(started))})").apply()
+            prefs.edit {
+                putLong("last_sync_ms", started)
+                putString("last_sync_msg", "$msg (${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(started))})")
+            }
             msg
         }
     }

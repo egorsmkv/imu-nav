@@ -64,6 +64,23 @@ android {
             excludes += listOf("META-INF/DEPENDENCIES", "META-INF/LICENSE*", "META-INF/NOTICE*", "META-INF/INDEX.LIST", "META-INF/*.md")
         }
     }
+
+    // The in-app language switcher needs every language in every install (App Bundles would split them).
+    bundle {
+        language {
+            enableSplit = false
+        }
+    }
+
+    // Android Lint: `./gradlew :app:lintRelease` (also part of `check`). Deliberate exceptions live in lint.xml.
+    lint {
+        abortOnError = true
+        warningsAsErrors = true
+        checkDependencies = false
+        lintConfig = file("lint.xml")
+        htmlReport = true
+        textReport = true
+    }
 }
 
 dependencies {

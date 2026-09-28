@@ -11,18 +11,11 @@ import kotlin.math.sqrt
  * @param linearAcc gravity-free acceleration vector (device frame is fine; only |a| is used)
  * @param gyro raw angular velocity vector, rad/s (only |ω| is used)
  */
-class ImuSample(
-    val elapsedMs: Long,
-    val headingDeg: Float?,
-    val yawRateDegS: Float?,
-    val linearAcc: FloatArray?,
-    val gyro: FloatArray?,
-) {
+class ImuSample(val elapsedMs: Long, val headingDeg: Float?, val yawRateDegS: Float?, val linearAcc: FloatArray?, val gyro: FloatArray?) {
     val accMagnitude: Double get() = linearAcc?.let { magnitude(it) } ?: Double.NaN
     val gyroMagnitude: Double get() = gyro?.let { magnitude(it) } ?: Double.NaN
 
-    private fun magnitude(v: FloatArray): Double =
-        if (v.size < 3) Double.NaN else sqrt((v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).toDouble())
+    private fun magnitude(v: FloatArray): Double = if (v.size < 3) Double.NaN else sqrt((v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).toDouble())
 }
 
 /**

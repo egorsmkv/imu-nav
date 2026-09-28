@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.graphics.toColorInt
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import org.blinddriver.app.cells.TowerLayer
@@ -99,6 +100,7 @@ fun NavMap(
     animateCamera: Boolean = true,
 ) {
     val context = LocalContext.current
+    val density = androidx.compose.ui.platform.LocalDensity.current.density
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val mapView = remember { MapView(context).apply { onCreate(null) } }
     var style by remember { mutableStateOf<Style?>(null) }
@@ -165,7 +167,7 @@ fun NavMap(
     // Keep the followed position, compass and attribution inside the visible (uncovered) map area.
     LaunchedEffect(style, insetTopPx, insetBottomPx) {
         val m = controller.map ?: return@LaunchedEffect
-        val margin = (8 * context.resources.displayMetrics.density).toInt()
+        val margin = (8 * density).toInt()
         m.moveCamera(CameraUpdateFactory.paddingTo(0.0, insetTopPx.toDouble(), 0.0, insetBottomPx.toDouble()))
         m.uiSettings.setCompassMargins(0, insetTopPx + margin, margin * 2, 0)
         m.uiSettings.setAttributionMargins(margin, 0, 0, insetBottomPx + margin)
@@ -182,14 +184,17 @@ fun NavMap(
 
     LaunchedEffect(style, destination) {
         val src = style?.getSourceAs<GeoJsonSource>("dest") ?: return@LaunchedEffect
-        if (destination == null) src.setGeoJson(FeatureCollection.fromFeatures(emptyList()))
-        else src.setGeoJson(Feature.fromGeometry(Point.fromLngLat(destination.lon, destination.lat)))
+        if (destination == null) {
+            src.setGeoJson(FeatureCollection.fromFeatures(emptyList()))
+        } else {
+            src.setGeoJson(Feature.fromGeometry(Point.fromLngLat(destination.lon, destination.lat)))
+        }
     }
 
     LaunchedEffect(style, towers) {
         val st = style ?: return@LaunchedEffect
         fun features(list: List<CellTower>) = FeatureCollection.fromFeatures(
-            list.map { t -> Feature.fromGeometry(Point.fromLngLat(t.lon, t.lat)).also { it.addStringProperty("radio", t.key.radio.name) } }
+            list.map { t -> Feature.fromGeometry(Point.fromLngLat(t.lon, t.lat)).also { it.addStringProperty("radio", t.key.radio.name) } },
         )
         st.getSourceAs<GeoJsonSource>("towers")?.setGeoJson(features(towers?.towers.orEmpty()))
         st.getSourceAs<GeoJsonSource>("towers-visible")?.setGeoJson(features(towers?.visible.orEmpty()))
@@ -209,11 +214,12 @@ fun NavMap(
         (st.getLayer("accuracy") as? CircleLayer)?.setProperties(
             PropertyFactory.circleRadius(
                 Expression.interpolate(
-                    Expression.exponential(2), Expression.zoom(),
+                    Expression.exponential(2),
+                    Expression.zoom(),
                     Expression.stop(0, (meters / mPerPx0).toFloat()),
                     Expression.stop(22, (meters / (mPerPx0 / 2.0.pow(22))).toFloat()),
-                )
-            )
+                ),
+            ),
         )
     }
 
@@ -244,68 +250,68 @@ private fun addLayers(s: Style) {
                 Expression.match(
                     Expression.get("radio"),
                     Expression.color(Color.GRAY),
-                    Expression.stop("GSM", Expression.color(Color.parseColor("#8E24AA"))),
-                    Expression.stop("UMTS", Expression.color(Color.parseColor("#FB8C00"))),
-                    Expression.stop("LTE", Expression.color(Color.parseColor("#00897B"))),
-                    Expression.stop("NR", Expression.color(Color.parseColor("#E53935"))),
-                )
+                    Expression.stop("GSM", Expression.color("#8E24AA".toColorInt())),
+                    Expression.stop("UMTS", Expression.color("#FB8C00".toColorInt())),
+                    Expression.stop("LTE", Expression.color("#00897B".toColorInt())),
+                    Expression.stop("NR", Expression.color("#E53935".toColorInt())),
+                ),
             ),
             PropertyFactory.circleRadius(Expression.interpolate(Expression.linear(), Expression.zoom(), Expression.stop(11, 2f), Expression.stop(16, 6f))),
             PropertyFactory.circleOpacity(0.8f),
             PropertyFactory.circleStrokeColor(Color.WHITE),
             PropertyFactory.circleStrokeWidth(0.5f),
-        )
+        ),
     )
     s.addLayer(
         CircleLayer("towers-visible-ring", "towers-visible").withProperties(
             PropertyFactory.circleColor(Color.TRANSPARENT),
             PropertyFactory.circleRadius(11f),
-            PropertyFactory.circleStrokeColor(Color.parseColor("#D32F2F")),
+            PropertyFactory.circleStrokeColor("#D32F2F".toColorInt()),
             PropertyFactory.circleStrokeWidth(3f),
-        )
+        ),
     )
     // Route with a darker casing, like native map apps.
     s.addLayer(
         LineLayer("route-casing", "route").withProperties(
-            PropertyFactory.lineColor(Color.parseColor("#0B3D91")),
+            PropertyFactory.lineColor("#0B3D91".toColorInt()),
             PropertyFactory.lineWidth(Expression.interpolate(Expression.linear(), Expression.zoom(), Expression.stop(10, 5f), Expression.stop(17, 13f))),
             PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
             PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
-        )
+        ),
     )
     s.addLayer(
         LineLayer("route-line", "route").withProperties(
-            PropertyFactory.lineColor(Color.parseColor("#1A73E8")),
+            PropertyFactory.lineColor("#1A73E8".toColorInt()),
             PropertyFactory.lineWidth(Expression.interpolate(Expression.linear(), Expression.zoom(), Expression.stop(10, 3f), Expression.stop(17, 9f))),
             PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
             PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
-        )
+        ),
     )
     s.addLayer(
         CircleLayer("dest-dot", "dest").withProperties(
-            PropertyFactory.circleColor(Color.parseColor("#D93025")),
+            PropertyFactory.circleColor("#D93025".toColorInt()),
             PropertyFactory.circleRadius(9f),
             PropertyFactory.circleStrokeColor(Color.WHITE),
             PropertyFactory.circleStrokeWidth(3f),
-        )
+        ),
     )
     // Position: translucent accuracy circle under a blue dot with a white ring.
     s.addLayer(
         CircleLayer("accuracy", "marker").withProperties(
-            PropertyFactory.circleColor(Color.parseColor("#1A73E8")),
+            PropertyFactory.circleColor("#1A73E8".toColorInt()),
             PropertyFactory.circleOpacity(0.15f),
-            PropertyFactory.circleStrokeColor(Color.parseColor("#1A73E8")),
+            PropertyFactory.circleStrokeColor("#1A73E8".toColorInt()),
             PropertyFactory.circleStrokeOpacity(0.4f),
             PropertyFactory.circleStrokeWidth(1f),
             PropertyFactory.circleRadius(0f),
-        )
+        ),
     )
     s.addLayer(
         CircleLayer("marker-dot", "marker").withProperties(
-            PropertyFactory.circleColor(Color.parseColor("#1A73E8")),
+            PropertyFactory.circleColor("#1A73E8".toColorInt()),
             PropertyFactory.circleRadius(8f),
             PropertyFactory.circleStrokeColor(Color.WHITE),
             PropertyFactory.circleStrokeWidth(3f),
-        )
+        ),
     )
 }

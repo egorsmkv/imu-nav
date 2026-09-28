@@ -17,6 +17,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.delay
 import org.blinddriver.app.AppGraph
 import org.blinddriver.app.graph
@@ -33,7 +34,12 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestPermissions() = permissions.launch(
-        arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.POST_NOTIFICATIONS)
+        buildList {
+            add(Manifest.permission.ACCESS_FINE_LOCATION)
+            add(Manifest.permission.ACCESS_COARSE_LOCATION)
+            // Runtime notification permission exists only on Android 13+.
+            if (android.os.Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
+        }.toTypedArray(),
     )
 
     override fun attachBaseContext(newBase: android.content.Context) = super.attachBaseContext(org.blinddriver.app.AppLanguage.wrap(newBase))
@@ -53,8 +59,11 @@ class MainActivity : ComponentActivity() {
 
     /** Keep the display on only while navigating. */
     private fun setKeepScreenOn(on: Boolean) {
-        if (on) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        if (on) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
     }
 
     override fun onStart() {
@@ -77,12 +86,17 @@ private fun AppRoot(g: AppGraph, hasLocation: Boolean, requestPermission: () -> 
     var tripId by rememberSaveable { mutableStateOf<String?>(null) }
 
     // While no navigation runs, keep position and diagnostics fresh (the service drives it otherwise).
-    LaunchedEffect(Unit) {
-        while (true) {
-            if (!g.engine.state.active) g.refresh()
-            delay(1000)
+    // Only while the app is visible: a hidden composition must not keep waking the CPU.
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            while (true) {
+                if (!g.engine.state.active) g.refresh()
+                delay(1000)
+            }
         }
     }
+    val history by g.trips.history.collectAsStateWithLifecycle()
     val screenOnSetting by g.keepScreenOn.collectAsStateWithLifecycle()
     LaunchedEffect(ui.guidance.active, screenOnSetting) { keepScreenOn(ui.guidance.active && screenOnSetting) }
 
@@ -103,12 +117,23 @@ private fun AppRoot(g: AppGraph, hasLocation: Boolean, requestPermission: () -> 
             onOpenLog = { screen = Screen.LOG },
             onOpenHistory = { screen = Screen.HISTORY },
         )
-        Screen.HISTORY -> HistoryScreen(g, onBack = { screen = Screen.MAP }, onOpen = { tripId = it.id; screen = Screen.TRIP })
+
+        Screen.HISTORY -> HistoryScreen(g, onBack = { screen = Screen.MAP }, onOpen = {
+            tripId = it.id
+            screen = Screen.TRIP
+        })
+
         Screen.TRIP -> {
-            val trip = g.trips.history.value.firstOrNull { it.id == tripId }
-            if (trip == null) screen = Screen.HISTORY else TripDetailScreen(g, trip, onBack = { screen = Screen.HISTORY })
+            val trip = history.firstOrNull { it.id == tripId }
+            if (trip == null) {
+                LaunchedEffect(Unit) { screen = Screen.HISTORY }
+            } else {
+                TripDetailScreen(g, trip, onBack = { screen = Screen.HISTORY })
+            }
         }
+
         Screen.SETTINGS -> SettingsScreen(ui, g, onBack = { screen = Screen.MAP }, onOpenLog = { screen = Screen.LOG })
+
         Screen.LOG -> LogScreen(g, onBack = { screen = Screen.SETTINGS })
     }
 }

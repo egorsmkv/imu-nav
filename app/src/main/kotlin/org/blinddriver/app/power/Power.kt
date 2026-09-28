@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
 import android.os.PowerManager
+import androidx.core.content.edit
 
 /** User-selectable trade-off between accuracy/smoothness and battery. */
 enum class PowerMode { AUTO, PERFORMANCE, BALANCED, SAVER }
@@ -45,12 +46,12 @@ class PowerPolicy(private val context: Context) {
 
     var mode: PowerMode
         get() = runCatching { PowerMode.valueOf(prefs.getString("mode", PowerMode.AUTO.name)!!) }.getOrDefault(PowerMode.AUTO)
-        set(v) = prefs.edit().putString("mode", v.name).apply()
+        set(v) = prefs.edit { putString("mode", v.name) }
 
     /** Keep the display on while navigating (the screen is by far the largest consumer). */
     var keepScreenOn: Boolean
         get() = prefs.getBoolean("keep_screen_on", true)
-        set(v) = prefs.edit().putBoolean("keep_screen_on", v).apply()
+        set(v) = prefs.edit { putBoolean("keep_screen_on", v) }
 
     fun batteryPercent(): Int? = runCatching {
         val i = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED)) ?: return null
@@ -67,8 +68,11 @@ class PowerPolicy(private val context: Context) {
     /** AUTO: full rate on a charger, saver under 20 % or with the system battery saver on, else balanced. */
     fun resolve(): PowerProfile = when (mode) {
         PowerMode.PERFORMANCE -> PowerProfile.PERFORMANCE
+
         PowerMode.BALANCED -> PowerProfile.BALANCED
+
         PowerMode.SAVER -> PowerProfile.SAVER
+
         PowerMode.AUTO -> {
             val pm = context.getSystemService(PowerManager::class.java)
             val battery = batteryPercent()

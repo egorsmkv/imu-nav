@@ -8,7 +8,6 @@ import com.graphhopper.config.Profile
 import com.graphhopper.json.Statement
 import com.graphhopper.matching.MapMatching
 import com.graphhopper.matching.Observation
-import com.graphhopper.util.PMap
 import com.graphhopper.routing.WeightingFactory
 import com.graphhopper.routing.ev.BooleanEncodedValue
 import com.graphhopper.routing.ev.DecimalEncodedValue
@@ -16,6 +15,7 @@ import com.graphhopper.routing.weighting.TurnCostProvider
 import com.graphhopper.routing.weighting.custom.CustomWeighting
 import com.graphhopper.util.CustomModel
 import com.graphhopper.util.Instruction
+import com.graphhopper.util.PMap
 import com.graphhopper.util.shapes.GHPoint
 import org.blinddriver.core.geo.GeoPoint
 import org.blinddriver.core.route.Route
@@ -95,8 +95,7 @@ class OfflineGraph private constructor(private val hopper: GraphHopper, val dir:
     val bounds: DoubleArray = hopper.baseGraph.bounds.let { doubleArrayOf(it.minLat, it.maxLat, it.minLon, it.maxLon) }
 
     /** Inside the network's bounding box, with a ~2 km margin (off-road points snap to the nearest road). */
-    fun covers(p: GeoPoint): Boolean =
-        p.lat in bounds[0] - MARGIN_DEG..bounds[1] + MARGIN_DEG && p.lon in bounds[2] - MARGIN_DEG..bounds[3] + MARGIN_DEG
+    fun covers(p: GeoPoint): Boolean = p.lat in bounds[0] - MARGIN_DEG..bounds[1] + MARGIN_DEG && p.lon in bounds[2] - MARGIN_DEG..bounds[3] + MARGIN_DEG
 
     /** Route through [points] (start, optional vias, destination). Thread-safe. */
     fun route(points: List<GeoPoint>, locale: Locale = Locale.getDefault()): Route {

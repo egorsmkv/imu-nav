@@ -49,14 +49,19 @@ fun maneuverOf(step: Step): Maneuver {
     val right = "right" in mod
     return when (step.type) {
         "arrive" -> Maneuver.ARRIVE
+
         "roundabout", "rotary", "roundabout turn", "exit roundabout", "exit rotary" -> Maneuver.ROUNDABOUT
+
         "fork" -> if (left) Maneuver.KEEP_LEFT else Maneuver.KEEP_RIGHT
+
         "off ramp", "on ramp" -> when {
             left -> Maneuver.RAMP_LEFT
             right -> Maneuver.RAMP_RIGHT
             else -> Maneuver.STRAIGHT
         }
+
         "merge" -> Maneuver.MERGE
+
         else -> when (mod) {
             "uturn" -> Maneuver.UTURN
             "left" -> Maneuver.LEFT
@@ -106,5 +111,5 @@ fun sourceLabel(res: Resources, source: PositionSource): String = res.getString(
         PositionSource.DR -> R.string.src_dr
         PositionSource.DR_NET -> R.string.src_dr_net
         PositionSource.DR_STOPPED -> R.string.src_stopped
-    }
+    },
 )

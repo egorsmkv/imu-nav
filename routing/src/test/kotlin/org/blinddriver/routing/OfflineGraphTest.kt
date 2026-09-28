@@ -24,7 +24,9 @@ class OfflineGraphTest {
         val stub = (1..3).map { 3000L + it to (50.461 + it * 0.001 to 30.500) }
         (north + east + stub).forEach { (id, p) -> sb.append("<node id='$id' lat='${p.first}' lon='${p.second}' version='1'/>\n") }
         // A town node and house numbers for the search index.
-        sb.append("<node id='9001' lat='50.455' lon='30.505' version='1'><tag k='place' v='town'/><tag k='name' v='Тестове'/><tag k='name:en' v='Testove'/><tag k='population' v='12000'/></node>\n")
+        sb.append(
+            "<node id='9001' lat='50.455' lon='30.505' version='1'><tag k='place' v='town'/><tag k='name' v='Тестове'/><tag k='name:en' v='Testove'/><tag k='population' v='12000'/></node>\n",
+        )
         sb.append("<node id='9002' lat='50.4612' lon='30.5061' version='1'><tag k='addr:housenumber' v='5А'/><tag k='addr:street' v='Eastway'/></node>\n")
         sb.append("<node id='9003' lat='50.4555' lon='30.4999' version='1'><tag k='addr:housenumber' v='12'/><tag k='addr:street' v='Northway'/></node>\n")
         fun way(id: Long, nodes: List<Long>, name: String, highway: String, maxspeed: Int) {

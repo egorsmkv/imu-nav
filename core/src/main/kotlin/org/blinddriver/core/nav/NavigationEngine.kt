@@ -136,13 +136,7 @@ class NavigationEngine(
      * @param startAccuracyM accuracy of the position the route was planned from (e.g. a coarse cell
      *   fix). Until the first usable GPS fix, reported uncertainty never drops below it.
      */
-    fun start(
-        route: Route,
-        destination: GeoPoint,
-        waypoints: List<GeoPoint> = emptyList(),
-        nowMs: Long,
-        startAccuracyM: Double = 0.0,
-    ) {
+    fun start(route: Route, destination: GeoPoint, waypoints: List<GeoPoint> = emptyList(), nowMs: Long, startAccuracyM: Double = 0.0) {
         this.startAccuracyM = startAccuracyM.coerceAtLeast(0.0)
         this.destination = destination
         this.waypoints = waypoints
@@ -357,28 +351,7 @@ class NavigationEngine(
         val route = c.route
         val sinceGps = nowMs - if (lastGpsUseMs > 0) lastGpsUseMs else navStartMs
         val factor = motion.motionFactor(nowMs)
-
-        var netSpeed = net.speed.estimate(nowMs)
-        if (netSpeed != null) {
-            cachedNet = netSpeed
-            cachedNetAtMs = nowMs
-        } else if (factor == 0.0) {
-            cachedNet = null
-        }
-        if (netSpeed == null) {
-            val cached = cachedNet
-            val age = nowMs - cachedNetAtMs
-            if (cached != null && age in 0..90_000) netSpeed = cached.copy(sigmaMps = max(cached.sigmaMps, 0.3) + 0.1 * age / 1000.0)
-        }
-        if (factor != null) {
-            motionHistory.addLast(nowMs to factor)
-            while (motionHistory.isNotEmpty() && nowMs - motionHistory.first().first > 90_000) motionHistory.removeFirst()
-        }
-        // Network speed averages over stops; rescale it to the speed while actually moving.
-        if (netSpeed != null && motionHistory.isNotEmpty()) {
-            val duty = motionHistory.sumOf { it.second } / motionHistory.size
-            if (duty >= 0.25) netSpeed = netSpeed.copy(speedMps = min(netSpeed.speedMps / duty, MAX_SPEED_MPS))
-        }
+        val netSpeed = networkSpeed(nowMs, factor)
 
         val base = SpeedFusion.fuse(lastGpsSpeed, sinceGps, RouteSpeedPrior.at(route, c.s, speedProfile), netSpeed)
         val strict = net.speed.strictEstimate(nowMs)
@@ -386,14 +359,7 @@ class NavigationEngine(
         if (override != netOverridesStop && factor == 0.0) log("net_overrides_stop active=$override netv=${((strict?.speedMps ?: 0.0) * 3.6).toInt()}")
         netOverridesStop = override
 
-        val gpsSpeed = lastGpsSpeed
-        var v = when {
-            factor == 0.0 && override -> base
-            factor != null -> factor * base
-            gpsSpeed != null && sinceGps < 120_000 -> gpsSpeed
-            gpsSpeed != null && sinceGps < 180_000 -> gpsSpeed * (1.0 - (sinceGps - 120_000) / 60_000.0)
-            else -> base
-        }
+        var v = drSpeed(base, factor, override, sinceGps)
         if (t.speedPlan && hazards.isNotEmpty()) SpeedPlan.cap(hazards, c.s, netSpeed == null)?.let { v = min(v, it) }
         currentSpeed = v
 
@@ -418,6 +384,59 @@ class NavigationEngine(
     }
 
     /**
+     * Network-derived speed: fresh estimate, else a recent one with growing σ (dropped once we stop),
+     * rescaled by the moving duty cycle because it averages over stops.
+     */
+    private fun networkSpeed(nowMs: Long, factor: Double?): SpeedEstimate? {
+        var netSpeed = net.speed.estimate(nowMs)
+        if (netSpeed != null) {
+            cachedNet = netSpeed
+            cachedNetAtMs = nowMs
+        } else if (factor == 0.0) {
+            cachedNet = null
+        }
+        if (netSpeed == null) {
+            val cached = cachedNet
+            val age = nowMs - cachedNetAtMs
+            if (cached != null && age in 0..90_000) netSpeed = cached.copy(sigmaMps = max(cached.sigmaMps, 0.3) + 0.1 * age / 1000.0)
+        }
+        if (factor != null) {
+            motionHistory.addLast(nowMs to factor)
+            while (motionHistory.isNotEmpty() && nowMs - motionHistory.first().first > 90_000) motionHistory.removeFirst()
+        }
+        if (netSpeed != null && motionHistory.isNotEmpty()) {
+            val duty = motionHistory.sumOf { it.second } / motionHistory.size
+            if (duty >= 0.25) netSpeed = netSpeed.copy(speedMps = min(netSpeed.speedMps / duty, MAX_SPEED_MPS))
+        }
+        return netSpeed
+    }
+
+    /** Dead-reckoning speed: fused speed scaled by the IMU motion factor; without IMU, the last GPS speed fading out. */
+    private fun drSpeed(base: Double, factor: Double?, netOverride: Boolean, sinceGps: Long): Double {
+        val gpsSpeed = lastGpsSpeed
+        return when {
+            factor == 0.0 && netOverride -> base
+            factor != null -> factor * base
+            gpsSpeed != null && sinceGps < 120_000 -> gpsSpeed
+            gpsSpeed != null && sinceGps < 180_000 -> gpsSpeed * (1.0 - (sinceGps - 120_000) / 60_000.0)
+            else -> base
+        }
+    }
+
+    /** First not-yet-passed route turn of at least [Tuning.turnMinDeg] at or ahead of the marker. */
+    private fun nextHoldableTurn(c: RouteCursor, t: Tuning): Triple<Int, Double, Double>? {
+        val route = c.route
+        for (i in route.steps.indices) {
+            if (i in consumedSteps || route.steps[i].isDepartOrArrive) continue
+            val si = route.stepS(i)
+            if (si < c.s - 1.0) continue
+            val turn = route.turnAngleAt(si)
+            if (abs(turn) >= t.turnMinDeg) return Triple(i, si, turn)
+        }
+        return null
+    }
+
+    /**
      * Move forward by v·dt, but park the marker 5 m before the next real turn until the turn is
      * confirmed (gyro or network), found to be missed, or a timeout expires.
      */
@@ -430,28 +449,15 @@ class NavigationEngine(
             c.advance(ds)
             return
         }
-        val route = c.route
         val target = c.s + ds
-        var step = -1
-        var stepS = 0.0
-        var stepTurn = 0.0
-        for (i in route.steps.indices) {
-            if (i in consumedSteps || route.steps[i].isDepartOrArrive) continue
-            val si = route.stepS(i)
-            if (si < c.s - 1.0) continue
-            val turn = route.turnAngleAt(si)
-            if (abs(turn) < t.turnMinDeg) continue
-            step = i
-            stepS = si
-            stepTurn = turn
-            break
-        }
-        val holdAt = if (step >= 0) max(stepS - 5.0, 0.0) else Double.MAX_VALUE
-        if (step < 0 || target <= holdAt) {
+        val next = nextHoldableTurn(c, t)
+        val holdAt = next?.let { max(it.second - 5.0, 0.0) } ?: Double.MAX_VALUE
+        if (next == null || target <= holdAt) {
             clearHold()
             c.advance(ds)
             return
         }
+        val (step, stepS, stepTurn) = next
         if (holdStep != step) {
             holdStep = step
             holdTravel = 0.0
@@ -487,19 +493,22 @@ class NavigationEngine(
             )
         }
 
-        val limitMs = t.turnHoldMaxS * 1000L
-        if (holdMovingMs > limitMs) {
-            val recentYaw = motion.integratedYaw(nowMs, 3000)
-            val partial = (recentYaw * stepTurn > 0 && abs(recentYaw) >= 10.0) || gyroAgrees
-            if (!partial || holdMovingMs > limitMs + 15_000) {
-                log("turn_hold_release step=$step reason=timeout gyro=${holdYaw.toInt()}")
-                consumedSteps += step
-                clearHold()
-                motion.resetHoldAccumulator()
-                holdAccStep = -1
-                c.moveTo(target)
-            }
-        }
+        releaseHoldOnTimeout(c, step, stepTurn, gyroAgrees, target, nowMs)
+    }
+
+    /** Give up holding after [Tuning.turnHoldMaxS] of driving (15 s more if the gyro shows a turn starting). */
+    private fun releaseHoldOnTimeout(c: RouteCursor, step: Int, stepTurn: Double, gyroAgrees: Boolean, target: Double, nowMs: Long) {
+        val limitMs = tuning().turnHoldMaxS * 1000L
+        if (holdMovingMs <= limitMs) return
+        val recentYaw = motion.integratedYaw(nowMs, 3000)
+        val partial = (recentYaw * stepTurn > 0 && abs(recentYaw) >= 10.0) || gyroAgrees
+        if (partial && holdMovingMs <= limitMs + 15_000) return
+        log("turn_hold_release step=$step reason=timeout gyro=${motion.holdYawDeg.toInt()}")
+        consumedSteps += step
+        clearHold()
+        motion.resetHoldAccumulator()
+        holdAccStep = -1
+        c.moveTo(target)
     }
 
     /** The held turn is confirmed once the gyro has turned the same way by enough. */
@@ -684,10 +693,12 @@ class NavigationEngine(
                 }
                 return
             }
+
             NetworkTracker.GateResult.REANCHORED -> {
                 net.clearSamples()
                 log("net_reanchor s_net=${proj.s.toInt()} s_marker=${c.s.toInt()}")
             }
+
             NetworkTracker.GateResult.ACCEPTED -> Unit
         }
         net.record(NetSample(fix.elapsedMs, proj.s, acc, proj.offsetM), fix.lat, fix.lon)
@@ -709,12 +720,20 @@ class NavigationEngine(
             val key = "${fix.lat},${fix.lon}"
             if (key != netDevFastKey) {
                 netDevFastKey = key
-                if (off >= max(100.0, 30.0 + 2.5 * acc)) netDevFastCount++ else if (off <= acc + 30.0) netDevFastCount = 0
+                if (off >= max(100.0, 30.0 + 2.5 * acc)) {
+                    netDevFastCount++
+                } else if (off <= acc + 30.0) {
+                    netDevFastCount = 0
+                }
                 if (netDevFastCount >= 3) {
                     netDevFastCount = 0
                     netDevCount = 0
                     if (deviation.canOffer(nowMs)) {
-                        offerDeviation(nowMs, "blind_deviation_net off=${off.toInt()} acc=${acc.toInt()} rule=fast delay_s=${t.blindDeviationDelayS}", phrases.blindOffRoute(t.blindDeviationDelayS))
+                        offerDeviation(
+                            nowMs,
+                            "blind_deviation_net off=${off.toInt()} acc=${acc.toInt()} rule=fast delay_s=${t.blindDeviationDelayS}",
+                            phrases.blindOffRoute(t.blindDeviationDelayS),
+                        )
                     }
                     return
                 }
@@ -787,8 +806,7 @@ class NavigationEngine(
         catchUp = 0.0
     }
 
-    private fun lastConfirmedTurnS(c: RouteCursor): Double? =
-        consumedSteps.map { c.route.stepS(it) + 20.0 }.filter { it <= c.s }.maxOrNull()
+    private fun lastConfirmedTurnS(c: RouteCursor): Double? = consumedSteps.map { c.route.stepS(it) + 20.0 }.filter { it <= c.s }.maxOrNull()
 
     // ------------------------------------------------------------------ deviation / reroute
 

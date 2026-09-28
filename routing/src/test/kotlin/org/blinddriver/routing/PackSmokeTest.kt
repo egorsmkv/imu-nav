@@ -28,7 +28,9 @@ class PackSmokeTest {
                 val r = g.route(listOf(kyiv, dest))
                 val ms = (System.nanoTime() - t) / 1_000_000
                 val limits = r.maxspeedKmh.count { it != null }
-                println("Kyiv→$name: ${(r.length / 1000).toInt()} km, ${(r.durationS / 3600 * 10).toInt() / 10.0} h, ${r.steps.size} steps, $limits/${r.maxspeedKmh.size} segments with limit, $ms ms")
+                println(
+                    "Kyiv→$name: ${(r.length / 1000).toInt()} km, ${(r.durationS / 3600 * 10).toInt() / 10.0} h, ${r.steps.size} steps, $limits/${r.maxspeedKmh.size} segments with limit, $ms ms",
+                )
                 assertTrue(r.length / 1000 in km, "$name length ${r.length / 1000} km")
             }
         }
@@ -41,13 +43,19 @@ class PackSmokeTest {
         val kyiv = GeoPoint(50.4501, 30.5234)
         JdbcSearchDb(File(dir!!, SearchIndexBuilder.FILE)).use { db ->
             for ((q, near) in listOf(
-                "Хрещатик 22" to kyiv, "Львів" to kyiv, "буча" to kyiv, "Шевченка Львів" to kyiv,
-                "Київ Грушевського 5" to kyiv, "Одеса Дерибасівська" to kyiv, "Kharkiv" to kyiv, "вул. Велика Васильківська 100" to kyiv,
+                "Хрещатик 22" to kyiv,
+                "Львів" to kyiv,
+                "буча" to kyiv,
+                "Шевченка Львів" to kyiv,
+                "Київ Грушевського 5" to kyiv,
+                "Одеса Дерибасівська" to kyiv,
+                "Kharkiv" to kyiv,
+                "вул. Велика Васильківська 100" to kyiv,
             )) {
                 val t = System.nanoTime()
                 val r = org.blinddriver.core.search.AddressSearch.search(db, q, near, limit = 3)
                 val ms = (System.nanoTime() - t) / 1_000_000
-                println("'$q' (${ms} ms): " + r.joinToString(" | ") { "${it.kind} ${it.title} [${it.subtitle}] ${it.distanceM?.let { d -> (d / 1000).toInt() }}km" })
+                println("'$q' ($ms ms): " + r.joinToString(" | ") { "${it.kind} ${it.title} [${it.subtitle}] ${it.distanceM?.let { d -> (d / 1000).toInt() }}km" })
                 assertTrue(r.isNotEmpty(), "no results for $q")
             }
         }

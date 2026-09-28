@@ -8,8 +8,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,17 +20,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AltRoute
 import androidx.compose.material.icons.filled.CellTower
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GpsFixed
-import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.GpsNotFixed
 import androidx.compose.material.icons.filled.GpsOff
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LocationOff
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Navigation
@@ -70,6 +70,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -78,6 +80,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.edit
+import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.blinddriver.app.AppGraph
 import org.blinddriver.app.R
@@ -98,17 +102,9 @@ private val InfoBlue = Color(0xFF1A73E8)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MapScreen(
-    ui: UiState,
-    g: AppGraph,
-    hasLocation: Boolean,
-    onRequestPermission: () -> Unit,
-    onOpenSettings: () -> Unit,
-    onOpenLog: () -> Unit,
-    onOpenHistory: () -> Unit,
-) {
+fun MapScreen(ui: UiState, g: AppGraph, hasLocation: Boolean, onRequestPermission: () -> Unit, onOpenSettings: () -> Unit, onOpenLog: () -> Unit, onOpenHistory: () -> Unit) {
     val context = LocalContext.current
-    val res = context.resources
+    val res = LocalResources.current
     val nav = ui.guidance
     val controller = remember { MapController() }
     val towerLayer by g.cells.towerLayer.collectAsStateWithLifecycle()
@@ -186,8 +182,20 @@ fun MapScreen(
             if (nav.active && !nav.arrived) ManeuverBanner(nav)
             if (!nav.active) SearchPill(onClick = { showSearch = true })
             when {
-                !hasLocation -> WarningBanner(Icons.Filled.LocationOff, stringResource(R.string.permission_title), stringResource(R.string.permission_text), stringResource(R.string.action_allow), onRequestPermission)
-                !ui.locationEnabled -> WarningBanner(Icons.Filled.LocationOff, stringResource(R.string.location_off_title), stringResource(R.string.location_off_text), stringResource(R.string.action_turn_on)) {
+                !hasLocation -> WarningBanner(
+                    Icons.Filled.LocationOff,
+                    stringResource(R.string.permission_title),
+                    stringResource(R.string.permission_text),
+                    stringResource(R.string.action_allow),
+                    onRequestPermission,
+                )
+
+                !ui.locationEnabled -> WarningBanner(
+                    Icons.Filled.LocationOff,
+                    stringResource(R.string.location_off_title),
+                    stringResource(R.string.location_off_text),
+                    stringResource(R.string.action_turn_on),
+                ) {
                     context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
                 }
             }
@@ -233,7 +241,10 @@ fun MapScreen(
             if (ui.cells.showTowers) TowerLegend(towerLayer, ui.cells.radios)
             SnackbarHost(snackbar)
             if (nav.active) {
-                NavigationPanel(nav, onStop = { g.stopNavigation(); NavService.stop(context) }, onReroute = { g.engine.requestManualReroute() })
+                NavigationPanel(nav, onStop = {
+                    g.stopNavigation()
+                    NavService.stop(context)
+                }, onReroute = { g.engine.requestManualReroute() })
             } else {
                 IdlePanel(
                     ui = ui,
@@ -278,7 +289,10 @@ fun MapScreen(
 
     if (showDiagnostics) {
         ModalBottomSheet(onDismissRequest = { showDiagnostics = false }) {
-            DiagnosticsContent(ui, g, onOpenLog = { showDiagnostics = false; onOpenLog() })
+            DiagnosticsContent(ui, g, onOpenLog = {
+                showDiagnostics = false
+                onOpenLog()
+            })
         }
     }
 }
@@ -290,11 +304,11 @@ fun MapScreen(
 private fun requestBatteryExemptionOnce(context: android.content.Context) {
     val prefs = context.getSharedPreferences("ui", android.content.Context.MODE_PRIVATE)
     if (prefs.getBoolean("battery_asked", false)) return
-    prefs.edit().putBoolean("battery_asked", true).apply()
+    prefs.edit { putBoolean("battery_asked", true) }
     if (isBatteryUnrestricted(context)) return
     runCatching {
         @android.annotation.SuppressLint("BatteryLife")
-        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, android.net.Uri.parse("package:${context.packageName}"))
+        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, "package:${context.packageName}".toUri())
         context.startActivity(intent)
     }
 }
@@ -306,7 +320,7 @@ fun isBatteryUnrestricted(context: android.content.Context): Boolean =
 
 @Composable
 private fun ManeuverBanner(nav: GuidanceState) {
-    val res = LocalContext.current.resources
+    val res = LocalResources.current
     val step = nav.nextStep ?: return
     val m = maneuverOf(step)
     Surface(color = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary, shape = RoundedCornerShape(24.dp), shadowElevation = 6.dp) {
@@ -335,7 +349,12 @@ private fun ManeuverBanner(nav: GuidanceState) {
 
 @Composable
 private fun WarningBanner(icon: ImageVector, title: String, text: String, action: String, onAction: () -> Unit) {
-    Surface(color = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer, shape = RoundedCornerShape(20.dp), shadowElevation = 4.dp) {
+    Surface(
+        color = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        shape = RoundedCornerShape(20.dp),
+        shadowElevation = 4.dp,
+    ) {
         Row(Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, contentDescription = null)
             Spacer(Modifier.width(12.dp))
@@ -351,7 +370,7 @@ private fun WarningBanner(icon: ImageVector, title: String, text: String, action
 /** Compact "where does my position come from" chip; tap for details. */
 @Composable
 private fun StatusPill(ui: UiState, onClick: () -> Unit) {
-    val res = LocalContext.current.resources
+    val res = LocalResources.current
     val nav = ui.guidance
     val (label, dot) = when {
         nav.active -> sourceLabel(res, nav.source) + " · " + formatAccuracy(res, nav.uncertaintyM) to when (nav.source) {
@@ -360,9 +379,13 @@ private fun StatusPill(ui: UiState, onClick: () -> Unit) {
             PositionSource.NONE -> Color.Gray
             else -> InfoBlue
         }
+
         ui.hasTrustedPosition && ui.trustedFromGps -> stringResource(R.string.src_gps) + " · " + formatAccuracy(res, ui.trustedAccuracyM ?: 0.0) to GoodGreen
+
         ui.hasTrustedPosition -> stringResource(R.string.src_cells) + " · " + formatAccuracy(res, ui.trustedAccuracyM ?: 0.0) to InfoBlue
+
         ui.manualStart != null -> stringResource(R.string.idle_position_manual) to InfoBlue
+
         else -> stringResource(R.string.src_none) to Color.Gray
     }
     val gps = when {
@@ -428,7 +451,7 @@ private fun TowerLegend(layer: TowerLayer, radios: Set<Radio>) {
                 when {
                     layer.zoomTooLow -> stringResource(R.string.legend_zoom_in)
                     layer.truncated -> stringResource(R.string.legend_sample, layer.towers.size)
-                    else -> stringResource(R.string.legend_count, layer.towers.size)
+                    else -> pluralStringResource(R.plurals.legend_count, layer.towers.size, layer.towers.size)
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -447,16 +470,8 @@ private fun PanelSurface(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun IdlePanel(
-    ui: UiState,
-    routingBusy: String?,
-    pickStart: Boolean,
-    canStart: Boolean,
-    onSetStart: () -> Unit,
-    onStart: () -> Unit,
-    onClearDestination: () -> Unit,
-) {
-    val res = LocalContext.current.resources
+private fun IdlePanel(ui: UiState, routingBusy: String?, pickStart: Boolean, canStart: Boolean, onSetStart: () -> Unit, onStart: () -> Unit, onClearDestination: () -> Unit) {
+    val res = LocalResources.current
     PanelSurface {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -517,7 +532,7 @@ private fun IconLine(icon: ImageVector, text: String) {
 @Composable
 private fun NavigationPanel(nav: GuidanceState, onStop: () -> Unit, onReroute: () -> Unit) {
     val context = LocalContext.current
-    val res = context.resources
+    val res = LocalResources.current
     PanelSurface {
         if (nav.arrived) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -569,7 +584,7 @@ private fun NavigationPanel(nav: GuidanceState, onStop: () -> Unit, onReroute: (
 
 @Composable
 private fun SpeedBadge(speedKmh: Int, limitKmh: Int?) {
-    val res = LocalContext.current.resources
+    val res = LocalResources.current
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text("$speedKmh", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -595,7 +610,7 @@ private fun SpeedBadge(speedKmh: Int, limitKmh: Int?) {
 
 @Composable
 private fun DiagnosticsContent(ui: UiState, g: AppGraph, onOpenLog: () -> Unit) {
-    val res = LocalContext.current.resources
+    val res = LocalResources.current
     val nav = ui.guidance
     val none = stringResource(R.string.none)
     Column(

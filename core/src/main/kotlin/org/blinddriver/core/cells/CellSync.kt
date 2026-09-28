@@ -18,12 +18,11 @@ import kotlin.math.min
 object CellCsv {
     const val HEADER = "radio,mcc,net,area,cell,unit,lon,lat,range,samples,changeable,created,updated,averageSignal"
 
-    fun format(t: CellTower, updatedEpochS: Long = 0): String =
-        String.format(
-            Locale.US,
-            "%s,%d,%d,%d,%d,,%.7f,%.7f,%d,%d,1,%d,%d,",
-            t.key.radio.name, t.key.mcc, t.key.mnc, t.key.area, t.key.cid, t.lon, t.lat, t.rangeM.toLong(), t.samples, updatedEpochS, updatedEpochS,
-        )
+    fun format(t: CellTower, updatedEpochS: Long = 0): String = String.format(
+        Locale.US,
+        "%s,%d,%d,%d,%d,,%.7f,%.7f,%d,%d,1,%d,%d,",
+        t.key.radio.name, t.key.mcc, t.key.mnc, t.key.area, t.key.cid, t.lon, t.lat, t.rangeM.toLong(), t.samples, updatedEpochS, updatedEpochS,
+    )
 
     fun writeGzip(towers: Iterable<CellTower>, out: OutputStream, updatedEpochS: (CellTower) -> Long = { 0 }) {
         GZIPOutputStream(out).bufferedWriter().use { w ->
@@ -136,19 +135,15 @@ class CellSyncClient(baseUrl: String, private val apiKey: String? = null, privat
         return conn.inputStream.bufferedReader().use { it.readText() }
     }
 
-    private fun readError(conn: HttpURLConnection): String =
-        runCatching { conn.errorStream?.bufferedReader()?.use { it.readText() }?.take(200) }.getOrNull().orEmpty()
+    private fun readError(conn: HttpURLConnection): String = runCatching { conn.errorStream?.bufferedReader()?.use { it.readText() }?.take(200) }.getOrNull().orEmpty()
 }
 
 /**
  * An InputStream over HTTP that transparently reconnects with a `Range` header after network
  * errors, so multi-gigabyte downloads survive Wi-Fi hiccups. Requires server byte-range support.
  */
-class ResumableHttpInputStream(
-    private val url: String,
-    private val maxRetries: Int = 20,
-    private val onProgress: (bytes: Long, total: Long) -> Unit = { _, _ -> },
-) : InputStream() {
+class ResumableHttpInputStream(private val url: String, private val maxRetries: Int = 20, private val onProgress: (bytes: Long, total: Long) -> Unit = { _, _ -> }) :
+    InputStream() {
     private var conn: HttpURLConnection? = null
     private var stream: InputStream? = null
     private var position = 0L

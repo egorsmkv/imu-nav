@@ -82,8 +82,7 @@ class Route(
     fun bearingAt(s: Double): Double = pointAt(s.coerceIn(0.0, length)).bearingDeg
 
     /** Signed heading change of the road across [s] ± 25 m (deg, + = right). */
-    fun turnAngleAt(s: Double): Double =
-        Geo.angleDiff(bearingAt(maxOf(0.0, s - 25.0)), bearingAt(minOf(length, s + 25.0)))
+    fun turnAngleAt(s: Double): Double = Geo.angleDiff(bearingAt(maxOf(0.0, s - 25.0)), bearingAt(minOf(length, s + 25.0)))
 
     /**
      * Project [p] onto the route. Searches [behindM] before and [aheadM] after [aroundS]; if the

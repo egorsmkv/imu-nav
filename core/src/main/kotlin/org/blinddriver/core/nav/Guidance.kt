@@ -118,8 +118,7 @@ object UkrainianPhrases : Phrases {
 }
 
 object EnglishPhrases : Phrases {
-    private fun distance(m: Double): String =
-        if (m >= 1000) "In ${String.format(Locale.US, "%.1f", m / 1000)} kilometres" else "In ${((m / 10).roundToInt() * 10)} metres"
+    private fun distance(m: Double): String = if (m >= 1000) "In ${String.format(Locale.US, "%.1f", m / 1000)} kilometres" else "In ${((m / 10).roundToInt() * 10)} metres"
 
     private fun action(step: Step): String {
         val dir = step.modifier ?: "straight"

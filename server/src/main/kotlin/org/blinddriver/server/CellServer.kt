@@ -94,10 +94,9 @@ class CellStore(private val file: File?, val policy: Policy = Policy()) {
         return UploadResult(ok, bad)
     }
 
-    private fun plausible(t: CellTower): Boolean =
-        t.rangeM > 0 && t.rangeM <= policy.maxRangeM && t.samples > 0 &&
-            t.lat in -90.0..90.0 && t.lon in -180.0..180.0 &&
-            (policy.area?.contains(t.lat, t.lon) ?: true)
+    private fun plausible(t: CellTower): Boolean = t.rangeM > 0 && t.rangeM <= policy.maxRangeM && t.samples > 0 &&
+        t.lat in -90.0..90.0 && t.lon in -180.0..180.0 &&
+        (policy.area?.contains(t.lat, t.lon) ?: true)
 
     /** Robust aggregate of all devices' contributions for one cell. */
     private fun recompute(key: CellKey) {
@@ -152,8 +151,7 @@ class CellStore(private val file: File?, val policy: Policy = Policy()) {
     }
 
     /** Published (confirmed) towers changed since [sinceS]. */
-    fun query(mccs: Set<Int>?, sinceS: Long): List<Consensus> =
-        consensus.values.filter { published(it) && (mccs == null || it.tower.key.mcc in mccs) && it.updatedS >= sinceS }
+    fun query(mccs: Set<Int>?, sinceS: Long): List<Consensus> = consensus.values.filter { published(it) && (mccs == null || it.tower.key.mcc in mccs) && it.updatedS >= sinceS }
 
     fun consensusOf(key: CellKey): Consensus? = consensus[key]
 
@@ -215,12 +213,7 @@ class RateLimiter(private val limit: Int, private val windowMs: Long) {
  *  - `GET  /v1/cells.csv.gz?mcc=255,256&since=<epoch s>` — confirmed consensus towers
  *  - `GET  /health`
  */
-class CellServer(
-    private val store: CellStore,
-    private val apiKey: String?,
-    port: Int,
-    tls: SSLContext? = null,
-) {
+class CellServer(private val store: CellStore, private val apiKey: String?, port: Int, tls: SSLContext? = null) {
     private val policy = store.policy
     private val http: HttpServer = if (tls != null) {
         HttpsServer.create(InetSocketAddress(port), 0).also { it.httpsConfigurator = HttpsConfigurator(tls) }
@@ -243,34 +236,52 @@ class CellServer(
 
     fun stop() = http.stop(0)
 
-    private fun error(ex: HttpExchange, code: Int, message: String) =
-        respond(ex, code, "application/json", "{\"status\":\"error\",\"message\":\"$message\"}".toByteArray())
+    private fun error(ex: HttpExchange, code: Int, message: String) = respond(ex, code, "application/json", "{\"status\":\"error\",\"message\":\"$message\"}".toByteArray())
 
     private fun handleUpload(ex: HttpExchange) {
         try {
-            if (ex.requestMethod != "POST") return error(ex, 405, "POST_ONLY")
-            if (!apiKey.isNullOrBlank() && ex.requestHeaders.getFirst("Authorization") != "Bearer $apiKey") return error(ex, 401, "UNAUTHORIZED")
             val ip = ex.remoteAddress.address.hostAddress
             val device = ex.requestHeaders.getFirst("X-Device-Id")?.takeIf { DEVICE_ID.matches(it) } ?: "ip:$ip"
-            if (device == CellStore.SEED) return error(ex, 400, "BAD_DEVICE")
-            // Limit how many identities one address can create per day (sybil resistance).
-            val now = System.currentTimeMillis()
-            val known = devicesPerIp.getOrPut(ip) { ConcurrentHashMap() }
-            known.entries.removeIf { now - it.value > 86_400_000 }
-            if (device !in known && known.size >= policy.maxDevicesPerIpPerDay) return error(ex, 429, "TOO_MANY_DEVICES")
-            known[device] = now
-            if (!perIp.allow(ip) || !perDevice.allow(device)) return error(ex, 429, "RATE_LIMITED")
+            rejectUpload(ex, ip, device)?.let { (code, message) -> return error(ex, code, message) }
 
             val towers = ArrayList<CellTower>()
             val body = LimitedInputStream(ex.requestBody, MAX_UPLOAD_BYTES)
-            CellCsv.read(body) { if (towers.size < policy.maxRowsPerUpload) towers += it }
+            try {
+                CellCsv.read(body) { if (towers.size < policy.maxRowsPerUpload) towers += it }
+            } catch (e: IllegalStateException) {
+                return error(ex, 413, e.message ?: "UPLOAD_TOO_LARGE")
+            } catch (_: java.io.IOException) {
+                return error(ex, 400, "BAD_BODY") // broken gzip, truncated upload
+            }
             val r = store.contribute(device, towers)
             store.save()
             log("upload $device@$ip: ${towers.size} rows, ${r.accepted} accepted, ${r.rejected} rejected, published=${store.size}")
             respond(ex, 200, "application/json", "{\"status\":\"ok\",\"accepted\":${r.accepted},\"rejected\":${r.rejected}}".toByteArray())
-        } catch (e: Exception) {
-            error(ex, 400, (e.message ?: "BAD_REQUEST").replace("\"", "'"))
+        } catch (e: java.io.IOException) {
+            // Client disconnected mid-upload, or the data file could not be saved.
+            log("upload_failed ${e.javaClass.simpleName}: ${e.message}")
+            runCatching { error(ex, 500, "SERVER_ERROR") }
         }
+    }
+
+    /** Admission checks before reading the body, in order; null = accepted. */
+    private fun rejectUpload(ex: HttpExchange, ip: String, device: String): Pair<Int, String>? = when {
+        ex.requestMethod != "POST" -> 405 to "POST_ONLY"
+        !apiKey.isNullOrBlank() && ex.requestHeaders.getFirst("Authorization") != "Bearer $apiKey" -> 401 to "UNAUTHORIZED"
+        device == CellStore.SEED -> 400 to "BAD_DEVICE"
+        !registerDevice(ip, device) -> 429 to "TOO_MANY_DEVICES"
+        !perIp.allow(ip) || !perDevice.allow(device) -> 429 to "RATE_LIMITED"
+        else -> null
+    }
+
+    /** Limit how many identities one address can create per day (sybil resistance). */
+    private fun registerDevice(ip: String, device: String): Boolean {
+        val now = System.currentTimeMillis()
+        val known = devicesPerIp.getOrPut(ip) { ConcurrentHashMap() }
+        known.entries.removeIf { now - it.value > 86_400_000 }
+        if (device !in known && known.size >= policy.maxDevicesPerIpPerDay) return false
+        known[device] = now
+        return true
     }
 
     private fun handleDownload(ex: HttpExchange) {

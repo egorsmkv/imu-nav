@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Deliberate exceptions to Android Lint; everything else is an error (see app/build.gradle.kts). -->
+<lint>
+    <!-- Release builds are ARM-only on purpose (APK size); ChromeOS runs them through translation. -->
+    <issue id="ChromeOsAbiSupport" severity="ignore" />
+    <!-- SDK 37 needs dependency versions that the pinned AndroidX/Compose set does not support yet;
+         revisit when upgrading AndroidX. -->
+    <issue id="OldTargetApi" severity="ignore" />
+    <issue id="GradleDependency" severity="ignore" />
+    <issue id="AndroidGradlePluginVersion" severity="ignore" />
+    <issue id="NewerVersionAvailable" severity="ignore" />
+    <!-- Rule shipped by a transitive dependency; the app logs through TripLog / android.util.Log, not Timber. -->
+    <issue id="LogNotTimber" severity="ignore" />
+</lint>

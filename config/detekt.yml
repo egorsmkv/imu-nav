@@ -1,0 +1,47 @@
+# detekt: default rules plus these project adjustments. Run with `./gradlew detekt` (part of `check`).
+
+style:
+  # Thresholds and physical constants are named in Tuning / TrustConfig; formulas (unit conversions,
+  # Web-Mercator maths, CSV column indices) would only get noisier with a constant per number.
+  MagicNumber:
+    active: false
+  # Line length is enforced by ktlint (see .editorconfig) — one tool, one limit.
+  MaxLineLength:
+    active: false
+  ReturnCount:
+    max: 4
+    excludeGuardClauses: true
+  LoopWithTooManyJumpStatements:
+    maxJumpCount: 3
+  ThrowsCount:
+    max: 4
+
+naming:
+  # Jetpack Compose convention: composable functions are PascalCase.
+  FunctionNaming:
+    ignoreAnnotated: ['Composable']
+  # Files are named after their topic (Format.kt, BuildGraph.kt) rather than their one class.
+  MatchingDeclarationName:
+    active: false
+
+complexity:
+  # The navigation engine is a state machine whose steps are easier to review in one place.
+  CyclomaticComplexMethod:
+    allowedComplexity: 25
+    ignoreSimpleWhenEntries: true
+    # Compose screens branch on UI state declaratively; that is layout, not control flow.
+    ignoreAnnotated: ['Composable']
+  LongMethod:
+    allowedLines: 120
+    ignoreAnnotated: ['Composable']
+  ComplexCondition:
+    allowedConditions: 5
+  NestedBlockDepth:
+    allowedDepth: 5
+  LargeClass:
+    allowedLines: 1000
+  TooManyFunctions:
+    allowedFunctionsPerFile: 30
+    allowedFunctionsPerClass: 40
+    allowedFunctionsPerObject: 15
+    ignorePrivate: true

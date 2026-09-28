@@ -61,13 +61,24 @@ class MotionDetector(private val tuning: () -> Tuning) {
             holdStartedMs = now
         }
 
+        val stats = windowStats(now, t.stopWindowMs) ?: return
+        accMean = stats.mean
+        accStd = stats.std
+        gyroMean = stats.gyro
+        if (stopped) checkResume(now, stats, t) else checkStop(now, stats, t)
+    }
+
+    private class WindowStats(val mean: Double, val std: Double, val gyro: Double)
+
+    /** Mean / σ of acceleration and mean gyro magnitude over the last [windowMs]; null with too few samples. */
+    private fun windowStats(now: Long, windowMs: Long): WindowStats? {
         var n = 0
         var sum = 0.0
         var sumSq = 0.0
         var gyroN = 0
         var gyroSum = 0.0
         for (s in samples) {
-            if (now - s.t > t.stopWindowMs) continue
+            if (now - s.t > windowMs) continue
             n++
             sum += s.acc
             sumSq += s.acc * s.acc
@@ -76,31 +87,33 @@ class MotionDetector(private val tuning: () -> Tuning) {
                 gyroSum += s.gyro
             }
         }
-        if (n < 8) return
+        if (n < 8) return null
         val mean = sum / n
         val std = sqrt(max(0.0, sumSq / n - mean * mean))
+        // Gyro only counts when most samples carried it.
         val gyro = if (gyroN * 5 >= n * 4) gyroSum / gyroN else Double.NaN
-        accMean = mean
-        accStd = std
-        gyroMean = gyro
+        return WindowStats(mean, std, gyro)
+    }
 
-        if (!stopped) {
-            val quietAcc = std < t.stopAccStd && mean < t.stopAccMean
-            val quietGyro = !gyro.isNaN() && gyro < t.stopGyro && mean < t.stopGyroAccMeanMax
-            if (!quietAcc && !quietGyro) {
-                quietSinceMs = -1L
-                return
-            }
-            if (quietSinceMs < 0) quietSinceMs = now
-            if (now - quietSinceMs >= t.stopHoldMs) {
-                stopped = true
-                noisySinceMs = -1L
-                log?.invoke("dr_stop std=%.3f mean=%.3f gyro=%.3f".format(std, mean, if (gyro.isNaN()) -1.0 else gyro))
-            }
+    /** Moving → stopped after [Tuning.stopHoldMs] of a quiet accelerometer or gyro. */
+    private fun checkStop(now: Long, w: WindowStats, t: Tuning) {
+        val quietAcc = w.std < t.stopAccStd && w.mean < t.stopAccMean
+        val quietGyro = !w.gyro.isNaN() && w.gyro < t.stopGyro && w.mean < t.stopGyroAccMeanMax
+        if (!quietAcc && !quietGyro) {
+            quietSinceMs = -1L
             return
         }
+        if (quietSinceMs < 0) quietSinceMs = now
+        if (now - quietSinceMs >= t.stopHoldMs) {
+            stopped = true
+            noisySinceMs = -1L
+            log?.invoke("dr_stop std=%.3f mean=%.3f gyro=%.3f".format(w.std, w.mean, if (w.gyro.isNaN()) -1.0 else w.gyro))
+        }
+    }
 
-        val stillQuiet = mean <= t.resumeAccMean && std <= t.resumeAccStd && (gyro.isNaN() || gyro <= t.resumeGyro)
+    /** Stopped → moving after [Tuning.resumeConfirmMs] of vibration above the resume thresholds. */
+    private fun checkResume(now: Long, w: WindowStats, t: Tuning) {
+        val stillQuiet = w.mean <= t.resumeAccMean && w.std <= t.resumeAccStd && (w.gyro.isNaN() || w.gyro <= t.resumeGyro)
         if (stillQuiet) {
             noisySinceMs = -1L
             return
@@ -110,7 +123,7 @@ class MotionDetector(private val tuning: () -> Tuning) {
             stopped = false
             quietSinceMs = -1L
             resumedAtMs = now
-            log?.invoke("dr_resume std=%.3f mean=%.3f gyro=%.3f".format(std, mean, if (gyro.isNaN()) -1.0 else gyro))
+            log?.invoke("dr_resume std=%.3f mean=%.3f gyro=%.3f".format(w.std, w.mean, if (w.gyro.isNaN()) -1.0 else w.gyro))
         }
     }
 

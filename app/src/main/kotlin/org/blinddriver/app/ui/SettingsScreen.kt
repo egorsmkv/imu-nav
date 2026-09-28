@@ -20,12 +20,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BatteryChargingFull
-import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Article
+import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.Route
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -51,8 +52,6 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.compose.material.icons.filled.Route
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -60,12 +59,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.net.toUri
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import org.blinddriver.app.AppGraph
 import org.blinddriver.app.R
@@ -111,7 +113,10 @@ fun SettingsScreen(ui: UiState, g: AppGraph, onBack: () -> Unit, onOpenLog: () -
             androidx.compose.material3.LargeTopAppBar(
                 title = { Text(stringResource(R.string.settings_title)) },
                 navigationIcon = {
-                    IconButton(onClick = { save(); onBack() }) {
+                    IconButton(onClick = {
+                        save()
+                        onBack()
+                    }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
                     }
                 },
@@ -185,8 +190,8 @@ fun SettingsScreen(ui: UiState, g: AppGraph, onBack: () -> Unit, onOpenLog: () -
                                     org.blinddriver.app.power.PowerMode.PERFORMANCE -> R.string.power_performance_hint
                                     org.blinddriver.app.power.PowerMode.BALANCED -> R.string.power_balanced_hint
                                     org.blinddriver.app.power.PowerMode.SAVER -> R.string.power_saver_hint
-                                }
-                            )
+                                },
+                            ),
                         )
                         if (powerMode == org.blinddriver.app.power.PowerMode.AUTO) {
                             val active = when (profile) {
@@ -211,8 +216,11 @@ fun SettingsScreen(ui: UiState, g: AppGraph, onBack: () -> Unit, onOpenLog: () -
             ListItem(
                 headlineContent = {
                     Text(
-                        if (pack == null) stringResource(R.string.routing_none)
-                        else stringResource(R.string.routing_pack, pack.name, (pack.sizeBytes / 1_048_576).toInt(), pack.builtAt.take(10))
+                        if (pack == null) {
+                            stringResource(R.string.routing_none)
+                        } else {
+                            stringResource(R.string.routing_pack, pack.name, (pack.sizeBytes / 1_048_576).toInt(), pack.builtAt.take(10))
+                        },
                     )
                 },
                 supportingContent = {
@@ -233,7 +241,10 @@ fun SettingsScreen(ui: UiState, g: AppGraph, onBack: () -> Unit, onOpenLog: () -
                     }
                 }
             }
-            Field(packUrl, { packUrl = it; g.offlineRouting.setPackUrl(it) }, stringResource(R.string.routing_url), "https://…/graph-ukraine.zip", keyboard = KeyboardType.Uri)
+            Field(packUrl, {
+                packUrl = it
+                g.offlineRouting.setPackUrl(it)
+            }, stringResource(R.string.routing_url), "https://…/graph-ukraine.zip", keyboard = KeyboardType.Uri)
             FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(onClick = { g.offlineRouting.download(packUrl) }, enabled = packUrl.isNotBlank() && routing.busy == null) {
                     Text(stringResource(R.string.action_download))
@@ -280,18 +291,26 @@ fun SettingsScreen(ui: UiState, g: AppGraph, onBack: () -> Unit, onOpenLog: () -
                 headlineContent = { Text(stringResource(R.string.cells_total, nf.format(c.total))) },
                 supportingContent = {
                     Text(
-                        CellSource.entries.filter { (c.counts[it] ?: 0) > 0 }.joinToString(" · ") { "${names[it]}: ${nf.format(c.counts[it] ?: 0)}" }
+                        CellSource.entries.filter { (c.counts[it] ?: 0) > 0 }.joinToString(" · ") { "${names[it]}: ${nf.format(c.counts[it] ?: 0)}" },
                     )
                 },
             )
-            Field(mccs, { mccs = it; save() }, stringResource(R.string.cells_region), stringResource(R.string.cells_region_hint), keyboard = KeyboardType.Number)
+            Field(mccs, {
+                mccs = it
+                save()
+            }, stringResource(R.string.cells_region), stringResource(R.string.cells_region_hint), keyboard = KeyboardType.Number)
 
             // ---------------- Data sources
             SectionHeader(stringResource(R.string.sec_sources))
             ListItem(
                 headlineContent = { Text(stringResource(R.string.mozilla_title)) },
                 supportingContent = { Text(stringResource(R.string.mozilla_summary)) },
-                trailingContent = { TextButton(onClick = { save(); mgr.downloadMozilla() }, enabled = !busy) { Text(stringResource(R.string.action_download)) } },
+                trailingContent = {
+                    TextButton(onClick = {
+                        save()
+                        mgr.downloadMozilla()
+                    }, enabled = !busy) { Text(stringResource(R.string.action_download)) }
+                },
             )
             ListItem(
                 headlineContent = { Text(stringResource(R.string.ocid_title)) },
@@ -299,8 +318,14 @@ fun SettingsScreen(ui: UiState, g: AppGraph, onBack: () -> Unit, onOpenLog: () -
             )
             Field(token, { token = it }, stringResource(R.string.ocid_token), null, secret = true)
             Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(onClick = { save(); mgr.downloadOpenCellId(token) }, enabled = token.isNotBlank() && !busy) { Text(stringResource(R.string.action_download)) }
-                OutlinedButton(onClick = { save(); pickFile.launch(arrayOf("*/*")) }, enabled = !busy) {
+                Button(onClick = {
+                    save()
+                    mgr.downloadOpenCellId(token)
+                }, enabled = token.isNotBlank() && !busy) { Text(stringResource(R.string.action_download)) }
+                OutlinedButton(onClick = {
+                    save()
+                    pickFile.launch(arrayOf("*/*"))
+                }, enabled = !busy) {
                     Icon(Icons.Filled.FileUpload, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.size(8.dp))
                     Text(stringResource(R.string.action_import_file))
@@ -315,8 +340,14 @@ fun SettingsScreen(ui: UiState, g: AppGraph, onBack: () -> Unit, onOpenLog: () -
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
             )
-            Field(syncUrl, { syncUrl = it; save() }, stringResource(R.string.sync_url), "https://cells.example.org", keyboard = KeyboardType.Uri)
-            Field(syncKey, { syncKey = it; save() }, stringResource(R.string.sync_key), null, secret = true)
+            Field(syncUrl, {
+                syncUrl = it
+                save()
+            }, stringResource(R.string.sync_url), "https://cells.example.org", keyboard = KeyboardType.Uri)
+            Field(syncKey, {
+                syncKey = it
+                save()
+            }, stringResource(R.string.sync_key), null, secret = true)
             if (syncUrl.trim().startsWith("http://") && syncKey.isNotBlank()) {
                 Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Filled.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
@@ -324,16 +355,25 @@ fun SettingsScreen(ui: UiState, g: AppGraph, onBack: () -> Unit, onOpenLog: () -
                     Text(stringResource(R.string.sync_http_warning), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                 }
             }
-            SwitchItem(stringResource(R.string.sync_auto), stringResource(R.string.sync_auto_summary), autoSync) { autoSync = it; save() }
+            SwitchItem(stringResource(R.string.sync_auto), stringResource(R.string.sync_auto_summary), autoSync) {
+                autoSync = it
+                save()
+            }
             Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Button(onClick = { save(); mgr.sync() }, enabled = syncUrl.isNotBlank() && !busy) { Text(stringResource(R.string.action_sync_now)) }
+                Button(onClick = {
+                    save()
+                    mgr.sync()
+                }, enabled = syncUrl.isNotBlank() && !busy) { Text(stringResource(R.string.action_sync_now)) }
                 Spacer(Modifier.size(12.dp))
                 c.lastSync?.let { Text(stringResource(R.string.sync_last, it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
 
             // ---------------- Learning
             SectionHeader(stringResource(R.string.sec_learning))
-            SwitchItem(stringResource(R.string.learning_title), stringResource(R.string.learning_summary), c.learning) { mgr.setLearning(it); g.refresh() }
+            SwitchItem(stringResource(R.string.learning_title), stringResource(R.string.learning_summary), c.learning) {
+                mgr.setLearning(it)
+                g.refresh()
+            }
 
             // ---------------- Database
             SectionHeader(stringResource(R.string.sec_database))
@@ -373,7 +413,7 @@ fun SettingsScreen(ui: UiState, g: AppGraph, onBack: () -> Unit, onOpenLog: () -
                         @android.annotation.SuppressLint("BatteryLife")
                         val intent = android.content.Intent(
                             android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                            android.net.Uri.parse("package:${context.packageName}"),
+                            "package:${context.packageName}".toUri(),
                         )
                         context.startActivity(intent)
                     }
@@ -409,12 +449,15 @@ fun SettingsScreen(ui: UiState, g: AppGraph, onBack: () -> Unit, onOpenLog: () -
                     Text(stringResource(R.string.reset_text))
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { deleteLearned = !deleteLearned }) {
                         Checkbox(checked = deleteLearned, onCheckedChange = { deleteLearned = it })
-                        Text(stringResource(R.string.reset_learned, (c.counts[CellSource.LEARNED] ?: 0L).toInt()))
+                        Text((c.counts[CellSource.LEARNED] ?: 0L).toInt().let { n -> pluralStringResource(R.plurals.reset_learned, n, n) })
                     }
                 }
             },
             confirmButton = {
-                TextButton(onClick = { confirmReset = false; mgr.resetDatabase(deleteLearned) }) {
+                TextButton(onClick = {
+                    confirmReset = false
+                    mgr.resetDatabase(deleteLearned)
+                }) {
                     Text(stringResource(R.string.action_reset_confirm), color = MaterialTheme.colorScheme.error)
                 }
             },
@@ -430,7 +473,7 @@ private fun powerModeName(m: org.blinddriver.app.power.PowerMode): String = stri
         org.blinddriver.app.power.PowerMode.PERFORMANCE -> R.string.power_performance
         org.blinddriver.app.power.PowerMode.BALANCED -> R.string.power_balanced
         org.blinddriver.app.power.PowerMode.SAVER -> R.string.power_saver
-    }
+    },
 )
 
 @Composable
@@ -441,7 +484,7 @@ private fun sourceName(s: CellSource): String = stringResource(
         CellSource.LEARNED -> R.string.src_label_learned
         CellSource.MOZILLA -> R.string.src_label_mozilla
         CellSource.BUNDLED -> R.string.src_label_bundled
-    }
+    },
 )
 
 @Composable
@@ -468,14 +511,7 @@ private fun SwitchItem(title: String, summary: String?, checked: Boolean, onChan
 }
 
 @Composable
-private fun Field(
-    value: String,
-    onChange: (String) -> Unit,
-    label: String,
-    placeholder: String?,
-    secret: Boolean = false,
-    keyboard: KeyboardType = KeyboardType.Text,
-) {
+private fun Field(value: String, onChange: (String) -> Unit, label: String, placeholder: String?, secret: Boolean = false, keyboard: KeyboardType = KeyboardType.Text) {
     OutlinedTextField(
         value = value,
         onValueChange = onChange,

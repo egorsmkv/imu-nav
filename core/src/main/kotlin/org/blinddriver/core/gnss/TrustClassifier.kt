@@ -14,10 +14,7 @@ import kotlin.math.min
  * vs. displacement, frozen coordinates), the receiver (satellite count, flat C/N0 across
  * satellites, AGC level) and independent sources (network position, compass heading).
  */
-class TrustClassifier(
-    private val config: TrustConfig = TrustConfig(),
-    private val area: ServiceArea = ServiceArea.EVERYWHERE,
-) {
+class TrustClassifier(private val config: TrustConfig = TrustConfig(), private val area: ServiceArea = ServiceArea.EVERYWHERE) {
     private var previousRaw: RawFix? = null
     private var frozenSinceMs = -1L
     private var jamStrongAtMs = -1L
@@ -35,121 +32,165 @@ class TrustClassifier(
      * @param compassDeg current device heading, if known
      * @param wallNowMs current wall-clock time, for clock-skew detection
      */
-    fun evaluate(
-        fix: RawFix,
-        lastGood: RawFix?,
-        lastNet: RawFix?,
-        gnss: GnssSnapshot,
-        jammed: Boolean,
-        compassDeg: Float?,
-        wallNowMs: Long,
-    ): Verdict {
-        val c = config
-        val hard = ArrayList<String>()
-        val soft = ArrayList<String>()
+    fun evaluate(fix: RawFix, lastGood: RawFix?, lastNet: RawFix?, gnss: GnssSnapshot, jammed: Boolean, compassDeg: Float?, wallNowMs: Long): Verdict {
+        val r = Reasons()
         val prevRaw = previousRaw
         previousRaw = fix
-        val speed = fix.speedMps
-        val acc = fix.accuracyM
 
-        if (fix.isMock) hard += "mock"
-        if (!area.contains(fix.lat, fix.lon)) hard += "outside_area"
-
-        fix.altitudeM?.let { alt ->
-            val slack = min(fix.verticalAccuracyM ?: 0f, 50f).toDouble()
-            if (alt < c.altMinM - slack || alt > c.altMaxM + slack) hard += "alt=${alt.toInt()}"
-        }
-        if (speed != null && speed * 3.6 > c.maxSpeedKmh) hard += "speed=${(speed * 3.6).toInt()}"
-        if (acc != null && acc > c.maxAccuracyM) hard += "acc=${acc.toInt()}"
-
-        val skew = fix.timeMs - wallNowMs
-        if (abs(skew) > c.maxClockSkewMs) hard += "clock_skew=${skew / 1000}s"
-
-        val prevGoodAcc = lastGood?.accuracyM
-        if (acc != null && prevGoodAcc != null && acc > 15f && acc > prevGoodAcc * 3f) soft += "acc_jump=${acc.toInt()}"
-
-        if (lastGood != null && fix.elapsedMs > lastGood.elapsedMs) {
-            val dt = (fix.elapsedMs - lastGood.elapsedMs) / 1000.0
-            val dist = Geo.distance(lastGood.lat, lastGood.lon, fix.lat, fix.lon)
-            val reachable = c.maxPlausibleSpeedMps * dt + (acc ?: 0f) + (prevGoodAcc ?: 0f) + 20.0
-            if (dist > reachable) hard += "jump=${dist.toInt()}m/${dt.toInt()}s"
-            if (speed != null && dt in 0.5..2.5) {
-                val implied = dist / dt
-                val mismatch = abs(speed - implied)
-                if (mismatch > max(c.speedMismatchMinMps, max(speed.toDouble(), implied) * 0.5)) {
-                    soft += "speed_mismatch=${(speed * 3.6).toInt()}/${(implied * 3.6).toInt()}"
-                }
-            }
-        }
-
-        if (prevRaw != null && (fix.elapsedMs <= prevRaw.elapsedMs || fix.timeMs <= prevRaw.timeMs)) hard += "dup_time"
-
-        // Frozen coordinates while the fix claims we are moving: a replayed / stuck spoofer.
-        if (prevRaw != null && fix.lat == prevRaw.lat && fix.lon == prevRaw.lon &&
-            speed != null && speed > c.frozenMinSpeedMps
-        ) {
-            if (frozenSinceMs < 0) frozenSinceMs = prevRaw.elapsedMs
-            val frozenS = (fix.elapsedMs - frozenSinceMs) / 1000
-            if (frozenS >= c.frozenBadS) hard += "frozen=${frozenS}s" else if (frozenS >= c.frozenSuspectS) soft += "frozen=${frozenS}s"
-        } else {
-            frozenSinceMs = -1L
-        }
-
-        // Disagreement with a fresh, accurate network fix.
-        val netAcc = lastNet?.accuracyM
-        if (lastNet != null && netAcc != null && netAcc < c.netMaxAccM &&
-            abs(fix.elapsedMs - lastNet.elapsedMs) <= 5000 &&
-            (speed == null || speed < c.netDiffMaxSpeedMps)
-        ) {
-            val d = Geo.distance(lastNet.lat, lastNet.lon, fix.lat, fix.lon)
-            if (d > max(c.netDiffMinM, ((acc ?: 10f) + netAcc) * 3.0)) soft += "net_diff=${d.toInt()}m"
-        }
-
-        val gnssFresh = gnss.elapsedMs > 0 && fix.elapsedMs - gnss.elapsedMs < 5000
-        val agc = gnss.agcDb
-        if (gnssFresh && agc != null && agc < c.jamHardAgcDb) {
-            // Hard jamming. A fix can still be real if the constellation looks healthy AND an
-            // independent source agrees (or we accepted such a fix moments ago).
-            val minSats = if (gnss.dualFrequencyUsed >= 2) c.jamStrongMinSatsDual else c.jamStrongMinSats
-            val healthy = gnss.satellitesUsed >= minSats &&
-                (gnss.meanCn0Used ?: 0f) >= c.jamStrongMinCn0 &&
-                (gnss.cn0SpreadUsed ?: 0f) >= c.jamStrongMinSpread
-            val netAgrees = lastNet != null && (netAcc ?: Float.MAX_VALUE) <= c.jamStrongNetMaxAccM &&
-                abs(fix.elapsedMs - lastNet.elapsedMs) <= c.jamStrongNetMaxAgeMs &&
-                Geo.distance(lastNet.lat, lastNet.lon, fix.lat, fix.lon) <= c.jamStrongNetM + (acc ?: 10f) + (netAcc ?: 0f)
-            val chained = jamStrongAtMs >= 0 && fix.elapsedMs - jamStrongAtMs in 1..c.jamStrongChainMs
-            if (healthy && (netAgrees || chained)) {
-                soft += JAM_STRONG
-                jamStrongAtMs = fix.elapsedMs
-            } else {
-                hard += "jam"
-                jamStrongAtMs = -1L
-            }
-        } else if (jammed || (gnssFresh && agc != null && agc < c.jamAgcDb)) {
-            if (gnssFresh && gnss.satellitesUsed < c.minSatsUsed) hard += "jam_weak" else soft += "jam_weak"
-        }
-
-        if (gnssFresh) {
-            if (gnss.satellitesUsed == 0 && gnss.satellitesVisible > 0) hard += "no_sats"
-            if (gnss.satellitesUsed in 1 until c.minSatsUsed) soft += "sats=${gnss.satellitesUsed}"
-            gnss.meanCn0Used?.let { if (it < c.minMeanCn0) soft += "cn0=${it.toInt()}" }
-            gnss.cn0SpreadUsed?.let { if (gnss.satellitesUsed >= 4 && it < c.minCn0Spread) soft += "cn0_flat" }
-        }
-
-        val bearing = fix.bearingDeg
-        if (compassDeg != null && bearing != null && speed != null && speed > c.headingCheckMinSpeedMps) {
-            val diff = Geo.absAngleDiff(bearing.toDouble(), compassDeg.toDouble())
-            if (diff > c.maxHeadingDiffDeg) soft += "heading_diff=${diff.toInt()}"
-        }
+        checkFix(fix, wallNowMs, r)
+        checkAgainstLastGood(fix, lastGood, r)
+        checkSequence(fix, prevRaw, r)
+        checkNetwork(fix, lastNet, r)
+        checkJamming(fix, lastNet, gnss, jammed, r)
+        checkReceiver(fix, gnss, r)
+        checkHeading(fix, compassDeg, r)
 
         return when {
-            hard.isNotEmpty() -> {
-                if (JAM_STRONG in soft) jamStrongAtMs = -1L
-                Verdict(TrustLevel.BAD, hard + soft)
+            r.hard.isNotEmpty() -> {
+                if (JAM_STRONG in r.soft) jamStrongAtMs = -1L
+                Verdict(TrustLevel.BAD, r.hard + r.soft)
             }
-            soft.isNotEmpty() -> Verdict(TrustLevel.SUSPECT, soft)
+
+            r.soft.isNotEmpty() -> Verdict(TrustLevel.SUSPECT, r.soft)
+
             else -> Verdict.GOOD
         }
+    }
+
+    /** Failed checks: any hard reason ⇒ BAD, only soft ones ⇒ SUSPECT. */
+    private class Reasons {
+        val hard = ArrayList<String>()
+        val soft = ArrayList<String>()
+    }
+
+    /** Checks on the fix alone: mock flag, service area, altitude, speed, accuracy, clock. */
+    private fun checkFix(fix: RawFix, wallNowMs: Long, r: Reasons) {
+        val c = config
+        val speed = fix.speedMps
+        val acc = fix.accuracyM
+        if (fix.isMock) r.hard += "mock"
+        if (!area.contains(fix.lat, fix.lon)) r.hard += "outside_area"
+        fix.altitudeM?.let { alt ->
+            val slack = min(fix.verticalAccuracyM ?: 0f, 50f).toDouble()
+            if (alt < c.altMinM - slack || alt > c.altMaxM + slack) r.hard += "alt=${alt.toInt()}"
+        }
+        if (speed != null && speed * 3.6 > c.maxSpeedKmh) r.hard += "speed=${(speed * 3.6).toInt()}"
+        if (acc != null && acc > c.maxAccuracyM) r.hard += "acc=${acc.toInt()}"
+        val skew = fix.timeMs - wallNowMs
+        if (abs(skew) > c.maxClockSkewMs) r.hard += "clock_skew=${skew / 1000}s"
+    }
+
+    /** Physics against the last trusted fix: accuracy jump, reachable distance, speed vs. displacement. */
+    private fun checkAgainstLastGood(fix: RawFix, lastGood: RawFix?, r: Reasons) {
+        val c = config
+        val speed = fix.speedMps
+        val acc = fix.accuracyM
+        val prevGoodAcc = lastGood?.accuracyM
+        if (acc != null && prevGoodAcc != null && acc > 15f && acc > prevGoodAcc * 3f) r.soft += "acc_jump=${acc.toInt()}"
+        if (lastGood == null || fix.elapsedMs <= lastGood.elapsedMs) return
+        val dt = (fix.elapsedMs - lastGood.elapsedMs) / 1000.0
+        val dist = Geo.distance(lastGood.lat, lastGood.lon, fix.lat, fix.lon)
+        val reachable = c.maxPlausibleSpeedMps * dt + (acc ?: 0f) + (prevGoodAcc ?: 0f) + 20.0
+        if (dist > reachable) r.hard += "jump=${dist.toInt()}m/${dt.toInt()}s"
+        if (speed != null && dt in 0.5..2.5) {
+            val implied = dist / dt
+            val mismatch = abs(speed - implied)
+            if (mismatch > max(c.speedMismatchMinMps, max(speed.toDouble(), implied) * 0.5)) {
+                r.soft += "speed_mismatch=${(speed * 3.6).toInt()}/${(implied * 3.6).toInt()}"
+            }
+        }
+    }
+
+    /** Against the previous raw fix: repeated timestamps, and frozen coordinates while "moving" (replayed / stuck spoofer). */
+    private fun checkSequence(fix: RawFix, prevRaw: RawFix?, r: Reasons) {
+        val c = config
+        val speed = fix.speedMps
+        if (prevRaw != null && (fix.elapsedMs <= prevRaw.elapsedMs || fix.timeMs <= prevRaw.timeMs)) r.hard += "dup_time"
+        val frozen = prevRaw != null && fix.lat == prevRaw.lat && fix.lon == prevRaw.lon && speed != null && speed > c.frozenMinSpeedMps
+        if (!frozen) {
+            frozenSinceMs = -1L
+            return
+        }
+        if (frozenSinceMs < 0) frozenSinceMs = prevRaw!!.elapsedMs
+        val frozenS = (fix.elapsedMs - frozenSinceMs) / 1000
+        if (frozenS >= c.frozenBadS) {
+            r.hard += "frozen=${frozenS}s"
+        } else if (frozenS >= c.frozenSuspectS) {
+            r.soft += "frozen=${frozenS}s"
+        }
+    }
+
+    /** Disagreement with a fresh, accurate network fix. */
+    private fun checkNetwork(fix: RawFix, lastNet: RawFix?, r: Reasons) {
+        val c = config
+        val speed = fix.speedMps
+        val netAcc = lastNet?.accuracyM ?: return
+        val fresh = abs(fix.elapsedMs - lastNet.elapsedMs) <= 5000
+        val slowEnough = speed == null || speed < c.netDiffMaxSpeedMps
+        if (netAcc >= c.netMaxAccM || !fresh || !slowEnough) return
+        val d = Geo.distance(lastNet.lat, lastNet.lon, fix.lat, fix.lon)
+        if (d > max(c.netDiffMinM, ((fix.accuracyM ?: 10f) + netAcc) * 3.0)) r.soft += "net_diff=${d.toInt()}m"
+    }
+
+    private fun gnssFresh(fix: RawFix, gnss: GnssSnapshot) = gnss.elapsedMs > 0 && fix.elapsedMs - gnss.elapsedMs < 5000
+
+    /** AGC jamming: hard jamming makes the fix BAD unless the constellation looks healthy and is confirmed. */
+    private fun checkJamming(fix: RawFix, lastNet: RawFix?, gnss: GnssSnapshot, jammed: Boolean, r: Reasons) {
+        val c = config
+        val fresh = gnssFresh(fix, gnss)
+        val agc = gnss.agcDb
+        if (fresh && agc != null && agc < c.jamHardAgcDb) {
+            // A fix can still be real if the constellation looks healthy AND an independent source
+            // agrees (or we accepted such a fix moments ago).
+            if (healthyConstellation(gnss) && (networkAgrees(fix, lastNet) || chainedJamStrong(fix))) {
+                r.soft += JAM_STRONG
+                jamStrongAtMs = fix.elapsedMs
+            } else {
+                r.hard += "jam"
+                jamStrongAtMs = -1L
+            }
+        } else if (jammed || (fresh && agc != null && agc < c.jamAgcDb)) {
+            if (fresh && gnss.satellitesUsed < c.minSatsUsed) r.hard += "jam_weak" else r.soft += "jam_weak"
+        }
+    }
+
+    private fun healthyConstellation(gnss: GnssSnapshot): Boolean {
+        val c = config
+        val minSats = if (gnss.dualFrequencyUsed >= 2) c.jamStrongMinSatsDual else c.jamStrongMinSats
+        return gnss.satellitesUsed >= minSats &&
+            (gnss.meanCn0Used ?: 0f) >= c.jamStrongMinCn0 &&
+            (gnss.cn0SpreadUsed ?: 0f) >= c.jamStrongMinSpread
+    }
+
+    private fun networkAgrees(fix: RawFix, lastNet: RawFix?): Boolean {
+        val c = config
+        if (lastNet == null) return false
+        val netAcc = lastNet.accuracyM
+        return (netAcc ?: Float.MAX_VALUE) <= c.jamStrongNetMaxAccM &&
+            abs(fix.elapsedMs - lastNet.elapsedMs) <= c.jamStrongNetMaxAgeMs &&
+            Geo.distance(lastNet.lat, lastNet.lon, fix.lat, fix.lon) <= c.jamStrongNetM + (fix.accuracyM ?: 10f) + (netAcc ?: 0f)
+    }
+
+    private fun chainedJamStrong(fix: RawFix) = jamStrongAtMs >= 0 && fix.elapsedMs - jamStrongAtMs in 1..config.jamStrongChainMs
+
+    /** Receiver health: satellites used, signal strength and the spoofer's tell-tale flat C/N0. */
+    private fun checkReceiver(fix: RawFix, gnss: GnssSnapshot, r: Reasons) {
+        val c = config
+        if (!gnssFresh(fix, gnss)) return
+        if (gnss.satellitesUsed == 0 && gnss.satellitesVisible > 0) r.hard += "no_sats"
+        if (gnss.satellitesUsed in 1 until c.minSatsUsed) r.soft += "sats=${gnss.satellitesUsed}"
+        gnss.meanCn0Used?.let { if (it < c.minMeanCn0) r.soft += "cn0=${it.toInt()}" }
+        gnss.cn0SpreadUsed?.let { if (gnss.satellitesUsed >= 4 && it < c.minCn0Spread) r.soft += "cn0_flat" }
+    }
+
+    /** GPS course vs. compass heading while moving. */
+    private fun checkHeading(fix: RawFix, compassDeg: Float?, r: Reasons) {
+        val c = config
+        val bearing = fix.bearingDeg ?: return
+        val speed = fix.speedMps ?: return
+        if (compassDeg == null || speed <= c.headingCheckMinSpeedMps) return
+        val diff = Geo.absAngleDiff(bearing.toDouble(), compassDeg.toDouble())
+        if (diff > c.maxHeadingDiffDeg) r.soft += "heading_diff=${diff.toInt()}"
     }
 
     companion object {
@@ -161,11 +202,7 @@ class TrustClassifier(
  * AGC-based jamming state with hysteresis: enters below [enterDb], leaves only after staying
  * above [exitDb] for [exitHoldMs].
  */
-class JamDetector(
-    private val enterDb: Float = -12f,
-    private val exitDb: Float = -8f,
-    private val exitHoldMs: Long = 15_000,
-) {
+class JamDetector(private val enterDb: Float = -12f, private val exitDb: Float = -8f, private val exitHoldMs: Long = 15_000) {
     var jammed = false
         private set
     private var aboveSinceMs = -1L

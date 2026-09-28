@@ -5,14 +5,15 @@ import android.os.SystemClock
 import android.util.Log
 import java.io.File
 import java.text.SimpleDateFormat
-import java.util.Date
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
+import java.util.Date
 import java.util.Locale
 
 /** Append-only text log per trip (files/logs/trip-*.log) plus an in-memory tail for the UI. */
 class TripLog(context: Context, private val maxFileBytes: Long = 15L * 1024 * 1024) {
     private val dir = File(context.filesDir, "logs").apply { mkdirs() }
+
     @Volatile private var file: File? = null
     private val tail = ArrayDeque<String>()
 

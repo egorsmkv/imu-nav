@@ -20,11 +20,7 @@ data class PositioningSnapshot(
  * Collects fixes from all providers plus receiver health, classifies GPS fixes and tracks the
  * overall GPS state (OK ≤ 5 s since a GOOD fix, LOST > 30 s, DEGRADED in between).
  */
-class PositioningHub(
-    trustConfig: TrustConfig = TrustConfig(),
-    area: ServiceArea = ServiceArea.EVERYWHERE,
-    private val wallClock: () -> Long = System::currentTimeMillis,
-) {
+class PositioningHub(trustConfig: TrustConfig = TrustConfig(), area: ServiceArea = ServiceArea.EVERYWHERE, private val wallClock: () -> Long = System::currentTimeMillis) {
     private val classifier = TrustClassifier(trustConfig, area)
     private val jamDetector = JamDetector()
     val gyroBias = GyroBiasEstimator()
@@ -66,10 +62,12 @@ class PositioningHub(
                 lastNet = fix
                 return null
             }
+
             FixSource.FUSED -> {
                 lastFused = fix
                 return null
             }
+
             FixSource.CELL -> {
                 lastCell = fix
                 // Offline cell fixes stand in for network location unless a fresher/better platform fix exists.
@@ -81,6 +79,7 @@ class PositioningHub(
                 }
                 return null
             }
+
             FixSource.GPS -> Unit
         }
         val verdict = classifier.evaluate(fix, lastGood, lastNet, gnss, jammed, compassDeg, wallClock())
@@ -103,17 +102,9 @@ class PositioningHub(
         return verdict
     }
 
-    fun onGnssStatus(
-        visible: Int,
-        used: Int,
-        meanCn0Used: Float?,
-        cn0SpreadUsed: Float?,
-        meanCn0Visible: Float?,
-        dualFrequencyUsed: Int,
-        elapsedMs: Long,
-    ) {
+    fun onGnssStatus(visible: Int, used: Int, meanCn0Used: Float?, cn0SpreadUsed: Float?, meanCn0Visible: Float?, dualFrequencyUsed: Int, elapsedMs: Long) {
         recorder?.invoke(
-            org.blinddriver.core.record.TripEvent.Gnss(elapsedMs, visible, used, meanCn0Used, cn0SpreadUsed, meanCn0Visible, dualFrequencyUsed)
+            org.blinddriver.core.record.TripEvent.Gnss(elapsedMs, visible, used, meanCn0Used, cn0SpreadUsed, meanCn0Visible, dualFrequencyUsed),
         )
         gnss = gnss.copy(
             satellitesVisible = visible,

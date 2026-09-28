@@ -8,9 +8,8 @@ import java.util.zip.ZipOutputStream
 
 /** Metadata written next to the graph as `pack.json`, shown in the app. */
 data class PackInfo(val name: String, val builtAt: String, val source: String, val bounds: DoubleArray, val sizeBytes: Long) {
-    fun toJson(): String =
-        "{\"name\":\"$name\",\"builtAt\":\"$builtAt\",\"source\":\"$source\",\"graphhopper\":\"11.0\"," +
-            "\"bounds\":[${bounds.joinToString(",")}],\"sizeBytes\":$sizeBytes}"
+    fun toJson(): String = "{\"name\":\"$name\",\"builtAt\":\"$builtAt\",\"source\":\"$source\",\"graphhopper\":\"11.0\"," +
+        "\"bounds\":[${bounds.joinToString(",")}],\"sizeBytes\":$sizeBytes}"
 
     companion object {
         const val FILE = "pack.json"
@@ -28,14 +27,7 @@ data class PackInfo(val name: String, val builtAt: String, val source: String, v
  * Import an OpenStreetMap extract into a GraphHopper graph with contraction hierarchies for the
  * car profile, write `pack.json` and return its metadata. Needs a desktop JVM (uses Janino).
  */
-fun buildGraph(
-    osmFile: File,
-    outDir: File,
-    name: String,
-    minNetworkSize: Int = 200,
-    withSearch: Boolean = true,
-    withAddresses: Boolean = true,
-): PackInfo {
+fun buildGraph(osmFile: File, outDir: File, name: String, minNetworkSize: Int = 200, withSearch: Boolean = true, withAddresses: Boolean = true): PackInfo {
     require(osmFile.exists()) { "OSM file not found: $osmFile" }
     outDir.deleteRecursively()
     outDir.mkdirs()
@@ -44,7 +36,7 @@ fun buildGraph(
         GraphSpec.config(outDir.absolutePath)
             .putObject("datareader.file", osmFile.absolutePath)
             // Drop tiny disconnected road islands (parking lots, private yards) that routes cannot use.
-            .putObject("prepare.min_network_size", minNetworkSize)
+            .putObject("prepare.min_network_size", minNetworkSize),
     )
     hopper.importOrLoad()
     val b = hopper.baseGraph.bounds

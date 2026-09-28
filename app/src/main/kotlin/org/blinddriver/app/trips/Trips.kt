@@ -79,21 +79,19 @@ data class HistoryTotals(val trips: Int, val drivenM: Double, val durationS: Dou
  * Trip lifecycle: records raw inputs to `files/trips/<id>.rec.gz` while navigating, accumulates
  * stats, persists the active trip so it survives the app being killed, and keeps the history.
  */
-class TripManager(
-    private val context: Context,
-    private val hub: PositioningHub,
-    private val engine: NavigationEngine,
-    private val log: (String) -> Unit,
-) {
+class TripManager(private val context: Context, private val hub: PositioningHub, private val engine: NavigationEngine, private val log: (String) -> Unit) {
     private val dir = File(context.filesDir, "trips").apply { mkdirs() }
     private val index = File(dir, "index.jsonl")
     private val activeFile = File(dir, "active.json")
 
     private var recorder: TripRecorder? = null
+
     /** Recording and state files are written here, never on the main thread; one thread keeps event order. */
     private val io = java.util.concurrent.Executors.newSingleThreadExecutor()
+
     /** [route] encoded once per route change (it can be large), reused by every [persist]. */
     private var routeEncoded = ""
+
     @Volatile private var id: String? = null
     private var recordingName = ""
     private var startWall = 0L
@@ -128,7 +126,12 @@ class TripManager(
         this.startAccuracy = startAccuracyM
         this.route = route
         routeEncoded = RouteCodec.encode(route)
-        drivenM = 0.0; movingS = 0.0; blindS = 0.0; blindM = 0.0; maxUnc = 0.0; reroutes = 0
+        drivenM = 0.0
+        movingS = 0.0
+        blindS = 0.0
+        blindM = 0.0
+        maxUnc = 0.0
+        reroutes = 0
         lastTickMs = -1L
         openRecorder(append = false)
         val now = SystemClock.elapsedRealtime()
@@ -220,8 +223,12 @@ class TripManager(
         startAccuracy = o.optDouble("startAcc", 0.0)
         route = restoredRoute
         routeEncoded = o.getString("route")
-        drivenM = o.optDouble("driven"); movingS = o.optDouble("moving"); blindS = o.optDouble("blindS"); blindM = o.optDouble("blindM")
-        maxUnc = o.optDouble("maxUnc"); reroutes = o.optInt("reroutes")
+        drivenM = o.optDouble("driven")
+        movingS = o.optDouble("moving")
+        blindS = o.optDouble("blindS")
+        blindM = o.optDouble("blindM")
+        maxUnc = o.optDouble("maxUnc")
+        reroutes = o.optInt("reroutes")
         lastTickMs = -1L
         // Unknown how far the car moved while the app was dead: widen the uncertainty with the gap.
         val uncertainty = (o.optDouble("unc", 100.0) + gapS * RESTORE_DRIFT_M_PER_S).coerceAtMost(3000.0)
@@ -303,8 +310,10 @@ class TripManager(
 
     companion object {
         private const val PERSIST_EVERY_MS = 10_000L
+
         /** Restore only trips interrupted less than 3 hours ago. */
         private const val MAX_RESTORE_GAP_S = 3 * 3600.0
+
         /** Assumed drift while the app was dead (~city driving), m/s. */
         private const val RESTORE_DRIFT_M_PER_S = 8.0
     }
@@ -332,12 +341,16 @@ fun extractTracks(file: File, area: org.blinddriver.core.geo.ServiceArea): TripT
                     if (gps.isEmpty() || Geo.distance(gps.last(), p) >= 5) gps += p
                 }
             }
+
             is TripEvent.Gnss -> hub.onGnssStatus(e.visible, e.used, e.meanCn0Used, e.cn0SpreadUsed, e.meanCn0Visible, e.dualFrequencyUsed, e.elapsedMs)
+
             is TripEvent.Agc -> hub.onAgc(e.agcDb, e.elapsedMs)
+
             is TripEvent.Estimate -> {
                 val p = GeoPoint(e.lat, e.lon)
                 if (engine.isEmpty() || Geo.distance(engine.last(), p) >= 5) engine += p
             }
+
             else -> Unit
         }
     }
