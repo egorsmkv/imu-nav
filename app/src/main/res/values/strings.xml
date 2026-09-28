@@ -180,7 +180,7 @@
 
     <string name="sec_about">About</string>
     <string name="about_version">Version %1$s</string>
-    <string name="about_credits">Cell data: OpenCellID contributors (CC BY-SA 4.0) and Mozilla Location Service (public domain). Maps © OpenStreetMap contributors, OpenFreeMap. Routing: OSRM.</string>
+    <string name="about_credits">Cell data: OpenCellID contributors (CC BY-SA 4.0) and Mozilla Location Service (public domain). Maps and routing data © OpenStreetMap contributors (ODbL), OpenFreeMap. Routing: GraphHopper, OSRM. Source code: MIT licence.</string>
     <string name="about_disclaimer">Research prototype. Never rely on it as a safety system.</string>
 
     <!-- Background tasks -->
@@ -228,4 +228,54 @@
     <string name="routing_no_coverage">The offline map does not cover this trip, and online routing is off</string>
     <string name="routing_preparing_builtin">Preparing offline map… %1$d of %2$d MB</string>
     <string name="routing_install_builtin">Install built-in map (%1$s)</string>
+
+    <!-- Trip history -->
+    <string name="history_title">Trip history</string>
+    <string name="cd_history">Trip history</string>
+    <string name="history_empty">No trips yet. Finished trips appear here with their stats.</string>
+    <string name="history_totals">%1$d trips · %2$s · %3$s</string>
+    <string name="history_blind_total">%1$s driven without GPS</string>
+    <string name="trip_line">%1$s · %2$s · %3$d%% without GPS</string>
+    <string name="trip_arrived">Arrived</string>
+    <string name="trip_not_arrived">Stopped early</string>
+    <string name="trip_stat_distance">Distance driven</string>
+    <string name="trip_stat_duration">Duration</string>
+    <string name="trip_stat_moving">Moving time</string>
+    <string name="trip_stat_avg">Average moving speed</string>
+    <string name="trip_stat_blind">Without GPS</string>
+    <string name="trip_stat_blind_value">%1$s · %2$s</string>
+    <string name="trip_stat_uncertainty">Largest uncertainty</string>
+    <string name="trip_stat_route">Planned route</string>
+    <string name="trip_stat_reroutes">Reroutes</string>
+    <string name="trip_stat_matched">Distance on roads (map-matched)</string>
+    <string name="trip_legend_gps">trusted GPS</string>
+    <string name="trip_legend_engine">estimated</string>
+    <string name="trip_legend_matched">on roads</string>
+    <string name="action_map_match">Snap to roads</string>
+    <string name="map_matching">Matching to roads…</string>
+    <string name="map_match_no_pack">Map matching needs the offline map</string>
+    <string name="map_match_no_gps">Not enough trusted GPS in this trip to match</string>
+    <string name="action_delete">Delete</string>
+    <string name="trip_delete_title">Delete this trip?</string>
+    <string name="trip_loading">Loading recording…</string>
+
+    <!-- Battery -->
+    <string name="battery_title">Battery optimization</string>
+    <string name="battery_restricted">Restricted — Android may stop navigation in the background. Tap to allow.</string>
+    <string name="battery_unrestricted">Unrestricted — navigation keeps running with the screen off</string>
+
+    <!-- Search -->
+    <string name="search_hint">Search address or place</string>
+    <string name="search_recent">Recent</string>
+    <string name="search_no_results">Nothing found</string>
+    <string name="search_offline_missing">Install the offline map to search without internet</string>
+    <string name="search_online_badge">online</string>
+    <string name="kind_city">city</string>
+    <string name="kind_town">town</string>
+    <string name="kind_village">village</string>
+    <string name="kind_hamlet">hamlet</string>
+    <string name="kind_suburb">district</string>
+    <string name="kind_quarter">quarter</string>
+    <string name="kind_neighbourhood">neighbourhood</string>
+    <string name="cd_clear">Clear</string>
 </resources>

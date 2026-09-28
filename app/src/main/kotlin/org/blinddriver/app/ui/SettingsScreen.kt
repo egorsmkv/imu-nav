@@ -275,6 +275,34 @@ fun SettingsScreen(ui: UiState, g: AppGraph, onBack: () -> Unit, onOpenLog: () -
 
             // ---------------- Diagnostics
             SectionHeader(stringResource(R.string.sec_diagnostics))
+            var unrestricted by remember { mutableStateOf(isBatteryUnrestricted(context)) }
+            val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+            androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+                val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
+                    if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) unrestricted = isBatteryUnrestricted(context)
+                }
+                lifecycleOwner.lifecycle.addObserver(obs)
+                onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+            }
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.battery_title)) },
+                supportingContent = {
+                    Text(
+                        stringResource(if (unrestricted) R.string.battery_unrestricted else R.string.battery_restricted),
+                        color = if (unrestricted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+                    )
+                },
+                modifier = Modifier.clickable(enabled = !unrestricted) {
+                    runCatching {
+                        @android.annotation.SuppressLint("BatteryLife")
+                        val intent = android.content.Intent(
+                            android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                            android.net.Uri.parse("package:${context.packageName}"),
+                        )
+                        context.startActivity(intent)
+                    }
+                },
+            )
             SwitchItem(stringResource(R.string.simulate_gps_loss), stringResource(R.string.simulate_gps_loss_summary), ui.simulateGpsLoss) { g.setSimulateGpsLoss(it) }
             ListItem(
                 headlineContent = { Text(stringResource(R.string.trip_log)) },

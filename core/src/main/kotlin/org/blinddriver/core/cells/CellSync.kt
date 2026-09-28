@@ -78,10 +78,11 @@ object CellMerge {
  * Client for a cell-sharing server (see the `server` module):
  *  - `POST {base}/v1/cells` — gzip CSV of towers learned on this device; returns `{"accepted":N}`
  *  - `GET  {base}/v1/cells.csv.gz?mcc=255&since=<epoch s>` — gzip CSV of merged towers
- * An optional API key is sent as `Authorization: Bearer <key>`.
+ * An optional API key is sent as `Authorization: Bearer <key>`; [deviceId] (random per install) lets
+ * the server weigh contributions per device and rate-limit.
  * Only tower positions are exchanged — never the device's own track.
  */
-class CellSyncClient(baseUrl: String, private val apiKey: String? = null) {
+class CellSyncClient(baseUrl: String, private val apiKey: String? = null, private val deviceId: String? = null) {
     private val base = baseUrl.trim().trimEnd('/')
 
     init {
@@ -125,6 +126,7 @@ class CellSyncClient(baseUrl: String, private val apiKey: String? = null) {
         conn.readTimeout = 120_000
         conn.setRequestProperty("User-Agent", "blind-driver-opensource/0.1")
         apiKey?.takeIf { it.isNotBlank() }?.let { conn.setRequestProperty("Authorization", "Bearer ${it.trim()}") }
+        deviceId?.let { conn.setRequestProperty("X-Device-Id", it) }
         return conn
     }
 

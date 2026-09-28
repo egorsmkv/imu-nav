@@ -178,7 +178,7 @@
 
     <string name="sec_about">Про застосунок</string>
     <string name="about_version">Версія %1$s</string>
-    <string name="about_credits">Дані вишок: учасники OpenCellID (CC BY-SA 4.0) і Mozilla Location Service (суспільне надбання). Карти © учасники OpenStreetMap, OpenFreeMap. Маршрути: OSRM.</string>
+    <string name="about_credits">Дані вишок: учасники OpenCellID (CC BY-SA 4.0) і Mozilla Location Service (суспільне надбання). Карти й дані маршрутів © учасники OpenStreetMap (ODbL), OpenFreeMap. Маршрути: GraphHopper, OSRM. Вихідний код: ліцензія MIT.</string>
     <string name="about_disclaimer">Дослідницький прототип. Ніколи не покладайтеся на нього як на систему безпеки.</string>
 
     <!-- Фонові завдання -->
@@ -226,4 +226,54 @@
     <string name="routing_no_coverage">Офлайн-карта не охоплює цю поїздку, а онлайн-маршрути вимкнено</string>
     <string name="routing_preparing_builtin">Готуємо офлайн-карту… %1$d з %2$d МБ</string>
     <string name="routing_install_builtin">Встановити вбудовану карту (%1$s)</string>
+
+    <!-- Історія поїздок -->
+    <string name="history_title">Історія поїздок</string>
+    <string name="cd_history">Історія поїздок</string>
+    <string name="history_empty">Поїздок поки немає. Завершені поїздки з’являться тут разом зі статистикою.</string>
+    <string name="history_totals">Поїздок: %1$d · %2$s · %3$s</string>
+    <string name="history_blind_total">%1$s без GPS</string>
+    <string name="trip_line">%1$s · %2$s · %3$d%% без GPS</string>
+    <string name="trip_arrived">Прибули</string>
+    <string name="trip_not_arrived">Зупинено раніше</string>
+    <string name="trip_stat_distance">Пройдена відстань</string>
+    <string name="trip_stat_duration">Тривалість</string>
+    <string name="trip_stat_moving">Час руху</string>
+    <string name="trip_stat_avg">Середня швидкість руху</string>
+    <string name="trip_stat_blind">Без GPS</string>
+    <string name="trip_stat_blind_value">%1$s · %2$s</string>
+    <string name="trip_stat_uncertainty">Найбільша похибка</string>
+    <string name="trip_stat_route">Запланований маршрут</string>
+    <string name="trip_stat_reroutes">Перебудов маршруту</string>
+    <string name="trip_stat_matched">Відстань дорогами (прив’язка до доріг)</string>
+    <string name="trip_legend_gps">достовірний GPS</string>
+    <string name="trip_legend_engine">розрахункова</string>
+    <string name="trip_legend_matched">дорогами</string>
+    <string name="action_map_match">Прив’язати до доріг</string>
+    <string name="map_matching">Прив’язуємо до доріг…</string>
+    <string name="map_match_no_pack">Для прив’язки до доріг потрібна офлайн-карта</string>
+    <string name="map_match_no_gps">У цій поїздці замало достовірних даних GPS для прив’язки</string>
+    <string name="action_delete">Видалити</string>
+    <string name="trip_delete_title">Видалити цю поїздку?</string>
+    <string name="trip_loading">Завантажуємо запис…</string>
+
+    <!-- Батарея -->
+    <string name="battery_title">Оптимізація батареї</string>
+    <string name="battery_restricted">Обмежено — Android може зупинити навігацію у фоні. Торкніться, щоб дозволити.</string>
+    <string name="battery_unrestricted">Без обмежень — навігація працює з вимкненим екраном</string>
+
+    <!-- Пошук -->
+    <string name="search_hint">Пошук адреси або місця</string>
+    <string name="search_recent">Нещодавні</string>
+    <string name="search_no_results">Нічого не знайдено</string>
+    <string name="search_offline_missing">Встановіть офлайн-карту, щоб шукати без інтернету</string>
+    <string name="search_online_badge">онлайн</string>
+    <string name="kind_city">місто</string>
+    <string name="kind_town">місто</string>
+    <string name="kind_village">село</string>
+    <string name="kind_hamlet">селище</string>
+    <string name="kind_suburb">район</string>
+    <string name="kind_quarter">квартал</string>
+    <string name="kind_neighbourhood">мікрорайон</string>
+    <string name="cd_clear">Очистити</string>
 </resources>

@@ -16,6 +16,8 @@ import org.blinddriver.app.routing.OsrmRouter
 import org.blinddriver.app.routing.Router
 import org.blinddriver.app.routing.OfflineRouting
 import org.blinddriver.app.routing.SmartRouter
+import org.blinddriver.app.service.NavService
+import org.blinddriver.app.trips.TripManager
 import org.blinddriver.app.sensors.SensorHub
 import org.blinddriver.app.voice.Voice
 import org.blinddriver.core.Tuning
@@ -69,6 +71,8 @@ class AppGraph(private val context: Context) {
     private val voice = Voice(context, if (ukrainian) java.util.Locale.forLanguageTag("uk-UA") else java.util.Locale.getDefault())
     /** Offline GraphHopper pack first; OSRM online only as an allowed fallback. */
     val offlineRouting = OfflineRouting(context, scope, tripLog::write)
+    /** Address search: the pack's offline index, Photon online when allowed. */
+    val search = org.blinddriver.app.search.PlaceSearch(context, { offlineRouting.searchDb }, { offlineRouting.status.value.allowOnline })
     private val router: Router = SmartRouter(offlineRouting, OsrmRouter(), tripLog::write) { context.getString(R.string.routing_no_coverage) }
 
     val tuning = MutableStateFlow(Tuning.DEFAULT)
@@ -82,7 +86,10 @@ class AppGraph(private val context: Context) {
         override fun onRerouteRequested(from: GeoPoint, destination: GeoPoint, via: List<GeoPoint>, auto: Boolean) {
             scope.launch {
                 runCatching { router.route(from, destination, via) }
-                    .onSuccess { engine.setRoute(it, SystemClock.elapsedRealtime()) }
+                    .onSuccess {
+                        engine.setRoute(it, SystemClock.elapsedRealtime())
+                        trips.onRoute(it)
+                    }
                     .onFailure {
                         tripLog.write("reroute_failed ${it.message}")
                         engine.rerouteFailed()
@@ -99,10 +106,16 @@ class AppGraph(private val context: Context) {
         listener = listener,
     )
 
+    /** Trip recording (for replay), history, and restoring a trip after the app was killed. */
+    val trips = TripManager(context, hub, engine, tripLog::write)
+
     val sensors = SensorHub(
         context,
         hub,
-        onImu = { engine.onImu(it, hub.gyroBias.biasDegS) },
+        onImu = {
+            engine.onImu(it, hub.gyroBias.biasDegS)
+            trips.onImu(it)
+        },
         log = tripLog::write,
     )
 
@@ -168,6 +181,7 @@ class AppGraph(private val context: Context) {
                     tripLog.startTrip()
                     tripLog.write("start_accuracy=${startAccuracy.toInt()}")
                     engine.start(route, dest, nowMs = SystemClock.elapsedRealtime(), startAccuracyM = startAccuracy)
+                    trips.begin(route, dest, emptyList(), startAccuracy)
                     _ui.value = _ui.value.copy(planning = false)
                     onStarted()
                 }
@@ -176,6 +190,7 @@ class AppGraph(private val context: Context) {
     }
 
     fun stopNavigation() {
+        trips.end(arrived = engine.state.arrived)
         engine.stop()
         tripLog.endTrip()
         cells.maybeAutoSync()
@@ -192,6 +207,7 @@ class AppGraph(private val context: Context) {
     fun tick() {
         val now = SystemClock.elapsedRealtime()
         engine.tick(now, hub.snapshot(now))
+        trips.onTick(now)
         refresh()
     }
 
@@ -214,6 +230,14 @@ class AppGraph(private val context: Context) {
             locationEnabled = sensors.locationEnabled,
             log = tripLog.recent.takeLast(30),
         )
+    }
+
+    init {
+        // The process was killed mid-trip (or the system restarted the sticky service): resume navigation.
+        if (trips.restore()) {
+            tripLog.startTrip()
+            runCatching { NavService.start(context) }.onFailure { tripLog.write("nav_service_restart_failed ${it.message}") }
+        }
     }
 }
 

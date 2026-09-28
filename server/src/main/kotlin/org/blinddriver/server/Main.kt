@@ -2,21 +2,32 @@ package org.blinddriver.server
 
 import org.blinddriver.core.cells.CellCsv
 import org.blinddriver.core.cells.CellTower
+import org.blinddriver.core.geo.ServiceArea
 import java.io.File
 
 /**
  * Usage:
- *   ./gradlew :server:run --args="--port 8080 --data cells.csv.gz [--api-key KEY] [--import seed.csv.gz --mcc 255]"
+ *   server --port 8080 --data cells.csv.gz [--api-key KEY] [--min-devices 2] [--area ukraine]
+ *          [--tls-keystore server.p12 --tls-password PASS] [--import seed.csv.gz --mcc 255]
  *
- * The API key can also come from the CELLS_API_KEY environment variable. `--import` seeds the store
- * from an OpenCellID / Mozilla export (optionally filtered by MCC) before serving.
+ * API key and TLS password can also come from CELLS_API_KEY / CELLS_TLS_PASSWORD. `--import` seeds
+ * the store with a trusted dataset (OpenCellID / Mozilla export); seeded cells are published at once.
  */
 fun main(args: Array<String>) {
     val opts = args.toList().windowed(2, 2, partialWindows = false).associate { (k, v) -> k.removePrefix("--") to v }
     val port = opts["port"]?.toInt() ?: 8080
     val dataFile = File(opts["data"] ?: "cells.csv.gz")
     val apiKey = opts["api-key"] ?: System.getenv("CELLS_API_KEY")
-    val store = CellStore(dataFile)
+    val policy = Policy(
+        minDevices = opts["min-devices"]?.toInt() ?: 2,
+        maxSamplesPerDevice = opts["max-samples"]?.toInt() ?: 50,
+        area = when (opts["area"]) {
+            null, "any" -> null
+            "ukraine" -> ServiceArea.UKRAINE_COARSE
+            else -> error("unknown --area ${opts["area"]} (use ukraine or any)")
+        },
+    )
+    val store = CellStore(dataFile, policy)
 
     opts["import"]?.let { path ->
         val mccs = opts["mcc"]?.split(',')?.mapNotNull { it.trim().toIntOrNull() }?.toSet()
@@ -28,12 +39,20 @@ fun main(args: Array<String>) {
                 if (mccs == null || t.key.mcc in mccs) batch += t
             }
         }
-        val n = store.contribute(batch)
+        val r = store.contribute(CellStore.SEED, batch)
         store.save()
-        println("[cells] imported $n of $read rows from $path")
+        println("[cells] seeded ${r.accepted} of $read rows from $path (${r.rejected} rejected)")
     }
 
-    val server = CellServer(store, apiKey, port)
+    val tls = opts["tls-keystore"]?.let { ks ->
+        val pass = opts["tls-password"] ?: System.getenv("CELLS_TLS_PASSWORD") ?: error("--tls-password or CELLS_TLS_PASSWORD required")
+        CellServer.tlsContext(File(ks), pass)
+    }
+    val server = CellServer(store, apiKey, port, tls)
     server.start()
-    println("[cells] serving ${store.size} towers on port ${server.port} (uploads ${if (apiKey.isNullOrBlank()) "open" else "require API key"})")
+    println(
+        "[cells] ${if (tls != null) "https" else "http"} on port ${server.port}: ${store.size} published towers, " +
+            "${store.contributionCount} contributions; uploads ${if (apiKey.isNullOrBlank()) "open" else "require API key"}, " +
+            "publish after ${policy.minDevices} device(s)"
+    )
 }

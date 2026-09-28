@@ -1,0 +1,331 @@
+package org.blinddriver.app.trips
+
+import android.content.Context
+import android.os.SystemClock
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import org.blinddriver.core.geo.Geo
+import org.blinddriver.core.geo.GeoPoint
+import org.blinddriver.core.gnss.PositioningHub
+import org.blinddriver.core.imu.ImuSample
+import org.blinddriver.core.nav.NavigationEngine
+import org.blinddriver.core.record.RouteCodec
+import org.blinddriver.core.record.TripEvent
+import org.blinddriver.core.record.TripRecorder
+import org.blinddriver.core.route.Route
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import kotlin.math.max
+
+/** One finished trip, as listed in the history. */
+data class TripSummary(
+    val id: String,
+    val startWallMs: Long,
+    val endWallMs: Long,
+    val destination: GeoPoint?,
+    val arrived: Boolean,
+    /** Distance driven according to the engine, m. */
+    val drivenM: Double,
+    val durationS: Double,
+    val movingS: Double,
+    /** Seconds navigated without usable GPS, and the distance driven meanwhile. */
+    val blindS: Double,
+    val blindM: Double,
+    val maxUncertaintyM: Double,
+    val routeLengthM: Double,
+    val reroutes: Int,
+    val recording: String,
+    /** Length of the drive snapped to roads (map matching), once computed. */
+    val matchedLengthM: Double? = null,
+) {
+    val avgMovingKmh: Double get() = if (movingS > 0) drivenM / movingS * 3.6 else 0.0
+
+    fun toJson(): JSONObject = JSONObject()
+        .put("id", id).put("start", startWallMs).put("end", endWallMs)
+        .put("destLat", destination?.lat).put("destLon", destination?.lon)
+        .put("arrived", arrived).put("driven", drivenM).put("duration", durationS).put("moving", movingS)
+        .put("blindS", blindS).put("blindM", blindM).put("maxUnc", maxUncertaintyM).put("routeLen", routeLengthM)
+        .put("reroutes", reroutes).put("recording", recording).put("matched", matchedLengthM)
+
+    companion object {
+        fun fromJson(o: JSONObject) = TripSummary(
+            id = o.getString("id"),
+            startWallMs = o.getLong("start"),
+            endWallMs = o.getLong("end"),
+            destination = if (o.has("destLat") && !o.isNull("destLat")) GeoPoint(o.getDouble("destLat"), o.getDouble("destLon")) else null,
+            arrived = o.optBoolean("arrived"),
+            drivenM = o.optDouble("driven", 0.0),
+            durationS = o.optDouble("duration", 0.0),
+            movingS = o.optDouble("moving", 0.0),
+            blindS = o.optDouble("blindS", 0.0),
+            blindM = o.optDouble("blindM", 0.0),
+            maxUncertaintyM = o.optDouble("maxUnc", 0.0),
+            routeLengthM = o.optDouble("routeLen", 0.0),
+            reroutes = o.optInt("reroutes"),
+            recording = o.optString("recording"),
+            matchedLengthM = if (o.has("matched") && !o.isNull("matched")) o.getDouble("matched") else null,
+        )
+    }
+}
+
+data class HistoryTotals(val trips: Int, val drivenM: Double, val durationS: Double, val blindM: Double)
+
+/**
+ * Trip lifecycle: records raw inputs to `files/trips/<id>.rec.gz` while navigating, accumulates
+ * stats, persists the active trip so it survives the app being killed, and keeps the history.
+ */
+class TripManager(
+    private val context: Context,
+    private val hub: PositioningHub,
+    private val engine: NavigationEngine,
+    private val log: (String) -> Unit,
+) {
+    private val dir = File(context.filesDir, "trips").apply { mkdirs() }
+    private val index = File(dir, "index.jsonl")
+    private val activeFile = File(dir, "active.json")
+
+    private var recorder: TripRecorder? = null
+    private var id: String? = null
+    private var recordingName = ""
+    private var startWall = 0L
+    private var destination: GeoPoint? = null
+    private var waypoints: List<GeoPoint> = emptyList()
+    private var startAccuracy = 0.0
+    private var route: Route? = null
+    private var drivenM = 0.0
+    private var movingS = 0.0
+    private var blindS = 0.0
+    private var blindM = 0.0
+    private var maxUnc = 0.0
+    private var reroutes = 0
+    private var lastTickMs = -1L
+    private var lastPersistMs = 0L
+
+    private val _history = MutableStateFlow(loadHistory())
+    val history: StateFlow<List<TripSummary>> = _history.asStateFlow()
+
+    val active: Boolean get() = id != null
+
+    // ------------------------------------------------------------------ lifecycle
+
+    fun begin(route: Route, destination: GeoPoint, waypoints: List<GeoPoint>, startAccuracyM: Double) {
+        end(arrived = false) // close anything left open
+        val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
+        id = stamp
+        recordingName = "trip-$stamp.rec.gz"
+        startWall = System.currentTimeMillis()
+        this.destination = destination
+        this.waypoints = waypoints
+        this.startAccuracy = startAccuracyM
+        this.route = route
+        drivenM = 0.0; movingS = 0.0; blindS = 0.0; blindM = 0.0; maxUnc = 0.0; reroutes = 0
+        lastTickMs = -1L
+        openRecorder(append = false)
+        val now = SystemClock.elapsedRealtime()
+        record(TripEvent.Start(now, destination, waypoints, startAccuracyM))
+        record(TripEvent.RouteSet(now, route))
+        persist(force = true)
+        log("trip_begin $recordingName")
+    }
+
+    fun onRoute(route: Route) {
+        if (!active) return
+        this.route = route
+        reroutes++
+        record(TripEvent.RouteSet(SystemClock.elapsedRealtime(), route))
+        persist(force = true)
+    }
+
+    fun onImu(sample: ImuSample) {
+        recorder?.record(TripEvent.Imu(sample))
+    }
+
+    /** Called every engine tick while navigating. */
+    fun onTick(nowMs: Long) {
+        if (!active) return
+        val st = engine.state
+        if (lastTickMs > 0) {
+            val dt = ((nowMs - lastTickMs) / 1000.0).coerceIn(0.0, 5.0)
+            val ds = st.speedKmh / 3.6 * dt
+            drivenM += ds
+            if (st.speedKmh > 2f) movingS += dt
+            if (!st.source.isGps) {
+                blindS += dt
+                blindM += ds
+            }
+        }
+        lastTickMs = nowMs
+        maxUnc = max(maxUnc, st.uncertaintyM)
+        st.position?.let { record(TripEvent.Estimate(nowMs, it.lat, it.lon, st.s, st.uncertaintyM, st.source.label)) }
+        persist(force = false)
+    }
+
+    /** Finish the trip: close the recording and add it to the history. */
+    fun end(arrived: Boolean) {
+        val tripId = id ?: return
+        record(TripEvent.Stop(SystemClock.elapsedRealtime()))
+        recorder?.close()
+        recorder = null
+        activeFile.delete()
+        val end = System.currentTimeMillis()
+        val summary = TripSummary(
+            tripId, startWall, end, destination, arrived, drivenM, (end - startWall) / 1000.0, movingS, blindS, blindM,
+            maxUnc, route?.length ?: 0.0, reroutes, recordingName,
+        )
+        id = null
+        // Skip accidental starts (no movement at all) to keep the history meaningful.
+        if (summary.drivenM < 50 && summary.durationS < 120) {
+            File(dir, recordingName).delete()
+            log("trip_discarded $tripId")
+            return
+        }
+        index.appendText(summary.toJson().toString() + "\n")
+        _history.value = loadHistory()
+        log("trip_end $tripId driven=${drivenM.toInt()}m blind=${blindS.toInt()}s")
+    }
+
+    // ------------------------------------------------------------------ surviving process death
+
+    /**
+     * If the app was killed mid-trip, reopen the recording and put the engine back on the saved route
+     * near the saved position. Returns true when a trip was restored.
+     */
+    fun restore(): Boolean {
+        val o = runCatching { JSONObject(activeFile.readText()) }.getOrNull() ?: return false
+        val savedAt = o.optLong("savedAt")
+        val gapS = (System.currentTimeMillis() - savedAt) / 1000.0
+        if (gapS < 0 || gapS > MAX_RESTORE_GAP_S) {
+            activeFile.delete()
+            return false
+        }
+        val restoredRoute = runCatching { RouteCodec.decode(o.getString("route")) }.getOrNull() ?: return false
+        id = o.getString("id")
+        recordingName = o.getString("recording")
+        startWall = o.getLong("start")
+        destination = GeoPoint(o.getDouble("destLat"), o.getDouble("destLon"))
+        waypoints = o.optJSONArray("via")?.let { a -> (0 until a.length() step 2).map { GeoPoint(a.getDouble(it), a.getDouble(it + 1)) } }.orEmpty()
+        startAccuracy = o.optDouble("startAcc", 0.0)
+        route = restoredRoute
+        drivenM = o.optDouble("driven"); movingS = o.optDouble("moving"); blindS = o.optDouble("blindS"); blindM = o.optDouble("blindM")
+        maxUnc = o.optDouble("maxUnc"); reroutes = o.optInt("reroutes")
+        lastTickMs = -1L
+        // Unknown how far the car moved while the app was dead: widen the uncertainty with the gap.
+        val uncertainty = (o.optDouble("unc", 100.0) + gapS * RESTORE_DRIFT_M_PER_S).coerceAtMost(3000.0)
+        val now = SystemClock.elapsedRealtime()
+        engine.start(restoredRoute, destination!!, waypoints, now, startAccuracyM = uncertainty)
+        engine.resumeAt(o.optDouble("s"))
+        // The killed process left the gzip stream unterminated: salvage it before appending.
+        runCatching { org.blinddriver.core.record.TripFormat.repair(File(dir, recordingName)) }.onFailure { log("trip_repair_failed ${it.message}") }
+        openRecorder(append = true)
+        record(TripEvent.Start(now, destination!!, waypoints, uncertainty))
+        record(TripEvent.RouteSet(now, restoredRoute))
+        log("trip_restored $id gap=${gapS.toInt()}s s=${o.optDouble("s").toInt()} unc=${uncertainty.toInt()}")
+        persist(force = true)
+        return true
+    }
+
+    private fun persist(force: Boolean) {
+        val now = SystemClock.elapsedRealtime()
+        if (!force && now - lastPersistMs < PERSIST_EVERY_MS) return
+        lastPersistMs = now
+        val tripId = id ?: return
+        val r = route ?: return
+        val d = destination ?: return
+        val st = engine.state
+        val o = JSONObject()
+            .put("id", tripId).put("recording", recordingName).put("start", startWall).put("savedAt", System.currentTimeMillis())
+            .put("destLat", d.lat).put("destLon", d.lon).put("via", JSONArray(waypoints.flatMap { listOf(it.lat, it.lon) }))
+            .put("startAcc", startAccuracy).put("s", engine.progressS).put("unc", st.uncertaintyM)
+            .put("driven", drivenM).put("moving", movingS).put("blindS", blindS).put("blindM", blindM)
+            .put("maxUnc", maxUnc).put("reroutes", reroutes).put("route", RouteCodec.encode(r))
+        val tmp = File(dir, "active.json.tmp")
+        tmp.writeText(o.toString())
+        tmp.renameTo(activeFile)
+    }
+
+    // ------------------------------------------------------------------ recording + history
+
+    private fun openRecorder(append: Boolean) {
+        recorder?.close()
+        recorder = runCatching { TripRecorder.open(File(dir, recordingName), append) }.onFailure { log("trip_record_failed ${it.message}") }.getOrNull()
+        hub.recorder = { e -> recorder?.record(e) }
+    }
+
+    private fun record(e: TripEvent) {
+        recorder?.record(e)
+    }
+
+    fun recordingFile(t: TripSummary): File = File(dir, t.recording)
+
+    private fun loadHistory(): List<TripSummary> =
+        runCatching { index.readLines().filter { it.isNotBlank() }.mapNotNull { runCatching { TripSummary.fromJson(JSONObject(it)) }.getOrNull() } }
+            .getOrDefault(emptyList())
+            .sortedByDescending { it.startWallMs }
+
+    private fun rewrite(list: List<TripSummary>) {
+        val tmp = File(dir, "index.jsonl.tmp")
+        tmp.writeText(list.sortedBy { it.startWallMs }.joinToString("") { it.toJson().toString() + "\n" })
+        tmp.renameTo(index)
+        _history.value = loadHistory()
+    }
+
+    fun delete(t: TripSummary) {
+        File(dir, t.recording).delete()
+        rewrite(_history.value.filter { it.id != t.id })
+    }
+
+    fun setMatchedLength(t: TripSummary, lengthM: Double) {
+        rewrite(_history.value.map { if (it.id == t.id) it.copy(matchedLengthM = lengthM) else it })
+    }
+
+    fun totals(): HistoryTotals = _history.value.let { h ->
+        HistoryTotals(h.size, h.sumOf { it.drivenM }, h.sumOf { it.durationS }, h.sumOf { it.blindM })
+    }
+
+    companion object {
+        private const val PERSIST_EVERY_MS = 10_000L
+        /** Restore only trips interrupted less than 3 hours ago. */
+        private const val MAX_RESTORE_GAP_S = 3 * 3600.0
+        /** Assumed drift while the app was dead (~city driving), m/s. */
+        private const val RESTORE_DRIFT_M_PER_S = 8.0
+    }
+}
+
+/** Tracks extracted from a recording for display. */
+data class TripTracks(val gps: List<GeoPoint>, val engine: List<GeoPoint>, val goodGpsCount: Int)
+
+/** Re-run the trust classifier over a recording so only trusted GPS fixes form the "real" track. */
+fun extractTracks(file: File, area: org.blinddriver.core.geo.ServiceArea): TripTracks {
+    val events = org.blinddriver.core.record.TripFormat.read(file)
+    var now = 0L
+    var offset = 0L
+    val hub = PositioningHub(area = area, wallClock = { now + offset })
+    val gps = ArrayList<GeoPoint>()
+    val engine = ArrayList<GeoPoint>()
+    for (e in events.sortedBy { it.elapsedMs }) {
+        now = e.elapsedMs
+        when (e) {
+            is TripEvent.Fix -> {
+                if (offset == 0L && e.fix.source == org.blinddriver.core.gnss.FixSource.GPS) offset = e.fix.timeMs - e.fix.elapsedMs
+                val v = hub.onFix(e.fix)
+                if (v?.level == org.blinddriver.core.gnss.TrustLevel.GOOD) {
+                    val p = e.fix.point
+                    if (gps.isEmpty() || Geo.distance(gps.last(), p) >= 5) gps += p
+                }
+            }
+            is TripEvent.Gnss -> hub.onGnssStatus(e.visible, e.used, e.meanCn0Used, e.cn0SpreadUsed, e.meanCn0Visible, e.dualFrequencyUsed, e.elapsedMs)
+            is TripEvent.Agc -> hub.onAgc(e.agcDb, e.elapsedMs)
+            is TripEvent.Estimate -> {
+                val p = GeoPoint(e.lat, e.lon)
+                if (engine.isEmpty() || Geo.distance(engine.last(), p) >= 5) engine += p
+            }
+            else -> Unit
+        }
+    }
+    return TripTracks(gps, engine, gps.size)
+}

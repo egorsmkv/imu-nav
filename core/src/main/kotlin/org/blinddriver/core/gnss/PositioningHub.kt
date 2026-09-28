@@ -54,9 +54,13 @@ class PositioningHub(
         private set
 
     var log: ((String) -> Unit)? = null
+
+    /** Receives every raw input (fixes, satellite status, AGC) — used to record trips for replay. */
+    var recorder: ((org.blinddriver.core.record.TripEvent) -> Unit)? = null
     private var jamEndedAtMs = -1L
 
     fun onFix(fix: RawFix): Verdict? {
+        recorder?.invoke(org.blinddriver.core.record.TripEvent.Fix(fix))
         when (fix.source) {
             FixSource.NET -> {
                 lastNet = fix
@@ -108,6 +112,9 @@ class PositioningHub(
         dualFrequencyUsed: Int,
         elapsedMs: Long,
     ) {
+        recorder?.invoke(
+            org.blinddriver.core.record.TripEvent.Gnss(elapsedMs, visible, used, meanCn0Used, cn0SpreadUsed, meanCn0Visible, dualFrequencyUsed)
+        )
         gnss = gnss.copy(
             satellitesVisible = visible,
             satellitesUsed = used,
@@ -121,6 +128,7 @@ class PositioningHub(
 
     /** @return true when jamming just ended (caller may re-inject assisted-GPS data). */
     fun onAgc(agcDb: Float?, elapsedMs: Long): Boolean {
+        recorder?.invoke(org.blinddriver.core.record.TripEvent.Agc(elapsedMs, agcDb))
         gnss = gnss.copy(agcDb = agcDb)
         val wasJammed = jammed
         if (jamDetector.update(agcDb, elapsedMs)) {

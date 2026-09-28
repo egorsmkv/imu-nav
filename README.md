@@ -163,6 +163,11 @@ Trip logs are written to `files/logs/` in app storage.
   turn integration, and projections compute exact arc-length.
 - Not road-tested. Treat as a research prototype, never as a safety system.
 
+## Licence
+
+Source code: MIT (see `LICENSE`). Bundled data keeps its own licences — OpenStreetMap-derived
+routing/search packs are ODbL, the cell database is CC BY-SA 4.0; see `NOTICE.md`.
+
 ## Provenance
 
 Written from scratch based on a behavioural analysis of BlindDriver 0.4.0 (algorithms,

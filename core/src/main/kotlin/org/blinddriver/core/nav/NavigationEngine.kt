@@ -155,6 +155,21 @@ class NavigationEngine(
         log("nav_start len=${route.length.toInt()}")
     }
 
+    /**
+     * Continue a trip restored after the app was killed: jump to [s] on the already started route.
+     * Call right after [start] (with the restored uncertainty as start accuracy).
+     */
+    fun resumeAt(s: Double) {
+        val c = cursor ?: return
+        c.moveTo(s)
+        // Turns already behind the saved position were driven.
+        c.route.steps.indices.filter { c.route.stepS(it) < s - 1.0 }.forEach { consumedSteps += it }
+        log("nav_resume s=${s.toInt()}")
+    }
+
+    /** Current along-route position (for persisting an active trip). */
+    val progressS: Double get() = cursor?.s ?: 0.0
+
     /** Install a route computed in response to [NavListener.onRerouteRequested]. */
     fun setRoute(route: Route, nowMs: Long) {
         if (cursor == null) return

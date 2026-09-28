@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.AltRoute
 import androidx.compose.material.icons.filled.CellTower
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GpsFixed
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.GpsNotFixed
 import androidx.compose.material.icons.filled.GpsOff
 import androidx.compose.material.icons.filled.LocationOff
@@ -104,6 +105,7 @@ fun MapScreen(
     onRequestPermission: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenLog: () -> Unit,
+    onOpenHistory: () -> Unit,
 ) {
     val context = LocalContext.current
     val res = context.resources
@@ -114,6 +116,7 @@ fun MapScreen(
     var mapCenter by remember { mutableStateOf<GeoPoint?>(null) }
     var following by remember { mutableStateOf(true) }
     var showDiagnostics by remember { mutableStateOf(false) }
+    var showSearch by remember { mutableStateOf(false) }
     var centeredOnce by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     var topInsetPx by remember { mutableStateOf(0) }
@@ -178,6 +181,7 @@ fun MapScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (nav.active && !nav.arrived) ManeuverBanner(nav)
+            if (!nav.active) SearchPill(onClick = { showSearch = true })
             when {
                 !hasLocation -> WarningBanner(Icons.Filled.LocationOff, stringResource(R.string.permission_title), stringResource(R.string.permission_text), stringResource(R.string.action_allow), onRequestPermission)
                 !ui.locationEnabled -> WarningBanner(Icons.Filled.LocationOff, stringResource(R.string.location_off_title), stringResource(R.string.location_off_text), stringResource(R.string.action_turn_on)) {
@@ -188,6 +192,9 @@ fun MapScreen(
                 StatusPill(ui) { showDiagnostics = true }
                 Spacer(Modifier.weight(1f))
                 if (!nav.active) {
+                    FilledTonalIconButton(onClick = onOpenHistory) {
+                        Icon(Icons.Filled.History, contentDescription = stringResource(R.string.cd_history))
+                    }
                     FilledTonalIconButton(onClick = onOpenSettings) {
                         Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.cd_settings))
                     }
@@ -231,7 +238,10 @@ fun MapScreen(
                     pickStart = pickStart,
                     canStart = hasLocation && ui.destination != null && !ui.planning && (ui.hasTrustedPosition || ui.manualStart != null),
                     onSetStart = { mapCenter?.let { g.setManualStart(it) } },
-                    onStart = { g.startNavigation { NavService.start(context) } },
+                    onStart = {
+                        requestBatteryExemptionOnce(context)
+                        g.startNavigation { NavService.start(context) }
+                    },
                     onClearDestination = { g.setDestination(null) },
                 )
             }
@@ -249,12 +259,45 @@ fun MapScreen(
         )
     }
 
+    if (showSearch) {
+        SearchScreen(
+            search = g.search,
+            near = ui.currentPosition ?: mapCenter,
+            onPick = { r ->
+                g.search.remember(r)
+                g.setDestination(r.point)
+                controller.moveTo(r.point, 16.0)
+                showSearch = false
+            },
+            onClose = { showSearch = false },
+        )
+    }
+
     if (showDiagnostics) {
         ModalBottomSheet(onDismissRequest = { showDiagnostics = false }) {
             DiagnosticsContent(ui, g, onOpenLog = { showDiagnostics = false; onOpenLog() })
         }
     }
 }
+
+/**
+ * Ask once (at the first trip) to exempt the app from battery optimization, so Android does not
+ * stop navigation in the background. Later changes are possible from Settings.
+ */
+private fun requestBatteryExemptionOnce(context: android.content.Context) {
+    val prefs = context.getSharedPreferences("ui", android.content.Context.MODE_PRIVATE)
+    if (prefs.getBoolean("battery_asked", false)) return
+    prefs.edit().putBoolean("battery_asked", true).apply()
+    if (isBatteryUnrestricted(context)) return
+    runCatching {
+        @android.annotation.SuppressLint("BatteryLife")
+        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, android.net.Uri.parse("package:${context.packageName}"))
+        context.startActivity(intent)
+    }
+}
+
+fun isBatteryUnrestricted(context: android.content.Context): Boolean =
+    context.getSystemService(android.os.PowerManager::class.java).isIgnoringBatteryOptimizations(context.packageName)
 
 // ------------------------------------------------------------------ top
 

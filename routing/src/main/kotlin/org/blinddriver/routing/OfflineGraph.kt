@@ -6,6 +6,9 @@ import com.graphhopper.GraphHopperConfig
 import com.graphhopper.config.CHProfile
 import com.graphhopper.config.Profile
 import com.graphhopper.json.Statement
+import com.graphhopper.matching.MapMatching
+import com.graphhopper.matching.Observation
+import com.graphhopper.util.PMap
 import com.graphhopper.routing.WeightingFactory
 import com.graphhopper.routing.ev.BooleanEncodedValue
 import com.graphhopper.routing.ev.DecimalEncodedValue
@@ -82,6 +85,9 @@ class PhoneGraphHopper : GraphHopper() {
 
 class OfflineRoutingException(message: String) : Exception(message)
 
+/** A recorded drive snapped onto the road network. */
+data class MatchedTrack(val geometry: List<GeoPoint>, val lengthM: Double, val rawLengthM: Double)
+
 /** A loaded offline routing pack (a GraphHopper graph folder built by [buildGraph]). */
 class OfflineGraph private constructor(private val hopper: GraphHopper, val dir: File) : AutoCloseable {
 
@@ -105,6 +111,20 @@ class OfflineGraph private constructor(private val hopper: GraphHopper, val dir:
         val rsp = hopper.route(req)
         if (rsp.hasErrors()) throw OfflineRoutingException(rsp.errors.joinToString { it.message ?: it.javaClass.simpleName })
         return toRoute(rsp.best)
+    }
+
+    /**
+     * Snap a recorded track (e.g. trusted GPS fixes) onto the roads with GraphHopper's HMM map
+     * matching; returns the driven road geometry and its length.
+     * @param accuracyM typical GPS error, the HMM measurement sigma
+     */
+    fun mapMatch(points: List<GeoPoint>, accuracyM: Double = 20.0): MatchedTrack {
+        require(points.size >= 2) { "need at least two points" }
+        val mm = MapMatching.fromGraphHopper(hopper, PMap().putObject("profile", GraphSpec.PROFILE))
+        mm.setMeasurementErrorSigma(accuracyM)
+        val result = synchronized(this) { mm.match(points.map { Observation(GHPoint(it.lat, it.lon)) }) }
+        val pts = result.mergedPath.calcPoints()
+        return MatchedTrack((0 until pts.size()).map { GeoPoint(pts.getLat(it), pts.getLon(it)) }, result.matchLength, result.gpxEntriesLength)
     }
 
     /**

@@ -45,6 +45,10 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
     private var graph: OfflineGraph? = null
     private var task: Job? = null
 
+    /** Address search index shipped inside the pack (`search.db`), if present. */
+    @Volatile var searchDb: org.blinddriver.app.search.AndroidSearchDb? = null
+        private set
+
     private val _status = MutableStateFlow(
         OfflineRoutingStatus(allowOnline = prefs.getBoolean("allow_online", true), packUrl = prefs.getString("pack_url", "").orEmpty())
     )
@@ -93,6 +97,10 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
     private fun load() {
         graph?.close()
         graph = null
+        searchDb?.close()
+        searchDb = File(current, "search.db").takeIf { it.exists() }?.let { f ->
+            runCatching { org.blinddriver.app.search.AndroidSearchDb(f) }.onFailure { log("search_db_open_failed ${it.message}") }.getOrNull()
+        }
         val info = File(current, PackInfo.FILE).takeIf { it.exists() }?.let { PackInfo.parse(it.readText()) }
         if (info == null) {
             _status.update { it.copy(pack = null, loaded = false) }
@@ -113,6 +121,12 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
     suspend fun route(points: List<GeoPoint>): Route = withContext(Dispatchers.Default) {
         val g = synchronized(this@OfflineRouting) { graph } ?: throw IOException("no offline routing pack")
         g.route(points)
+    }
+
+    /** Snap a recorded drive onto the roads of the loaded pack (null if no pack is loaded). */
+    suspend fun mapMatch(points: List<GeoPoint>): org.blinddriver.routing.MatchedTrack? = withContext(Dispatchers.Default) {
+        val g = synchronized(this@OfflineRouting) { graph } ?: return@withContext null
+        g.mapMatch(points)
     }
 
     fun setAllowOnline(on: Boolean) {
@@ -158,6 +172,8 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
             synchronized(this@OfflineRouting) {
                 graph?.close()
                 graph = null
+                searchDb?.close()
+                searchDb = null
             }
             current.deleteRecursively()
             load()
@@ -201,6 +217,8 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
         synchronized(this) {
             graph?.close()
             graph = null
+            searchDb?.close()
+            searchDb = null
             current.deleteRecursively()
             if (!staging.renameTo(current)) throw IOException("cannot install pack")
         }

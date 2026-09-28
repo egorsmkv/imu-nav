@@ -28,7 +28,14 @@ data class PackInfo(val name: String, val builtAt: String, val source: String, v
  * Import an OpenStreetMap extract into a GraphHopper graph with contraction hierarchies for the
  * car profile, write `pack.json` and return its metadata. Needs a desktop JVM (uses Janino).
  */
-fun buildGraph(osmFile: File, outDir: File, name: String, minNetworkSize: Int = 200): PackInfo {
+fun buildGraph(
+    osmFile: File,
+    outDir: File,
+    name: String,
+    minNetworkSize: Int = 200,
+    withSearch: Boolean = true,
+    withAddresses: Boolean = true,
+): PackInfo {
     require(osmFile.exists()) { "OSM file not found: $osmFile" }
     outDir.deleteRecursively()
     outDir.mkdirs()
@@ -41,6 +48,7 @@ fun buildGraph(osmFile: File, outDir: File, name: String, minNetworkSize: Int = 
     )
     hopper.importOrLoad()
     val b = hopper.baseGraph.bounds
+    if (withSearch) SearchIndexBuilder.build(osmFile, hopper, File(outDir, SearchIndexBuilder.FILE), withAddresses)
     hopper.close()
     val size = outDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
     val info = PackInfo(name, Instant.now().toString(), osmFile.name, doubleArrayOf(b.minLat, b.maxLat, b.minLon, b.maxLon), size)
@@ -62,16 +70,18 @@ fun zipPack(dir: File, zip: File) {
 /**
  * Build an offline routing pack:
  *   ./gradlew :routing:run --args="--osm ukraine-latest.osm.pbf --out build/graph-ukraine --name Ukraine"
- * Produces the graph folder and `<out>.zip` to import in the app (Settings → Offline routing).
+ * Produces the graph folder (with the address search index `search.db`) and `<out>.zip` to import
+ * in the app (Settings → Offline routing). `--no-addresses` skips house numbers, `--no-search` the index.
  */
 fun main(args: Array<String>) {
-    val opts = args.toList().windowed(2, 2).associate { (k, v) -> k.removePrefix("--") to v }
+    val flags = args.filter { it == "--no-search" || it == "--no-addresses" }.map { it.removePrefix("--") }.toSet()
+    val opts = (args.toList() - flags.map { "--$it" }.toSet()).windowed(2, 2).associate { (k, v) -> k.removePrefix("--") to v }
     val osm = File(opts["osm"] ?: error("--osm <file.osm.pbf> is required"))
     val out = File(opts["out"] ?: "graph-${osm.nameWithoutExtension.substringBefore('.')}")
     val name = opts["name"] ?: osm.nameWithoutExtension.substringBefore('.')
     val t0 = System.currentTimeMillis()
     println("[graph] importing ${osm.name} (${osm.length() / 1_048_576} MB) → $out")
-    val info = buildGraph(osm, out, name)
+    val info = buildGraph(osm, out, name, withSearch = "no-search" !in flags, withAddresses = "no-addresses" !in flags)
     val zip = File(out.absolutePath + ".zip")
     zipPack(out, zip)
     println("[graph] done in ${(System.currentTimeMillis() - t0) / 1000}s: graph ${info.sizeBytes / 1_048_576} MB, pack ${zip.length() / 1_048_576} MB → $zip")

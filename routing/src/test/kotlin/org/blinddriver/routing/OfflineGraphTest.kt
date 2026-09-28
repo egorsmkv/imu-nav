@@ -23,6 +23,10 @@ class OfflineGraphTest {
         // A side street continuing north makes the junction a real choice, so a turn instruction is emitted.
         val stub = (1..3).map { 3000L + it to (50.461 + it * 0.001 to 30.500) }
         (north + east + stub).forEach { (id, p) -> sb.append("<node id='$id' lat='${p.first}' lon='${p.second}' version='1'/>\n") }
+        // A town node and house numbers for the search index.
+        sb.append("<node id='9001' lat='50.455' lon='30.505' version='1'><tag k='place' v='town'/><tag k='name' v='Тестове'/><tag k='name:en' v='Testove'/><tag k='population' v='12000'/></node>\n")
+        sb.append("<node id='9002' lat='50.4612' lon='30.5061' version='1'><tag k='addr:housenumber' v='5А'/><tag k='addr:street' v='Eastway'/></node>\n")
+        sb.append("<node id='9003' lat='50.4555' lon='30.4999' version='1'><tag k='addr:housenumber' v='12'/><tag k='addr:street' v='Northway'/></node>\n")
         fun way(id: Long, nodes: List<Long>, name: String, highway: String, maxspeed: Int) {
             sb.append("<way id='$id' version='1'>")
             nodes.forEach { sb.append("<nd ref='$it'/>") }
@@ -71,6 +75,31 @@ class OfflineGraphTest {
             assertEquals(ref.time / 1000.0, route.durationS, 1.0)
 
             assertFailsWith<OfflineRoutingException> { g.route(listOf(start, GeoPoint(48.0, 24.0))) }
+
+            // Map matching: noisy GPS along the drive snaps back onto the two roads.
+            val rnd = kotlin.random.Random(4)
+            val noisy = (0..20).map { i ->
+                val p = if (i <= 10) GeoPoint(50.451 + i * 0.001, 30.500) else GeoPoint(50.461, 30.500 + (i - 10) * 0.001)
+                GeoPoint(p.lat + rnd.nextDouble(-0.00012, 0.00012), p.lon + rnd.nextDouble(-0.00018, 0.00018))
+            }
+            val matched = g.mapMatch(noisy, accuracyM = 15.0)
+            assertTrue(matched.lengthM in 1700.0..2000.0, "matched length ${matched.lengthM}")
+            // Offline search index built next to the graph.
+            JdbcSearchDb(File(dir, SearchIndexBuilder.FILE)).use { db ->
+                val near = GeoPoint(50.455, 30.505)
+                val town = org.blinddriver.core.search.AddressSearch.search(db, "тесто", near)
+                assertEquals("Тестове", town.first().title, "prefix match on a settlement: $town")
+                assertEquals("Тестове", org.blinddriver.core.search.AddressSearch.search(db, "Testove", near).first().title, "English name")
+                val street = org.blinddriver.core.search.AddressSearch.search(db, "вул. Eastway", near)
+                assertEquals("Eastway", street.first().title, "street-type word ignored: $street")
+                assertEquals("Тестове", street.first().subtitle, "street attached to its settlement")
+                val house = org.blinddriver.core.search.AddressSearch.search(db, "Eastway 5а", near)
+                assertEquals(org.blinddriver.core.search.ResultKind.ADDRESS, house.first().kind, "house number found: $house")
+                assertEquals(50.4612, house.first().point.lat, 1e-6)
+                val combo = org.blinddriver.core.search.AddressSearch.search(db, "Тестове Northway 12", near)
+                assertEquals("Northway, 12", combo.first().title, "settlement + street + number: $combo")
+            }
+            assertTrue(matched.geometry.all { kotlin.math.abs(it.lon - 30.500) < 1e-4 || kotlin.math.abs(it.lat - 50.461) < 1e-4 }, "matched points lie on the roads")
         }
         tmp.deleteRecursively()
     }

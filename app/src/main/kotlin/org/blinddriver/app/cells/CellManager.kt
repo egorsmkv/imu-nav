@@ -148,6 +148,11 @@ class CellManager(
 
     // ------------------------------------------------------------------ settings
 
+    /** Random, install-scoped identifier sent to the sharing server (not tied to the phone or user). */
+    private fun deviceId(): String = prefs.getString("device_id", null) ?: java.util.UUID.randomUUID().toString().also {
+        prefs.edit().putString("device_id", it).apply()
+    }
+
     fun savedToken(): String = prefs.getString("token", "").orEmpty()
     fun savedSyncKey(): String = prefs.getString("sync_key", "").orEmpty()
 
@@ -368,7 +373,7 @@ class CellManager(
         }
         runTask(str(R.string.task_syncing)) {
             val started = System.currentTimeMillis()
-            val client = CellSyncClient(url, savedSyncKey())
+            val client = CellSyncClient(url, savedSyncKey(), deviceId())
             val (uploaded, downloaded) = withContext(Dispatchers.IO) {
                 val pending = db.learnedSince(prefs.getLong("last_upload_ms", 0))
                 progress(str(R.string.task_uploading, pending.size))

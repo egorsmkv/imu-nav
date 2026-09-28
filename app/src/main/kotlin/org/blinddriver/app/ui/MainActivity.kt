@@ -22,7 +22,7 @@ import org.blinddriver.app.AppGraph
 import org.blinddriver.app.graph
 import org.blinddriver.app.ui.theme.BlindDriverTheme
 
-private enum class Screen { MAP, SETTINGS, LOG }
+private enum class Screen { MAP, SETTINGS, LOG, HISTORY, TRIP }
 
 class MainActivity : ComponentActivity() {
     private var hasLocation by mutableStateOf(false)
@@ -70,6 +70,7 @@ class MainActivity : ComponentActivity() {
 private fun AppRoot(g: AppGraph, hasLocation: Boolean, requestPermission: () -> Unit, keepScreenOn: (Boolean) -> Unit) {
     val ui by g.ui.collectAsStateWithLifecycle()
     var screen by rememberSaveable { mutableStateOf(Screen.MAP) }
+    var tripId by rememberSaveable { mutableStateOf<String?>(null) }
 
     // While no navigation runs, keep position and diagnostics fresh (the service drives it otherwise).
     LaunchedEffect(Unit) {
@@ -81,7 +82,11 @@ private fun AppRoot(g: AppGraph, hasLocation: Boolean, requestPermission: () -> 
     LaunchedEffect(ui.guidance.active) { keepScreenOn(ui.guidance.active) }
 
     BackHandler(enabled = screen != Screen.MAP) {
-        screen = if (screen == Screen.LOG) Screen.SETTINGS else Screen.MAP
+        screen = when (screen) {
+            Screen.LOG -> Screen.SETTINGS
+            Screen.TRIP -> Screen.HISTORY
+            else -> Screen.MAP
+        }
     }
     when (screen) {
         Screen.MAP -> MapScreen(
@@ -91,7 +96,13 @@ private fun AppRoot(g: AppGraph, hasLocation: Boolean, requestPermission: () -> 
             onRequestPermission = requestPermission,
             onOpenSettings = { screen = Screen.SETTINGS },
             onOpenLog = { screen = Screen.LOG },
+            onOpenHistory = { screen = Screen.HISTORY },
         )
+        Screen.HISTORY -> HistoryScreen(g, onBack = { screen = Screen.MAP }, onOpen = { tripId = it.id; screen = Screen.TRIP })
+        Screen.TRIP -> {
+            val trip = g.trips.history.value.firstOrNull { it.id == tripId }
+            if (trip == null) screen = Screen.HISTORY else TripDetailScreen(g, trip, onBack = { screen = Screen.HISTORY })
+        }
         Screen.SETTINGS -> SettingsScreen(ui, g, onBack = { screen = Screen.MAP }, onOpenLog = { screen = Screen.LOG })
         Screen.LOG -> LogScreen(g, onBack = { screen = Screen.SETTINGS })
     }

@@ -33,4 +33,23 @@ class PackSmokeTest {
             }
         }
     }
+
+    @Test
+    fun addressSearchOnRealPack() {
+        val dir = System.getenv("GRAPH_DIR")?.let(::File)
+        assumeTrue("GRAPH_DIR not set", dir != null && File(dir, SearchIndexBuilder.FILE).exists())
+        val kyiv = GeoPoint(50.4501, 30.5234)
+        JdbcSearchDb(File(dir!!, SearchIndexBuilder.FILE)).use { db ->
+            for ((q, near) in listOf(
+                "Хрещатик 22" to kyiv, "Львів" to kyiv, "буча" to kyiv, "Шевченка Львів" to kyiv,
+                "Київ Грушевського 5" to kyiv, "Одеса Дерибасівська" to kyiv, "Kharkiv" to kyiv, "вул. Велика Васильківська 100" to kyiv,
+            )) {
+                val t = System.nanoTime()
+                val r = org.blinddriver.core.search.AddressSearch.search(db, q, near, limit = 3)
+                val ms = (System.nanoTime() - t) / 1_000_000
+                println("'$q' (${ms} ms): " + r.joinToString(" | ") { "${it.kind} ${it.title} [${it.subtitle}] ${it.distanceM?.let { d -> (d / 1000).toInt() }}km" })
+                assertTrue(r.isNotEmpty(), "no results for $q")
+            }
+        }
+    }
 }
