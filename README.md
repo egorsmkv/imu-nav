@@ -73,7 +73,11 @@ Routing packs also contain `search.db`, an SQLite FTS4 index of settlements, str
 numbers built from the same OSM extract (~87 MB for Ukraine; skip with `--no-addresses` or
 `--no-search`). Queries like `Хрещатик 22`, `Київ Хрещатик`, `вул. Шевченка, Львів` or `Буча`
 work offline in a few milliseconds; street-type words are ignored and results near you rank first.
-When the offline index finds nothing and online use is allowed, Photon (OpenStreetMap) is asked.
+When the offline index finds nothing and online use is allowed (**Settings → Offline routing →
+Allow online routing and search**), a [Photon](https://github.com/komoot/photon) geocoder is asked.
+The public server `photon.komoot.io` is the default; **Settings → Address search** accepts your own
+server instead (a host such as `http://192.168.1.10:2322` or the full `…/api` URL), with a *Test*
+button that runs a sample query. Self-hosting keeps search text off third-party servers.
 
 ### Trips: history, recording, restore and replay
 Every navigation is recorded to `files/trips/trip-<time>.rec.gz` in app storage — all fixes, IMU

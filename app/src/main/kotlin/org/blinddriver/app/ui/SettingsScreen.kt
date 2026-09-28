@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material.icons.filled.TravelExplore
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -61,12 +62,15 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -80,6 +84,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.blinddriver.app.AppGraph
 import org.blinddriver.app.AppLanguage
 import org.blinddriver.app.MapStartMode
@@ -91,6 +96,7 @@ import org.blinddriver.app.power.PowerMode
 import org.blinddriver.app.power.PowerProfile
 import org.blinddriver.core.cells.Radio
 import org.blinddriver.core.geo.GeoPoint
+import org.blinddriver.core.search.PhotonServer
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -294,6 +300,9 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
             SwitchItem(stringResource(R.string.routing_allow_online), stringResource(R.string.routing_allow_online_summary), routing.allowOnline) {
                 app.offlineRouting.setAllowOnline(it)
             }
+
+            // ---------------- Address search (online fallback server)
+            SearchServerSection(app, onlineAllowed = routing.allowOnline)
 
             // ---------------- Cell towers
             SectionHeader(stringResource(R.string.sec_cells))
@@ -554,6 +563,78 @@ private fun Field(value: String, onChange: (String) -> Unit, label: String, plac
         keyboardOptions = KeyboardOptions(keyboardType = if (secret) KeyboardType.Password else keyboard),
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
     )
+}
+
+/**
+ * Settings → Address search: which Photon server answers searches the offline index cannot.
+ * The user can type a self-hosted server, test it, or go back to the public one.
+ */
+@Composable
+private fun SearchServerSection(app: AppGraph, onlineAllowed: Boolean) {
+    val saved by app.search.photonUrl.collectAsStateWithLifecycle()
+    var text by remember(saved) { mutableStateOf(if (saved == PhotonServer.DEFAULT_URL) "" else saved) }
+    val normalized = PhotonServer.normalize(text)
+    val scope = rememberCoroutineScope()
+    // Result of the last "Test" (null = not tested since the text changed).
+    var testResult by remember(text) { mutableStateOf<String?>(null) }
+    var testing by remember { mutableStateOf(false) }
+    val res = LocalResources.current
+
+    SectionHeader(stringResource(R.string.sec_search))
+    ListItem(
+        headlineContent = { Text(stringResource(R.string.search_server_title)) },
+        supportingContent = {
+            Text(
+                stringResource(if (onlineAllowed) R.string.search_server_hint else R.string.search_server_hint_offline),
+                color = if (onlineAllowed) Color.Unspecified else MaterialTheme.colorScheme.error,
+            )
+        },
+        leadingContent = { Icon(Icons.Filled.TravelExplore, contentDescription = null) },
+    )
+    OutlinedTextField(
+        value = text,
+        onValueChange = { text = it },
+        label = { Text(stringResource(R.string.search_server_url)) },
+        placeholder = { Text(PhotonServer.DEFAULT_URL) },
+        singleLine = true,
+        isError = normalized == null,
+        supportingText = {
+            when {
+                normalized == null -> Text(stringResource(R.string.search_server_invalid))
+                testResult != null -> Text(testResult.orEmpty())
+                else -> Text(stringResource(R.string.search_server_in_use, saved))
+            }
+        },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+    )
+    FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Button(onClick = { app.search.setPhotonUrl(text) }, enabled = normalized != null && normalized != saved) {
+            Text(stringResource(R.string.action_apply))
+        }
+        OutlinedButton(
+            onClick = {
+                testing = true
+                scope.launch {
+                    val result = app.search.testPhoton(text)
+                    testing = false
+                    testResult = result.fold(
+                        onSuccess = { count -> res.getQuantityString(R.plurals.search_server_ok, count, count) },
+                        onFailure = { error -> res.getString(R.string.search_server_failed, error.message ?: error.javaClass.simpleName) },
+                    )
+                }
+            },
+            enabled = normalized != null && !testing,
+        ) {
+            Text(stringResource(if (testing) R.string.search_server_testing else R.string.search_server_test))
+        }
+        if (saved != PhotonServer.DEFAULT_URL) {
+            TextButton(onClick = {
+                app.search.setPhotonUrl("")
+                text = ""
+            }) { Text(stringResource(R.string.search_server_reset)) }
+        }
+    }
 }
 
 /** Settings → Map start: open the map at the phone's position, or at a fixed place. */

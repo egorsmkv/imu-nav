@@ -7,6 +7,9 @@ import android.database.sqlite.SQLiteDatabase
 import android.util.Log
 import androidx.core.content.edit
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.blinddriver.core.geo.Geo
@@ -14,6 +17,7 @@ import org.blinddriver.core.geo.GeoPoint
 import org.blinddriver.core.net.Http
 import org.blinddriver.core.search.AddressRow
 import org.blinddriver.core.search.AddressSearch
+import org.blinddriver.core.search.PhotonServer
 import org.blinddriver.core.search.PlaceRow
 import org.blinddriver.core.search.ResultKind
 import org.blinddriver.core.search.SearchDb
@@ -90,6 +94,37 @@ class AndroidSearchDb(file: File) :
  */
 class PlaceSearch(context: Context, private val offlineDb: () -> SearchDb?, private val allowOnline: () -> Boolean) {
     private val prefs = context.getSharedPreferences("search", Context.MODE_PRIVATE)
+
+    private val _photonUrl = MutableStateFlow(prefs.getString(KEY_PHOTON_URL, null) ?: PhotonServer.DEFAULT_URL)
+
+    /** The Photon endpoint used for online search (Settings → Address search). */
+    val photonUrl: StateFlow<String> = _photonUrl.asStateFlow()
+
+    /**
+     * Use the Photon server at [text] (a host or full URL; blank = the public default).
+     * @return false if [text] is not a usable URL (nothing is changed then)
+     */
+    fun setPhotonUrl(text: String): Boolean {
+        val url = PhotonServer.normalize(text) ?: return false
+        prefs.edit { if (url == PhotonServer.DEFAULT_URL) remove(KEY_PHOTON_URL) else putString(KEY_PHOTON_URL, url) }
+        _photonUrl.value = url
+        return true
+    }
+
+    /**
+     * Check that [text] points at a working Photon server by searching for "Київ".
+     * @return the number of results, or the error (network, HTTP status, not a Photon answer)
+     */
+    suspend fun testPhoton(text: String): Result<Int> = withContext(Dispatchers.IO) {
+        val url = PhotonServer.normalize(text) ?: return@withContext Result.failure(IllegalArgumentException("invalid URL"))
+        try {
+            Result.success(photon(TEST_QUERY, near = null, endpoint = url).size)
+        } catch (e: IOException) {
+            Result.failure(e)
+        } catch (e: JSONException) {
+            Result.failure(IOException("not a Photon server", e))
+        }
+    }
 
     /** Is an offline index installed? */
     val hasOffline: Boolean get() = offlineDb() != null
@@ -171,9 +206,9 @@ class PlaceSearch(context: Context, private val offlineDb: () -> SearchDb?, priv
 
     // ------------------------------------------------------------------ online fallback (Photon)
 
-    /** Ask photon.komoot.io; see https://photon.komoot.io for the API. Blocking. */
-    private fun photon(query: String, near: GeoPoint?): List<SearchResult> {
-        val url = PHOTON_URL.toHttpUrl().newBuilder()
+    /** Ask the configured Photon server ([endpoint]); see https://photon.komoot.io for the API. Blocking. */
+    private fun photon(query: String, near: GeoPoint?, endpoint: String = photonUrl.value): List<SearchResult> {
+        val url = endpoint.toHttpUrl().newBuilder()
             .addQueryParameter("q", query)
             .addQueryParameter("limit", MAX_ONLINE_RESULTS.toString())
             .apply {
@@ -208,7 +243,8 @@ class PlaceSearch(context: Context, private val offlineDb: () -> SearchDb?, priv
 
     private companion object {
         const val TAG = "PlaceSearch"
-        const val PHOTON_URL = "https://photon.komoot.io/api/"
+        const val KEY_PHOTON_URL = "photon_url"
+        const val TEST_QUERY = "Київ"
         const val KEY_RECENT = "recent"
         const val MIN_QUERY_LENGTH = 2
         const val MAX_RECENT = 10

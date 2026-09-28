@@ -111,3 +111,28 @@ object AddressSearch {
     val SETTLEMENTS = setOf("city", "town", "village", "hamlet")
     private val KIND_WEIGHT = mapOf("city" to 50.0, "town" to 12.0, "village" to 3.0, "suburb" to 2.5, "hamlet" to 1.0, "neighbourhood" to 1.0, "quarter" to 1.5)
 }
+
+/**
+ * Address of a Photon geocoder (https://github.com/komoot/photon), the online search fallback.
+ * The public server is used by default; anyone can self-host Photon (it serves `/api` on port 2322).
+ */
+object PhotonServer {
+    const val DEFAULT_URL = "https://photon.komoot.io/api"
+
+    /**
+     * Turn what the user typed into the API endpoint URL, or null if it is not a usable URL.
+     *
+     * Accepts a bare host or the full endpoint: `photon.example.org`, `http://10.0.0.5:2322`,
+     * `https://photon.example.org/api/` all work. Blank text means "use the default server".
+     */
+    fun normalize(text: String): String? {
+        var url = text.trim()
+        if (url.isEmpty()) return DEFAULT_URL
+        if ("://" !in url) url = "https://$url"
+        if (!url.startsWith("http://") && !url.startsWith("https://")) return null
+        val host = url.substringAfter("://").substringBefore('/')
+        if (host.isBlank() || ' ' in url || '?' in url) return null
+        url = url.trimEnd('/')
+        return if (url.endsWith("/api")) url else "$url/api"
+    }
+}

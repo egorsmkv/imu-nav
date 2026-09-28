@@ -216,6 +216,17 @@
     <string name="map_start_use_position">Моя позиція</string>
     <string name="map_start_use_center">Центр карти</string>
     <string name="action_apply">Застосувати</string>
+    <string name="sec_search">Пошук адрес</string>
+    <string name="search_server_title">Онлайн-сервер пошуку (Photon)</string>
+    <string name="search_server_hint">Використовується лише тоді, коли офлайн-індекс нічого не знаходить. Залиште порожнім для публічного сервера або вкажіть власний сервер Photon (напр. http://192.168.1.10:2322).</string>
+    <string name="search_server_hint_offline">Онлайн-сервіси вимкнено (див. «Дозволити онлайн-маршрути та пошук» вище), тому цей сервер не використовується.</string>
+    <string name="search_server_url">Адреса сервера</string>
+    <string name="search_server_invalid">Введіть адресу http:// або https://</string>
+    <string name="search_server_in_use">Використовується: %1$s</string>
+    <string name="search_server_test">Перевірити</string>
+    <string name="search_server_testing">Перевіряємо…</string>
+    <string name="search_server_failed">Помилка: %1$s</string>
+    <string name="search_server_reset">Публічний сервер</string>
     <string name="sec_power">Батарея</string>
     <string name="power_title">Режим живлення</string>
     <string name="power_auto">Авто</string>
@@ -240,8 +251,8 @@
     <string name="routing_import">Імпорт пакета</string>
     <string name="routing_url">Адреса пакета (.zip)</string>
     <string name="routing_remove">Видалити</string>
-    <string name="routing_allow_online">Дозволити онлайн-маршрути</string>
-    <string name="routing_allow_online_summary">Коли офлайн-карта не може прокласти маршрут. Надсилає старт і пункт призначення на router.project-osrm.org.</string>
+    <string name="routing_allow_online">Дозволити онлайн-маршрути та пошук</string>
+    <string name="routing_allow_online_summary">Коли офлайн-карта чи пошуковий індекс не можуть відповісти. Надсилає старт і пункт призначення на router.project-osrm.org, а текст пошуку — на сервер пошуку адрес нижче.</string>
     <string name="routing_installing">Встановлення пакета… %1$d МБ</string>
     <string name="routing_downloading">Завантаження пакета… %1$d з %2$d МБ (%3$d%%)</string>
     <string name="routing_removing">Видалення пакета…</string>
@@ -317,5 +328,11 @@
         <item quantity="few">%1$d поїздки · %2$s · %3$s</item>
         <item quantity="many">%1$d поїздок · %2$s · %3$s</item>
         <item quantity="other">%1$d поїздки · %2$s · %3$s</item>
+    </plurals>
+    <plurals name="search_server_ok">
+        <item quantity="one">Працює: %1$d результат для «Київ»</item>
+        <item quantity="few">Працює: %1$d результати для «Київ»</item>
+        <item quantity="many">Працює: %1$d результатів для «Київ»</item>
+        <item quantity="other">Працює: %1$d результату для «Київ»</item>
     </plurals>
 </resources>

@@ -218,6 +218,17 @@
     <string name="map_start_use_position">Use my position</string>
     <string name="map_start_use_center">Use map centre</string>
     <string name="action_apply">Apply</string>
+    <string name="sec_search">Address search</string>
+    <string name="search_server_title">Online search server (Photon)</string>
+    <string name="search_server_hint">Asked only when the offline index finds nothing. Leave empty for the public server, or enter your own Photon server (e.g. http://192.168.1.10:2322).</string>
+    <string name="search_server_hint_offline">Online services are off (see “Allow online routing and search” above), so this server is not used.</string>
+    <string name="search_server_url">Server URL</string>
+    <string name="search_server_invalid">Enter an http:// or https:// address</string>
+    <string name="search_server_in_use">In use: %1$s</string>
+    <string name="search_server_test">Test</string>
+    <string name="search_server_testing">Testing…</string>
+    <string name="search_server_failed">Failed: %1$s</string>
+    <string name="search_server_reset">Use public server</string>
     <string name="sec_power">Battery</string>
     <string name="power_title">Power mode</string>
     <string name="power_auto">Auto</string>
@@ -242,8 +253,8 @@
     <string name="routing_import">Import pack</string>
     <string name="routing_url">Pack URL (.zip)</string>
     <string name="routing_remove">Remove</string>
-    <string name="routing_allow_online">Allow online routing</string>
-    <string name="routing_allow_online_summary">Used when the offline map cannot answer. Sends start and destination to router.project-osrm.org.</string>
+    <string name="routing_allow_online">Allow online routing and search</string>
+    <string name="routing_allow_online_summary">Used when the offline map or search index cannot answer. Sends start and destination to router.project-osrm.org, and search text to the address-search server below.</string>
     <string name="routing_installing">Installing pack… %1$d MB</string>
     <string name="routing_downloading">Downloading pack… %1$d of %2$d MB (%3$d%%)</string>
     <string name="routing_removing">Removing pack…</string>
@@ -313,5 +324,9 @@
     <plurals name="history_totals">
         <item quantity="one">%1$d trip · %2$s · %3$s</item>
         <item quantity="other">%1$d trips · %2$s · %3$s</item>
+    </plurals>
+    <plurals name="search_server_ok">
+        <item quantity="one">Works: %1$d result for “Київ”</item>
+        <item quantity="other">Works: %1$d results for “Київ”</item>
     </plurals>
 </resources>
