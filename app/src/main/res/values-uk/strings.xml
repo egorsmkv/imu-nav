@@ -208,6 +208,19 @@
 
     <!-- Офлайн-маршрути -->
     <string name="sec_routing">Офлайн-маршрути</string>
+    <string name="sec_power">Батарея</string>
+    <string name="power_title">Режим живлення</string>
+    <string name="power_auto">Авто</string>
+    <string name="power_performance">Максимальна точність</string>
+    <string name="power_balanced">Збалансований</string>
+    <string name="power_saver">Економія батареї</string>
+    <string name="power_auto_hint">Максимальна точність під час заряджання, економія нижче 20 % або коли увімкнено енергозбереження телефона, інакше збалансований.</string>
+    <string name="power_auto_now">Зараз: %1$s · батарея %2$s</string>
+    <string name="power_performance_hint">Датчики 50 Гц, сканування веж кожні 5 с, плавна карта 60 кадр/с. Найкраще числення шляху, найбільша витрата.</string>
+    <string name="power_balanced_hint">Датчики 25 Гц, сканування веж кожні 5–10 с, карта 30 кадр/с. Рекомендовано.</string>
+    <string name="power_saver_hint">Датчики 10 Гц, рідше сканування веж і мережі, без індикатора глушіння (AGC), карта без анімації 15 кадр/с. Трохи менш точне розпізнавання поворотів.</string>
+    <string name="power_screen_on">Не вимикати екран під час навігації</string>
+    <string name="power_screen_on_summary">Екран споживає найбільше енергії. Вимкніть, щоб їхати з голосовими підказками при вимкненому екрані.</string>
     <string name="sec_language">Мова</string>
     <string name="language_title">Мова застосунку та голосу</string>
     <string name="language_hint">Екрани та голосові підказки.</string>

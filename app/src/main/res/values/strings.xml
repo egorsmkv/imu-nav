@@ -210,6 +210,19 @@
 
     <!-- Offline routing -->
     <string name="sec_routing">Offline routing</string>
+    <string name="sec_power">Battery</string>
+    <string name="power_title">Power mode</string>
+    <string name="power_auto">Auto</string>
+    <string name="power_performance">Max accuracy</string>
+    <string name="power_balanced">Balanced</string>
+    <string name="power_saver">Battery saver</string>
+    <string name="power_auto_hint">Max accuracy on a charger, battery saver below 20 % or when the phone\'s battery saver is on, balanced otherwise.</string>
+    <string name="power_auto_now">Now: %1$s · battery %2$s</string>
+    <string name="power_performance_hint">Sensors at 50 Hz, cell scans every 5 s, smooth 60 fps map. Best dead reckoning, highest drain.</string>
+    <string name="power_balanced_hint">Sensors at 25 Hz, cell scans every 5–10 s, 30 fps map. Recommended.</string>
+    <string name="power_saver_hint">Sensors at 10 Hz, fewer cell and network scans, no jamming indicator (AGC), map updated without animation at 15 fps. Slightly less precise turn detection.</string>
+    <string name="power_screen_on">Keep screen on while navigating</string>
+    <string name="power_screen_on_summary">The display uses the most energy. Turn off to navigate by voice with the screen off.</string>
     <string name="sec_language">Language</string>
     <string name="language_title">App and voice language</string>
     <string name="language_hint">Screens and spoken prompts.</string>
