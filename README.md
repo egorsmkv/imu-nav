@@ -49,7 +49,17 @@ curl -LO https://download.geofabrik.de/europe/ukraine-latest.osm.pbf
 ./gradlew :routing:run --args="--osm ukraine-latest.osm.pbf --out graph-ukraine --name Ukraine"
 # → graph-ukraine/ and graph-ukraine.zip
 ```
-Install it in the app with **Import pack** (the `.zip`) or **Download** from any HTTP(S) URL — the
+**Bundling a pack in the APK:** copy the zip and its metadata into the app's assets before building —
+```bash
+cp graph-ukraine.zip app/src/main/assets/routing/pack.zip
+cp graph-ukraine/pack.json app/src/main/assets/routing/pack.json
+```
+On first start the app unpacks it in the background (~20 s for Ukraine) and uses it. It is only
+reinstalled when an update ships a newer pack, and stays removed if the user removes it (Settings
+offers *Install built-in map*). The APK grows by the zip size (~250 MB for Ukraine, over Google
+Play's 200 MB base-APK limit — fine for sideloading); both files are gitignored.
+
+Packs can also be installed at runtime with **Import pack** (the `.zip`) or **Download** from any HTTP(S) URL — the
 zip is unpacked while it streams, and interrupted downloads resume. The graph is memory-mapped, so
 large regions do not need a large heap.
 

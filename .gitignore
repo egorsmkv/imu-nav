@@ -9,3 +9,5 @@ captures/
 keystore/
 keystore.properties
 dist/
+app/src/main/assets/routing/pack.zip
+app/src/main/assets/routing/pack.json

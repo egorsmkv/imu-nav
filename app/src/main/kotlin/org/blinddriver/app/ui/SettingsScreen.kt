@@ -165,6 +165,12 @@ fun SettingsScreen(ui: UiState, g: AppGraph, onBack: () -> Unit, onOpenLog: () -
                 OutlinedButton(onClick = { pickPack.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) }, enabled = routing.busy == null) {
                     Text(stringResource(R.string.routing_import))
                 }
+                val bundled = routing.bundled
+                if (pack == null && bundled != null) {
+                    OutlinedButton(onClick = { g.offlineRouting.installBundled() }, enabled = routing.busy == null) {
+                        Text(stringResource(R.string.routing_install_builtin, bundled.name))
+                    }
+                }
                 if (pack != null) {
                     TextButton(onClick = { g.offlineRouting.remove() }, enabled = routing.busy == null) {
                         Text(stringResource(R.string.routing_remove), color = MaterialTheme.colorScheme.error)

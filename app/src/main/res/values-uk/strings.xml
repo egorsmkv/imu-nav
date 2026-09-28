@@ -224,4 +224,6 @@
     <string name="routing_installed">Офлайн-карту встановлено: %1$s</string>
     <string name="routing_not_a_pack">Це не пакет маршрутів (потрібні pack.json і файли графа)</string>
     <string name="routing_no_coverage">Офлайн-карта не охоплює цю поїздку, а онлайн-маршрути вимкнено</string>
+    <string name="routing_preparing_builtin">Готуємо офлайн-карту… %1$d з %2$d МБ</string>
+    <string name="routing_install_builtin">Встановити вбудовану карту (%1$s)</string>
 </resources>

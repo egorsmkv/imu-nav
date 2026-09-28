@@ -226,4 +226,6 @@
     <string name="routing_installed">Offline map installed: %1$s</string>
     <string name="routing_not_a_pack">Not a routing pack (pack.json and graph files expected)</string>
     <string name="routing_no_coverage">The offline map does not cover this trip, and online routing is off</string>
+    <string name="routing_preparing_builtin">Preparing offline map… %1$d of %2$d MB</string>
+    <string name="routing_install_builtin">Install built-in map (%1$s)</string>
 </resources>

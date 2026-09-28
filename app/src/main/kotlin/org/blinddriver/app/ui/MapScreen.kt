@@ -110,6 +110,7 @@ fun MapScreen(
     val nav = ui.guidance
     val controller = remember { MapController() }
     val towerLayer by g.cells.towerLayer.collectAsStateWithLifecycle()
+    val routing by g.offlineRouting.status.collectAsStateWithLifecycle()
     var mapCenter by remember { mutableStateOf<GeoPoint?>(null) }
     var following by remember { mutableStateOf(true) }
     var showDiagnostics by remember { mutableStateOf(false) }
@@ -226,6 +227,7 @@ fun MapScreen(
             } else {
                 IdlePanel(
                     ui = ui,
+                    routingBusy = routing.busy,
                     pickStart = pickStart,
                     canStart = hasLocation && ui.destination != null && !ui.planning && (ui.hasTrustedPosition || ui.manualStart != null),
                     onSetStart = { mapCenter?.let { g.setManualStart(it) } },
@@ -401,6 +403,7 @@ private fun PanelSurface(content: @Composable () -> Unit) {
 @Composable
 private fun IdlePanel(
     ui: UiState,
+    routingBusy: String?,
     pickStart: Boolean,
     canStart: Boolean,
     onSetStart: () -> Unit,
@@ -430,6 +433,11 @@ private fun IdlePanel(
         IconLine(Icons.Filled.TripOrigin, positionLine)
         if (pickStart) IconLine(Icons.Filled.Add, stringResource(R.string.idle_set_start_hint))
         if (ui.destination == null) IconLine(Icons.Filled.Navigation, stringResource(R.string.idle_hint_long_press))
+        if (routingBusy != null) {
+            Spacer(Modifier.size(8.dp))
+            LinearProgressIndicator(Modifier.fillMaxWidth())
+            Text(routingBusy, style = MaterialTheme.typography.bodySmall)
+        }
         if (ui.planning) {
             Spacer(Modifier.size(8.dp))
             LinearProgressIndicator(Modifier.fillMaxWidth())

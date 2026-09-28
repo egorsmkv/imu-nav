@@ -25,6 +25,8 @@ import kotlin.coroutines.coroutineContext
 
 data class OfflineRoutingStatus(
     val pack: PackInfo? = null,
+    /** Pack shipped inside the APK (assets/routing), if any. */
+    val bundled: PackInfo? = null,
     val loaded: Boolean = false,
     val allowOnline: Boolean = true,
     val packUrl: String = "",
@@ -48,8 +50,41 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
     )
     val status: StateFlow<OfflineRoutingStatus> = _status.asStateFlow()
 
+    /** Metadata of the pack bundled in the APK (assets/routing/pack.json next to pack.zip). */
+    private val bundledInfo: PackInfo? = runCatching {
+        context.assets.open(BUNDLED_ZIP).close() // the pack itself must be present, not just its description
+        context.assets.open(BUNDLED_INFO).use { PackInfo.parse(it.readBytes().decodeToString()) }
+    }.getOrNull()
+
     init {
-        scope.launch { withContext(Dispatchers.IO) { load() } }
+        _status.update { it.copy(bundled = bundledInfo) }
+        scope.launch {
+            withContext(Dispatchers.IO) { load() }
+            installBundledIfNeeded()
+        }
+    }
+
+    /**
+     * First start (or an app update shipping a newer pack): unpack the bundled pack into app storage.
+     * Skipped when a pack at least as new is installed, or the user removed this bundled pack.
+     */
+    private fun installBundledIfNeeded() {
+        val bundled = bundledInfo ?: return
+        val installed = _status.value.pack
+        if (installed != null && installed.builtAt >= bundled.builtAt) return
+        if (prefs.getString("bundled_declined", null) == bundled.builtAt) return
+        installBundled()
+    }
+
+    /** Unpack the pack shipped with the app (also offered in Settings after it was removed). */
+    fun installBundled() {
+        val bundled = bundledInfo ?: return
+        prefs.edit().remove("bundled_declined").apply()
+        runTask(str(R.string.routing_preparing_builtin, 0, (bundled.sizeBytes / 1_048_576).toInt())) {
+            withContext(Dispatchers.IO) {
+                context.assets.open(BUNDLED_ZIP).use { install(it, totalBytes = bundled.sizeBytes) }
+            }
+        }
     }
 
     private fun str(id: Int, vararg args: Any) = context.getString(id, *args)
@@ -117,6 +152,8 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
     }
 
     fun remove() = runTask(str(R.string.routing_removing)) {
+        // Do not silently reinstall the bundled pack the user just removed.
+        bundledInfo?.let { prefs.edit().putString("bundled_declined", it.builtAt).apply() }
         withContext(Dispatchers.IO) {
             synchronized(this@OfflineRouting) {
                 graph?.close()
@@ -129,7 +166,7 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
     }
 
     /** Unzip into a staging folder, validate, then atomically replace the current pack. */
-    private suspend fun install(input: InputStream): String {
+    private suspend fun install(input: InputStream, totalBytes: Long = 0): String {
         val ctx = coroutineContext
         val staging = File(root, "staging").apply { deleteRecursively(); mkdirs() }
         var bytes = 0L
@@ -148,7 +185,10 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
                         bytes += n
                     }
                 }
-                progress(str(R.string.routing_installing, (bytes / 1_048_576).toInt()))
+                progress(
+                    if (totalBytes > 0) str(R.string.routing_preparing_builtin, (bytes / 1_048_576).toInt(), (totalBytes / 1_048_576).toInt())
+                    else str(R.string.routing_installing, (bytes / 1_048_576).toInt())
+                )
             }
         }
         val info = File(staging, PackInfo.FILE).takeIf { it.exists() }?.let { PackInfo.parse(it.readText()) }
@@ -198,6 +238,9 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
         }
     }
 }
+
+private const val BUNDLED_ZIP = "routing/pack.zip"
+private const val BUNDLED_INFO = "routing/pack.json"
 
 /** Offline first; online OSRM only when allowed and the offline pack cannot answer. */
 class SmartRouter(

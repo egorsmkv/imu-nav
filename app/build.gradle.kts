@@ -13,8 +13,8 @@ android {
         applicationId = "org.blinddriver.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.4.0"
+        versionCode = 6
+        versionName = "0.5.0"
     }
 
     // Release signing: create keystore.properties (see README) — it and the keystore are gitignored.
@@ -51,6 +51,11 @@ android {
 
     buildFeatures {
         compose = true
+    }
+
+    androidResources {
+        // The bundled routing pack is already a zip; store it as-is so first-start unpacking is fast.
+        noCompress += "zip"
     }
 
     packaging {
