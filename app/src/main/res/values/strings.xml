@@ -229,6 +229,10 @@
     <string name="search_server_testing">Testing…</string>
     <string name="search_server_failed">Failed: %1$s</string>
     <string name="search_server_reset">Use public server</string>
+    <string name="mode_car">Car</string>
+    <string name="mode_walk">Walk</string>
+    <string name="mode_walk_needs_pack">Walking routes need a map pack with walking data (rebuild or download an updated pack).</string>
+    <string name="routing_no_walking">Walking routes need the offline map with walking data; there is no online fallback for walking.</string>
     <string name="sec_power">Battery</string>
     <string name="power_title">Power mode</string>
     <string name="power_auto">Auto</string>

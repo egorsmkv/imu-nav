@@ -74,6 +74,11 @@ Requirements: JDK 17+, Android SDK platform 36. `adb` lives at `~/Library/Androi
   results are posted back. HTTP calls are blocking — never call them on the main thread.
 - **HTTP:** always through `org.blinddriver.core.net.Http` (shared OkHttp client). Do not add
   `HttpURLConnection` or new clients; use `Http.client.newBuilder()` for different timeouts.
+- **Travel mode** (`TravelMode.CAR` / `FOOT`) selects the GraphHopper profile and the engine's motion
+  model. Car-only corrections must stay gated by `mode == CAR` (or `Tuning.forWalking()`); walking uses
+  the `Pedometer` (steps × learned stride). Both profiles live in one pack; `GraphSpec.config(profiles)`
+  must match what `pack.json` says the pack contains, and `PhoneGraphHopper` mirrors each custom model in
+  plain code — change both together (`OfflineGraphTest` compares phone and desktop for car and foot).
 - **Positioning inputs** go through `PositioningHub` (which also records them for replay). Anything the
   engine consumes must be recorded in `TripEvent`, or replays will diverge from real drives.
 - **Trust:** the fused provider and Android's cached GPS fix are never trusted for navigation

@@ -227,6 +227,10 @@
     <string name="search_server_testing">Перевіряємо…</string>
     <string name="search_server_failed">Помилка: %1$s</string>
     <string name="search_server_reset">Публічний сервер</string>
+    <string name="mode_car">Авто</string>
+    <string name="mode_walk">Пішки</string>
+    <string name="mode_walk_needs_pack">Для пішохідних маршрутів потрібен пакет карти з пішохідними даними (оновіть пакет).</string>
+    <string name="routing_no_walking">Для пішохідних маршрутів потрібна офлайн-карта з пішохідними даними; онлайн-варіанту для пішки немає.</string>
     <string name="sec_power">Батарея</string>
     <string name="power_title">Режим живлення</string>
     <string name="power_auto">Авто</string>

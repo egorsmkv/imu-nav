@@ -1,7 +1,9 @@
 package org.blinddriver.app.sensors
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -16,6 +18,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
+import androidx.core.content.ContextCompat
 import org.blinddriver.app.power.PowerProfile
 import org.blinddriver.core.gnss.FixSource
 import org.blinddriver.core.gnss.PositioningHub
@@ -32,7 +35,14 @@ import kotlin.math.sqrt
  *
  * All callbacks are delivered on the main looper.
  */
-class SensorHub(context: Context, private val hub: PositioningHub, private val onImu: (ImuSample) -> Unit, private val log: (String) -> Unit) {
+class SensorHub(
+    private val context: Context,
+    private val hub: PositioningHub,
+    private val onImu: (ImuSample) -> Unit,
+    private val log: (String) -> Unit,
+    /** Called once per detected step (walking trips only), with elapsedRealtime ms. */
+    private val onStep: (Long) -> Unit = {},
+) {
     private val locationManager = context.getSystemService(LocationManager::class.java)
     private val sensorManager = context.getSystemService(SensorManager::class.java)
     private val handler = Handler(Looper.getMainLooper())
@@ -109,6 +119,18 @@ class SensorHub(context: Context, private val hub: PositioningHub, private val o
         }
     }
 
+    /** Android's step detector: one event per step, fine in a hand, pocket or bag. */
+    private val stepListener = object : SensorEventListener {
+        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+
+        override fun onSensorChanged(e: SensorEvent) = onStep(SystemClock.elapsedRealtime())
+    }
+
+    /** Does this phone have a step detector? (Most do; some budget phones do not.) */
+    val hasStepDetector: Boolean get() = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR) != null
+
+    private var stepsRegistered = false
+
     private val sensorListener = object : SensorEventListener {
         override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
 
@@ -177,10 +199,31 @@ class SensorHub(context: Context, private val hub: PositioningHub, private val o
      * Apply a power profile. While [navigating] the IMU runs at the profile's rate (turn and stop
      * detection); otherwise only orientation at a low rate (compass plausibility check, gyro bias).
      */
-    fun configure(p: PowerProfile, navigating: Boolean) {
+    fun configure(p: PowerProfile, navigating: Boolean, walking: Boolean = false) {
         profile = p
         this.navigating = navigating
+        this.walking = walking
         if (running) applyConfig()
+    }
+
+    /** Walking trip in progress: listen to the step detector. */
+    private var walking = false
+
+    /** Steps need the "physical activity" permission (Android 10+). */
+    private fun canCountSteps(): Boolean = ContextCompat.checkSelfPermission(context, Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
+
+    private fun applyStepConfig() {
+        val want = running && navigating && walking && hasStepDetector && canCountSteps()
+        if (want == stepsRegistered) return
+        if (want) {
+            sensorManager.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR)?.let {
+                sensorManager.registerListener(stepListener, it, SensorManager.SENSOR_DELAY_NORMAL, handler)
+            }
+        } else {
+            sensorManager.unregisterListener(stepListener)
+        }
+        stepsRegistered = want
+        log("step_detector ${if (want) "on" else "off"}")
     }
 
     /** (Re-)register listeners so they match the current power profile; only what changed is touched. */
@@ -220,6 +263,7 @@ class SensorHub(context: Context, private val hub: PositioningHub, private val o
             }
             imuConfig = imu
         }
+        applyStepConfig()
         val summary = "power ${p.name} nav=$navigating imu_hz=${1_000_000 / imu.first} net_ms=${p.networkMinMs} agc=$measurements"
         if (summary != lastSummary) log(summary)
         lastSummary = summary
@@ -249,6 +293,8 @@ class SensorHub(context: Context, private val hub: PositioningHub, private val o
         locationManager.unregisterGnssStatusCallback(gnssStatusCallback)
         if (measurements) locationManager.unregisterGnssMeasurementsCallback(gnssMeasurementsCallback)
         sensorManager.unregisterListener(sensorListener)
+        sensorManager.unregisterListener(stepListener)
+        stepsRegistered = false
         netMinMs = -1L
         measurements = false
         imuConfig = null

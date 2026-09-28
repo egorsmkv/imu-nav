@@ -1,6 +1,7 @@
 package org.blinddriver.routing
 
 import org.blinddriver.core.geo.GeoPoint
+import org.blinddriver.core.route.TravelMode
 import org.blinddriver.core.search.AddressSearch
 import org.junit.Assume.assumeTrue
 import java.io.File
@@ -34,6 +35,33 @@ class PackSmokeTest {
                 )
                 assertTrue(r.length / 1000 in km, "$name length ${r.length / 1000} km")
             }
+        }
+    }
+
+    @Test
+    fun walkingRoutesOnRealPack() {
+        val dir = System.getenv("GRAPH_DIR")?.let(::File)
+        assumeTrue("GRAPH_DIR not set", dir != null && File(dir, "properties").exists())
+        OfflineGraph.load(dir!!).use { g ->
+            assumeTrue("pack has no walking data", g.supports(TravelMode.FOOT))
+            // Odesa centre: pedestrians cut across Cathedral Square and pedestrian streets; cars must go round.
+            val from = GeoPoint(46.48445, 30.73180)
+            val to = GeoPoint(46.48510, 30.74000)
+            val walk = g.route(listOf(from, to), TravelMode.FOOT)
+            val drive = g.route(listOf(from, to), TravelMode.CAR)
+            val walkNames = walk.steps.map { it.name }.distinct()
+            println(
+                "walk ${walk.length.toInt()} m ${(walk.durationS / 60).toInt()} min via $walkNames; drive ${drive.length.toInt()} m via ${drive.steps.map {
+                    it.name
+                }.distinct()}",
+            )
+            assertTrue(walk.length < drive.length - 200, "walk ${walk.length} m should be clearly shorter than drive ${drive.length} m")
+            val pace = walk.length / walk.durationS
+            assertTrue(pace in 0.9..1.8, "walking pace $pace m/s")
+            // A longer walk across central Kyiv (Khreshchatyk → Kyiv Pechersk Lavra).
+            val long = g.route(listOf(GeoPoint(50.4501, 30.5234), GeoPoint(50.4346, 30.5573)), TravelMode.FOOT)
+            println("Kyiv walk ${long.length.toInt()} m, ${(long.durationS / 60).toInt()} min, ${long.steps.size} steps")
+            assertTrue(long.length in 2500.0..6000.0, "Kyiv walk ${long.length}")
         }
     }
 

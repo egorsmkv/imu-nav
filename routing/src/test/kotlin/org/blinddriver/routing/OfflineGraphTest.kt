@@ -4,6 +4,7 @@ import com.graphhopper.GHRequest
 import com.graphhopper.GraphHopper
 import com.graphhopper.util.shapes.GHPoint
 import org.blinddriver.core.geo.GeoPoint
+import org.blinddriver.core.route.TravelMode
 import org.blinddriver.core.search.AddressSearch
 import org.blinddriver.core.search.ResultKind
 import java.io.File
@@ -25,7 +26,9 @@ class OfflineGraphTest {
         val east = (1..14).map { 2000L + it to (50.461 to 30.500 + it * 0.001) }
         // A side street continuing north makes the junction a real choice, so a turn instruction is emitted.
         val stub = (1..3).map { 3000L + it to (50.461 + it * 0.001 to 30.500) }
-        (north + east + stub).forEach { (id, p) -> sb.append("<node id='$id' lat='${p.first}' lon='${p.second}' version='1'/>\n") }
+        // A footpath cutting the corner diagonally: pedestrians may use it, cars may not.
+        val path = (1..5).map { 4000L + it to (50.455 + it * 0.001 to 30.500 + it * 0.0016) }
+        (north + east + stub + path).forEach { (id, p) -> sb.append("<node id='$id' lat='${p.first}' lon='${p.second}' version='1'/>\n") }
         // A town node and house numbers for the search index.
         sb.append(
             "<node id='9001' lat='50.455' lon='30.505' version='1'><tag k='place' v='town'/><tag k='name' v='Тестове'/><tag k='name:en' v='Testove'/><tag k='population' v='12000'/></node>\n",
@@ -40,6 +43,7 @@ class OfflineGraphTest {
         way(1, north.map { it.first }, "Northway", "primary", 50)
         way(2, listOf(1011L) + east.map { it.first }, "Eastway", "secondary", 30)
         way(3, listOf(1011L) + stub.map { it.first }, "Stubway", "residential", 30)
+        way(4, listOf(1005L) + path.map { it.first } + listOf(2008L), "Parkpath", "footway", 5)
         sb.append("</osm>\n")
         file.writeText(sb.toString())
     }
@@ -74,10 +78,21 @@ class OfflineGraphTest {
 
             // Same answer as desktop GraphHopper with the Janino-compiled model.
             val desktop = GraphHopper().init(GraphSpec.config(dir.absolutePath)).also { it.load() }
-            val ref = desktop.route(GHRequest(GHPoint(start.lat, start.lon), GHPoint(end.lat, end.lon)).setProfile(GraphSpec.PROFILE)).best
-            desktop.close()
+            val ref = desktop.route(GHRequest(GHPoint(start.lat, start.lon), GHPoint(end.lat, end.lon)).setProfile(GraphSpec.CAR)).best
             assertEquals(ref.distance, route.length, 1.0)
             assertEquals(ref.time / 1000.0, route.durationS, 1.0)
+            assertTrue(route.steps.none { it.name == "Parkpath" }, "cars must not use the footway")
+
+            // Walking takes the footway shortcut, and the phone agrees with desktop GraphHopper.
+            assertTrue(g.supports(TravelMode.FOOT))
+            val walk = g.route(listOf(start, end), TravelMode.FOOT)
+            assertTrue(walk.steps.any { it.name == "Parkpath" }, "walking route uses the footway: ${walk.steps.map { it.name }}")
+            assertTrue(walk.length < route.length - 300, "walk ${walk.length} vs drive ${route.length}")
+            val refWalk = desktop.route(GHRequest(GHPoint(start.lat, start.lon), GHPoint(end.lat, end.lon)).setProfile(GraphSpec.FOOT)).best
+            desktop.close()
+            assertEquals(refWalk.distance, walk.length, 1.0)
+            assertEquals(refWalk.time / 1000.0, walk.durationS, 1.0)
+            assertTrue(walk.durationS > route.durationS * 3, "walking is much slower than driving")
 
             assertFailsWith<OfflineRoutingException> { g.route(listOf(start, GeoPoint(48.0, 24.0))) }
 
@@ -106,6 +121,24 @@ class OfflineGraphTest {
             }
             assertTrue(matched.geometry.all { abs(it.lon - 30.500) < 1e-4 || abs(it.lat - 50.461) < 1e-4 }, "matched points lie on the roads")
         }
+        tmp.deleteRecursively()
+    }
+
+    @Test
+    fun carOnlyPacksFromOlderVersionsStillLoad() {
+        val tmp = createTempDirectory()
+        val osm = File(tmp, "test.osm").also { writeOsm(it) }
+        val dir = File(tmp, "graph")
+        buildGraph(osm, dir, "old", minNetworkSize = 0, withSearch = false, profiles = listOf(GraphSpec.CAR))
+        assertEquals(listOf(GraphSpec.CAR), PackInfo.parse(File(dir, PackInfo.FILE).readText())?.profiles)
+        OfflineGraph.load(dir).use { g ->
+            assertTrue(!g.supports(TravelMode.FOOT))
+            val route = g.route(listOf(GeoPoint(50.4502, 30.5001), GeoPoint(50.4611, 30.5135)))
+            assertTrue(route.length in 2000.0..2600.0)
+            assertFailsWith<OfflineRoutingException> { g.route(listOf(GeoPoint(50.4502, 30.5001), GeoPoint(50.4611, 30.5135)), TravelMode.FOOT) }
+        }
+        // pack.json written before profiles existed means car-only.
+        assertEquals(listOf(GraphSpec.CAR), PackInfo.parse("{\"name\":\"x\",\"bounds\":[1,2,3,4],\"sizeBytes\":5}")?.profiles)
         tmp.deleteRecursively()
     }
 

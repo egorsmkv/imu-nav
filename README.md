@@ -43,6 +43,11 @@ contraction hierarchies built on a computer from an OpenStreetMap extract. OSRM 
 fallback, and can be switched off in **Settings → Offline routing**. Packs also provide real speed
 limits (OSM `maxspeed`) for the speed sign and the dead-reckoning speed prior.
 
+Packs contain two profiles, **car** and **foot** (walking: footways, paths, steps, pedestrian
+streets, preferring pleasant ways over busy roads). Choose *Car* or *Walk* in the "Where to?" panel
+before starting. Walking routes are offline-only (the public OSRM server drives only). Packs built
+before walking support (`pack.json` without `"profiles"`) still load; *Walk* is then disabled.
+
 Build a pack (needs a desktop JVM; the full Ukraine takes a few minutes and ~10 GB RAM):
 ```bash
 curl -LO https://download.geofabrik.de/europe/ukraine-latest.osm.pbf
@@ -56,8 +61,8 @@ cp graph-ukraine/pack.json app/src/main/assets/routing/pack.json
 ```
 On first start the app unpacks it in the background (~20 s for Ukraine) and uses it. It is only
 reinstalled when an update ships a newer pack, and stays removed if the user removes it (Settings
-offers *Install built-in map*). The APK grows by the zip size (~300 MB for Ukraine including the
-search index, making the APK ~350 MB — over Google Play's 200 MB base-APK limit, fine for
+offers *Install built-in map*). The APK grows by the zip size (~400+ MB for Ukraine with car and
+foot profiles and the search index, making the APK ~450+ MB — over Google Play's 200 MB base-APK limit, fine for
 sideloading); both files are gitignored.
 
 Packs can also be installed at runtime with **Import pack** (the `.zip`) or **Download** from any HTTP(S) URL — the
@@ -208,6 +213,16 @@ keyPassword=...
 Keep a backup of the keystore: Android only installs updates signed with the same key.
 Without `keystore.properties`, `assembleRelease` produces an unsigned APK.
 
+### Walking without GPS
+On foot the engine replaces the car speed model with the phone's **step detector**: speed = steps
+per second × stride, and the stride (0.72 m to start) is learned while GPS is trusted. Car-only
+corrections are off (turn hold, gyro turn matching, compass snap, U-turn and missed-turn detection,
+traffic-signal and speed-bump rules — they assume a phone fixed in a car holder), off-route and
+arrival distances are tighter (`Tuning.forWalking()`), and maneuvers are announced at 150 / 50 / 15 m.
+Cell-tower and network corrections still apply. Step counting needs the *Physical activity*
+permission (asked when choosing *Walk*); without it or without a step sensor, a 1.3 m/s pace is
+assumed while the phone is moving. Walk recordings contain the steps, so the replay tool works for them too.
+
 Usage: long-press the map to choose a destination and tap **Start**. If GPS is untrusted and there is
 no cell fix, pan the crosshair onto your position and tap **Start here** first. Tap the status pill for
 positioning diagnostics (satellites, spoofing reasons, cells, *Simulate GPS loss*, trip log); the gear
@@ -219,6 +234,9 @@ The interface and voice follow the phone's language (Ukrainian or English) unles
 `files/logs/`, trip recordings to `files/trips/` in app storage.
 
 ## Status and limitations
+
+- Walking mode is new and tuned only on simulations; record a few walks (with GPS) and check them
+  with the replay tool before relying on it.
 
 - Offline routing packs carry no traffic-signal data yet, so the stop-at-signal snap and signal
   speed plan stay inactive. The OSRM fallback uses the public demo server — self-host it for real use.

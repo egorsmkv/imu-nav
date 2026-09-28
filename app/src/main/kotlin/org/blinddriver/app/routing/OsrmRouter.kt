@@ -8,6 +8,7 @@ import org.blinddriver.core.net.Http
 import org.blinddriver.core.net.HttpException
 import org.blinddriver.core.route.Route
 import org.blinddriver.core.route.Step
+import org.blinddriver.core.route.TravelMode
 import org.json.JSONObject
 import java.io.IOException
 import java.util.Locale
@@ -15,7 +16,8 @@ import java.util.concurrent.TimeUnit
 
 /** Something that computes routes: the offline GraphHopper pack, the online OSRM server, or both ([SmartRouter]). */
 interface Router {
-    suspend fun route(from: GeoPoint, to: GeoPoint, via: List<GeoPoint> = emptyList()): Route
+    /** A route from [from] to [to] through [via] for [mode]; throws an IOException when there is none. */
+    suspend fun route(from: GeoPoint, to: GeoPoint, via: List<GeoPoint> = emptyList(), mode: TravelMode = TravelMode.CAR): Route
 }
 
 /**
@@ -25,7 +27,8 @@ interface Router {
  */
 class OsrmRouter(private val baseUrl: String = "https://router.project-osrm.org") : Router {
 
-    override suspend fun route(from: GeoPoint, to: GeoPoint, via: List<GeoPoint>): Route = withContext(Dispatchers.IO) {
+    override suspend fun route(from: GeoPoint, to: GeoPoint, via: List<GeoPoint>, mode: TravelMode): Route = withContext(Dispatchers.IO) {
+        if (mode != TravelMode.CAR) throw IOException("OSRM: only driving routes are available online")
         val coords = (listOf(from) + via + to).joinToString(";") { String.format(Locale.US, "%.6f,%.6f", it.lon, it.lat) }
         val url = "$baseUrl/route/v1/driving/$coords?overview=full&geometries=polyline6&steps=true&annotations=true"
         parse(fetch(url))

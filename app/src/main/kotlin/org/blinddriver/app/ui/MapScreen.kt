@@ -1,11 +1,15 @@
 package org.blinddriver.app.ui
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.Settings
 import android.text.format.DateFormat
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -29,10 +33,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AltRoute
 import androidx.compose.material.icons.filled.CellTower
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.GpsNotFixed
 import androidx.compose.material.icons.filled.GpsOff
@@ -53,6 +59,9 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -84,6 +93,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -99,6 +109,7 @@ import org.blinddriver.core.gnss.GpsState
 import org.blinddriver.core.gnss.TrustLevel
 import org.blinddriver.core.nav.GuidanceState
 import org.blinddriver.core.nav.PositionSource
+import org.blinddriver.core.route.TravelMode
 import java.util.Date
 
 private val GoodGreen = Color(0xFF1E8E3E)
@@ -122,6 +133,10 @@ fun MapScreen(ui: UiState, app: AppGraph, hasLocation: Boolean, onRequestPermiss
     val controller = remember { MapController() }
     val towerLayer by app.cells.towerLayer.collectAsStateWithLifecycle()
     val power by app.powerProfile.collectAsStateWithLifecycle()
+    val travelMode by app.travelMode.collectAsStateWithLifecycle()
+    val activityPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        app.tripLog.write("activity_permission granted=$granted")
+    }
     val routing by app.offlineRouting.status.collectAsStateWithLifecycle()
     var mapCenter by remember { mutableStateOf<GeoPoint?>(null) }
     var following by remember { mutableStateOf(true) }
@@ -190,6 +205,7 @@ fun MapScreen(ui: UiState, app: AppGraph, hasLocation: Boolean, onRequestPermiss
                 animateCamera = power.animateCamera,
                 initialCenter = startView.point,
                 initialZoom = startView.zoom,
+                followZoomDefault = if (nav.travelMode == TravelMode.FOOT) 17.5 else 16.0,
             )
         }
 
@@ -270,6 +286,13 @@ fun MapScreen(ui: UiState, app: AppGraph, hasLocation: Boolean, onRequestPermiss
             } else {
                 IdlePanel(
                     ui = ui,
+                    mode = travelMode,
+                    walkingAvailable = routing.walking,
+                    onModeChange = { mode ->
+                        app.setTravelMode(mode)
+                        // The step counter needs the "physical activity" permission; without it walking still works at a fixed pace.
+                        if (mode == TravelMode.FOOT && !hasActivityPermission(context)) activityPermission.launch(Manifest.permission.ACTIVITY_RECOGNITION)
+                    },
                     routingBusy = routing.busy,
                     pickStart = pickStart,
                     canStart = hasLocation && ui.destination != null && !ui.planning && (ui.hasTrustedPosition || ui.manualStart != null),
@@ -499,7 +522,18 @@ private fun PanelSurface(content: @Composable () -> Unit) {
 
 /** Bottom panel before navigation: position status, hints and the Start / Start here buttons. */
 @Composable
-private fun IdlePanel(ui: UiState, routingBusy: String?, pickStart: Boolean, canStart: Boolean, onSetStart: () -> Unit, onStart: () -> Unit, onClearDestination: () -> Unit) {
+private fun IdlePanel(
+    ui: UiState,
+    mode: TravelMode,
+    walkingAvailable: Boolean,
+    onModeChange: (TravelMode) -> Unit,
+    routingBusy: String?,
+    pickStart: Boolean,
+    canStart: Boolean,
+    onSetStart: () -> Unit,
+    onStart: () -> Unit,
+    onClearDestination: () -> Unit,
+) {
     val res = LocalResources.current
     PanelSurface {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -523,6 +557,11 @@ private fun IdlePanel(ui: UiState, routingBusy: String?, pickStart: Boolean, can
         IconLine(Icons.Filled.TripOrigin, positionLine)
         if (pickStart) IconLine(Icons.Filled.Add, stringResource(R.string.idle_set_start_hint))
         if (ui.destination == null) IconLine(Icons.Filled.Navigation, stringResource(R.string.idle_hint_long_press))
+        Spacer(Modifier.size(12.dp))
+        TravelModeSelector(mode, walkingAvailable, onModeChange)
+        if (!walkingAvailable) {
+            Text(stringResource(R.string.mode_walk_needs_pack), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         if (routingBusy != null) {
             Spacer(Modifier.size(8.dp))
             LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -548,6 +587,31 @@ private fun IdlePanel(ui: UiState, routingBusy: String?, pickStart: Boolean, can
         }
     }
 }
+
+/** Car / Walk choice before starting. Walking is disabled when the map pack has no walking data. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TravelModeSelector(mode: TravelMode, walkingAvailable: Boolean, onModeChange: (TravelMode) -> Unit) {
+    val options = listOf(
+        Triple(TravelMode.CAR, Icons.Filled.DirectionsCar, R.string.mode_car),
+        Triple(TravelMode.FOOT, Icons.AutoMirrored.Filled.DirectionsWalk, R.string.mode_walk),
+    )
+    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+        options.forEachIndexed { index, (option, icon, label) ->
+            SegmentedButton(
+                selected = mode == option,
+                onClick = { onModeChange(option) },
+                enabled = option == TravelMode.CAR || walkingAvailable,
+                shape = SegmentedButtonDefaults.itemShape(index, options.size),
+                icon = { Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp)) },
+            ) { Text(stringResource(label)) }
+        }
+    }
+}
+
+/** Has the user allowed step counting ("physical activity")? */
+private fun hasActivityPermission(context: Context): Boolean =
+    ContextCompat.checkSelfPermission(context, Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
 
 /** One line of text with a small leading icon. */
 @Composable

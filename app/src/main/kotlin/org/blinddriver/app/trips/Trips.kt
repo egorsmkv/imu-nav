@@ -18,6 +18,7 @@ import org.blinddriver.core.record.TripEvent
 import org.blinddriver.core.record.TripFormat
 import org.blinddriver.core.record.TripRecorder
 import org.blinddriver.core.route.Route
+import org.blinddriver.core.route.TravelMode
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -47,6 +48,8 @@ data class TripSummary(
     val recording: String,
     /** Length of the drive snapped to roads (map matching), once computed. */
     val matchedLengthM: Double? = null,
+    /** Driven or walked. Trips saved before walking support are car trips. */
+    val mode: TravelMode = TravelMode.CAR,
 ) {
     val avgMovingKmh: Double get() = if (movingS > 0) drivenM / movingS * 3.6 else 0.0
 
@@ -56,7 +59,7 @@ data class TripSummary(
         .put("destLat", destination?.lat).put("destLon", destination?.lon)
         .put("arrived", arrived).put("driven", drivenM).put("duration", durationS).put("moving", movingS)
         .put("blindS", blindS).put("blindM", blindM).put("maxUnc", maxUncertaintyM).put("routeLen", routeLengthM)
-        .put("reroutes", reroutes).put("recording", recording).put("matched", matchedLengthM)
+        .put("reroutes", reroutes).put("recording", recording).put("matched", matchedLengthM).put("mode", mode.name)
 
     companion object {
         /** Parse a line of the history index. */
@@ -76,7 +79,11 @@ data class TripSummary(
             reroutes = o.optInt("reroutes"),
             recording = o.optString("recording"),
             matchedLengthM = if (o.has("matched") && !o.isNull("matched")) o.getDouble("matched") else null,
+            mode = modeOf(o),
         )
+
+        /** The "mode" field, defaulting to car for data written before walking support. */
+        fun modeOf(o: JSONObject): TravelMode = TravelMode.entries.firstOrNull { it.name == o.optString("mode") } ?: TravelMode.CAR
     }
 }
 
@@ -106,6 +113,7 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
     private var destination: GeoPoint? = null
     private var waypoints: List<GeoPoint> = emptyList()
     private var startAccuracy = 0.0
+    private var mode = TravelMode.CAR
     private var route: Route? = null
     private var drivenM = 0.0
     private var movingS = 0.0
@@ -124,7 +132,8 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
     // ------------------------------------------------------------------ lifecycle
 
     /** Navigation started: open a new recording and reset the statistics. */
-    fun begin(route: Route, destination: GeoPoint, waypoints: List<GeoPoint>, startAccuracyM: Double) {
+    fun begin(route: Route, destination: GeoPoint, waypoints: List<GeoPoint>, startAccuracyM: Double, mode: TravelMode = TravelMode.CAR) {
+        this.mode = mode
         end(arrived = false) // close anything left open
         val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
         id = stamp
@@ -145,6 +154,7 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
         openRecorder(append = false)
         val now = SystemClock.elapsedRealtime()
         record(TripEvent.Start(now, destination, waypoints, startAccuracyM))
+        record(TripEvent.Mode(now, mode))
         record(TripEvent.RouteSet(now, route))
         persist(force = true)
         log("trip_begin $recordingName")
@@ -158,6 +168,11 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
         reroutes++
         record(TripEvent.RouteSet(SystemClock.elapsedRealtime(), route))
         persist(force = true)
+    }
+
+    /** Record a step (walking trips). */
+    fun onStep(elapsedMs: Long) {
+        if (recorder != null) record(TripEvent.StepTaken(elapsedMs))
     }
 
     /** Record an IMU sample (only while a trip is being recorded). */
@@ -196,7 +211,7 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
         val end = System.currentTimeMillis()
         val summary = TripSummary(
             tripId, startWall, end, destination, arrived, drivenM, (end - startWall) / 1000.0, movingS, blindS, blindM,
-            maxUnc, route?.length ?: 0.0, reroutes, recordingName,
+            maxUnc, route?.length ?: 0.0, reroutes, recordingName, mode = mode,
         )
         id = null
         // Skip accidental starts (no movement at all) to keep the history meaningful.
@@ -233,6 +248,7 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
         destination = restoredDestination
         waypoints = o.optJSONArray("via")?.let { a -> (0 until a.length() step 2).map { GeoPoint(a.getDouble(it), a.getDouble(it + 1)) } }.orEmpty()
         startAccuracy = o.optDouble("startAcc", 0.0)
+        mode = TripSummary.modeOf(o)
         route = restoredRoute
         routeEncoded = o.getString("route")
         drivenM = o.optDouble("driven")
@@ -245,12 +261,13 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
         // Unknown how far the car moved while the app was dead: widen the uncertainty with the gap.
         val uncertainty = (o.optDouble("unc", 100.0) + gapS * RESTORE_DRIFT_M_PER_S).coerceAtMost(3000.0)
         val now = SystemClock.elapsedRealtime()
-        engine.start(restoredRoute, restoredDestination, waypoints, now, startAccuracyM = uncertainty)
+        engine.start(restoredRoute, restoredDestination, waypoints, now, startAccuracyM = uncertainty, mode = mode)
         engine.resumeAt(o.optDouble("s"))
         // The killed process left the gzip stream unterminated: salvage it before appending.
         runCatching { TripFormat.repair(File(dir, recordingName)) }.onFailure { log("trip_repair_failed ${it.message}") }
         openRecorder(append = true)
         record(TripEvent.Start(now, restoredDestination, waypoints, uncertainty))
+        record(TripEvent.Mode(now, mode))
         record(TripEvent.RouteSet(now, restoredRoute))
         log("trip_restored $id gap=${gapS.toInt()}s s=${o.optDouble("s").toInt()} unc=${uncertainty.toInt()}")
         persist(force = true)
@@ -269,7 +286,7 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
         val o = JSONObject()
             .put("id", tripId).put("recording", recordingName).put("start", startWall).put("savedAt", System.currentTimeMillis())
             .put("destLat", d.lat).put("destLon", d.lon).put("via", JSONArray(waypoints.flatMap { listOf(it.lat, it.lon) }))
-            .put("startAcc", startAccuracy).put("s", engine.progressS).put("unc", st.uncertaintyM)
+            .put("startAcc", startAccuracy).put("s", engine.progressS).put("unc", st.uncertaintyM).put("mode", mode.name)
             .put("driven", drivenM).put("moving", movingS).put("blindS", blindS).put("blindM", blindM)
             .put("maxUnc", maxUnc).put("reroutes", reroutes).put("route", routeEncoded.ifEmpty { RouteCodec.encode(r) })
         val text = o.toString()

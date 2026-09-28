@@ -85,6 +85,25 @@ data class Tuning(
     val cameraBeepM: Double = 300.0,
     val cameraSpeedTolKmh: Double = 5.0,
 ) {
+    /**
+     * The same settings adapted for walking: tighter off-route and arrival distances, and the
+     * car-only corrections switched off (turn hold and U-turn detection rely on a phone fixed in
+     * a car holder; traffic-signal and speed-bump rules are about cars).
+     */
+    fun forWalking(): Tuning = copy(
+        turnHoldEnabled = false,
+        speedPlan = false,
+        signalSnap = false,
+        blindDeviationEnabled = false,
+        missedTurnEnabled = false,
+        offRouteM = 30.0,
+        offRouteHoldMs = 10_000,
+        offRouteFastM = 20.0,
+        offRouteFastDeg = 60.0,
+        offRouteFastHoldMs = 5_000,
+        arriveM = 15.0,
+    )
+
     /** Clamp every numeric parameter into its documented range and keep camera distances ordered. */
     fun sanitized(): Tuning {
         val clamped = SPECS.fold(this) { tuning, spec -> spec.set(tuning, spec.get(tuning).coerceIn(spec.min, spec.max)) }

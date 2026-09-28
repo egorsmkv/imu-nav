@@ -26,6 +26,7 @@ import java.io.InputStream
 import java.security.MessageDigest
 import java.text.DateFormat
 import java.util.Date
+import java.util.Locale
 import java.util.UUID
 import kotlin.coroutines.coroutineContext
 import kotlin.math.abs
@@ -104,7 +105,7 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
             hub.onFix(raw)
             if (raw.elapsedMs - lastCellLogMs >= 30_000) {
                 lastCellLogMs = raw.elapsedMs
-                log("cell_fix towers=${fix.towersUsed}/${fix.towersSeen} acc=${fix.accuracyM.toInt()} %.5f %.5f".format(fix.lat, fix.lon))
+                log("cell_fix towers=${fix.towersUsed}/${fix.towersSeen} acc=${fix.accuracyM.toInt()} %.5f %.5f".format(Locale.US, fix.lat, fix.lon))
             }
         },
         log = log,

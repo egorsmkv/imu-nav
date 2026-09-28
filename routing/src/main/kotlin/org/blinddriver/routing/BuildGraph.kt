@@ -7,10 +7,19 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /** Metadata written next to the graph as `pack.json`, shown in the app. */
-data class PackInfo(val name: String, val builtAt: String, val source: String, val bounds: DoubleArray, val sizeBytes: Long) {
+data class PackInfo(
+    val name: String,
+    val builtAt: String,
+    val source: String,
+    val bounds: DoubleArray,
+    val sizeBytes: Long,
+    /** Routing profiles in the pack; packs from before walking support have only "car". */
+    val profiles: List<String> = listOf(GraphSpec.CAR),
+) {
     /** Written as `pack.json` next to the graph; the app reads it to show and compare packs. */
     fun toJson(): String = "{\"name\":\"$name\",\"builtAt\":\"$builtAt\",\"source\":\"$source\",\"graphhopper\":\"11.0\"," +
-        "\"bounds\":[${bounds.joinToString(",")}],\"sizeBytes\":$sizeBytes}"
+        "\"bounds\":[${bounds.joinToString(",")}],\"sizeBytes\":$sizeBytes," +
+        "\"profiles\":[${profiles.joinToString(",") { "\"$it\"" }}]}"
 
     companion object {
         const val FILE = "pack.json"
@@ -22,22 +31,33 @@ data class PackInfo(val name: String, val builtAt: String, val source: String, v
             val boundsText = Regex("\"bounds\"\\s*:\\s*\\[([^\\]]*)]").find(json)?.groupValues?.get(1) ?: error("pack.json has no bounds")
             val b = boundsText.split(',').map { it.trim().toDouble() }.toDoubleArray()
             val size = Regex("\"sizeBytes\"\\s*:\\s*(\\d+)").find(json)?.groupValues?.get(1)?.toLong() ?: 0
-            PackInfo(str("name"), str("builtAt"), str("source"), b, size)
+            val profiles = Regex("\"profiles\"\\s*:\\s*\\[([^\\]]*)]").find(json)?.groupValues?.get(1)
+                ?.split(',')?.map { it.trim().trim('"') }?.filter { it.isNotEmpty() }
+                ?: listOf(GraphSpec.CAR)
+            PackInfo(str("name"), str("builtAt"), str("source"), b, size, profiles)
         }.getOrNull()
     }
 }
 
 /**
  * Import an OpenStreetMap extract into a GraphHopper graph with contraction hierarchies for the
- * car profile, write `pack.json` and return its metadata. Needs a desktop JVM (uses Janino).
+ * car and foot profiles, write `pack.json` and return its metadata. Needs a desktop JVM (uses Janino).
  */
-fun buildGraph(osmFile: File, outDir: File, name: String, minNetworkSize: Int = 200, withSearch: Boolean = true, withAddresses: Boolean = true): PackInfo {
+fun buildGraph(
+    osmFile: File,
+    outDir: File,
+    name: String,
+    minNetworkSize: Int = 200,
+    withSearch: Boolean = true,
+    withAddresses: Boolean = true,
+    profiles: List<String> = GraphSpec.ALL_PROFILES,
+): PackInfo {
     require(osmFile.exists()) { "OSM file not found: $osmFile" }
     outDir.deleteRecursively()
     outDir.mkdirs()
     val hopper = GraphHopper()
     hopper.init(
-        GraphSpec.config(outDir.absolutePath)
+        GraphSpec.config(outDir.absolutePath, profiles)
             .putObject("datareader.file", osmFile.absolutePath)
             // Drop tiny disconnected road islands (parking lots, private yards) that routes cannot use.
             .putObject("prepare.min_network_size", minNetworkSize),
@@ -47,7 +67,7 @@ fun buildGraph(osmFile: File, outDir: File, name: String, minNetworkSize: Int = 
     if (withSearch) SearchIndexBuilder.build(osmFile, hopper, File(outDir, SearchIndexBuilder.FILE), withAddresses)
     hopper.close()
     val size = outDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
-    val info = PackInfo(name, Instant.now().toString(), osmFile.name, doubleArrayOf(b.minLat, b.maxLat, b.minLon, b.maxLon), size)
+    val info = PackInfo(name, Instant.now().toString(), osmFile.name, doubleArrayOf(b.minLat, b.maxLat, b.minLon, b.maxLon), size, profiles)
     File(outDir, PackInfo.FILE).writeText(info.toJson())
     return info
 }

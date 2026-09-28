@@ -1,6 +1,7 @@
 package org.blinddriver.core.imu
 
 import org.blinddriver.core.Tuning
+import java.util.Locale
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
@@ -107,7 +108,7 @@ class MotionDetector(private val tuning: () -> Tuning) {
         if (now - quietSinceMs >= t.stopHoldMs) {
             stopped = true
             noisySinceMs = -1L
-            log?.invoke("dr_stop std=%.3f mean=%.3f gyro=%.3f".format(w.std, w.mean, if (w.gyro.isNaN()) -1.0 else w.gyro))
+            log?.invoke("dr_stop std=%.3f mean=%.3f gyro=%.3f".format(Locale.US, w.std, w.mean, if (w.gyro.isNaN()) -1.0 else w.gyro))
         }
     }
 
@@ -123,7 +124,7 @@ class MotionDetector(private val tuning: () -> Tuning) {
             stopped = false
             quietSinceMs = -1L
             resumedAtMs = now
-            log?.invoke("dr_resume std=%.3f mean=%.3f gyro=%.3f".format(w.std, w.mean, if (w.gyro.isNaN()) -1.0 else w.gyro))
+            log?.invoke("dr_resume std=%.3f mean=%.3f gyro=%.3f".format(Locale.US, w.std, w.mean, if (w.gyro.isNaN()) -1.0 else w.gyro))
         }
     }
 

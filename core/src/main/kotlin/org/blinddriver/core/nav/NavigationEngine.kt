@@ -10,18 +10,21 @@ import org.blinddriver.core.gnss.RawFix
 import org.blinddriver.core.gnss.TrustLevel
 import org.blinddriver.core.imu.ImuSample
 import org.blinddriver.core.imu.MotionDetector
+import org.blinddriver.core.imu.Pedometer
 import org.blinddriver.core.route.Hazard
 import org.blinddriver.core.route.HazardKind
 import org.blinddriver.core.route.Projection
 import org.blinddriver.core.route.Route
 import org.blinddriver.core.route.RouteCursor
 import org.blinddriver.core.route.Step
+import org.blinddriver.core.route.TravelMode
 import org.blinddriver.core.speed.MAX_SPEED_MPS
 import org.blinddriver.core.speed.RouteSpeedPrior
 import org.blinddriver.core.speed.SpeedEstimate
 import org.blinddriver.core.speed.SpeedFusion
 import org.blinddriver.core.speed.SpeedPlan
 import org.blinddriver.core.speed.SpeedProfile
+import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.max
@@ -51,6 +54,16 @@ class NavigationEngine(
     private val trafficCalming: List<GeoPoint> = emptyList(),
 ) {
     val motion = MotionDetector(tuning).also { it.log = ::log }
+
+    /** Walking speed from the step detector (used in [TravelMode.FOOT]). */
+    val pedometer = Pedometer()
+
+    /** Car or on foot; set by [start]. */
+    var mode: TravelMode = TravelMode.CAR
+        private set
+
+    /** The thresholds in effect: the user's [Tuning], adapted for walking in [TravelMode.FOOT]. */
+    private fun settings(): Tuning = if (mode == TravelMode.FOOT) tuning().forWalking() else tuning()
 
     var state = GuidanceState()
         private set
@@ -138,7 +151,9 @@ class NavigationEngine(
      * @param startAccuracyM accuracy of the position the route was planned from (e.g. a coarse cell
      *   fix). Until the first usable GPS fix, reported uncertainty never drops below it.
      */
-    fun start(route: Route, destination: GeoPoint, waypoints: List<GeoPoint> = emptyList(), nowMs: Long, startAccuracyM: Double = 0.0) {
+    fun start(route: Route, destination: GeoPoint, waypoints: List<GeoPoint> = emptyList(), nowMs: Long, startAccuracyM: Double = 0.0, mode: TravelMode = TravelMode.CAR) {
+        this.mode = mode
+        pedometer.reset()
         this.startAccuracyM = startAccuracyM.coerceAtLeast(0.0)
         this.destination = destination
         this.waypoints = waypoints
@@ -149,7 +164,7 @@ class NavigationEngine(
         source = PositionSource.NONE
         gpsLostAnnounced = false
         installRoute(route, nowMs)
-        log("nav_start len=${route.length.toInt()}")
+        log("nav_start len=${route.length.toInt()} mode=$mode")
     }
 
     /**
@@ -190,6 +205,9 @@ class NavigationEngine(
         destination = null
         state = GuidanceState()
     }
+
+    /** One step from the phone's step detector (only used on foot). */
+    fun onStep(elapsedMs: Long) = pedometer.onStep(elapsedMs)
 
     /** Feed every IMU sample (tens per second) to the stop / turn detectors. */
     fun onImu(sample: ImuSample, yawBiasDegS: Double = 0.0) = motion.add(sample, yawBiasDegS)
@@ -302,7 +320,12 @@ class NavigationEngine(
         if (speed != null) {
             lastGpsSpeed = speed
             currentSpeed = speed
-            if (good) route.maxspeedAtSegment(proj.segment)?.let { speedProfile.learn(speed, it) }
+            if (good) {
+                when (mode) {
+                    TravelMode.CAR -> route.maxspeedAtSegment(proj.segment)?.let { speedProfile.learn(speed, it) }
+                    TravelMode.FOOT -> pedometer.learnStride(speed, nowMs)
+                }
+            }
         }
         lastGpsUseMs = fix.elapsedMs
         if (good) trustedPoint = fix.point
@@ -320,7 +343,7 @@ class NavigationEngine(
 
     /** With GOOD GPS: have we left the route (far from it for a while, or clearly driving elsewhere)? */
     private fun checkOffRoute(car: RouteCursor, proj: Projection, courseDiff: Double?, fix: RawFix, nowMs: Long) {
-        val config = tuning()
+        val config = settings()
         offRouteM = proj.offsetM
         if (car.route.length - proj.s < max(config.arriveM, 15.0)) {
             offRouteSinceMs = -1L
@@ -365,7 +388,37 @@ class NavigationEngine(
      * have (turns seen by the gyro, compass, traffic signals, network fixes).
      */
     private fun deadReckon(car: RouteCursor, pos: PositioningSnapshot, nowMs: Long, dt: Double) {
-        val config = tuning()
+        val config = settings()
+        val (speedMps, stopped) = when (mode) {
+            TravelMode.CAR -> drivingMotion(car, nowMs, config)
+            TravelMode.FOOT -> walkingMotion(nowMs)
+        }
+        currentSpeed = speedMps
+
+        if (speedMps > 0.3) advance(car, speedMps, dt, nowMs)
+        if (mode == TravelMode.CAR) {
+            // These corrections need a phone fixed in a car holder; a phone in the hand swings around.
+            confirmHeldTurn(car, nowMs)
+            matchGyroTurn(car, nowMs)
+            checkBlindUturn(car, nowMs)
+            compassSnap(car, pos.compassDeg, speedMps, nowMs)
+        }
+
+        if (config.signalSnap && stopped && !wasStopped) signalSnap(car)
+        wasStopped = stopped
+        bandCorrection(car, pos.lastNet, nowMs, dt, stopped)
+
+        source = if (stopped) {
+            PositionSource.DR_STOPPED
+        } else {
+            applyCatchUp(car, dt)
+            val netFresh = pos.lastNet?.let { nowMs - it.elapsedMs < 30_000 } == true
+            if (netFresh) PositionSource.DR_NET else PositionSource.DR
+        }
+    }
+
+    /** Car: fused speed (GPS / route prior / network) scaled by the IMU motion factor. Returns (speed, stopped). */
+    private fun drivingMotion(car: RouteCursor, nowMs: Long, config: Tuning): Pair<Double, Boolean> {
         val route = car.route
         val sinceGps = nowMs - if (lastGpsUseMs > 0) lastGpsUseMs else navStartMs
         val factor = motion.motionFactor(nowMs)
@@ -381,26 +434,18 @@ class NavigationEngine(
 
         var speedMps = drSpeed(base, factor, override, sinceGps)
         if (config.speedPlan && hazards.isNotEmpty()) SpeedPlan.cap(hazards, car.s, netSpeed == null)?.let { speedMps = min(speedMps, it) }
-        currentSpeed = speedMps
+        return speedMps to (motion.stopped && !override)
+    }
 
-        if (speedMps > 0.3) advance(car, speedMps, dt, nowMs)
-        confirmHeldTurn(car, nowMs)
-        matchGyroTurn(car, nowMs)
-        checkBlindUturn(car, nowMs)
-        compassSnap(car, pos.compassDeg, speedMps, nowMs)
-
-        val stopped = motion.stopped && !override
-        if (config.signalSnap && stopped && !wasStopped) signalSnap(car)
-        wasStopped = stopped
-        bandCorrection(car, pos.lastNet, nowMs, dt, stopped)
-
-        source = if (stopped) {
-            PositionSource.DR_STOPPED
-        } else {
-            applyCatchUp(car, dt)
-            val netFresh = pos.lastNet?.let { nowMs - it.elapsedMs < 30_000 } == true
-            if (netFresh) PositionSource.DR_NET else PositionSource.DR
-        }
+    /**
+     * On foot: steps × stride from the step detector. Phones without one fall back to a normal
+     * walking pace while the IMU sees movement. Returns (speed, stopped).
+     */
+    private fun walkingMotion(nowMs: Long): Pair<Double, Boolean> {
+        pedometer.speed(nowMs)?.let { speed -> return speed to (speed == 0.0) }
+        val factor = motion.motionFactor(nowMs)
+        if (factor == 0.0 || motion.stopped) return 0.0 to true
+        return WALKING_SPEED_MPS * (factor ?: 1.0) to false
     }
 
     /**
@@ -461,7 +506,7 @@ class NavigationEngine(
      * confirmed (gyro or network), found to be missed, or a timeout expires.
      */
     private fun advance(car: RouteCursor, speedMps: Double, dt: Double, nowMs: Long) {
-        val config = tuning()
+        val config = settings()
         val ds = speedMps * dt
         drDistance += ds
         if (!config.turnHoldEnabled) {
@@ -518,7 +563,7 @@ class NavigationEngine(
 
     /** Give up holding after [Tuning.turnHoldMaxS] of driving (15 s more if the gyro shows a turn starting). */
     private fun releaseHoldOnTimeout(car: RouteCursor, step: Int, stepTurn: Double, gyroAgrees: Boolean, target: Double, nowMs: Long) {
-        val limitMs = tuning().turnHoldMaxS * 1000L
+        val limitMs = settings().turnHoldMaxS * 1000L
         if (holdMovingMs <= limitMs) return
         val recentYaw = motion.integratedYaw(nowMs, 3000)
         val partial = (recentYaw * stepTurn > 0 && abs(recentYaw) >= 10.0) || gyroAgrees
@@ -541,13 +586,13 @@ class NavigationEngine(
         val yaw = motion.holdYawDeg
         // Same direction (signs agree) and at least 60 % of the route's turn angle.
         val sameDirection = yaw * turn > 0
-        if (!sameDirection || abs(yaw) < max(tuning().turnMinDeg, abs(turn) * 0.6)) return
+        if (!sameDirection || abs(yaw) < max(settings().turnMinDeg, abs(turn) * 0.6)) return
         snapPastTurn(car, step, turnS + 20.0, nowMs, "hold")
     }
 
     /** Any clear gyro turn is matched against route turns near the marker (turn-signature map matching). */
     private fun matchGyroTurn(car: RouteCursor, nowMs: Long) {
-        val config = tuning()
+        val config = settings()
         val yaw = motion.integratedYaw(nowMs, config.turnWindowMs)
         if (abs(yaw) < config.turnMinDeg) return
         val route = car.route
@@ -589,7 +634,7 @@ class NavigationEngine(
 
     /** A big gyro rotation that the route cannot explain means a U-turn / wrong road. */
     private fun checkBlindUturn(car: RouteCursor, nowMs: Long) {
-        val config = tuning()
+        val config = settings()
         if (!config.blindDeviationEnabled || !deviation.canOffer(nowMs) || rerouting) return
         val yaw = motion.integratedYaw(nowMs, config.turnWindowMs)
         if (abs(yaw) < config.blindDeviationMinDeg) return
@@ -728,7 +773,7 @@ class NavigationEngine(
 
     /** Three network fixes in a row far from the route ⇒ offer a reroute. */
     private fun checkNetworkDeviation(car: RouteCursor, proj: Projection, acc: Double, fix: RawFix, nowMs: Long) {
-        val config = tuning()
+        val config = settings()
         val gpsRecent = lastGpsUseMs > 0 && nowMs - lastGpsUseMs < 3000
         if (gpsRecent || rerouting || !config.blindDeviationEnabled) {
             netDevFastCount = 0
@@ -846,7 +891,7 @@ class NavigationEngine(
         val from = trustedPoint ?: return
         if (!deviation.canOffer(nowMs)) return
         deviationFrom = from
-        deviation.pendingUntilMs = nowMs + tuning().blindDeviationDelayS * 1000L
+        deviation.pendingUntilMs = nowMs + settings().blindDeviationDelayS * 1000L
         log(logLine)
         say(speech, urgent = true)
     }
@@ -865,7 +910,7 @@ class NavigationEngine(
         if (rerouting) return
         rerouting = true
         val via = waypointS.filter { it.second > car.s + 30.0 }.map { it.first }
-        log("reroute_from %.5f %.5f via=%d".format(from.lat, from.lon, via.size))
+        log("reroute_from %.5f %.5f via=%d".format(Locale.US, from.lat, from.lon, via.size))
         publishFlags()
         listener.onRerouteRequested(from, dest, via, auto)
     }
@@ -874,7 +919,7 @@ class NavigationEngine(
 
     /** Build the new [GuidanceState] for the UI (position, next maneuver, uncertainty…) and speak. */
     private fun publish(car: RouteCursor, pos: PositioningSnapshot, nowMs: Long) {
-        val config = tuning()
+        val config = settings()
         val route = car.route
         val s = car.s
         val point = route.pointAt(s)
@@ -910,6 +955,7 @@ class NavigationEngine(
             remainingM = remaining,
             remainingS = if (route.length > 0) route.durationS * remaining / route.length else 0.0,
             speedKmh = (currentSpeed * 3.6).toFloat(),
+            travelMode = mode,
             speedLimitKmh = route.maxspeedAtSegment(point.segment),
             offRoute = offRouteDeclared,
             offRouteM = offRouteM,
@@ -946,15 +992,16 @@ class NavigationEngine(
             say(phrases.gpsLost(), urgent = false)
         }
         if (step == null || next < 0) return
-        val level = ANNOUNCE_AT_M.indexOfLast { dist <= it }
+        val announceAt = if (mode == TravelMode.FOOT) WALK_ANNOUNCE_AT_M else ANNOUNCE_AT_M
+        val level = announceAt.indexOfLast { dist <= it }
         if (level < 0) return
         // Each (step, distance level) is announced once; key = step × 10 + level.
         val key = next * 10 + level
         if (key in announced) return
         for (skipped in 0..level) announced += next * 10 + skipped
         // "In 1 km…" is pointless in slow city traffic (below 50 km/h).
-        if (level == 0 && currentSpeed < 14.0) return
-        say(phrases.maneuver(step, if (level == ANNOUNCE_AT_M.lastIndex) null else dist), urgent = level >= 2)
+        if (mode == TravelMode.CAR && level == 0 && currentSpeed < 14.0) return
+        say(phrases.maneuver(step, if (level == announceAt.lastIndex) null else dist), urgent = level >= 2)
     }
 
     private fun say(text: String, urgent: Boolean) {
@@ -1021,6 +1068,14 @@ class NavigationEngine(
 
     companion object {
         const val TICK_MS = 500L
+
+        /** Driving: announce maneuvers this far ahead (the last one is "now"). */
         private val ANNOUNCE_AT_M = listOf(1000.0, 400.0, 150.0, 40.0)
+
+        /** Walking: shorter distances. */
+        private val WALK_ANNOUNCE_AT_M = listOf(150.0, 50.0, 15.0)
+
+        /** Typical walking pace, used on phones without a step detector. */
+        private const val WALKING_SPEED_MPS = 1.3
     }
 }

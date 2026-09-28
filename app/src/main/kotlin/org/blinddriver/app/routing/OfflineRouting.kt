@@ -19,6 +19,7 @@ import org.blinddriver.app.search.AndroidSearchDb
 import org.blinddriver.core.cells.ResumableHttpInputStream
 import org.blinddriver.core.geo.GeoPoint
 import org.blinddriver.core.route.Route
+import org.blinddriver.core.route.TravelMode
 import org.blinddriver.routing.MatchedTrack
 import org.blinddriver.routing.OfflineGraph
 import org.blinddriver.routing.PackInfo
@@ -36,6 +37,8 @@ data class OfflineRoutingStatus(
     val bundled: PackInfo? = null,
     /** The installed pack was loaded successfully and can route. */
     val loaded: Boolean = false,
+    /** The loaded pack has walking data (packs built before walking support do not). */
+    val walking: Boolean = false,
     /** Use OSRM online when the offline pack cannot answer. */
     val allowOnline: Boolean = true,
     /** Last URL entered for downloading a pack. */
@@ -116,14 +119,14 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
         }
         val info = File(current, PackInfo.FILE).takeIf { it.exists() }?.let { PackInfo.parse(it.readText()) }
         if (info == null) {
-            _status.update { it.copy(pack = null, loaded = false) }
+            _status.update { it.copy(pack = null, loaded = false, walking = false) }
             return
         }
         val g = runCatching { OfflineGraph.load(current) }
             .onFailure { log("offline_routing_load_failed ${it.message}") }
             .getOrNull()
         graph = g
-        _status.update { it.copy(pack = info, loaded = g != null) }
+        _status.update { it.copy(pack = info, loaded = g != null, walking = g?.supports(TravelMode.FOOT) == true) }
         if (g != null) log("offline_routing_loaded ${info.name}")
     }
 
@@ -131,15 +134,18 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
     fun covers(points: List<GeoPoint>): Boolean = graph?.let { g -> points.all { g.covers(it) } } == true
 
     /** Route offline (CPU-bound, run off the main thread). */
-    suspend fun route(points: List<GeoPoint>): Route = withContext(Dispatchers.Default) {
+    suspend fun route(points: List<GeoPoint>, mode: TravelMode = TravelMode.CAR): Route = withContext(Dispatchers.Default) {
         val g = synchronized(this@OfflineRouting) { graph } ?: throw IOException("no offline routing pack")
-        g.route(points)
+        g.route(points, mode)
     }
 
+    /** Can the loaded pack route [mode]? */
+    fun supports(mode: TravelMode): Boolean = synchronized(this) { graph }?.supports(mode) == true
+
     /** Snap a recorded drive onto the roads of the loaded pack (null if no pack is loaded). */
-    suspend fun mapMatch(points: List<GeoPoint>): MatchedTrack? = withContext(Dispatchers.Default) {
+    suspend fun mapMatch(points: List<GeoPoint>, mode: TravelMode = TravelMode.CAR): MatchedTrack? = withContext(Dispatchers.Default) {
         val g = synchronized(this@OfflineRouting) { graph } ?: return@withContext null
-        g.mapMatch(points)
+        g.mapMatch(points, mode = mode)
     }
 
     /** Allow or forbid the online OSRM fallback. */
@@ -286,13 +292,22 @@ private const val BUNDLED_ZIP = "routing/pack.zip"
 private const val BUNDLED_INFO = "routing/pack.json"
 
 /** Offline first; online OSRM only when allowed and the offline pack cannot answer. */
-class SmartRouter(private val offline: OfflineRouting, private val online: Router, private val log: (String) -> Unit, private val noOfflineMessage: () -> String) : Router {
-    override suspend fun route(from: GeoPoint, to: GeoPoint, via: List<GeoPoint>): Route {
+class SmartRouter(
+    private val offline: OfflineRouting,
+    private val online: Router,
+    private val log: (String) -> Unit,
+    private val noOfflineMessage: () -> String,
+    /** Message when a walking route is asked for but the offline pack cannot give one. */
+    private val noWalkingMessage: () -> String,
+) : Router {
+    override suspend fun route(from: GeoPoint, to: GeoPoint, via: List<GeoPoint>, mode: TravelMode): Route {
         val points = listOf(from) + via + to
-        val allowOnline = offline.status.value.allowOnline
+        // Walking routes come only from the offline pack (the public OSRM server offers driving only).
+        if (mode == TravelMode.FOOT && !(offline.covers(points) && offline.supports(mode))) throw IOException(noWalkingMessage())
+        val allowOnline = offline.status.value.allowOnline && mode == TravelMode.CAR
         if (offline.covers(points)) {
             try {
-                return offline.route(points).also { log("route_via offline len=${it.length.toInt()}") }
+                return offline.route(points, mode).also { log("route_via offline len=${it.length.toInt()} mode=$mode") }
             } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
                 // GraphHopper throws plain RuntimeExceptions (no path, point not found, …).
                 log("offline_route_failed ${e.message}")
@@ -301,6 +316,6 @@ class SmartRouter(private val offline: OfflineRouting, private val online: Route
         } else if (!allowOnline) {
             throw IOException(noOfflineMessage())
         }
-        return online.route(from, to, via).also { log("route_via osrm len=${it.length.toInt()}") }
+        return online.route(from, to, via, mode).also { log("route_via osrm len=${it.length.toInt()}") }
     }
 }

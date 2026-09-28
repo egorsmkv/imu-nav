@@ -6,6 +6,7 @@ import org.blinddriver.core.gnss.RawFix
 import org.blinddriver.core.imu.ImuSample
 import org.blinddriver.core.route.Route
 import org.blinddriver.core.route.Step
+import org.blinddriver.core.route.TravelMode
 import java.io.BufferedReader
 import java.io.ByteArrayOutputStream
 import java.io.Closeable
@@ -55,11 +56,18 @@ sealed class TripEvent {
 
     /** The engine's own estimate at a tick (for trip history; ignored by replay). */
     data class Estimate(override val elapsedMs: Long, val lat: Double, val lon: Double, val s: Double, val uncertaintyM: Double, val source: String) : TripEvent()
+
+    /** One step from the phone's step detector (walking trips). */
+    data class StepTaken(override val elapsedMs: Long) : TripEvent()
+
+    /** The travel mode of the trip; written right after [Start] (missing in old recordings = car). */
+    data class Mode(override val elapsedMs: Long, val mode: TravelMode) : TripEvent()
 }
 
 /**
  * Line-oriented trip recording (`*.rec.gz`). One event per line, comma-separated, first field is
- * the type: F fix, I imu, S satellites, A agc, D start, R route, X stop, E engine estimate. Empty fields = null.
+ * the type: F fix, I imu, S satellites, A agc, D start, M travel mode, R route, P step, X stop,
+ * E engine estimate. Empty fields = null.
  */
 object TripFormat {
     const val VERSION = 1
@@ -101,6 +109,10 @@ object TripFormat {
         is TripEvent.RouteSet -> "R,${e.elapsedMs},${RouteCodec.encode(e.route)}"
 
         is TripEvent.Stop -> "X,${e.elapsedMs}"
+
+        is TripEvent.StepTaken -> "P,${e.elapsedMs}"
+
+        is TripEvent.Mode -> "M,${e.elapsedMs},${e.mode.name}"
 
         is TripEvent.Estimate -> listOf("E", e.elapsedMs, n(e.lat), n(e.lon), String.format(Locale.US, "%.1f", e.s), e.uncertaintyM.toInt(), e.source).joinToString(",")
     }
@@ -152,6 +164,10 @@ object TripFormat {
                 "R" -> TripEvent.RouteSet(time, RouteCodec.decode(fields[2]))
 
                 "X" -> TripEvent.Stop(time)
+
+                "P" -> TripEvent.StepTaken(time)
+
+                "M" -> TripEvent.Mode(time, TravelMode.valueOf(fields[2]))
 
                 "E" -> TripEvent.Estimate(time, fields[2].toDouble(), fields[3].toDouble(), fields[4].toDouble(), fields[5].toDouble(), fields.getOrNull(6).orEmpty())
 

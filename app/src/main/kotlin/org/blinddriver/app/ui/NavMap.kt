@@ -104,6 +104,8 @@ fun NavMap(
     /** Where the camera starts before any position is known (Settings → Map start). */
     initialCenter: GeoPoint = MapStartPrefs.KYIV,
     initialZoom: Double = 12.0,
+    /** Zoom while following the position (closer when walking). */
+    followZoomDefault: Double = 16.0,
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current.density
@@ -237,7 +239,7 @@ fun NavMap(
     LaunchedEffect(style, position, bearingDeg, following, controller.followZoom) {
         val m = controller.map ?: return@LaunchedEffect
         if (!following || position == null || style == null) return@LaunchedEffect
-        val zoom = controller.followZoom ?: 16.0
+        val zoom = controller.followZoom ?: followZoomDefault
         val cam = m.cameraPosition
         val target = LatLng(position.lat, position.lon)
         // Standing still: don't redraw the map for sub-metre / sub-degree changes.

@@ -11,6 +11,7 @@ import org.blinddriver.core.gnss.TrustLevel
 import org.blinddriver.core.nav.NavListener
 import org.blinddriver.core.nav.NavigationEngine
 import org.blinddriver.core.nav.PositionSource
+import org.blinddriver.core.route.TravelMode
 import org.blinddriver.core.speed.SpeedProfile
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -125,6 +126,7 @@ class TripReplayer(private val tuning: Tuning = Tuning.DEFAULT, private val area
         private var navStartMs: Long? = null
         private var blindFrom: Long? = null
         private var pendingStart: TripEvent.Start? = null
+        private var pendingMode = TravelMode.CAR
         private var lastTruth: RawFix? = null
 
         fun tick(t: Long) {
@@ -162,7 +164,14 @@ class TripReplayer(private val tuning: Tuning = Tuning.DEFAULT, private val area
 
                 is TripEvent.Agc -> hub.onAgc(e.agcDb, e.elapsedMs)
 
-                is TripEvent.Start -> pendingStart = e
+                is TripEvent.Start -> {
+                    pendingStart = e
+                    pendingMode = TravelMode.CAR // old recordings have no Mode event
+                }
+
+                is TripEvent.Mode -> pendingMode = e.mode
+
+                is TripEvent.StepTaken -> engine.onStep(e.elapsedMs)
 
                 is TripEvent.RouteSet -> onRoute(e)
 
@@ -182,7 +191,7 @@ class TripReplayer(private val tuning: Tuning = Tuning.DEFAULT, private val area
         private fun onRoute(e: TripEvent.RouteSet) {
             val start = pendingStart
             if (engine.route == null && start != null) {
-                engine.start(e.route, start.destination, start.waypoints, e.elapsedMs, start.startAccuracyM)
+                engine.start(e.route, start.destination, start.waypoints, e.elapsedMs, start.startAccuracyM, pendingMode)
                 navStartMs = e.elapsedMs
             } else {
                 engine.setRoute(e.route, e.elapsedMs)

@@ -38,8 +38,10 @@ import org.blinddriver.core.nav.GuidanceState
 import org.blinddriver.core.nav.NavListener
 import org.blinddriver.core.nav.NavigationEngine
 import org.blinddriver.core.nav.UkrainianPhrases
+import org.blinddriver.core.route.TravelMode
 import org.blinddriver.core.speed.SpeedProfile
 import org.blinddriver.core.speed.SpeedProfileStore
+import java.util.Locale
 
 /**
  * Everything the UI shows, as one immutable value. [AppGraph] publishes a new copy (via a
@@ -125,7 +127,26 @@ class AppGraph(private val context: Context) {
 
     /** Address search: the pack's offline index, Photon online when allowed. */
     val search = PlaceSearch(context, { offlineRouting.searchDb }, { offlineRouting.status.value.allowOnline })
-    private val router: Router = SmartRouter(offlineRouting, OsrmRouter(), tripLog::write) { context.getString(R.string.routing_no_coverage) }
+    private val router: Router = SmartRouter(
+        offlineRouting,
+        OsrmRouter(),
+        tripLog::write,
+        noOfflineMessage = { context.getString(R.string.routing_no_coverage) },
+        noWalkingMessage = { context.getString(R.string.routing_no_walking) },
+    )
+
+    // ---------------------------------------------------------------- travel mode
+
+    private val modePrefs = context.getSharedPreferences("travel", Context.MODE_PRIVATE)
+
+    /** Car or on foot, chosen before starting (remembered between app starts). */
+    val travelMode = MutableStateFlow(TravelMode.entries.firstOrNull { it.name == modePrefs.getString("mode", null) } ?: TravelMode.CAR)
+
+    fun setTravelMode(mode: TravelMode) {
+        modePrefs.edit { putString("mode", mode.name) }
+        travelMode.value = mode
+        tripLog.write("travel_mode $mode")
+    }
 
     /** Engine thresholds (factory defaults; see [Tuning]). */
     val tuning = MutableStateFlow(Tuning.DEFAULT)
@@ -148,7 +169,7 @@ class AppGraph(private val context: Context) {
         mapStart.fixed = fixed
         mapStartMode.value = mode
         mapStartFixed.value = fixed
-        tripLog.write("map_start $mode ${fixed?.let { "%.5f %.5f".format(it.lat, it.lon) }.orEmpty()}")
+        tripLog.write("map_start $mode ${fixed?.let { "%.5f %.5f".format(Locale.US, it.lat, it.lon) }.orEmpty()}")
     }
 
     /** How the engine reaches the rest of the app: voice, log, and routing requests. */
@@ -157,7 +178,7 @@ class AppGraph(private val context: Context) {
         override fun onLog(message: String) = tripLog.write(message)
         override fun onRerouteRequested(from: GeoPoint, destination: GeoPoint, via: List<GeoPoint>, auto: Boolean) {
             scope.launch {
-                runCatching { router.route(from, destination, via) }
+                runCatching { router.route(from, destination, via, engine.mode) }
                     .onSuccess {
                         engine.setRoute(it, SystemClock.elapsedRealtime())
                         trips.onRoute(it)
@@ -191,6 +212,10 @@ class AppGraph(private val context: Context) {
             trips.onImu(it)
         },
         log = tripLog::write,
+        onStep = { elapsedMs ->
+            engine.onStep(elapsedMs)
+            trips.onStep(elapsedMs)
+        },
     )
 
     // Kotlin convention: a private mutable flow (_ui) and a public read-only view (ui) of it.
@@ -248,7 +273,7 @@ class AppGraph(private val context: Context) {
     fun applyPower() {
         val p = power.resolve()
         _powerProfile.value = p
-        sensors.configure(p, navigating = engine.state.active)
+        sensors.configure(p, navigating = engine.state.active, walking = engine.state.active && engine.mode == TravelMode.FOOT)
     }
 
     /** Start GPS, sensors and cell scans (when the app is visible or navigating). */
@@ -274,7 +299,7 @@ class AppGraph(private val context: Context) {
 
     /** The user placed the start by hand ("Start here") because no trusted position exists. */
     fun setManualStart(p: GeoPoint?) {
-        tripLog.write("manual_start ${p?.let { "%.5f %.5f".format(it.lat, it.lon) }}")
+        tripLog.write("manual_start ${p?.let { "%.5f %.5f".format(Locale.US, it.lat, it.lon) }}")
         _ui.value = _ui.value.copy(manualStart = p, error = null)
     }
 
@@ -311,12 +336,13 @@ class AppGraph(private val context: Context) {
         }
         _ui.value = _ui.value.copy(planning = true, error = null)
         scope.launch {
-            runCatching { router.route(from, dest) }
+            val mode = travelMode.value
+            runCatching { router.route(from, dest, mode = mode) }
                 .onSuccess { route ->
                     tripLog.startTrip()
                     tripLog.write("start_accuracy=${startAccuracy.toInt()}")
-                    engine.start(route, dest, nowMs = SystemClock.elapsedRealtime(), startAccuracyM = startAccuracy)
-                    trips.begin(route, dest, emptyList(), startAccuracy)
+                    engine.start(route, dest, nowMs = SystemClock.elapsedRealtime(), startAccuracyM = startAccuracy, mode = mode)
+                    trips.begin(route, dest, emptyList(), startAccuracy, mode)
                     applyPower()
                     _ui.value = _ui.value.copy(planning = false)
                     onStarted()

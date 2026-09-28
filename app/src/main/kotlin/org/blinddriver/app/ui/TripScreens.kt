@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Timeline
@@ -72,6 +73,7 @@ import org.blinddriver.app.trips.TripTracks
 import org.blinddriver.app.trips.extractTracks
 import org.blinddriver.core.geo.GeoPoint
 import org.blinddriver.core.geo.ServiceArea
+import org.blinddriver.core.route.TravelMode
 import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.geometry.LatLngBounds
@@ -150,7 +152,11 @@ private fun TripRow(t: TripSummary, onClick: () -> Unit) {
         supportingContent = { Text(stringResource(R.string.trip_line, formatDistance(res, t.drivenM), formatDuration(res, t.durationS), blindPct)) },
         leadingContent = {
             Icon(
-                if (t.arrived) Icons.Filled.CheckCircle else Icons.Filled.Timeline,
+                when {
+                    t.arrived -> Icons.Filled.CheckCircle
+                    t.mode == TravelMode.FOOT -> Icons.AutoMirrored.Filled.DirectionsWalk
+                    else -> Icons.Filled.Timeline
+                },
                 contentDescription = stringResource(if (t.arrived) R.string.trip_arrived else R.string.trip_not_arrived),
                 tint = if (t.arrived) GpsGreen else MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -239,7 +245,7 @@ fun TripDetailScreen(app: AppGraph, trip: TripSummary, onBack: () -> Unit) {
                         matching = true
                         note = null
                         scope.launch {
-                            val result = runCatching { app.offlineRouting.mapMatch(gps) }
+                            val result = runCatching { app.offlineRouting.mapMatch(gps, trip.mode) }
                             matching = false
                             result.onSuccess { m ->
                                 if (m == null) {

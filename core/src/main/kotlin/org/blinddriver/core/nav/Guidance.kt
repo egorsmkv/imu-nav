@@ -3,6 +3,7 @@ package org.blinddriver.core.nav
 import org.blinddriver.core.geo.GeoPoint
 import org.blinddriver.core.route.Route
 import org.blinddriver.core.route.Step
+import org.blinddriver.core.route.TravelMode
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -53,6 +54,8 @@ data class GuidanceState(
     val remainingM: Double = 0.0,
     val remainingS: Double = 0.0,
     val speedKmh: Float = 0f,
+    /** Car or on foot. */
+    val travelMode: TravelMode = TravelMode.CAR,
     val speedLimitKmh: Int? = null,
     /** GPS says we left the route (and how far from it we are). */
     val offRoute: Boolean = false,

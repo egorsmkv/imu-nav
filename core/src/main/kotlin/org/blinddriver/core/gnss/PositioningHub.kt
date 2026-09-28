@@ -4,6 +4,7 @@ import org.blinddriver.core.geo.Geo
 import org.blinddriver.core.geo.ServiceArea
 import org.blinddriver.core.imu.GyroBiasEstimator
 import org.blinddriver.core.record.TripEvent
+import java.util.Locale
 
 /** Everything the navigation engine needs to know about positioning at one instant. */
 data class PositioningSnapshot(
@@ -140,7 +141,7 @@ class PositioningHub(trustConfig: TrustConfig = TrustConfig(), area: ServiceArea
         gnss = gnss.copy(agcDb = agcDb)
         val wasJammed = jammed
         if (jamDetector.update(agcDb, elapsedMs)) {
-            log?.invoke("jammed=$jammed agc=${agcDb?.let { "%.1f".format(it) }}")
+            log?.invoke("jammed=$jammed agc=${agcDb?.let { "%.1f".format(Locale.US, it) }}")
             if (wasJammed && !jammed) {
                 jamEndedAtMs = elapsedMs
                 return true
