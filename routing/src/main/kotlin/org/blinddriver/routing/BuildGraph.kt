@@ -8,15 +8,19 @@ import java.util.zip.ZipOutputStream
 
 /** Metadata written next to the graph as `pack.json`, shown in the app. */
 data class PackInfo(val name: String, val builtAt: String, val source: String, val bounds: DoubleArray, val sizeBytes: Long) {
+    /** Written as `pack.json` next to the graph; the app reads it to show and compare packs. */
     fun toJson(): String = "{\"name\":\"$name\",\"builtAt\":\"$builtAt\",\"source\":\"$source\",\"graphhopper\":\"11.0\"," +
         "\"bounds\":[${bounds.joinToString(",")}],\"sizeBytes\":$sizeBytes}"
 
     companion object {
         const val FILE = "pack.json"
 
+        /** Read `pack.json`; null if it is missing fields. */
         fun parse(json: String): PackInfo? = runCatching {
-            fun str(k: String) = Regex("\"$k\"\\s*:\\s*\"([^\"]*)\"").find(json)?.groupValues?.get(1).orEmpty()
-            val b = Regex("\"bounds\"\\s*:\\s*\\[([^\\]]*)]").find(json)!!.groupValues[1].split(',').map { it.trim().toDouble() }.toDoubleArray()
+            // A tiny hand-written reader: pack.json is small and flat, so no JSON library is needed.
+            fun str(key: String) = Regex("\"$key\"\\s*:\\s*\"([^\"]*)\"").find(json)?.groupValues?.get(1).orEmpty()
+            val boundsText = Regex("\"bounds\"\\s*:\\s*\\[([^\\]]*)]").find(json)?.groupValues?.get(1) ?: error("pack.json has no bounds")
+            val b = boundsText.split(',').map { it.trim().toDouble() }.toDoubleArray()
             val size = Regex("\"sizeBytes\"\\s*:\\s*(\\d+)").find(json)?.groupValues?.get(1)?.toLong() ?: 0
             PackInfo(str("name"), str("builtAt"), str("source"), b, size)
         }.getOrNull()

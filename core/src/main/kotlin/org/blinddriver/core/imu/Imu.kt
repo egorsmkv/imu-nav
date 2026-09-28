@@ -12,31 +12,42 @@ import kotlin.math.sqrt
  * @param gyro raw angular velocity vector, rad/s (only |ω| is used)
  */
 class ImuSample(val elapsedMs: Long, val headingDeg: Float?, val yawRateDegS: Float?, val linearAcc: FloatArray?, val gyro: FloatArray?) {
+    /** Length of the acceleration vector (m/s²), or NaN without accelerometer data. */
     val accMagnitude: Double get() = linearAcc?.let { magnitude(it) } ?: Double.NaN
+
+    /** Length of the rotation vector (rad/s), or NaN without a gyroscope. */
     val gyroMagnitude: Double get() = gyro?.let { magnitude(it) } ?: Double.NaN
 
     private fun magnitude(v: FloatArray): Double = if (v.size < 3) Double.NaN else sqrt((v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).toDouble())
 }
 
 /**
- * Estimates the gyroscope's vertical-axis bias while the car stands still: when GPS reports
- * < 0.5 m/s for at least 5 s, the mean yaw rate over that interval is blended into the bias.
+ * Estimates the gyroscope's error ("bias") around the vertical axis.
+ *
+ * A cheap gyroscope never reads exactly zero: standing still it may report e.g. 0.2 °/s, which
+ * would add up to a fake 12° turn per minute. While GPS says the car stands still (below
+ * 0.5 m/s for at least 5 s), everything the gyro measures must be bias, so we average it and
+ * blend it slowly into [biasDegS].
  */
 class GyroBiasEstimator {
+    /** Recent (time, yaw rate) pairs, the last 12 s. */
     private val samples = ArrayDeque<Pair<Long, Double>>()
+
+    /** When the current standstill started, -1 when moving. */
     private var stillSinceMs = -1L
 
-    /** Current bias estimate, deg/s. Subtract from raw yaw rates. */
+    /** Current bias estimate, deg/s. Subtract it from raw yaw rates. */
     var biasDegS = 0.0
         private set
 
     fun addYawRate(elapsedMs: Long, yawRateDegS: Double) {
         samples.addLast(elapsedMs to yawRateDegS)
-        while (samples.isNotEmpty() && elapsedMs - samples.first().first > 12_000) samples.removeFirst()
+        while (samples.isNotEmpty() && elapsedMs - samples.first().first > HISTORY_MS) samples.removeFirst()
     }
 
     fun onGpsSpeed(elapsedMs: Long, speedMps: Float?) {
-        if ((speedMps ?: 99f) >= 0.5f) {
+        val standingStill = speedMps != null && speedMps < STILL_SPEED_MPS
+        if (!standingStill) {
             stillSinceMs = -1L
             return
         }
@@ -44,12 +55,24 @@ class GyroBiasEstimator {
             stillSinceMs = elapsedMs
             return
         }
-        if (elapsedMs - stillSinceMs < 5000) return
-        val window = samples.filter { it.first >= stillSinceMs }
-        if (window.size >= 20) {
-            val mean = window.sumOf { it.second } / window.size
-            if (abs(mean) < 3.0) biasDegS += 0.3 * (mean - biasDegS)
+        if (elapsedMs - stillSinceMs < STILL_MIN_MS) return
+        val window = samples.filter { (time, _) -> time >= stillSinceMs }
+        if (window.size >= MIN_SAMPLES) {
+            val mean = window.sumOf { (_, rate) -> rate } / window.size
+            // A mean above 3 °/s is not bias (someone is turning the phone): ignore it.
+            if (abs(mean) < MAX_BIAS_DEG_S) biasDegS += BLEND * (mean - biasDegS)
         }
         stillSinceMs = elapsedMs
+    }
+
+    private companion object {
+        const val HISTORY_MS = 12_000L
+        const val STILL_SPEED_MPS = 0.5f
+        const val STILL_MIN_MS = 5000L
+        const val MIN_SAMPLES = 20
+        const val MAX_BIAS_DEG_S = 3.0
+
+        /** Move 30 % of the way to the new measurement each time (smooths out noise). */
+        const val BLEND = 0.3
     }
 }

@@ -169,6 +169,7 @@ fun SearchScreen(search: PlaceSearch, near: GeoPoint?, onPick: (SearchResult) ->
     }
 }
 
+/** Subtitle for a result: its town, or the kind of place ("village"). */
 @Composable
 private fun kindLabel(r: SearchResult): String? {
     if (r.kind != ResultKind.PLACE) return null

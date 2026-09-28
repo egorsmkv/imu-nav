@@ -3,6 +3,7 @@ package org.blinddriver.core.gnss
 import org.blinddriver.core.geo.Geo
 import org.blinddriver.core.geo.ServiceArea
 import org.blinddriver.core.imu.GyroBiasEstimator
+import org.blinddriver.core.record.TripEvent
 
 /** Everything the navigation engine needs to know about positioning at one instant. */
 data class PositioningSnapshot(
@@ -17,8 +18,14 @@ data class PositioningSnapshot(
 )
 
 /**
- * Collects fixes from all providers plus receiver health, classifies GPS fixes and tracks the
- * overall GPS state (OK ≤ 5 s since a GOOD fix, LOST > 30 s, DEGRADED in between).
+ * The single place all positioning inputs arrive: fixes from every provider, satellite status,
+ * AGC and orientation. It
+ *  - judges every GPS fix with the [TrustClassifier] (GOOD / SUSPECT / BAD),
+ *  - remembers the latest fix of each kind,
+ *  - tracks the overall GPS state: OK up to 5 s after a GOOD fix, LOST after 30 s, DEGRADED in between,
+ *  - forwards every input to [recorder] so trips can be replayed later.
+ *
+ * Android code only feeds it (see `SensorHub`); the navigation engine reads a [snapshot].
  */
 class PositioningHub(trustConfig: TrustConfig = TrustConfig(), area: ServiceArea = ServiceArea.EVERYWHERE, private val wallClock: () -> Long = System::currentTimeMillis) {
     private val classifier = TrustClassifier(trustConfig, area)
@@ -52,11 +59,15 @@ class PositioningHub(trustConfig: TrustConfig = TrustConfig(), area: ServiceArea
     var log: ((String) -> Unit)? = null
 
     /** Receives every raw input (fixes, satellite status, AGC) — used to record trips for replay. */
-    var recorder: ((org.blinddriver.core.record.TripEvent) -> Unit)? = null
+    var recorder: ((TripEvent) -> Unit)? = null
     private var jamEndedAtMs = -1L
 
+    /**
+     * A new location fix from any provider. Only GPS fixes are judged; for them the verdict is
+     * returned (null for other sources).
+     */
     fun onFix(fix: RawFix): Verdict? {
-        recorder?.invoke(org.blinddriver.core.record.TripEvent.Fix(fix))
+        recorder?.invoke(TripEvent.Fix(fix))
         when (fix.source) {
             FixSource.NET -> {
                 lastNet = fix
@@ -70,13 +81,7 @@ class PositioningHub(trustConfig: TrustConfig = TrustConfig(), area: ServiceArea
 
             FixSource.CELL -> {
                 lastCell = fix
-                // Offline cell fixes stand in for network location unless a fresher/better platform fix exists.
-                val net = lastNet
-                if (net == null || net.source == FixSource.CELL || fix.elapsedMs - net.elapsedMs > 10_000 ||
-                    (fix.accuracyM ?: Float.MAX_VALUE) < (net.accuracyM ?: Float.MAX_VALUE)
-                ) {
-                    lastNet = fix
-                }
+                if (cellReplacesNetwork(fix, lastNet)) lastNet = fix
                 return null
             }
 
@@ -102,9 +107,21 @@ class PositioningHub(trustConfig: TrustConfig = TrustConfig(), area: ServiceArea
         return verdict
     }
 
+    /**
+     * Our own offline cell fix stands in for Android's network location, unless Android has a
+     * fresher (≤ 10 s old) and more accurate network fix.
+     */
+    private fun cellReplacesNetwork(cell: RawFix, net: RawFix?): Boolean {
+        if (net == null || net.source == FixSource.CELL) return true
+        val netIsStale = cell.elapsedMs - net.elapsedMs > 10_000
+        val cellIsMoreAccurate = (cell.accuracyM ?: Float.MAX_VALUE) < (net.accuracyM ?: Float.MAX_VALUE)
+        return netIsStale || cellIsMoreAccurate
+    }
+
+    /** Satellite status (from Android's GnssStatus callback). */
     fun onGnssStatus(visible: Int, used: Int, meanCn0Used: Float?, cn0SpreadUsed: Float?, meanCn0Visible: Float?, dualFrequencyUsed: Int, elapsedMs: Long) {
         recorder?.invoke(
-            org.blinddriver.core.record.TripEvent.Gnss(elapsedMs, visible, used, meanCn0Used, cn0SpreadUsed, meanCn0Visible, dualFrequencyUsed),
+            TripEvent.Gnss(elapsedMs, visible, used, meanCn0Used, cn0SpreadUsed, meanCn0Visible, dualFrequencyUsed),
         )
         gnss = gnss.copy(
             satellitesVisible = visible,
@@ -119,7 +136,7 @@ class PositioningHub(trustConfig: TrustConfig = TrustConfig(), area: ServiceArea
 
     /** @return true when jamming just ended (caller may re-inject assisted-GPS data). */
     fun onAgc(agcDb: Float?, elapsedMs: Long): Boolean {
-        recorder?.invoke(org.blinddriver.core.record.TripEvent.Agc(elapsedMs, agcDb))
+        recorder?.invoke(TripEvent.Agc(elapsedMs, agcDb))
         gnss = gnss.copy(agcDb = agcDb)
         val wasJammed = jammed
         if (jamDetector.update(agcDb, elapsedMs)) {
@@ -132,11 +149,13 @@ class PositioningHub(trustConfig: TrustConfig = TrustConfig(), area: ServiceArea
         return false
     }
 
+    /** Compass heading and vertical rotation rate from the orientation sensors. */
     fun onOrientation(headingDeg: Float?, yawRateDegS: Float?, elapsedMs: Long) {
         compassDeg = headingDeg
         yawRateDegS?.let { gyroBias.addYawRate(elapsedMs, it.toDouble()) }
     }
 
+    /** Recompute [gpsState] for time [nowMs] (logs changes). */
     fun updateGpsState(nowMs: Long): GpsState {
         val goodAge = lastGood?.let { nowMs - it.elapsedMs } ?: Long.MAX_VALUE
         val anyAge = lastJudged?.let { nowMs - it.fix.elapsedMs } ?: Long.MAX_VALUE
@@ -150,6 +169,7 @@ class PositioningHub(trustConfig: TrustConfig = TrustConfig(), area: ServiceArea
         return state
     }
 
+    /** Everything the engine needs for one tick, as an immutable value. */
     fun snapshot(nowMs: Long): PositioningSnapshot {
         updateGpsState(nowMs)
         return PositioningSnapshot(lastUsable, lastGood, lastNet, gpsState, jammed, compassDeg)

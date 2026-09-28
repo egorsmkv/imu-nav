@@ -7,11 +7,15 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.blinddriver.core.geo.Geo
 import org.blinddriver.core.geo.GeoPoint
+import org.blinddriver.core.geo.ServiceArea
+import org.blinddriver.core.gnss.FixSource
 import org.blinddriver.core.gnss.PositioningHub
+import org.blinddriver.core.gnss.TrustLevel
 import org.blinddriver.core.imu.ImuSample
 import org.blinddriver.core.nav.NavigationEngine
 import org.blinddriver.core.record.RouteCodec
 import org.blinddriver.core.record.TripEvent
+import org.blinddriver.core.record.TripFormat
 import org.blinddriver.core.record.TripRecorder
 import org.blinddriver.core.route.Route
 import org.json.JSONArray
@@ -20,6 +24,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.Executors
 import kotlin.math.max
 
 /** One finished trip, as listed in the history. */
@@ -45,6 +50,7 @@ data class TripSummary(
 ) {
     val avgMovingKmh: Double get() = if (movingS > 0) drivenM / movingS * 3.6 else 0.0
 
+    /** Serialize for the history index (one JSON object per line). */
     fun toJson(): JSONObject = JSONObject()
         .put("id", id).put("start", startWallMs).put("end", endWallMs)
         .put("destLat", destination?.lat).put("destLon", destination?.lon)
@@ -53,6 +59,7 @@ data class TripSummary(
         .put("reroutes", reroutes).put("recording", recording).put("matched", matchedLengthM)
 
     companion object {
+        /** Parse a line of the history index. */
         fun fromJson(o: JSONObject) = TripSummary(
             id = o.getString("id"),
             startWallMs = o.getLong("start"),
@@ -73,6 +80,7 @@ data class TripSummary(
     }
 }
 
+/** Sums over all saved trips, for the top of the History screen. */
 data class HistoryTotals(val trips: Int, val drivenM: Double, val durationS: Double, val blindM: Double)
 
 /**
@@ -87,7 +95,7 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
     private var recorder: TripRecorder? = null
 
     /** Recording and state files are written here, never on the main thread; one thread keeps event order. */
-    private val io = java.util.concurrent.Executors.newSingleThreadExecutor()
+    private val io = Executors.newSingleThreadExecutor()
 
     /** [route] encoded once per route change (it can be large), reused by every [persist]. */
     private var routeEncoded = ""
@@ -115,6 +123,7 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
 
     // ------------------------------------------------------------------ lifecycle
 
+    /** Navigation started: open a new recording and reset the statistics. */
     fun begin(route: Route, destination: GeoPoint, waypoints: List<GeoPoint>, startAccuracyM: Double) {
         end(arrived = false) // close anything left open
         val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
@@ -141,6 +150,7 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
         log("trip_begin $recordingName")
     }
 
+    /** A reroute happened: record the new route. */
     fun onRoute(route: Route) {
         if (!active) return
         this.route = route
@@ -150,6 +160,7 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
         persist(force = true)
     }
 
+    /** Record an IMU sample (only while a trip is being recorded). */
     fun onImu(sample: ImuSample) {
         if (recorder != null) record(TripEvent.Imu(sample))
     }
@@ -218,7 +229,8 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
         id = o.getString("id")
         recordingName = o.getString("recording")
         startWall = o.getLong("start")
-        destination = GeoPoint(o.getDouble("destLat"), o.getDouble("destLon"))
+        val restoredDestination = GeoPoint(o.getDouble("destLat"), o.getDouble("destLon"))
+        destination = restoredDestination
         waypoints = o.optJSONArray("via")?.let { a -> (0 until a.length() step 2).map { GeoPoint(a.getDouble(it), a.getDouble(it + 1)) } }.orEmpty()
         startAccuracy = o.optDouble("startAcc", 0.0)
         route = restoredRoute
@@ -233,18 +245,19 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
         // Unknown how far the car moved while the app was dead: widen the uncertainty with the gap.
         val uncertainty = (o.optDouble("unc", 100.0) + gapS * RESTORE_DRIFT_M_PER_S).coerceAtMost(3000.0)
         val now = SystemClock.elapsedRealtime()
-        engine.start(restoredRoute, destination!!, waypoints, now, startAccuracyM = uncertainty)
+        engine.start(restoredRoute, restoredDestination, waypoints, now, startAccuracyM = uncertainty)
         engine.resumeAt(o.optDouble("s"))
         // The killed process left the gzip stream unterminated: salvage it before appending.
-        runCatching { org.blinddriver.core.record.TripFormat.repair(File(dir, recordingName)) }.onFailure { log("trip_repair_failed ${it.message}") }
+        runCatching { TripFormat.repair(File(dir, recordingName)) }.onFailure { log("trip_repair_failed ${it.message}") }
         openRecorder(append = true)
-        record(TripEvent.Start(now, destination!!, waypoints, uncertainty))
+        record(TripEvent.Start(now, restoredDestination, waypoints, uncertainty))
         record(TripEvent.RouteSet(now, restoredRoute))
         log("trip_restored $id gap=${gapS.toInt()}s s=${o.optDouble("s").toInt()} unc=${uncertainty.toInt()}")
         persist(force = true)
         return true
     }
 
+    /** Save the active trip to `active.json` (at most every 10 s unless [force]) so it can be restored after a kill. */
     private fun persist(force: Boolean) {
         val now = SystemClock.elapsedRealtime()
         if (!force && now - lastPersistMs < PERSIST_EVERY_MS) return
@@ -270,24 +283,29 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
 
     // ------------------------------------------------------------------ recording + history
 
+    /** Open the recording file and route the positioning hub's raw inputs into it. */
     private fun openRecorder(append: Boolean) {
         recorder?.close()
         recorder = runCatching { TripRecorder.open(File(dir, recordingName), append) }.onFailure { log("trip_record_failed ${it.message}") }.getOrNull()
         hub.recorder = { e -> record(e) }
     }
 
+    /** Write one event, on the background I/O thread. */
     private fun record(e: TripEvent) {
         val r = recorder ?: return
         io.execute { r.record(e) }
     }
 
+    /** The recording (.rec.gz) of trip [t]. */
     fun recordingFile(t: TripSummary): File = File(dir, t.recording)
 
+    /** All saved trips, newest first. */
     private fun loadHistory(): List<TripSummary> =
         runCatching { index.readLines().filter { it.isNotBlank() }.mapNotNull { runCatching { TripSummary.fromJson(JSONObject(it)) }.getOrNull() } }
             .getOrDefault(emptyList())
             .sortedByDescending { it.startWallMs }
 
+    /** Replace the history index with [list] (after a delete or edit). */
     private fun rewrite(list: List<TripSummary>) {
         val tmp = File(dir, "index.jsonl.tmp")
         tmp.writeText(list.sortedBy { it.startWallMs }.joinToString("") { it.toJson().toString() + "\n" })
@@ -295,11 +313,13 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
         _history.value = loadHistory()
     }
 
+    /** Delete a trip and its recording. */
     fun delete(t: TripSummary) {
         File(dir, t.recording).delete()
         rewrite(_history.value.filter { it.id != t.id })
     }
 
+    /** Store the road length found by map matching ("Snap to roads"). */
     fun setMatchedLength(t: TripSummary, lengthM: Double) {
         rewrite(_history.value.map { if (it.id == t.id) it.copy(matchedLengthM = lengthM) else it })
     }
@@ -323,8 +343,8 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
 data class TripTracks(val gps: List<GeoPoint>, val engine: List<GeoPoint>, val goodGpsCount: Int)
 
 /** Re-run the trust classifier over a recording so only trusted GPS fixes form the "real" track. */
-fun extractTracks(file: File, area: org.blinddriver.core.geo.ServiceArea): TripTracks {
-    val events = org.blinddriver.core.record.TripFormat.read(file)
+fun extractTracks(file: File, area: ServiceArea): TripTracks {
+    val events = TripFormat.read(file)
     var now = 0L
     var offset = 0L
     val hub = PositioningHub(area = area, wallClock = { now + offset })
@@ -334,9 +354,9 @@ fun extractTracks(file: File, area: org.blinddriver.core.geo.ServiceArea): TripT
         now = e.elapsedMs
         when (e) {
             is TripEvent.Fix -> {
-                if (offset == 0L && e.fix.source == org.blinddriver.core.gnss.FixSource.GPS) offset = e.fix.timeMs - e.fix.elapsedMs
+                if (offset == 0L && e.fix.source == FixSource.GPS) offset = e.fix.timeMs - e.fix.elapsedMs
                 val v = hub.onFix(e.fix)
-                if (v?.level == org.blinddriver.core.gnss.TrustLevel.GOOD) {
+                if (v?.level == TrustLevel.GOOD) {
                     val p = e.fix.point
                     if (gps.isEmpty() || Geo.distance(gps.last(), p) >= 5) gps += p
                 }

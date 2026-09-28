@@ -6,53 +6,79 @@ import org.blinddriver.core.route.Step
 import java.util.Locale
 import kotlin.math.roundToInt
 
-/** Where the current position estimate comes from. */
+/** Where the current position estimate comes from ([label] is shown in the UI and logs). */
 enum class PositionSource(val label: String) {
     NONE("—"),
+
+    /** A GOOD GPS fix. */
     GPS("GPS"),
 
     /** A SUSPECT GPS fix that was consistent with the dead-reckoned position. */
     GPS_SUSPECT("GPS?"),
+
+    /** Dead reckoning (no GPS): speed × time along the route. */
     DR("DR"),
+
+    /** Dead reckoning with fresh network/cell fixes keeping it in check. */
     DR_NET("DR+NET"),
+
+    /** Dead reckoning, and the sensors say the car is standing still. */
     DR_STOPPED("DR⏸"),
     ;
 
     val isGps: Boolean get() = this == GPS || this == GPS_SUSPECT
 }
 
+/**
+ * Everything the UI shows during navigation. The engine publishes a new copy every tick;
+ * it is immutable, so the UI can read it from any thread.
+ */
 data class GuidanceState(
+    /** Navigation is running. */
     val active: Boolean = false,
     val route: Route? = null,
     /** Distance travelled along the route, m. */
     val s: Double = 0.0,
+    /** The marker's position on the map. */
     val position: GeoPoint? = null,
+    /** Road direction at the marker (for rotating the map). */
     val bearingDeg: Float = 0f,
+    /** The upcoming maneuver, its index in the route's steps and the distance to it. */
     val nextStep: Step? = null,
     val nextStepIndex: Int = -1,
     val distToNextM: Double = 0.0,
+    /** The maneuver after the next one ("then turn left"). */
     val thenStep: Step? = null,
+    /** Distance and estimated time to the destination. */
     val remainingM: Double = 0.0,
     val remainingS: Double = 0.0,
     val speedKmh: Float = 0f,
     val speedLimitKmh: Int? = null,
+    /** GPS says we left the route (and how far from it we are). */
     val offRoute: Boolean = false,
     val offRouteM: Double = 0.0,
     val arrived: Boolean = false,
     val source: PositionSource = PositionSource.NONE,
+    /** A new route is being computed. */
     val rerouting: Boolean = false,
     val destination: GeoPoint? = null,
     /** Seconds since the last usable GPS fix. */
     val blindS: Int = 0,
+    /** How far off the marker may be, metres (drawn as the blue circle). */
     val uncertaintyM: Double = 0.0,
+    /** GPS just came back after jamming; suspicious fixes are accepted more generously for a while. */
     val jamRecovering: Boolean = false,
     /** A "you seem to have left the route" countdown is running. */
     val blindDeviation: Boolean = false,
     val blindDeviationSecLeft: Int = 0,
 )
 
+/** How the engine talks to the app. All methods have empty defaults, so implement only what you need. */
 interface NavListener {
+    /** Speak [text]; [urgent] phrases should interrupt whatever is being said. */
     fun onSay(text: String, urgent: Boolean) {}
+
+    /** A line for the trip log (short `key=value` style, useful for debugging and replay). */
     fun onLog(message: String) {}
 
     /**

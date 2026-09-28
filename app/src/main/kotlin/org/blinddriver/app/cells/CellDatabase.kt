@@ -12,6 +12,9 @@ import org.blinddriver.core.cells.CellTower
 import org.blinddriver.core.cells.CellTowerDb
 import org.blinddriver.core.cells.Radio
 import java.io.InputStream
+import java.io.OutputStream
+import java.util.zip.GZIPOutputStream
+import kotlin.math.sqrt
 
 /** Where a tower location came from. Lookup order = declaration order. */
 enum class CellSource(val table: String, val label: String) {
@@ -60,12 +63,14 @@ class CellDatabase(context: Context) :
         if (oldVersion < 5) createIndexes(db)
     }
 
+    /** Every source has a table with the same columns; (radio, mcc, mnc, area, cid) is the key. */
     private fun createTable(db: SQLiteDatabase, table: String) = db.execSQL(
         "CREATE TABLE IF NOT EXISTS $table (radio INTEGER NOT NULL, mcc INTEGER NOT NULL, mnc INTEGER NOT NULL, area INTEGER NOT NULL, " +
             "cid INTEGER NOT NULL, lat REAL NOT NULL, lon REAL NOT NULL, range REAL NOT NULL, samples INTEGER NOT NULL, " +
             "PRIMARY KEY (mcc, mnc, area, cid, radio)) WITHOUT ROWID",
     )
 
+    /** Number of towers per source. */
     fun counts(): Map<CellSource, Long> {
         val db = readableDatabase
         return CellSource.entries.associateWith { s ->
@@ -108,6 +113,7 @@ class CellDatabase(context: Context) :
         return null
     }
 
+    /** The tower for exactly [k] in [table], or null. */
     private fun find(db: SQLiteDatabase, table: String, k: CellKey): CellTower? = db.rawQuery(
         "SELECT lat, lon, range, samples FROM $table WHERE mcc=? AND mnc=? AND area=? AND cid=? AND radio=?",
         arrayOf(k.mcc.toString(), k.mnc.toString(), k.area.toString(), k.cid.toString(), k.radio.ordinal.toString()),
@@ -186,6 +192,7 @@ class CellDatabase(context: Context) :
         return kept
     }
 
+    /** Insert or replace [towers] in [source]'s table (one transaction). */
     fun upsert(source: CellSource, towers: List<CellTower>) {
         if (towers.isEmpty()) return
         val db = writableDatabase
@@ -204,10 +211,10 @@ class CellDatabase(context: Context) :
      * (declaration order of [CellSource]), as gzip CSV in OpenCellID columns.
      * @return towers written
      */
-    fun exportMerged(out: java.io.OutputStream, sources: List<CellSource> = CellSource.entries, onProgress: (Long) -> Unit = {}): Long {
+    fun exportMerged(out: OutputStream, sources: List<CellSource> = CellSource.entries, onProgress: (Long) -> Unit = {}): Long {
         val db = readableDatabase
         var n = 0L
-        java.util.zip.GZIPOutputStream(out, 1 shl 16).bufferedWriter().use { w ->
+        GZIPOutputStream(out, 1 shl 16).bufferedWriter().use { w ->
             w.write(CellCsv.HEADER)
             w.write("\n")
             for ((i, s) in sources.withIndex()) {
@@ -251,7 +258,7 @@ class CellDatabase(context: Context) :
             db.rawQuery("SELECT COUNT(*) FROM ${s.table} WHERE $where", box).use { if (it.moveToFirst()) it.getLong(0) else 0L }
         }
         val thinned = total > limit
-        val grid = kotlin.math.sqrt(limit.toDouble()).toInt().coerceAtLeast(1)
+        val grid = sqrt(limit.toDouble()).toInt().coerceAtLeast(1)
         val dLat = ((north - south) / grid).coerceAtLeast(1e-9)
         val dLon = ((east - west) / grid).coerceAtLeast(1e-9)
         val seen = LinkedHashMap<CellKey, Pair<CellTower, CellSource>>()
@@ -281,6 +288,7 @@ class CellDatabase(context: Context) :
         return seen.values.take(limit) to thinned
     }
 
+    /** Delete all towers of one source. */
     fun clear(source: CellSource) = writableDatabase.execSQL("DELETE FROM ${source.table}")
 
     /** Rebuild the file to give space freed by deletes back to the system. */

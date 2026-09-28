@@ -6,20 +6,27 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
 
+/** A position on Earth in degrees (WGS 84, the system GPS uses). North and east are positive. */
 data class GeoPoint(val lat: Double, val lon: Double)
 
+/** Small geometry helpers. Angles are in degrees, distances in metres. */
 object Geo {
     private const val EARTH_DIAMETER_M = 12_742_000.0
     const val M_PER_DEG_LAT = 110_540.0
     const val M_PER_DEG_LON_EQUATOR = 111_320.0
 
-    /** Great-circle distance in metres (haversine). */
+    /**
+     * Distance between two points along the Earth's surface, in metres.
+     *
+     * Uses the haversine formula, which treats the Earth as a sphere. That is accurate to about
+     * 0.5 %, far better than any GPS fix, and stays numerically stable for very short distances.
+     */
     fun distance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
-        val dLat = Math.toRadians(lat2 - lat1) / 2
-        val dLon = Math.toRadians(lon2 - lon1) / 2
-        val h = sin(dLat) * sin(dLat) +
-            sin(dLon) * sin(dLon) * cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2))
-        return atan2(sqrt(h), sqrt(1 - h)) * EARTH_DIAMETER_M
+        val halfDeltaLat = Math.toRadians(lat2 - lat1) / 2
+        val halfDeltaLon = Math.toRadians(lon2 - lon1) / 2
+        val haversine = sin(halfDeltaLat) * sin(halfDeltaLat) +
+            sin(halfDeltaLon) * sin(halfDeltaLon) * cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2))
+        return atan2(sqrt(haversine), sqrt(1 - haversine)) * EARTH_DIAMETER_M
     }
 
     fun distance(a: GeoPoint, b: GeoPoint): Double = distance(a.lat, a.lon, b.lat, b.lon)
@@ -31,20 +38,30 @@ object Geo {
         return normalize(Math.toDegrees(atan2(dx, dy)))
     }
 
+    /** Any angle → the same direction in [0, 360). Example: -90 → 270, 370 → 10. */
     fun normalize(deg: Double): Double = ((deg % 360.0) + 360.0) % 360.0
 
-    /** Signed smallest rotation from [from] to [to], in (-180, 180]. Positive = clockwise (right turn). */
+    /**
+     * The smallest rotation that turns heading [from] into heading [to], in (-180, 180].
+     * Positive = clockwise (a right turn). Example: from 350° to 10° is +20°, not -340°.
+     */
     fun angleDiff(from: Double, to: Double): Double {
-        var d = (to - from) % 360.0
-        if (d > 180.0) d -= 360.0
-        if (d <= -180.0) d += 360.0
-        return d
+        var diff = (to - from) % 360.0
+        if (diff > 180.0) diff -= 360.0
+        if (diff <= -180.0) diff += 360.0
+        return diff
     }
 
+    /** How far apart two headings are, ignoring direction: always 0…180°. */
     fun absAngleDiff(a: Double, b: Double): Double = abs(angleDiff(a, b))
 }
 
-/** Equirectangular projection around an origin; accurate to well under 1% within tens of kilometres. */
+/**
+ * Converts lat/lon to flat x/y metres around [origin] (x = east, y = north), so that nearby
+ * geometry can use plain 2-D maths. Accurate to well under 1 % within tens of kilometres.
+ *
+ * (A degree of longitude gets shorter towards the poles, hence the `cos(latitude)` factor.)
+ */
 class LocalProjection(val origin: GeoPoint) {
     private val mPerDegLon = Geo.M_PER_DEG_LON_EQUATOR * cos(Math.toRadians(origin.lat))
 
@@ -54,7 +71,10 @@ class LocalProjection(val origin: GeoPoint) {
     fun toGeo(x: Double, y: Double): GeoPoint = GeoPoint(origin.lat + y / Geo.M_PER_DEG_LAT, origin.lon + x / mPerDegLon)
 }
 
-/** Simple polygon (ring of lon/lat vertices) with a bounding box pre-check. */
+/**
+ * A polygon on the map (a closed ring of vertices). Used for the service-area border.
+ * The bounding box makes the common "far away" case a quick reject.
+ */
 class Polygon(private val lons: DoubleArray, private val lats: DoubleArray) {
     private val minLon = lons.min()
     private val maxLon = lons.max()
@@ -62,9 +82,13 @@ class Polygon(private val lons: DoubleArray, private val lats: DoubleArray) {
     private val maxLat = lats.max()
 
     init {
-        require(lons.size == lats.size && lons.size >= 3)
+        require(lons.size == lats.size && lons.size >= 3) { "a polygon needs at least 3 vertices" }
     }
 
+    /**
+     * Point-in-polygon test by "ray casting": walk east from the point and count how many edges
+     * we cross. An odd count means the point is inside.
+     */
     fun contains(lat: Double, lon: Double): Boolean {
         if (lon < minLon || lon > maxLon || lat < minLat || lat > maxLat) return false
         var inside = false

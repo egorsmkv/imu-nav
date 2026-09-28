@@ -7,8 +7,11 @@ import org.blinddriver.core.imu.ImuSample
 import org.blinddriver.core.route.Route
 import org.blinddriver.core.route.Step
 import java.io.BufferedReader
+import java.io.ByteArrayOutputStream
 import java.io.Closeable
 import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.io.Writer
@@ -68,6 +71,7 @@ object TripFormat {
         else -> v.toString()
     }
 
+    /** One event → one line (see the format description above). */
     fun encode(e: TripEvent): String = when (e) {
         is TripEvent.Fix -> e.fix.let { f ->
             listOf(
@@ -101,40 +105,55 @@ object TripFormat {
         is TripEvent.Estimate -> listOf("E", e.elapsedMs, n(e.lat), n(e.lon), String.format(Locale.US, "%.1f", e.s), e.uncertaintyM.toInt(), e.source).joinToString(",")
     }
 
+    /** One line → one event; null for comments, blank lines and anything malformed (e.g. a line cut off by a crash). */
     fun decode(line: String): TripEvent? {
         if (line.isBlank() || line.startsWith("#")) return null
-        val f = if (line.startsWith("R,")) line.split(',', limit = 3) else line.split(',')
-        fun d(i: Int) = f.getOrNull(i)?.takeIf { it.isNotEmpty() }?.toDouble()
-        fun fl(i: Int) = f.getOrNull(i)?.takeIf { it.isNotEmpty() }?.toFloat()
-        val t = f.getOrNull(1)?.toLongOrNull() ?: return null
+        val fields = if (line.startsWith("R,")) line.split(',', limit = 3) else line.split(',')
+
+        // Field [i] as a number, or null when the field is empty ("unknown").
+        fun double(i: Int) = fields.getOrNull(i)?.takeIf { it.isNotEmpty() }?.toDouble()
+        fun float(i: Int) = fields.getOrNull(i)?.takeIf { it.isNotEmpty() }?.toFloat()
+        val time = fields.getOrNull(1)?.toLongOrNull() ?: return null
         return runCatching {
-            when (f[0]) {
+            when (fields[0]) {
                 "F" -> TripEvent.Fix(
-                    RawFix(FixSource.valueOf(f[2]), f[3].toLong(), t, f[4].toDouble(), f[5].toDouble(), d(6), fl(7), fl(8), fl(9), fl(10), fl(11), f.getOrNull(12) == "1"),
+                    RawFix(
+                        FixSource.valueOf(
+                            fields[2],
+                        ),
+                        fields[3].toLong(), time, fields[4].toDouble(), fields[5].toDouble(), double(6), float(7), float(8), float(9), float(10), float(11),
+                        fields.getOrNull(12) == "1",
+                    ),
                 )
 
                 "I" -> {
-                    val acc = if (f.getOrNull(4).isNullOrEmpty()) null else floatArrayOf(fl(4)!!, fl(5)!!, fl(6)!!)
-                    val gyro = if (f.getOrNull(7).isNullOrEmpty()) null else floatArrayOf(fl(7)!!, fl(8)!!, fl(9)!!)
-                    TripEvent.Imu(ImuSample(t, fl(2), fl(3), acc, gyro))
+                    // Three numbers x,y,z starting at field [first], or null when absent.
+                    fun vector(first: Int): FloatArray? = if (fields.getOrNull(first).isNullOrEmpty()) {
+                        null
+                    } else {
+                        floatArrayOf(requireNotNull(float(first)), requireNotNull(float(first + 1)), requireNotNull(float(first + 2)))
+                    }
+                    val acc = vector(4)
+                    val gyro = vector(7)
+                    TripEvent.Imu(ImuSample(time, float(2), float(3), acc, gyro))
                 }
 
-                "S" -> TripEvent.Gnss(t, f[2].toInt(), f[3].toInt(), fl(4), fl(5), fl(6), f[7].toInt())
+                "S" -> TripEvent.Gnss(time, fields[2].toInt(), fields[3].toInt(), float(4), float(5), float(6), fields[7].toInt())
 
-                "A" -> TripEvent.Agc(t, fl(2))
+                "A" -> TripEvent.Agc(time, float(2))
 
                 "D" -> TripEvent.Start(
-                    t,
-                    GeoPoint(f[2].toDouble(), f[3].toDouble()),
-                    (5 until f.size - 1 step 2).map { GeoPoint(f[it].toDouble(), f[it + 1].toDouble()) },
-                    d(4) ?: 0.0,
+                    time,
+                    GeoPoint(fields[2].toDouble(), fields[3].toDouble()),
+                    (5 until fields.size - 1 step 2).map { GeoPoint(fields[it].toDouble(), fields[it + 1].toDouble()) },
+                    double(4) ?: 0.0,
                 )
 
-                "R" -> TripEvent.RouteSet(t, RouteCodec.decode(f[2]))
+                "R" -> TripEvent.RouteSet(time, RouteCodec.decode(fields[2]))
 
-                "X" -> TripEvent.Stop(t)
+                "X" -> TripEvent.Stop(time)
 
-                "E" -> TripEvent.Estimate(t, f[2].toDouble(), f[3].toDouble(), f[4].toDouble(), f[5].toDouble(), f.getOrNull(6).orEmpty())
+                "E" -> TripEvent.Estimate(time, fields[2].toDouble(), fields[3].toDouble(), fields[4].toDouble(), fields[5].toDouble(), fields.getOrNull(6).orEmpty())
 
                 else -> null
             }
@@ -152,7 +171,7 @@ object TripFormat {
         buffered.reset()
         val stream = if (magic == 0x1f8b) GZIPInputStream(buffered) else buffered
         // Decompress into memory first: readers buffer ahead and would drop the tail on an EOF error.
-        val bytes = java.io.ByteArrayOutputStream()
+        val bytes = ByteArrayOutputStream()
         val buf = ByteArray(1 shl 14)
         try {
             while (true) {
@@ -160,7 +179,7 @@ object TripFormat {
                 if (n < 0) break
                 bytes.write(buf, 0, n)
             }
-        } catch (_: java.io.IOException) {
+        } catch (_: IOException) {
             // Truncated stream: keep what was decompressed (a partial last line fails to decode).
         } finally {
             runCatching { stream.close() }
@@ -219,7 +238,7 @@ class TripRecorder(out: OutputStream, private val flushEveryMs: Long = 2000) : C
     }
 
     companion object {
-        fun open(file: File, append: Boolean = false): TripRecorder = TripRecorder(java.io.FileOutputStream(file, append))
+        fun open(file: File, append: Boolean = false): TripRecorder = TripRecorder(FileOutputStream(file, append))
     }
 }
 

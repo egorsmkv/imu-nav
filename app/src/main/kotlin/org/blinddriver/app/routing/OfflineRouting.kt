@@ -1,7 +1,9 @@
 package org.blinddriver.app.routing
 
 import android.content.Context
+import android.util.Log
 import androidx.core.content.edit
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -13,9 +15,11 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.blinddriver.app.R
+import org.blinddriver.app.search.AndroidSearchDb
 import org.blinddriver.core.cells.ResumableHttpInputStream
 import org.blinddriver.core.geo.GeoPoint
 import org.blinddriver.core.route.Route
+import org.blinddriver.routing.MatchedTrack
 import org.blinddriver.routing.OfflineGraph
 import org.blinddriver.routing.PackInfo
 import java.io.File
@@ -24,13 +28,19 @@ import java.io.InputStream
 import java.util.zip.ZipInputStream
 import kotlin.coroutines.coroutineContext
 
+/** State of the offline routing pack, for the Settings screen. */
 data class OfflineRoutingStatus(
+    /** The installed pack, if any. */
     val pack: PackInfo? = null,
     /** Pack shipped inside the APK (assets/routing), if any. */
     val bundled: PackInfo? = null,
+    /** The installed pack was loaded successfully and can route. */
     val loaded: Boolean = false,
+    /** Use OSRM online when the offline pack cannot answer. */
     val allowOnline: Boolean = true,
+    /** Last URL entered for downloading a pack. */
     val packUrl: String = "",
+    /** Progress text of a running install / download, null when idle. */
     val busy: String? = null,
     val message: String? = null,
 )
@@ -47,7 +57,7 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
     private var task: Job? = null
 
     /** Address search index shipped inside the pack (`search.db`), if present. */
-    @Volatile var searchDb: org.blinddriver.app.search.AndroidSearchDb? = null
+    @Volatile var searchDb: AndroidSearchDb? = null
         private set
 
     private val _status = MutableStateFlow(
@@ -92,15 +102,17 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
         }
     }
 
+    /** A string resource in the current app language. */
     private fun str(id: Int, vararg args: Any) = context.getString(id, *args)
 
+    /** Open the installed pack (graph + search index); runs in the background. */
     @Synchronized
     private fun load() {
         graph?.close()
         graph = null
         searchDb?.close()
         searchDb = File(current, "search.db").takeIf { it.exists() }?.let { f ->
-            runCatching { org.blinddriver.app.search.AndroidSearchDb(f) }.onFailure { log("search_db_open_failed ${it.message}") }.getOrNull()
+            runCatching { AndroidSearchDb(f) }.onFailure { log("search_db_open_failed ${it.message}") }.getOrNull()
         }
         val info = File(current, PackInfo.FILE).takeIf { it.exists() }?.let { PackInfo.parse(it.readText()) }
         if (info == null) {
@@ -125,21 +137,24 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
     }
 
     /** Snap a recorded drive onto the roads of the loaded pack (null if no pack is loaded). */
-    suspend fun mapMatch(points: List<GeoPoint>): org.blinddriver.routing.MatchedTrack? = withContext(Dispatchers.Default) {
+    suspend fun mapMatch(points: List<GeoPoint>): MatchedTrack? = withContext(Dispatchers.Default) {
         val g = synchronized(this@OfflineRouting) { graph } ?: return@withContext null
         g.mapMatch(points)
     }
 
+    /** Allow or forbid the online OSRM fallback. */
     fun setAllowOnline(on: Boolean) {
         prefs.edit { putBoolean("allow_online", on) }
         _status.update { it.copy(allowOnline = on) }
     }
 
+    /** Remember the pack download URL. */
     fun setPackUrl(url: String) {
         prefs.edit { putString("pack_url", url.trim()) }
         _status.update { it.copy(packUrl = url.trim()) }
     }
 
+    /** Cancel a running install / download. */
     fun cancel() {
         task?.cancel()
     }
@@ -166,6 +181,7 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
         }
     }
 
+    /** Delete the installed pack (and do not re-install the built-in one automatically). */
     fun remove() = runTask(str(R.string.routing_removing)) {
         // Do not silently reinstall the bundled pack the user just removed.
         bundledInfo?.let { prefs.edit { putString("bundled_declined", it.builtAt) } }
@@ -184,24 +200,24 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
 
     /** Unzip into a staging folder, validate, then atomically replace the current pack. */
     private suspend fun install(input: InputStream, totalBytes: Long = 0): String {
-        val ctx = coroutineContext
+        val job = coroutineContext // to notice cancellation inside the blocking loop
         val staging = File(root, "staging").apply {
             deleteRecursively()
             mkdirs()
         }
         var bytes = 0L
         ZipInputStream(input.buffered(1 shl 16)).use { zip ->
-            val buf = ByteArray(1 shl 16)
+            val buffer = ByteArray(1 shl 16)
             while (true) {
-                val e = zip.nextEntry ?: break
-                if (!ctx.isActive) throw InterruptedException()
-                val name = File(e.name).name // flat pack; ignore any folder structure
-                if (e.isDirectory || name.isBlank()) continue
+                val entry = zip.nextEntry ?: break
+                if (!job.isActive) throw InterruptedException()
+                val name = File(entry.name).name // flat pack; ignore any folder structure (and "../" tricks)
+                if (entry.isDirectory || name.isBlank()) continue
                 File(staging, name).outputStream().use { out ->
                     while (true) {
-                        val n = zip.read(buf)
+                        val n = zip.read(buffer)
                         if (n < 0) break
-                        out.write(buf, 0, n)
+                        out.write(buffer, 0, n)
                         bytes += n
                     }
                 }
@@ -234,28 +250,30 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
         return str(R.string.routing_installed, info.name)
     }
 
+    /** Update the progress text (any thread). */
     private fun progress(text: String) {
         _status.update { it.copy(busy = text) }
     }
 
+    /** Run one install / download at a time; the returned text is shown when it finishes. */
     private fun runTask(start: String, block: suspend () -> String) {
         if (task?.isActive == true) return
         task = scope.launch {
             _status.update { it.copy(busy = start, message = null) }
             val msg = try {
                 block()
-            } catch (_: kotlinx.coroutines.CancellationException) {
+            } catch (_: CancellationException) {
                 str(R.string.task_cancelled)
             } catch (_: InterruptedException) {
                 str(R.string.task_cancelled)
             } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
                 log("offline_routing_task_failed ${e.javaClass.simpleName}: ${e.message}")
-                android.util.Log.w("OfflineRouting", "task failed", e)
+                Log.w("OfflineRouting", "task failed", e)
                 str(R.string.task_failed, e.message ?: e.javaClass.simpleName)
             } catch (@Suppress("TooGenericExceptionCaught") e: Throwable) {
                 // e.g. NoSuchMethodError / VerifyError from a library on this Android version.
                 log("offline_routing_task_error ${e.javaClass.simpleName}: ${e.message}")
-                android.util.Log.e("OfflineRouting", "task error", e)
+                Log.e("OfflineRouting", "task error", e)
                 str(R.string.task_failed, e.javaClass.simpleName)
             }
             File(root, "staging").takeIf { it.exists() }?.deleteRecursively()

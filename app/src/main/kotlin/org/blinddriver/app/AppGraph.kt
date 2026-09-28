@@ -13,10 +13,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.blinddriver.app.cells.CellManager
 import org.blinddriver.app.cells.CellStatus
+import org.blinddriver.app.power.PowerMode
+import org.blinddriver.app.power.PowerPolicy
+import org.blinddriver.app.power.PowerProfile
 import org.blinddriver.app.routing.OfflineRouting
 import org.blinddriver.app.routing.OsrmRouter
 import org.blinddriver.app.routing.Router
 import org.blinddriver.app.routing.SmartRouter
+import org.blinddriver.app.search.PlaceSearch
 import org.blinddriver.app.sensors.SensorHub
 import org.blinddriver.app.service.NavService
 import org.blinddriver.app.trips.TripManager
@@ -27,21 +31,31 @@ import org.blinddriver.core.geo.ServiceArea
 import org.blinddriver.core.gnss.GnssSnapshot
 import org.blinddriver.core.gnss.GpsState
 import org.blinddriver.core.gnss.PositioningHub
+import org.blinddriver.core.gnss.TrustLevel
 import org.blinddriver.core.gnss.Verdict
+import org.blinddriver.core.nav.EnglishPhrases
 import org.blinddriver.core.nav.GuidanceState
 import org.blinddriver.core.nav.NavListener
 import org.blinddriver.core.nav.NavigationEngine
+import org.blinddriver.core.nav.UkrainianPhrases
 import org.blinddriver.core.speed.SpeedProfile
 import org.blinddriver.core.speed.SpeedProfileStore
 
-/** Everything the UI shows, refreshed every engine tick. */
+/**
+ * Everything the UI shows, as one immutable value. [AppGraph] publishes a new copy (via a
+ * StateFlow) every engine tick; Compose redraws only the parts that changed.
+ */
 data class UiState(
+    /** Navigation state from the engine (route, next maneuver, position on the route…). */
     val guidance: GuidanceState = GuidanceState(),
     val gpsState: GpsState = GpsState.LOST,
+    /** The classifier's verdict on the latest GPS fix (for the diagnostics sheet). */
     val lastVerdict: Verdict? = null,
     val gnss: GnssSnapshot = GnssSnapshot(),
     val jammed: Boolean = false,
+    /** Where to draw the position dot (engine estimate, else best trusted fix, else the manual start). */
     val currentPosition: GeoPoint? = null,
+    /** Destination picked on the map or in search, before navigation starts. */
     val destination: GeoPoint? = null,
     /** Start point chosen by the user when no trusted position exists (GPS spoofed/jammed, no network). */
     val manualStart: GeoPoint? = null,
@@ -52,18 +66,40 @@ data class UiState(
     val trustedFromGps: Boolean = false,
     /** Why GPS fixes are currently rejected, for the "no trusted position" message. */
     val gpsRejectReasons: List<String> = emptyList(),
+    /** A route is being computed. */
     val planning: Boolean = false,
+    /** A message to show once in a snackbar (then cleared with [AppGraph.clearError]). */
     val error: String? = null,
+    /** Debug switch: pretend GPS is jammed. */
     val simulateGpsLoss: Boolean = false,
+    /** The phone lacks some sensors (e.g. no gyroscope); shown in diagnostics. */
     val sensorWarning: String? = null,
     /** System-wide Location switch; when off, Android delivers no fixes to any app. */
     val locationEnabled: Boolean = true,
+    /** The latest trip-log lines. */
     val log: List<String> = emptyList(),
     val cells: CellStatus = CellStatus(),
 )
 
-/** Process-wide object graph. All engine access happens on the main thread. */
+/**
+ * The app's "object graph": creates every long-lived component once and connects them.
+ *
+ * There is one instance per process, created in [BlindDriverApp.onCreate] and reachable from any
+ * `Context` as `context.graph`. This is plain manual dependency injection — no framework —
+ * so you can read top to bottom how the pieces fit:
+ *
+ * ```
+ * SensorHub (Android GPS/sensors) ─┐
+ * CellScanner (cell towers) ───────┼─► PositioningHub ─► NavigationEngine ─► UiState ─► Compose UI
+ *                                  │   (trust checks)    (dead reckoning)
+ * OfflineRouting / OSRM ───────────┘ (routes)                 └─► Voice, TripManager (recording)
+ * ```
+ *
+ * Threading rule: everything here, and all engine access, happens on the **main thread**
+ * (background work is done in coroutines and its results are posted back).
+ */
 class AppGraph(private val context: Context) {
+    /** Coroutine scope for the app's lifetime; runs on the main thread unless told otherwise. */
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val tripLog = TripLog(context)
 
@@ -81,15 +117,17 @@ class AppGraph(private val context: Context) {
         tripLog.write("language $choice")
     }
 
-    private fun phrasesFor() = if (ukrainian) org.blinddriver.core.nav.UkrainianPhrases else org.blinddriver.core.nav.EnglishPhrases
+    /** Voice phrases in the current language. */
+    private fun phrasesFor() = if (ukrainian) UkrainianPhrases else EnglishPhrases
 
     /** Offline GraphHopper pack first; OSRM online only as an allowed fallback. */
     val offlineRouting = OfflineRouting(context, scope, tripLog::write)
 
     /** Address search: the pack's offline index, Photon online when allowed. */
-    val search = org.blinddriver.app.search.PlaceSearch(context, { offlineRouting.searchDb }, { offlineRouting.status.value.allowOnline })
+    val search = PlaceSearch(context, { offlineRouting.searchDb }, { offlineRouting.status.value.allowOnline })
     private val router: Router = SmartRouter(offlineRouting, OsrmRouter(), tripLog::write) { context.getString(R.string.routing_no_coverage) }
 
+    /** Engine thresholds (factory defaults; see [Tuning]). */
     val tuning = MutableStateFlow(Tuning.DEFAULT)
 
     /** Fixes outside this area are treated as spoofed. Set to [ServiceArea.EVERYWHERE] to use the app elsewhere. */
@@ -104,6 +142,7 @@ class AppGraph(private val context: Context) {
     /** Centre of the map as last seen by the map screen, for "use map centre" in Settings. */
     @Volatile var lastMapCenter: GeoPoint? = null
 
+    /** Save the map-start setting (Settings → Map start). */
     fun setMapStart(mode: MapStartMode, fixed: GeoPoint?) {
         mapStart.mode = mode
         mapStart.fixed = fixed
@@ -112,6 +151,7 @@ class AppGraph(private val context: Context) {
         tripLog.write("map_start $mode ${fixed?.let { "%.5f %.5f".format(it.lat, it.lon) }.orEmpty()}")
     }
 
+    /** How the engine reaches the rest of the app: voice, log, and routing requests. */
     private val listener = object : NavListener {
         override fun onSay(text: String, urgent: Boolean) = voice.speak(text, urgent)
         override fun onLog(message: String) = tripLog.write(message)
@@ -131,6 +171,7 @@ class AppGraph(private val context: Context) {
         }
     }
 
+    /** The dead-reckoning navigator (pure Kotlin, in the `core` module). */
     val engine: NavigationEngine = NavigationEngine(
         tuning = { tuning.value },
         speedProfile = SpeedProfile(PrefsSpeedProfileStore(context)),
@@ -141,6 +182,7 @@ class AppGraph(private val context: Context) {
     /** Trip recording (for replay), history, and restoring a trip after the app was killed. */
     val trips = TripManager(context, hub, engine, tripLog::write)
 
+    /** Android GPS / network location / motion sensors → [hub] and [engine]. */
     val sensors = SensorHub(
         context,
         hub,
@@ -151,20 +193,25 @@ class AppGraph(private val context: Context) {
         log = tripLog::write,
     )
 
+    // Kotlin convention: a private mutable flow (_ui) and a public read-only view (ui) of it.
     private val _ui = MutableStateFlow(UiState())
+
+    /** What the UI shows; collect it with `collectAsStateWithLifecycle()`. */
     val ui: StateFlow<UiState> = _ui.asStateFlow()
 
     // ---------------------------------------------------------------- offline cell positioning
 
+    /** Offline cell-tower positioning: tower database, scanning, downloads, sharing. */
     val cells = CellManager(context, scope, hub, tripLog::write)
 
     // ---------------------------------------------------------------- power
 
-    val power = org.blinddriver.app.power.PowerPolicy(context)
+    /** Battery trade-offs (Settings → Battery). */
+    val power = PowerPolicy(context)
     private val _powerProfile = MutableStateFlow(power.resolve())
 
     /** The profile in effect (AUTO already resolved). */
-    val powerProfile: StateFlow<org.blinddriver.app.power.PowerProfile> = _powerProfile.asStateFlow()
+    val powerProfile: StateFlow<PowerProfile> = _powerProfile.asStateFlow()
     val powerMode = MutableStateFlow(power.mode)
     val keepScreenOn = MutableStateFlow(power.keepScreenOn)
 
@@ -177,19 +224,21 @@ class AppGraph(private val context: Context) {
             val p = _powerProfile.value
             when {
                 !engine.state.active -> if (hub.lastGood != null) p.cellScanIdleMs else p.cellScanNoGpsMs
-                hub.gpsState == org.blinddriver.core.gnss.GpsState.OK -> p.cellScanGoodGpsMs
+                hub.gpsState == GpsState.OK -> p.cellScanGoodGpsMs
                 else -> p.cellScanNoGpsMs
             }
         }
     }
 
-    fun setPowerMode(mode: org.blinddriver.app.power.PowerMode) {
+    /** Save the power mode and apply it immediately. */
+    fun setPowerMode(mode: PowerMode) {
         power.mode = mode
         powerMode.value = mode
         tripLog.write("power_mode $mode")
         applyPower()
     }
 
+    /** Keep the display on while navigating, or not. */
     fun setKeepScreenOn(on: Boolean) {
         power.keepScreenOn = on
         keepScreenOn.value = on
@@ -202,12 +251,14 @@ class AppGraph(private val context: Context) {
         sensors.configure(p, navigating = engine.state.active)
     }
 
+    /** Start GPS, sensors and cell scans (when the app is visible or navigating). */
     fun startSensing() {
         applyPower()
         sensors.start()
         cells.scanner.start()
     }
 
+    /** Stop them again to save battery. */
     fun stopSensing() {
         sensors.stop()
         cells.scanner.stop()
@@ -221,19 +272,26 @@ class AppGraph(private val context: Context) {
      */
     fun currentPosition(): GeoPoint? = hub.lastGood?.point ?: hub.lastNet?.point
 
+    /** The user placed the start by hand ("Start here") because no trusted position exists. */
     fun setManualStart(p: GeoPoint?) {
         tripLog.write("manual_start ${p?.let { "%.5f %.5f".format(it.lat, it.lon) }}")
         _ui.value = _ui.value.copy(manualStart = p, error = null)
     }
 
+    /** The error message was shown; forget it. */
     fun clearError() {
         _ui.value = _ui.value.copy(error = null)
     }
 
+    /** Destination picked on the map / in search (null clears it). */
     fun setDestination(p: GeoPoint?) {
         _ui.value = _ui.value.copy(destination = p, error = null)
     }
 
+    /**
+     * Plan a route from the best known start to the chosen destination and start navigating.
+     * Routing runs in the background; [onStarted] is called on success (the UI then starts [NavService]).
+     */
     fun startNavigation(onStarted: () -> Unit) {
         val dest = _ui.value.destination ?: return
         if (!sensors.locationEnabled) {
@@ -267,6 +325,7 @@ class AppGraph(private val context: Context) {
         }
     }
 
+    /** End the trip: save it to the history and stop the engine. */
     fun stopNavigation() {
         trips.end(arrived = engine.state.arrived)
         engine.stop()
@@ -276,6 +335,7 @@ class AppGraph(private val context: Context) {
         refresh()
     }
 
+    /** Debug: drive as if GPS were jammed (to test dead reckoning with a working GPS). */
     fun setSimulateGpsLoss(on: Boolean) {
         engine.simulateGpsLoss = on
         tripLog.write("simulate_gps_loss=$on")
@@ -298,6 +358,7 @@ class AppGraph(private val context: Context) {
         }
     }
 
+    /** Rebuild [ui] from the current state of all components. */
     fun refresh() {
         cells.refresh()
         hub.lastGood?.let { mapStart.rememberTrusted(it.point) }
@@ -316,7 +377,7 @@ class AppGraph(private val context: Context) {
             hasTrustedPosition = currentPosition() != null,
             trustedAccuracyM = (hub.lastGood ?: hub.lastNet)?.accuracyM?.toDouble(),
             trustedFromGps = hub.lastGood != null,
-            gpsRejectReasons = hub.lastJudged?.takeIf { it.verdict.level == org.blinddriver.core.gnss.TrustLevel.BAD }?.verdict?.reasons.orEmpty(),
+            gpsRejectReasons = hub.lastJudged?.takeIf { it.verdict.level == TrustLevel.BAD }?.verdict?.reasons.orEmpty(),
             simulateGpsLoss = engine.simulateGpsLoss,
             sensorWarning = sensors.sensorWarning,
             locationEnabled = sensors.locationEnabled,
@@ -335,6 +396,7 @@ class AppGraph(private val context: Context) {
 
 private const val MANUAL_START_ACCURACY_M = 100.0
 
+/** Keeps the learned driving-speed profile in SharedPreferences. */
 private class PrefsSpeedProfileStore(context: Context) : SpeedProfileStore {
     private val prefs = context.getSharedPreferences("speed_profile", Context.MODE_PRIVATE)
 

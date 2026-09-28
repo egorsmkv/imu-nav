@@ -101,3 +101,13 @@ dependencies {
 
     implementation(libs.maplibre.android)
 }
+
+// GraphHopper brings its OSM import stack, which only the desktop pack builder (`:routing:run`)
+// needs; the phone loads ready-made graphs. Keeping it out of the APK removes the only copyleft
+// component (osmosis-osm-binary, LGPL 3.0) and its Protocol Buffers dependency.
+configurations.configureEach {
+    if (name.endsWith("RuntimeClasspath")) {
+        exclude(group = "org.openstreetmap.osmosis", module = "osmosis-osm-binary")
+        exclude(group = "com.google.protobuf", module = "protobuf-java")
+    }
+}

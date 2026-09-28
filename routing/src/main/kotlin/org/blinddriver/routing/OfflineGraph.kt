@@ -3,6 +3,7 @@ package org.blinddriver.routing
 import com.graphhopper.GHRequest
 import com.graphhopper.GraphHopper
 import com.graphhopper.GraphHopperConfig
+import com.graphhopper.ResponsePath
 import com.graphhopper.config.CHProfile
 import com.graphhopper.config.Profile
 import com.graphhopper.json.Statement
@@ -48,8 +49,10 @@ object GraphSpec {
         .setDistanceInfluence(DISTANCE_INFLUENCE)
         .setHeadingPenalty(HEADING_PENALTY_S)
 
+    /** The single "car" routing profile, with our custom model (speeds and road preferences). */
     fun profile(): Profile = Profile(PROFILE).setCustomModel(customModel())
 
+    /** GraphHopper settings shared by the desktop builder and the phone — both must agree or the graph will not load. */
     fun config(graphDir: String): GraphHopperConfig = GraphHopperConfig()
         .putObject("graph.location", graphDir)
         .putObject("graph.encoded_values", ENCODED_VALUES)
@@ -83,6 +86,7 @@ class PhoneGraphHopper : GraphHopper() {
     }
 }
 
+/** The offline graph cannot answer (point outside the pack, no road connection…). */
 class OfflineRoutingException(message: String) : Exception(message)
 
 /** A recorded drive snapped onto the road network. */
@@ -152,7 +156,7 @@ class OfflineGraph private constructor(private val hopper: GraphHopper, val dir:
         }
 
         /** Convert a GraphHopper path into the engine's [Route] (OSRM-style step vocabulary). */
-        internal fun toRoute(path: com.graphhopper.ResponsePath): Route {
+        internal fun toRoute(path: ResponsePath): Route {
             val pts = path.points
             val geometry = (0 until pts.size()).map { GeoPoint(pts.getLat(it), pts.getLon(it)) }
             val steps = ArrayList<Step>()
@@ -191,6 +195,7 @@ class OfflineGraph private constructor(private val hopper: GraphHopper, val dir:
             )
         }
 
+        /** GraphHopper turn sign → OSRM-style (type, modifier), so the rest of the app handles both routers the same way. */
         private fun stepKind(ins: Instruction, first: Boolean): Pair<String, String?> = when (ins.sign) {
             Instruction.CONTINUE_ON_STREET -> if (first) "depart" to null else "new name" to "straight"
             Instruction.TURN_SLIGHT_LEFT -> "turn" to "slight left"

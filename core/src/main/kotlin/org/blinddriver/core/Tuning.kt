@@ -1,54 +1,85 @@
 package org.blinddriver.core
 
 /**
- * All user-tunable thresholds of the dead-reckoning engine. Defaults are the factory preset.
+ * All tunable thresholds of the dead-reckoning engine. The defaults are the factory preset.
  * Times are in milliseconds unless the name says otherwise.
+ *
+ * "Dead reckoning" (DR) = estimating where the car is without GPS, from speed, time and the
+ * route. See `NavigationEngine` for how these values are used; the `replay` tool shows the
+ * effect of a change on recorded trips (`--set key=value`).
  */
 data class Tuning(
-    // --- Stop / resume detector (accelerometer + gyro "quietness") ---
+    // --- Stop / resume detector: is the car standing still? (accelerometer + gyro "quietness")
+    /** Look at this much recent sensor data. */
     val stopWindowMs: Long = 1000,
+    /** Must be quiet this long before we call it a stop. */
     val stopHoldMs: Long = 1500,
+    /** Quiet = mean acceleration below this (m/s², gravity removed)… */
     val stopAccMean: Double = 0.25,
+    /** …and its variation (standard deviation) below this. */
     val stopAccStd: Double = 0.3,
+    /** Alternatively quiet = gyro below this (rad/s) while acceleration mean stays under [stopGyroAccMeanMax]. */
     val stopGyro: Double = 0.03,
     val stopGyroAccMeanMax: Double = 0.5,
+    /** Moving again = acceleration mean or variation above these, or gyro above [resumeGyro]… */
     val resumeAccMean: Double = 0.5,
     val resumeAccStd: Double = 0.5,
     val resumeGyro: Double = 0.1,
+    /** …for this long (filters out doors closing, people moving in the car). */
     val resumeConfirmMs: Long = 700,
+    /** After a stop the car accelerates: estimated speed ramps from 15 % to 100 % over this time. */
     val resumeRampMs: Long = 8000,
+    /** During the first part of the ramp, speed is capped at [resumeSlowCap] × cruising speed. */
     val resumeSlowMs: Long = 3000,
     val resumeSlowCap: Double = 0.6,
 
-    // --- Gyro turn matching ---
+    // --- Gyro turn matching: recognise route turns from the gyroscope
+    /** Route turns sharper than this (degrees) count as "real" turns. */
     val turnMinDeg: Double = 35.0,
+    /** A measured turn may differ from the route's turn angle by this much and still match. */
     val turnTolDeg: Double = 25.0,
+    /** Search route turns from this far behind the marker… */
     val turnBehindM: Double = 400.0,
+    /** …to this far ahead of it. */
     val turnAheadM: Double = 300.0,
+    /** Integrate the gyro over this window to measure a turn. */
     val turnWindowMs: Long = 6000,
+    /** Park the marker just before the next turn until the turn is confirmed ("turn hold"). */
     val turnHoldEnabled: Boolean = true,
+    /** Give up holding after this many seconds of driving. */
     val turnHoldMaxS: Int = 25,
 
-    // --- Off-route / arrival ---
+    // --- Off-route detection and arrival (with GPS)
+    /** GPS further than this from the route… */
     val offRouteM: Double = 50.0,
+    /** …for this long ⇒ off route. */
     val offRouteHoldMs: Long = 8000,
+    /** Faster rule: further than [offRouteFastM] AND heading off by [offRouteFastDeg] for [offRouteFastHoldMs]. */
     val offRouteFastM: Double = 30.0,
     val offRouteFastDeg: Double = 40.0,
     val offRouteFastHoldMs: Long = 3000,
+    /** "You have arrived" within this distance of the destination. */
     val arriveM: Double = 30.0,
 
-    // --- Map knowledge ---
+    // --- Map knowledge
+    /** Slow the estimated speed down near traffic signals / speed bumps. */
     val speedPlan: Boolean = true,
+    /** When the car stops close to a traffic signal, snap the marker to it. */
     val signalSnap: Boolean = true,
 
-    // --- Deviation without GPS ---
+    // --- Leaving the route without GPS ("blind deviation")
+    /** Offer a reroute when the sensors say we left the route. */
     val blindDeviationEnabled: Boolean = true,
+    /** A U-turn = the gyro turned at least this many degrees where the route goes straight. */
     val blindDeviationMinDeg: Double = 90.0,
+    /** Seconds the voice countdown gives the driver to cancel before rerouting. */
     val blindDeviationDelayS: Int = 8,
+    /** Also treat "drove past a held turn without turning" as leaving the route. */
     val missedTurnEnabled: Boolean = false,
+    /** …after driving this far past it. */
     val missedTurnM: Double = 250.0,
 
-    // --- Speed cameras ---
+    // --- Speed cameras (not implemented yet; kept so saved presets stay compatible)
     val cameraShowM: Double = 2000.0,
     val cameraWarnM: Double = 700.0,
     val cameraBeepM: Double = 300.0,
@@ -56,12 +87,15 @@ data class Tuning(
 ) {
     /** Clamp every numeric parameter into its documented range and keep camera distances ordered. */
     fun sanitized(): Tuning {
-        var t = this
-        for (spec in SPECS) t = spec.set(t, spec.get(t).coerceIn(spec.min, spec.max))
-        val warn = minOf(t.cameraWarnM, t.cameraShowM)
-        return t.copy(cameraWarnM = warn, cameraBeepM = minOf(t.cameraBeepM, warn))
+        val clamped = SPECS.fold(this) { tuning, spec -> spec.set(tuning, spec.get(tuning).coerceIn(spec.min, spec.max)) }
+        val warn = minOf(clamped.cameraWarnM, clamped.cameraShowM)
+        return clamped.copy(cameraWarnM = warn, cameraBeepM = minOf(clamped.cameraBeepM, warn))
     }
 
+    /**
+     * Describes one numeric parameter for a settings UI / the replay tool: its [key], allowed
+     * range and step, and how to read ([get]) and change ([set]) it on a [Tuning].
+     */
     class Spec(
         val key: String,
         val group: String,

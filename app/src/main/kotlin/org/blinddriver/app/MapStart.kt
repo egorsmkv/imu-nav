@@ -28,7 +28,7 @@ class MapStartPrefs(private val context: Context, private val area: ServiceArea)
     private val prefs = context.getSharedPreferences("map_start", Context.MODE_PRIVATE)
 
     var mode: MapStartMode
-        get() = runCatching { MapStartMode.valueOf(prefs.getString("mode", MapStartMode.GPS.name)!!) }.getOrDefault(MapStartMode.GPS)
+        get() = MapStartMode.entries.firstOrNull { it.name == prefs.getString("mode", null) } ?: MapStartMode.GPS
         set(v) = prefs.edit { putString("mode", v.name) }
 
     var fixed: GeoPoint?
@@ -46,6 +46,7 @@ class MapStartPrefs(private val context: Context, private val area: ServiceArea)
     /** Last trusted position, remembered so the next start opens there even before any fix arrives. */
     val lastTrusted: GeoPoint? get() = point("last")
 
+    /** Remember a trusted position for the next app start. */
     fun rememberTrusted(p: GeoPoint) {
         val prev = lastTrusted
         // Avoid a disk write every tick: only when the position really changed.
@@ -56,6 +57,7 @@ class MapStartPrefs(private val context: Context, private val area: ServiceArea)
         }
     }
 
+    /** Where the map should open right now. */
     fun initialView(): MapStartView {
         if (mode == MapStartMode.FIXED) fixed?.let { return MapStartView(it, FIXED_ZOOM, isPosition = false) }
         systemLastGps()?.let { return MapStartView(it, POSITION_ZOOM, isPosition = true) }
@@ -82,6 +84,7 @@ class MapStartPrefs(private val context: Context, private val area: ServiceArea)
         return GeoPoint(loc.latitude, loc.longitude)
     }
 
+    /** Read a saved point (stored as two strings to keep full precision). */
     private fun point(prefix: String): GeoPoint? {
         val lat = prefs.getString("${prefix}_lat", null)?.toDoubleOrNull() ?: return null
         val lon = prefs.getString("${prefix}_lon", null)?.toDoubleOrNull() ?: return null

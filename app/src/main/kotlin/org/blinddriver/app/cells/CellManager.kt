@@ -1,10 +1,13 @@
 package org.blinddriver.app.cells
 
 import android.content.Context
+import android.util.Log
 import androidx.core.content.edit
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -20,13 +23,19 @@ import org.blinddriver.core.cells.ResumableHttpInputStream
 import org.blinddriver.core.gnss.PositioningHub
 import java.io.File
 import java.io.InputStream
+import java.security.MessageDigest
+import java.text.DateFormat
+import java.util.Date
+import java.util.UUID
 import kotlin.coroutines.coroutineContext
+import kotlin.math.abs
 
 /** Towers to draw on the map for the current viewport. */
 data class TowerLayer(
     val towers: List<CellTower> = emptyList(),
     /** Towers of the cells the phone sees right now (exact or site match). */
     val visible: List<CellTower> = emptyList(),
+    /** True when there were more towers than we draw (only a sample is shown). */
     val truncated: Boolean = false,
     /** Map is zoomed out too far to show towers. */
     val zoomTooLow: Boolean = false,
@@ -34,16 +43,24 @@ data class TowerLayer(
 
 /** Offline cell positioning status for the UI. */
 data class CellStatus(
+    /** Cells of enabled types the modem sees now. */
     val seen: Int = 0,
+    /** How many of them are in the database (used for the position). */
     val located: Int = 0,
+    /** Accuracy of the current cell fix, metres. */
     val accuracyM: Double? = null,
+    /** Towers per source in the database. */
     val counts: Map<CellSource, Long> = emptyMap(),
+    /** Learn tower positions from trusted GPS. */
     val learning: Boolean = true,
     val showTowers: Boolean = false,
     /** Cell types used for positioning and drawn on the map. */
     val radios: Set<Radio> = CellManager.DEFAULT_RADIOS,
+    /** An OpenCellID token has been entered. */
     val hasToken: Boolean = false,
+    /** Country codes to import, comma-separated (255 = Ukraine). */
     val mccs: String = "255",
+    /** Cell-sharing server settings. */
     val syncUrl: String = "",
     val hasSyncKey: Boolean = false,
     val autoSync: Boolean = false,
@@ -64,6 +81,7 @@ data class CellStatus(
 class CellManager(private val context: Context, private val scope: CoroutineScope, private val hub: PositioningHub, private val log: (String) -> Unit) {
     private val prefs = context.getSharedPreferences("cells", Context.MODE_PRIVATE)
 
+    /** A string resource in the current app language. */
     private fun str(id: Int, vararg args: Any): String = context.getString(id, *args)
     val db = CellDatabase(context)
     private var lastCellLogMs = 0L
@@ -101,9 +119,11 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
         }
     }
 
+    /** Cell types (LTE, 5G, …) used for positioning; LTE + 5G by default. */
     fun enabledRadios(): Set<Radio> = prefs.getString("radios", null)?.split(',')?.mapNotNull { n -> Radio.entries.firstOrNull { it.name == n } }?.toSet()
         ?: DEFAULT_RADIOS
 
+    /** Turn one cell type on or off (Settings chips). */
     fun setRadioEnabled(radio: Radio, on: Boolean) {
         val set = if (on) enabledRadios() + radio else enabledRadios() - radio
         prefs.edit { putString("radios", set.joinToString(",") { it.name }) }
@@ -113,6 +133,7 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
         lastViewport?.let { v -> onViewport(v[0], v[1], v[2], v[3], v[4]) }
     }
 
+    /** The configured country codes as numbers. */
     private fun mccSet(): Set<Int> = mccText().split(',', ' ').mapNotNull { it.trim().toIntOrNull() }.toSet().ifEmpty { setOf(255) }
     private fun mccText(): String = prefs.getString("mccs", "255").orEmpty()
 
@@ -138,6 +159,7 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
         }
     }
 
+    /** Re-count towers per source (a database query, so on the IO dispatcher). */
     private suspend fun reloadCounts() {
         val counts = withContext(Dispatchers.IO) { db.counts() }
         lastQuery = null // the database changed: the next viewport must re-query
@@ -147,15 +169,18 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
     // ------------------------------------------------------------------ settings
 
     /** Random, install-scoped identifier sent to the sharing server (not tied to the phone or user). */
-    private fun deviceId(): String = prefs.getString("device_id", null) ?: java.util.UUID.randomUUID().toString().also {
+    private fun deviceId(): String = prefs.getString("device_id", null) ?: UUID.randomUUID().toString().also {
         prefs.edit { putString("device_id", it) }
     }
 
+    /** The saved OpenCellID token / sync key, for pre-filling Settings fields. */
     fun savedToken(): String = prefs.getString("token", "").orEmpty()
     fun savedSyncKey(): String = prefs.getString("sync_key", "").orEmpty()
 
+    /** Enable or disable learning tower positions from GPS. */
     fun setLearning(on: Boolean) = prefs.edit { putBoolean("learning", on) }
 
+    /** Show or hide the tower layer on the map. */
     fun setShowTowers(on: Boolean) {
         prefs.edit { putBoolean("show_towers", on) }
         refresh()
@@ -174,7 +199,7 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
         if (!prefs.getBoolean("show_towers", false)) return
         // While the camera follows the car it settles every tick; skip queries that would return the same towers.
         val q = lastQuery
-        if (q != null && q.contains(south, west, north, east) && kotlin.math.abs(zoom - q[4]) < 0.5 && !_towerLayer.value.truncated) return
+        if (q != null && q.contains(south, west, north, east) && abs(zoom - q[4]) < 0.5 && !_towerLayer.value.truncated) return
         // Query a margin around the view so small moves stay inside it.
         val padLat = (north - south) * 0.5
         val padLon = (east - west) * 0.5
@@ -198,8 +223,10 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
     /** This query box (south, west, north, east, zoom) covers the given bounds. */
     private fun DoubleArray.contains(south: Double, west: Double, north: Double, east: Double) = south >= this[0] && west >= this[1] && north <= this[2] && east <= this[3]
 
+    /** Database entries for the cells the phone sees now (for the red rings on the map). */
     private fun visibleTowers(): List<CellTower> = scanner.lastUsable.mapNotNull { runCatching { db.resolve(it.key)?.first }.getOrNull() }
 
+    /** Save the sharing-server and country settings from the Settings screen. */
     fun saveSettings(syncUrl: String, syncKey: String, autoSync: Boolean, mccs: String) {
         prefs.edit {
             putString("sync_url", syncUrl.trim())
@@ -212,35 +239,41 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
 
     // ------------------------------------------------------------------ long-running tasks
 
+    /**
+     * Run one long task (import, download, sync…) at a time, showing [start] as progress text.
+     * The returned string is shown to the user when it finishes (also after failure or cancel).
+     */
     private fun runTask(start: String, cancellable: Boolean = false, block: suspend () -> String) {
         if (task?.isActive == true) return
         task = scope.launch {
             _status.update { it.copy(busy = start, busyCancellable = cancellable, message = null) }
             val msg = try {
                 block()
-            } catch (_: kotlinx.coroutines.CancellationException) {
+            } catch (_: CancellationException) {
                 str(R.string.task_cancelled)
             } catch (_: InterruptedException) {
                 str(R.string.task_cancelled)
             } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
                 // Task boundary: any failure (I/O, SQLite, parsing) is reported to the user, not crashed on.
-                android.util.Log.w("CellManager", "task failed", e)
+                Log.w("CellManager", "task failed", e)
                 str(R.string.task_failed, e.message ?: e.javaClass.simpleName)
             }
             log("cells_task ${msg.lowercase()}")
             // After a cancel this coroutine is cancelled: without NonCancellable, reloadCounts() would
             // throw immediately and the busy indicator would never clear.
-            withContext(kotlinx.coroutines.NonCancellable) {
+            withContext(NonCancellable) {
                 reloadCounts()
                 _status.update { it.copy(busy = null, busyCancellable = false, message = msg) }
             }
         }
     }
 
+    /** Cancel the running task (the Cancel button). */
     fun cancelTask() {
         task?.cancel()
     }
 
+    /** Update the progress text of the running task (any thread). */
     private fun progress(text: String) {
         scope.launch { _status.update { it.copy(busy = text) } }
     }
@@ -320,7 +353,7 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
         val asset = BUNDLED_ASSETS.firstOrNull { name -> runCatching { context.assets.open(name).close() }.isSuccess } ?: return
         val hash = runCatching {
             context.assets.open(asset).use { input ->
-                val md = java.security.MessageDigest.getInstance("SHA-256")
+                val md = MessageDigest.getInstance("SHA-256")
                 val buf = ByteArray(1 shl 16)
                 while (true) {
                     val n = input.read(buf)
@@ -419,7 +452,7 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
             val msg = str(R.string.task_sync_done, uploaded, downloaded)
             prefs.edit {
                 putLong("last_sync_ms", started)
-                putString("last_sync_msg", "$msg (${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(started))})")
+                putString("last_sync_msg", "$msg (${DateFormat.getDateTimeInstance().format(Date(started))})")
             }
             msg
         }
@@ -437,7 +470,7 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
         if (good.elapsedMs == lastLearnedFixMs) return
         val acc = good.accuracyM ?: return
         val obs = scanner.lastObservations
-        if (acc > 30f || obs.isEmpty() || kotlin.math.abs(scanner.lastScanMs - good.elapsedMs) > 10_000) return
+        if (acc > 30f || obs.isEmpty() || abs(scanner.lastScanMs - good.elapsedMs) > 10_000) return
         if (lastLearnedFixMs > 0 && good.elapsedMs - lastLearnedFixMs < 20_000) return
         lastLearnedFixMs = good.elapsedMs
         scope.launch {

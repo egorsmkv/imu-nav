@@ -45,7 +45,7 @@ class PowerPolicy(private val context: Context) {
     private val prefs = context.getSharedPreferences("power", Context.MODE_PRIVATE)
 
     var mode: PowerMode
-        get() = runCatching { PowerMode.valueOf(prefs.getString("mode", PowerMode.AUTO.name)!!) }.getOrDefault(PowerMode.AUTO)
+        get() = PowerMode.entries.firstOrNull { it.name == prefs.getString("mode", null) } ?: PowerMode.AUTO
         set(v) = prefs.edit { putString("mode", v.name) }
 
     /** Keep the display on while navigating (the screen is by far the largest consumer). */
@@ -53,6 +53,7 @@ class PowerPolicy(private val context: Context) {
         get() = prefs.getBoolean("keep_screen_on", true)
         set(v) = prefs.edit { putBoolean("keep_screen_on", v) }
 
+    /** Battery level 0–100, or null if unknown. */
     fun batteryPercent(): Int? = runCatching {
         val i = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED)) ?: return null
         val level = i.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
@@ -60,6 +61,7 @@ class PowerPolicy(private val context: Context) {
         if (level < 0 || scale <= 0) null else level * 100 / scale
     }.getOrNull()
 
+    /** Is the phone plugged in? */
     fun isCharging(): Boolean = runCatching {
         val i = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         (i?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0

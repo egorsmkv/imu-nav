@@ -17,9 +17,19 @@ data class NetSample(val elapsedMs: Long, val s: Double, val accM: Double, val o
  * anchor was wrong and the tracker re-anchors on them.
  */
 class NetworkTracker {
+    /** A trusted reference point: route position [s] at time [tS] (seconds), accurate to [acc] metres. */
     private class Anchor(val tS: Double, val s: Double, val acc: Double)
 
-    enum class GateResult { ACCEPTED, REANCHORED, REJECTED }
+    enum class GateResult {
+        /** Consistent with what we believed: use it. */
+        ACCEPTED,
+
+        /** Our old anchor was wrong; the tracker switched to the new, consistent fixes. */
+        REANCHORED,
+
+        /** Physically impossible from the anchor: ignore it (for now). */
+        REJECTED,
+    }
 
     private var anchor: Anchor? = null
     private val candidates = ArrayList<Anchor>()
@@ -52,41 +62,48 @@ class NetworkTracker {
         speed.clear()
     }
 
+    /** Decide whether a network fix at route position [s] (accuracy [acc] m) can be believed. */
     fun gate(elapsedMs: Long, s: Double, acc: Double): GateResult {
-        val t = elapsedMs / 1000.0
-        val a = anchor
-        if (acc > 300.0) {
-            val ok = a != null && reachable(a, t, s, acc)
+        val timeS = elapsedMs / 1000.0
+        val current = anchor
+        val fix = Anchor(timeS, s, acc)
+
+        // Very coarse fixes may confirm the anchor, but never replace it.
+        if (acc > COARSE_ACCURACY_M) {
+            val ok = current != null && reachable(current, fix)
             return if (ok) GateResult.ACCEPTED else GateResult.REJECTED
         }
-        if (a == null) {
-            anchor = Anchor(t, s, acc)
+        if (current == null) {
+            anchor = fix
             return GateResult.ACCEPTED
         }
-        if (candidates.isNotEmpty()) {
-            if (reachable(candidates.last(), t, s, acc)) {
-                candidates += Anchor(t, s, acc)
-                val span = candidates.last().tS - candidates.first().tS
-                if (candidates.size >= 2 && span >= 12.0 && slope(candidates) >= -6.0) {
-                    anchor = Anchor(t, s, acc)
-                    candidates.clear()
-                    return GateResult.REANCHORED
-                }
-                return GateResult.REJECTED
+        // Collecting evidence that the anchor itself was wrong?
+        if (candidates.isNotEmpty() && reachable(candidates.last(), fix)) {
+            candidates += fix
+            val spanS = candidates.last().tS - candidates.first().tS
+            val movesForward = slope(candidates) >= MAX_BACKWARDS_MPS
+            if (candidates.size >= 2 && spanS >= REANCHOR_MIN_SPAN_S && movesForward) {
+                anchor = fix
+                candidates.clear()
+                return GateResult.REANCHORED
             }
+            return GateResult.REJECTED
         }
-        if (reachable(a, t, s, acc)) {
-            anchor = Anchor(t, s, acc)
+        if (reachable(current, fix)) {
+            anchor = fix
             candidates.clear()
             return GateResult.ACCEPTED
         }
+        // Impossible from the anchor: remember it as the first candidate of a possible re-anchor.
         candidates.clear()
-        candidates += Anchor(t, s, acc)
+        candidates += fix
         return GateResult.REJECTED
     }
 
-    private fun reachable(from: Anchor, t: Double, s: Double, acc: Double): Boolean = abs(s - from.s) <= max(0.0, t - from.tS) * MAX_SPEED_MPS + from.acc + acc
+    /** Could a car get from [from] to [to] at 150 km/h, allowing for both fixes' inaccuracy? */
+    private fun reachable(from: Anchor, to: Anchor): Boolean = abs(to.s - from.s) <= max(0.0, to.tS - from.tS) * MAX_SPEED_MPS + from.acc + to.acc
 
+    /** Speed (m/s) of the least-squares line through the points. */
     private fun slope(points: List<Anchor>): Double {
         val tMean = points.sumOf { it.tS } / points.size
         val sMean = points.sumOf { it.s } / points.size
@@ -114,10 +131,18 @@ class NetworkTracker {
     /** True if the last two accepted samples are physically consistent with each other. */
     fun lastTwoConsistent(): Boolean {
         if (recent.size < 2) return false
-        val a = recent[recent.size - 2]
-        val b = recent[recent.size - 1]
-        val dt = (b.elapsedMs - a.elapsedMs) / 1000.0
-        return dt > 0 && abs(b.s - a.s) <= dt * MAX_SPEED_MPS + a.accM + b.accM
+        val older = recent[recent.size - 2]
+        val newer = recent[recent.size - 1]
+        val dtS = (newer.elapsedMs - older.elapsedMs) / 1000.0
+        return dtS > 0 && abs(newer.s - older.s) <= dtS * MAX_SPEED_MPS + older.accM + newer.accM
+    }
+
+    private companion object {
+        const val COARSE_ACCURACY_M = 300.0
+        const val REANCHOR_MIN_SPAN_S = 12.0
+
+        /** Network fixes wobble; a real car does not drive backwards along the route faster than this. */
+        const val MAX_BACKWARDS_MPS = -6.0
     }
 }
 
@@ -127,7 +152,10 @@ class NetworkTracker {
  * until [cooldownUntilMs].
  */
 class DeviationOffer {
+    /** When the countdown ends (-1 = no offer running). */
     var pendingUntilMs = -1L
+
+    /** No new offers before this time. */
     var cooldownUntilMs = 0L
 
     val pending: Boolean get() = pendingUntilMs >= 0

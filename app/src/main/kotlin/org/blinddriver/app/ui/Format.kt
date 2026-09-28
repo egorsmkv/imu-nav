@@ -96,13 +96,16 @@ fun formatDistance(res: Resources, meters: Double): String = when {
     else -> res.getString(R.string.unit_km, (meters / 1000).roundToInt().toDouble()).replace(Regex("[.,]0 "), " ")
 }
 
+/** "25 min" / "1 h 20 min". */
 fun formatDuration(res: Resources, seconds: Double): String {
     val min = (seconds / 60).roundToInt().coerceAtLeast(1)
     return if (min < 60) res.getString(R.string.unit_min, min) else res.getString(R.string.unit_h_min, min / 60, min % 60)
 }
 
+/** "± 30 m". */
 fun formatAccuracy(res: Resources, meters: Double): String = res.getString(R.string.accuracy_pm, formatDistance(res, meters))
 
+/** Localised name of a position source for the status pill. */
 fun sourceLabel(res: Resources, source: PositionSource): String = res.getString(
     when (source) {
         PositionSource.NONE -> R.string.src_none

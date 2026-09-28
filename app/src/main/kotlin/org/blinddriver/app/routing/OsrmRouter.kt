@@ -4,14 +4,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.blinddriver.core.geo.Geo
 import org.blinddriver.core.geo.GeoPoint
+import org.blinddriver.core.net.Http
+import org.blinddriver.core.net.HttpException
 import org.blinddriver.core.route.Route
 import org.blinddriver.core.route.Step
 import org.json.JSONObject
 import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 
+/** Something that computes routes: the offline GraphHopper pack, the online OSRM server, or both ([SmartRouter]). */
 interface Router {
     suspend fun route(from: GeoPoint, to: GeoPoint, via: List<GeoPoint> = emptyList()): Route
 }
@@ -29,22 +31,17 @@ class OsrmRouter(private val baseUrl: String = "https://router.project-osrm.org"
         parse(fetch(url))
     }
 
-    private fun fetch(url: String): String {
-        val conn = URL(url).openConnection() as HttpURLConnection
-        conn.connectTimeout = 15_000
-        conn.readTimeout = 30_000
-        conn.setRequestProperty("User-Agent", "blind-driver-opensource/0.1")
-        try {
-            val code = conn.responseCode
-            val body = (if (code in 200..299) conn.inputStream else conn.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
-            if (code !in 200..299) throw IOException("OSRM HTTP $code: ${body.take(200)}")
-            return body
-        } finally {
-            conn.disconnect()
-        }
+    /** GET [url] with the shared OkHttp client (routes can be long: allow 30 s of silence). */
+    private fun fetch(url: String): String = try {
+        Http.getText(url, http)
+    } catch (e: HttpException) {
+        throw IOException("OSRM ${e.message}", e)
     }
 
+    private val http = Http.client.newBuilder().connectTimeout(15, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build()
+
     companion object {
+        /** Turn an OSRM JSON answer into a [Route] (steps, geometry, speed limits). */
         fun parse(json: String): Route {
             val root = JSONObject(json)
             if (root.optString("code") != "Ok") throw IOException("OSRM: ${root.optString("code")} ${root.optString("message")}")
@@ -110,6 +107,7 @@ class OsrmRouter(private val baseUrl: String = "https://router.project-osrm.org"
             )
         }
 
+        /** Index of the geometry point nearest [p], searching from [from] onwards (maneuvers come in order). */
         private fun nearestIndex(geometry: List<GeoPoint>, p: GeoPoint, from: Int): Int {
             var best = from
             var bestD = Double.MAX_VALUE
@@ -124,6 +122,7 @@ class OsrmRouter(private val baseUrl: String = "https://router.project-osrm.org"
             return best
         }
 
+        /** Decode Google's "encoded polyline" format (OSRM uses 6 decimal places). */
         fun decodePolyline(encoded: String, precision: Int): List<GeoPoint> {
             val factor = Math.pow(10.0, precision.toDouble())
             val out = ArrayList<GeoPoint>()

@@ -12,11 +12,13 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.graphics.toColorInt
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import org.blinddriver.app.MapStartPrefs
 import org.blinddriver.app.cells.TowerLayer
 import org.blinddriver.core.cells.CellTower
 import org.blinddriver.core.geo.GeoPoint
@@ -55,6 +57,7 @@ class MapController {
     var followZoom by mutableStateOf<Double?>(null)
         internal set
 
+    /** Zoom in (positive) or out (negative); while following, the new zoom is kept. */
     fun zoomBy(delta: Double) {
         val m = map ?: return
         val z = (m.cameraPosition.zoom + delta).coerceIn(m.minZoomLevel, m.maxZoomLevel)
@@ -62,6 +65,7 @@ class MapController {
         m.animateCamera(CameraUpdateFactory.zoomTo(z), 250)
     }
 
+    /** Fly the camera to [p] (north up). */
     fun moveTo(p: GeoPoint, zoom: Double? = null) {
         val m = map ?: return
         val z = zoom ?: m.cameraPosition.zoom.coerceAtLeast(14.0)
@@ -98,11 +102,11 @@ fun NavMap(
     /** Glide the camera between positions, or jump (one frame per update instead of a 450 ms animation). */
     animateCamera: Boolean = true,
     /** Where the camera starts before any position is known (Settings → Map start). */
-    initialCenter: GeoPoint = org.blinddriver.app.MapStartPrefs.KYIV,
+    initialCenter: GeoPoint = MapStartPrefs.KYIV,
     initialZoom: Double = 12.0,
 ) {
     val context = LocalContext.current
-    val density = androidx.compose.ui.platform.LocalDensity.current.density
+    val density = LocalDensity.current.density
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val mapView = remember { MapView(context).apply { onCreate(null) } }
     var style by remember { mutableStateOf<Style?>(null) }
@@ -134,6 +138,7 @@ fun NavMap(
             m.uiSettings.isAttributionEnabled = true
             m.uiSettings.isLogoEnabled = false
             m.cameraPosition = CameraPosition.Builder().target(LatLng(initialCenter.lat, initialCenter.lon)).zoom(initialZoom).build()
+            /** Tell the caller which area is visible (the tower layer loads towers for it). */
             fun reportViewport() {
                 val b = m.projection.visibleRegion.latLngBounds
                 viewportChanged(b.latitudeSouth, b.longitudeWest, b.latitudeNorth, b.longitudeEast, m.cameraPosition.zoom)
@@ -195,6 +200,8 @@ fun NavMap(
 
     LaunchedEffect(style, towers) {
         val st = style ?: return@LaunchedEffect
+
+        /** Towers as GeoJSON points, tagged with their radio type for colouring. */
         fun features(list: List<CellTower>) = FeatureCollection.fromFeatures(
             list.map { t -> Feature.fromGeometry(Point.fromLngLat(t.lon, t.lat)).also { it.addStringProperty("radio", t.key.radio.name) } },
         )
@@ -244,6 +251,7 @@ fun NavMap(
     AndroidView(factory = { mapView }, modifier = modifier)
 }
 
+/** Create the map's own layers once (route, position, destination, towers), drawn above the base map. */
 private fun addLayers(s: Style) {
     for (id in listOf("route", "marker", "dest", "towers", "towers-visible")) s.addSource(GeoJsonSource(id))
     s.addLayer(

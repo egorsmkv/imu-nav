@@ -20,6 +20,7 @@ object AppLanguage {
     private const val PREFS = "language"
     private const val KEY = "tag"
 
+    /** The saved choice: [SYSTEM], [UKRAINIAN] or [ENGLISH]. */
     fun get(context: Context): String = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, SYSTEM) ?: SYSTEM
 
     /** The locale in effect for [choice]. */
@@ -29,6 +30,7 @@ object AppLanguage {
         else -> Resources.getSystem().configuration.locales[0]
     }
 
+    /** Is the effective language Ukrainian? */
     fun isUkrainian(context: Context) = locale(get(context)).language == "uk"
 
     /** Context whose resources use the chosen language (for Application/Activity.attachBaseContext). */

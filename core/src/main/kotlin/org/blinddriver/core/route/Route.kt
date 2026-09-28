@@ -22,14 +22,21 @@ data class Step(
     val isDepartOrArrive: Boolean get() = type == "depart" || type == "arrive"
 }
 
+/** Things on the road that make cars slow down or stop. */
 enum class HazardKind { TRAFFIC_SIGNAL, TRAFFIC_CALMING }
 
-/** A point hazard projected onto the route, at arc-length [s]. */
+/** A hazard [s] metres from the start of the route. */
 data class Hazard(val s: Double, val kind: HazardKind)
 
 /**
- * A planned route: polyline, maneuvers, optional per-segment speed limits and traffic signals.
- * [maxspeedKmh] and [segmentSpeedMps] have one entry per segment (geometry.size - 1) or are empty.
+ * A planned route.
+ *
+ * The road is a polyline: a list of points ([geometry]) joined by straight *segments*. Positions
+ * along the route are given as **`s` = metres from the start, measured along the road** (the
+ * "arc length"). The whole navigation engine works in `s`: "the car is at s = 1234 m" is
+ * all it needs to know, because the car cannot leave the road sideways.
+ *
+ * [maxspeedKmh] and [segmentSpeedMps] have one entry per segment (`geometry.size - 1`) or are empty.
  */
 class Route(
     val geometry: List<GeoPoint>,
@@ -41,14 +48,15 @@ class Route(
     /** Optional per-segment modelled travel speed from the router (m/s), used when no limit is known. */
     val segmentSpeedMps: List<Double?> = emptyList(),
 ) {
-    /** Cumulative distance at each vertex, metres. */
+    /** `cumulative[i]` = `s` of point `i`, i.e. the road distance from the start to that point. */
     val cumulative: DoubleArray = DoubleArray(geometry.size).also { cum ->
         for (i in 1 until geometry.size) cum[i] = cum[i - 1] + Geo.distance(geometry[i - 1], geometry[i])
     }
 
-    val length: Double get() = if (cumulative.isEmpty()) 0.0 else cumulative.last()
+    /** Total route length, metres. */
+    val length: Double get() = cumulative.lastOrNull() ?: 0.0
 
-    /** Index of the segment containing arc-length [s] (binary search). */
+    /** Index of the segment that contains position [s] (binary search, fast even for long routes). */
     fun segmentAt(s: Double): Int {
         if (geometry.size < 2 || s <= 0.0) return 0
         if (s >= length) return geometry.size - 2
@@ -61,32 +69,40 @@ class Route(
         return lo
     }
 
+    /** Posted speed limit on [segment] in km/h, or null if unknown. */
     fun maxspeedAtSegment(segment: Int): Int? = maxspeedKmh.getOrNull(segment)?.takeIf { it > 0 }
 
+    /** The router's modelled travel speed on [segment] in m/s, or null if unknown. */
     fun modelledSpeedAtSegment(segment: Int): Double? = segmentSpeedMps.getOrNull(segment)?.takeIf { it > 0.5 }
 
-    /** Arc-length of step [i]'s maneuver point. */
+    /** Position `s` of step [i]'s maneuver (where the driver turns). */
     fun stepS(i: Int): Double = cumulative[steps[i].geometryIndex.coerceIn(0, geometry.size - 1)]
 
+    /** The map point and road direction at position [s]. */
     fun pointAt(s: Double): RoutePoint {
         if (geometry.size < 2) return RoutePoint(geometry.firstOrNull() ?: GeoPoint(0.0, 0.0), 0.0, 0)
-        val seg = segmentAt(s)
-        val a = geometry[seg]
-        val b = geometry[seg + 1]
-        val len = cumulative[seg + 1] - cumulative[seg]
-        val f = if (len >= 1e-3) ((s - cumulative[seg]) / len).coerceIn(0.0, 1.0) else 0.0
-        val p = GeoPoint(a.lat + (b.lat - a.lat) * f, a.lon + (b.lon - a.lon) * f)
-        return RoutePoint(p, Geo.bearing(a, b), seg)
+        val segment = segmentAt(s)
+        val start = geometry[segment]
+        val end = geometry[segment + 1]
+        val segmentLength = cumulative[segment + 1] - cumulative[segment]
+        // How far along this segment we are: 0 = at its start, 1 = at its end.
+        val fraction = if (segmentLength >= 1e-3) ((s - cumulative[segment]) / segmentLength).coerceIn(0.0, 1.0) else 0.0
+        val point = GeoPoint(start.lat + (end.lat - start.lat) * fraction, start.lon + (end.lon - start.lon) * fraction)
+        return RoutePoint(point, Geo.bearing(start, end), segment)
     }
 
+    /** Road direction (compass bearing) at position [s]. */
     fun bearingAt(s: Double): Double = pointAt(s.coerceIn(0.0, length)).bearingDeg
 
     /** Signed heading change of the road across [s] ± 25 m (deg, + = right). */
     fun turnAngleAt(s: Double): Double = Geo.angleDiff(bearingAt(maxOf(0.0, s - 25.0)), bearingAt(minOf(length, s + 25.0)))
 
     /**
-     * Project [p] onto the route. Searches [behindM] before and [aheadM] after [aroundS]; if the
-     * local match is farther than [globalIfFartherM], also searches the whole route.
+     * Find the point of the route closest to [p] ("project" it onto the route).
+     *
+     * Searching the whole route every time would be slow and could jump to a far part of the
+     * route that happens to pass nearby, so only [behindM] before and [aheadM] after [aroundS]
+     * are searched. Only if that best match is farther than [globalIfFartherM] is the whole route searched.
      */
     fun project(p: GeoPoint, aroundS: Double, behindM: Double, aheadM: Double, globalIfFartherM: Double): Projection {
         if (geometry.size < 2) {
@@ -101,22 +117,25 @@ class Route(
         return local
     }
 
+    /** Closest point to [p] on segments [from]..[to]. */
     private fun projectRange(p: GeoPoint, from: Int, to: Int): Projection {
-        val proj = LocalProjection(p)
+        // Work in flat metres with p at the origin (0, 0): the maths becomes simple 2-D vectors.
+        val flat = LocalProjection(p)
         var best = Projection(0.0, Double.MAX_VALUE, from, geometry[from])
         for (i in from..minOf(to, geometry.size - 2)) {
-            val ax = proj.x(geometry[i])
-            val ay = proj.y(geometry[i])
-            val dx = proj.x(geometry[i + 1]) - ax
-            val dy = proj.y(geometry[i + 1]) - ay
-            val len2 = dx * dx + dy * dy
-            val f = if (len2 < 1e-6) 0.0 else ((-ax * dx - ay * dy) / len2).coerceIn(0.0, 1.0)
-            val cx = ax + dx * f
-            val cy = ay + dy * f
-            val d = sqrt(cx * cx + cy * cy)
-            if (d < best.offsetM) {
-                val s = cumulative[i] + f * (cumulative[i + 1] - cumulative[i])
-                best = Projection(s, d, i, proj.toGeo(cx, cy))
+            val startX = flat.x(geometry[i])
+            val startY = flat.y(geometry[i])
+            val dirX = flat.x(geometry[i + 1]) - startX
+            val dirY = flat.y(geometry[i + 1]) - startY
+            val lengthSquared = dirX * dirX + dirY * dirY
+            // Closest point on the (infinite) line, as a fraction of the segment, clamped to the segment.
+            val fraction = if (lengthSquared < 1e-6) 0.0 else ((-startX * dirX - startY * dirY) / lengthSquared).coerceIn(0.0, 1.0)
+            val closestX = startX + dirX * fraction
+            val closestY = startY + dirY * fraction
+            val distance = sqrt(closestX * closestX + closestY * closestY)
+            if (distance < best.offsetM) {
+                val s = cumulative[i] + fraction * (cumulative[i + 1] - cumulative[i])
+                best = Projection(s, distance, i, flat.toGeo(closestX, closestY))
             }
         }
         return best
@@ -124,19 +143,27 @@ class Route(
 
     /** Project traffic signals (and optional extra calming points) onto the route, sorted by s. */
     fun hazards(calming: List<GeoPoint> = emptyList(), maxOffsetM: Double = 30.0): List<Hazard> {
-        fun toHazards(points: List<GeoPoint>, kind: HazardKind) = points.mapNotNull {
-            val pr = project(it, 0.0, 0.0, length, 0.0)
-            if (pr.offsetM <= maxOffsetM) Hazard(pr.s, kind) else null
+        fun toHazards(points: List<GeoPoint>, kind: HazardKind) = points.mapNotNull { point ->
+            val projection = project(point, aroundS = 0.0, behindM = 0.0, aheadM = length, globalIfFartherM = 0.0)
+            if (projection.offsetM <= maxOffsetM) Hazard(projection.s, kind) else null
         }
         return (toHazards(signals, HazardKind.TRAFFIC_SIGNAL) + toHazards(calming, HazardKind.TRAFFIC_CALMING)).sortedBy { it.s }
     }
 }
 
+/** A point on the route with the road's direction there. */
 data class RoutePoint(val point: GeoPoint, val bearingDeg: Double, val segment: Int)
 
+/**
+ * Result of [Route.project]: the closest route position [s], how far the original point was from
+ * the road ([offsetM], metres), and the closest [point] itself.
+ */
 data class Projection(val s: Double, val offsetM: Double, val segment: Int, val point: GeoPoint)
 
-/** The whole dead-reckoning state: distance travelled along the route. */
+/**
+ * The car's position on the route — the entire dead-reckoning state is this one number [s].
+ * [moveTo] keeps it within the route.
+ */
 class RouteCursor(val route: Route) {
     var s: Double = 0.0
         private set

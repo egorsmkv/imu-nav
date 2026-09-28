@@ -1,6 +1,7 @@
 package org.blinddriver.routing
 
 import org.blinddriver.core.geo.GeoPoint
+import org.blinddriver.core.search.AddressSearch
 import org.junit.Assume.assumeTrue
 import java.io.File
 import kotlin.test.Test
@@ -53,7 +54,7 @@ class PackSmokeTest {
                 "вул. Велика Васильківська 100" to kyiv,
             )) {
                 val t = System.nanoTime()
-                val r = org.blinddriver.core.search.AddressSearch.search(db, q, near, limit = 3)
+                val r = AddressSearch.search(db, q, near, limit = 3)
                 val ms = (System.nanoTime() - t) / 1_000_000
                 println("'$q' ($ms ms): " + r.joinToString(" | ") { "${it.kind} ${it.title} [${it.subtitle}] ${it.distanceM?.let { d -> (d / 1000).toInt() }}km" })
                 assertTrue(r.isNotEmpty(), "no results for $q")

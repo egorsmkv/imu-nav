@@ -22,6 +22,7 @@ usage: replay <trip.rec.gz|dir> [options]
   --out DIR                write summary.txt, errors-*.csv and compare-*.geojson per run
 """
 
+/** Command-line entry point; see [USAGE] or run with `--help`. */
 fun main(args: Array<String>) {
     if (args.isEmpty() || args[0] in setOf("-h", "--help")) {
         println(USAGE.trimIndent())
@@ -61,6 +62,7 @@ fun main(args: Array<String>) {
     }
 }
 
+/** Apply `--set key=value,…` to [base] (keys are [Tuning.SPECS] keys). */
 private fun applyOverrides(base: Tuning, spec: String?): Tuning {
     if (spec.isNullOrBlank()) return base
     var t = base
@@ -72,6 +74,7 @@ private fun applyOverrides(base: Tuning, spec: String?): Tuning {
     return t.sanitized()
 }
 
+/** Per-sample errors as CSV, for spreadsheets / plotting. */
 private fun errorsCsv(r: ReplayResult): String = buildString {
     appendLine("t_s,engine_lat,engine_lon,truth_lat,truth_lon,along_error_m,error_m,truth_off_route_m,uncertainty_m,source,blind")
     val t0 = r.samples.firstOrNull()?.elapsedMs ?: 0
@@ -88,6 +91,7 @@ private fun errorsCsv(r: ReplayResult): String = buildString {
 
 /** Real (GPS) track in green, engine track in red — open in geojson.io or QGIS. */
 private fun geoJson(r: ReplayResult): String {
+    /** One GeoJSON LineString feature. */
     fun line(points: List<GeoPoint>, name: String, color: String) =
         """{"type":"Feature","properties":{"name":"$name","stroke":"$color","stroke-width":3},"geometry":{"type":"LineString","coordinates":[""" +
             points.joinToString(",") { String.format(Locale.US, "[%.6f,%.6f]", it.lon, it.lat) } + "]}}"

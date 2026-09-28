@@ -85,17 +85,19 @@ import org.maplibre.android.style.sources.GeoJsonSource
 import org.maplibre.geojson.Feature
 import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
+import java.util.Date
 import android.graphics.Color as AColor
 
 private val GpsGreen = Color(0xFF1E8E3E)
 private val EngineRed = Color(0xFFD93025)
 private val MatchedBlue = Color(0xFF1A73E8)
 
+/** List of saved trips with totals at the top. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HistoryScreen(g: AppGraph, onBack: () -> Unit, onOpen: (TripSummary) -> Unit) {
+fun HistoryScreen(app: AppGraph, onBack: () -> Unit, onOpen: (TripSummary) -> Unit) {
     val res = LocalResources.current
-    val trips by g.trips.history.collectAsStateWithLifecycle()
+    val trips by app.trips.history.collectAsStateWithLifecycle()
     Scaffold(
         topBar = {
             TopAppBar(
@@ -112,7 +114,7 @@ fun HistoryScreen(g: AppGraph, onBack: () -> Unit, onOpen: (TripSummary) -> Unit
         }
         LazyColumn(Modifier.fillMaxSize().padding(padding)) {
             item {
-                val t = g.trips.totals()
+                val t = app.trips.totals()
                 Card(Modifier.fillMaxWidth().padding(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
                     Column(Modifier.padding(20.dp)) {
                         Text(formatDistance(res, t.drivenM), style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
@@ -135,12 +137,13 @@ fun HistoryScreen(g: AppGraph, onBack: () -> Unit, onOpen: (TripSummary) -> Unit
     }
 }
 
+/** One trip in the history list: date, distance, duration and time without GPS. */
 @Composable
 private fun TripRow(t: TripSummary, onClick: () -> Unit) {
     val context = LocalContext.current
     val res = LocalResources.current
-    val date = DateFormat.getMediumDateFormat(context).format(java.util.Date(t.startWallMs)) + " " +
-        DateFormat.getTimeFormat(context).format(java.util.Date(t.startWallMs))
+    val date = DateFormat.getMediumDateFormat(context).format(Date(t.startWallMs)) + " " +
+        DateFormat.getTimeFormat(context).format(Date(t.startWallMs))
     val blindPct = if (t.durationS > 0) (t.blindS / t.durationS * 100).toInt().coerceIn(0, 100) else 0
     ListItem(
         headlineContent = { Text(date) },
@@ -156,9 +159,10 @@ private fun TripRow(t: TripSummary, onClick: () -> Unit) {
     )
 }
 
+/** One trip: map with the GPS track and the engine's estimate, statistics, "Snap to roads" and delete. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TripDetailScreen(g: AppGraph, trip: TripSummary, onBack: () -> Unit) {
+fun TripDetailScreen(app: AppGraph, trip: TripSummary, onBack: () -> Unit) {
     val context = LocalContext.current
     val res = LocalResources.current
     val scope = rememberCoroutineScope()
@@ -171,7 +175,7 @@ fun TripDetailScreen(g: AppGraph, trip: TripSummary, onBack: () -> Unit) {
 
     LaunchedEffect(trip.id) {
         tracks = withContext(Dispatchers.IO) {
-            runCatching { extractTracks(g.trips.recordingFile(trip), ServiceArea.UKRAINE_COARSE) }.getOrNull() ?: TripTracks(emptyList(), emptyList(), 0)
+            runCatching { extractTracks(app.trips.recordingFile(trip), ServiceArea.UKRAINE_COARSE) }.getOrNull() ?: TripTracks(emptyList(), emptyList(), 0)
         }
     }
 
@@ -180,8 +184,8 @@ fun TripDetailScreen(g: AppGraph, trip: TripSummary, onBack: () -> Unit) {
             TopAppBar(
                 title = {
                     Text(
-                        DateFormat.getMediumDateFormat(context).format(java.util.Date(trip.startWallMs)) + " " +
-                            DateFormat.getTimeFormat(context).format(java.util.Date(trip.startWallMs)),
+                        DateFormat.getMediumDateFormat(context).format(Date(trip.startWallMs)) + " " +
+                            DateFormat.getTimeFormat(context).format(Date(trip.startWallMs)),
                     )
                 },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.cd_back)) } },
@@ -235,7 +239,7 @@ fun TripDetailScreen(g: AppGraph, trip: TripSummary, onBack: () -> Unit) {
                         matching = true
                         note = null
                         scope.launch {
-                            val result = runCatching { g.offlineRouting.mapMatch(gps) }
+                            val result = runCatching { app.offlineRouting.mapMatch(gps) }
                             matching = false
                             result.onSuccess { m ->
                                 if (m == null) {
@@ -243,7 +247,7 @@ fun TripDetailScreen(g: AppGraph, trip: TripSummary, onBack: () -> Unit) {
                                 } else {
                                     matched = m.geometry
                                     matchedLength = m.lengthM
-                                    g.trips.setMatchedLength(trip, m.lengthM)
+                                    app.trips.setMatchedLength(trip, m.lengthM)
                                 }
                             }.onFailure { note = res.getString(R.string.task_failed, it.message ?: it.javaClass.simpleName) }
                         }
@@ -261,7 +265,7 @@ fun TripDetailScreen(g: AppGraph, trip: TripSummary, onBack: () -> Unit) {
             confirmButton = {
                 TextButton(onClick = {
                     confirmDelete = false
-                    g.trips.delete(trip)
+                    app.trips.delete(trip)
                     onBack()
                 }) {
                     Text(stringResource(R.string.action_delete), color = MaterialTheme.colorScheme.error)
@@ -272,6 +276,7 @@ fun TripDetailScreen(g: AppGraph, trip: TripSummary, onBack: () -> Unit) {
     }
 }
 
+/** A "label ……… value" statistics row. */
 @Composable
 private fun Stat(label: String, value: String) {
     ListItem(
@@ -280,6 +285,7 @@ private fun Stat(label: String, value: String) {
     )
 }
 
+/** A coloured line sample with a label, for the map legend. */
 @Composable
 private fun LegendDot(color: Color, label: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -344,6 +350,8 @@ private fun TrackMap(gps: List<GeoPoint>, engine: List<GeoPoint>, matched: List<
 
     LaunchedEffect(style, gps, engine, matched) {
         val s = style ?: return@LaunchedEffect
+
+        /** Replace the line drawn for source [id]. */
         fun set(id: String, pts: List<GeoPoint>) {
             val src = s.getSourceAs<GeoJsonSource>(id) ?: return
             if (pts.size < 2) {

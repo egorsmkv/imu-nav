@@ -14,6 +14,7 @@ import org.blinddriver.core.route.Route
 import org.blinddriver.core.route.Step
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.File
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -92,7 +93,7 @@ class ReplayTest {
 
     @Test
     fun truncatedRecordingIsSalvaged() {
-        val f = java.io.File.createTempFile("trip", ".rec.gz")
+        val f = File.createTempFile("trip", ".rec.gz")
         val rec = TripRecorder(f.outputStream(), flushEveryMs = 0)
         for (i in 0 until 500) rec.record(TripEvent.Agc(i * 10L, -5f))
         // Simulate a kill: no close(), and cut the file mid-stream.

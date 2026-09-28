@@ -1,6 +1,9 @@
 package org.blinddriver.app.ui
 
+import android.content.Context
 import android.content.Intent
+import android.os.PowerManager
+import android.os.SystemClock
 import android.provider.Settings
 import android.text.format.DateFormat
 import androidx.compose.foundation.BorderStroke
@@ -11,6 +14,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -84,6 +88,7 @@ import androidx.core.content.edit
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.blinddriver.app.AppGraph
+import org.blinddriver.app.MapStartMode
 import org.blinddriver.app.R
 import org.blinddriver.app.UiState
 import org.blinddriver.app.cells.TowerLayer
@@ -94,29 +99,37 @@ import org.blinddriver.core.gnss.GpsState
 import org.blinddriver.core.gnss.TrustLevel
 import org.blinddriver.core.nav.GuidanceState
 import org.blinddriver.core.nav.PositionSource
+import java.util.Date
 
 private val GoodGreen = Color(0xFF1E8E3E)
 private val WarnAmber = Color(0xFFE37400)
 private val BadRed = Color(0xFFD93025)
 private val InfoBlue = Color(0xFF1A73E8)
 
+/**
+ * The main screen: full-screen map with the search pill and status on top, map buttons on the
+ * right, and either the "Where to?" panel or the navigation panel at the bottom.
+ *
+ * @param ui everything to show (re-drawn whenever it changes)
+ * @param app for actions (start navigation, search, settings…)
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MapScreen(ui: UiState, g: AppGraph, hasLocation: Boolean, onRequestPermission: () -> Unit, onOpenSettings: () -> Unit, onOpenLog: () -> Unit, onOpenHistory: () -> Unit) {
+fun MapScreen(ui: UiState, app: AppGraph, hasLocation: Boolean, onRequestPermission: () -> Unit, onOpenSettings: () -> Unit, onOpenLog: () -> Unit, onOpenHistory: () -> Unit) {
     val context = LocalContext.current
     val res = LocalResources.current
     val nav = ui.guidance
     val controller = remember { MapController() }
-    val towerLayer by g.cells.towerLayer.collectAsStateWithLifecycle()
-    val power by g.powerProfile.collectAsStateWithLifecycle()
-    val routing by g.offlineRouting.status.collectAsStateWithLifecycle()
+    val towerLayer by app.cells.towerLayer.collectAsStateWithLifecycle()
+    val power by app.powerProfile.collectAsStateWithLifecycle()
+    val routing by app.offlineRouting.status.collectAsStateWithLifecycle()
     var mapCenter by remember { mutableStateOf<GeoPoint?>(null) }
     var following by remember { mutableStateOf(true) }
     var showDiagnostics by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
     // Opening view: the last known GPS / trusted position, or the fixed place from Settings.
-    val startView = remember { g.mapStart.initialView() }
-    val startMode by g.mapStartMode.collectAsStateWithLifecycle()
+    val startView = remember { app.mapStart.initialView() }
+    val startMode by app.mapStartMode.collectAsStateWithLifecycle()
     var centeredOnce by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     var topInsetPx by remember { mutableStateOf(0) }
@@ -135,7 +148,7 @@ fun MapScreen(ui: UiState, g: AppGraph, hasLocation: Boolean, onRequestPermissio
     // Fixed mode keeps the chosen place; the re-centre button still goes to the position.
     LaunchedEffect(ui.currentPosition != null) {
         val p = ui.currentPosition
-        if (!centeredOnce && p != null && !nav.active && startMode == org.blinddriver.app.MapStartMode.GPS) {
+        if (!centeredOnce && p != null && !nav.active && startMode == MapStartMode.GPS) {
             centeredOnce = true
             controller.moveTo(p, 14.0)
         }
@@ -143,7 +156,7 @@ fun MapScreen(ui: UiState, g: AppGraph, hasLocation: Boolean, onRequestPermissio
     LaunchedEffect(ui.error) {
         ui.error?.let {
             snackbar.showSnackbar(it)
-            g.clearError()
+            app.clearError()
         }
     }
     LaunchedEffect(ui.cells.message) {
@@ -163,12 +176,12 @@ fun MapScreen(ui: UiState, g: AppGraph, hasLocation: Boolean, onRequestPermissio
                 destination = ui.destination ?: nav.destination,
                 following = nav.active && following,
                 towers = if (ui.cells.showTowers) towerLayer else null,
-                onLongPress = { if (!nav.active) g.setDestination(it) },
+                onLongPress = { if (!nav.active) app.setDestination(it) },
                 onCenterChanged = {
                     mapCenter = it
-                    g.lastMapCenter = it
+                    app.lastMapCenter = it
                 },
-                onViewport = { s, w, n, e, z -> g.cells.onViewport(s, w, n, e, z) },
+                onViewport = { s, w, n, e, z -> app.cells.onViewport(s, w, n, e, z) },
                 onUserPan = { if (nav.active) following = false },
                 modifier = Modifier.fillMaxSize(),
                 insetTopPx = topInsetPx,
@@ -229,7 +242,7 @@ fun MapScreen(ui: UiState, g: AppGraph, hasLocation: Boolean, onRequestPermissio
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             MapButton(Icons.Filled.CellTower, stringResource(R.string.cd_towers), selected = ui.cells.showTowers) {
-                g.cells.setShowTowers(!ui.cells.showTowers)
+                app.cells.setShowTowers(!ui.cells.showTowers)
             }
             MapButton(Icons.Filled.Add, stringResource(R.string.cd_zoom_in)) { controller.zoomBy(1.0) }
             MapButton(Icons.Filled.Remove, stringResource(R.string.cd_zoom_out)) { controller.zoomBy(-1.0) }
@@ -251,21 +264,21 @@ fun MapScreen(ui: UiState, g: AppGraph, hasLocation: Boolean, onRequestPermissio
             SnackbarHost(snackbar)
             if (nav.active) {
                 NavigationPanel(nav, onStop = {
-                    g.stopNavigation()
+                    app.stopNavigation()
                     NavService.stop(context)
-                }, onReroute = { g.engine.requestManualReroute() })
+                }, onReroute = { app.engine.requestManualReroute() })
             } else {
                 IdlePanel(
                     ui = ui,
                     routingBusy = routing.busy,
                     pickStart = pickStart,
                     canStart = hasLocation && ui.destination != null && !ui.planning && (ui.hasTrustedPosition || ui.manualStart != null),
-                    onSetStart = { mapCenter?.let { g.setManualStart(it) } },
+                    onSetStart = { mapCenter?.let { app.setManualStart(it) } },
                     onStart = {
                         requestBatteryExemptionOnce(context)
-                        g.startNavigation { NavService.start(context) }
+                        app.startNavigation { NavService.start(context) }
                     },
-                    onClearDestination = { g.setDestination(null) },
+                    onClearDestination = { app.setDestination(null) },
                 )
             }
         }
@@ -277,18 +290,18 @@ fun MapScreen(ui: UiState, g: AppGraph, hasLocation: Boolean, onRequestPermissio
             icon = { Icon(Icons.Filled.AltRoute, null) },
             title = { Text(stringResource(R.string.deviation_title)) },
             text = { Text(stringResource(R.string.deviation_text, nav.blindDeviationSecLeft)) },
-            confirmButton = { TextButton(onClick = { g.engine.confirmDeviation(android.os.SystemClock.elapsedRealtime()) }) { Text(stringResource(R.string.action_reroute_now)) } },
-            dismissButton = { TextButton(onClick = { g.engine.dismissDeviation(android.os.SystemClock.elapsedRealtime()) }) { Text(stringResource(R.string.action_on_route)) } },
+            confirmButton = { TextButton(onClick = { app.engine.confirmDeviation(SystemClock.elapsedRealtime()) }) { Text(stringResource(R.string.action_reroute_now)) } },
+            dismissButton = { TextButton(onClick = { app.engine.dismissDeviation(SystemClock.elapsedRealtime()) }) { Text(stringResource(R.string.action_on_route)) } },
         )
     }
 
     if (showSearch) {
         SearchScreen(
-            search = g.search,
+            search = app.search,
             near = ui.currentPosition ?: mapCenter,
             onPick = { r ->
-                g.search.remember(r)
-                g.setDestination(r.point)
+                app.search.remember(r)
+                app.setDestination(r.point)
                 controller.moveTo(r.point, 16.0)
                 showSearch = false
             },
@@ -298,7 +311,7 @@ fun MapScreen(ui: UiState, g: AppGraph, hasLocation: Boolean, onRequestPermissio
 
     if (showDiagnostics) {
         ModalBottomSheet(onDismissRequest = { showDiagnostics = false }) {
-            DiagnosticsContent(ui, g, onOpenLog = {
+            DiagnosticsContent(ui, app, onOpenLog = {
                 showDiagnostics = false
                 onOpenLog()
             })
@@ -310,8 +323,8 @@ fun MapScreen(ui: UiState, g: AppGraph, hasLocation: Boolean, onRequestPermissio
  * Ask once (at the first trip) to exempt the app from battery optimization, so Android does not
  * stop navigation in the background. Later changes are possible from Settings.
  */
-private fun requestBatteryExemptionOnce(context: android.content.Context) {
-    val prefs = context.getSharedPreferences("ui", android.content.Context.MODE_PRIVATE)
+private fun requestBatteryExemptionOnce(context: Context) {
+    val prefs = context.getSharedPreferences("ui", Context.MODE_PRIVATE)
     if (prefs.getBoolean("battery_asked", false)) return
     prefs.edit { putBoolean("battery_asked", true) }
     if (isBatteryUnrestricted(context)) return
@@ -322,11 +335,12 @@ private fun requestBatteryExemptionOnce(context: android.content.Context) {
     }
 }
 
-fun isBatteryUnrestricted(context: android.content.Context): Boolean =
-    context.getSystemService(android.os.PowerManager::class.java).isIgnoringBatteryOptimizations(context.packageName)
+/** Is the app exempt from battery optimisation? */
+fun isBatteryUnrestricted(context: Context): Boolean = context.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(context.packageName)
 
 // ------------------------------------------------------------------ top
 
+/** Big banner at the top during navigation: maneuver icon, distance and street. */
 @Composable
 private fun ManeuverBanner(nav: GuidanceState) {
     val res = LocalResources.current
@@ -356,6 +370,7 @@ private fun ManeuverBanner(nav: GuidanceState) {
     }
 }
 
+/** A card explaining a problem (e.g. Location is off) with one action button. */
 @Composable
 private fun WarningBanner(icon: ImageVector, title: String, text: String, action: String, onAction: () -> Unit) {
     Surface(
@@ -417,6 +432,7 @@ private fun StatusPill(ui: UiState, onClick: () -> Unit) {
 
 // ------------------------------------------------------------------ map controls
 
+/** Round button on the map's right edge (zoom, re-centre, towers). */
 @Composable
 private fun MapButton(icon: ImageVector, description: String, selected: Boolean = false, onClick: () -> Unit) {
     SmallFloatingActionButton(
@@ -427,6 +443,7 @@ private fun MapButton(icon: ImageVector, description: String, selected: Boolean 
     ) { Icon(icon, contentDescription = null) }
 }
 
+/** The "+" in the middle of the map, used to place the start by hand. */
 @Composable
 private fun Crosshair(modifier: Modifier) {
     Box(modifier.size(44.dp).border(2.dp, MaterialTheme.colorScheme.primary, CircleShape), contentAlignment = Alignment.Center) {
@@ -434,6 +451,7 @@ private fun Crosshair(modifier: Modifier) {
     }
 }
 
+/** Legend for the cell-tower layer (colours per radio type and how many are drawn). */
 @Composable
 private fun TowerLegend(layer: TowerLayer, radios: Set<Radio>) {
     Surface(
@@ -471,6 +489,7 @@ private fun TowerLegend(layer: TowerLayer, radios: Set<Radio>) {
 
 // ------------------------------------------------------------------ bottom panels
 
+/** The rounded card at the bottom of the map that the panels live in. */
 @Composable
 private fun PanelSurface(content: @Composable () -> Unit) {
     Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surface, shadowElevation = 8.dp, tonalElevation = 2.dp) {
@@ -478,6 +497,7 @@ private fun PanelSurface(content: @Composable () -> Unit) {
     }
 }
 
+/** Bottom panel before navigation: position status, hints and the Start / Start here buttons. */
 @Composable
 private fun IdlePanel(ui: UiState, routingBusy: String?, pickStart: Boolean, canStart: Boolean, onSetStart: () -> Unit, onStart: () -> Unit, onClearDestination: () -> Unit) {
     val res = LocalResources.current
@@ -529,6 +549,7 @@ private fun IdlePanel(ui: UiState, routingBusy: String?, pickStart: Boolean, can
     }
 }
 
+/** One line of text with a small leading icon. */
 @Composable
 private fun IconLine(icon: ImageVector, text: String) {
     Row(Modifier.padding(vertical = 3.dp), verticalAlignment = Alignment.Top) {
@@ -538,6 +559,7 @@ private fun IconLine(icon: ImageVector, text: String) {
     }
 }
 
+/** Bottom panel during navigation: time and distance left, speed, Reroute and Stop. */
 @Composable
 private fun NavigationPanel(nav: GuidanceState, onStop: () -> Unit, onReroute: () -> Unit) {
     val context = LocalContext.current
@@ -558,7 +580,7 @@ private fun NavigationPanel(nav: GuidanceState, onStop: () -> Unit, onReroute: (
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
                 )
-                val arrival = DateFormat.getTimeFormat(context).format(java.util.Date(System.currentTimeMillis() + (nav.remainingS * 1000).toLong()))
+                val arrival = DateFormat.getTimeFormat(context).format(Date(System.currentTimeMillis() + (nav.remainingS * 1000).toLong()))
                 Text(
                     formatDistance(res, nav.remainingM) + " · " + stringResource(R.string.nav_arrival_at, arrival),
                     style = MaterialTheme.typography.bodyMedium,
@@ -573,7 +595,7 @@ private fun NavigationPanel(nav: GuidanceState, onStop: () -> Unit, onReroute: (
             OutlinedButton(
                 onClick = onReroute,
                 enabled = !nav.rerouting,
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp),
                 modifier = Modifier.weight(1f),
             ) {
                 Text(stringResource(R.string.action_reroute), maxLines = 1, softWrap = false)
@@ -591,6 +613,7 @@ private fun NavigationPanel(nav: GuidanceState, onStop: () -> Unit, onReroute: (
     }
 }
 
+/** Current speed, plus a round speed-limit sign (red ring, like the road sign) when the limit is known. */
 @Composable
 private fun SpeedBadge(speedKmh: Int, limitKmh: Int?) {
     val res = LocalResources.current
@@ -617,8 +640,9 @@ private fun SpeedBadge(speedKmh: Int, limitKmh: Int?) {
 
 // ------------------------------------------------------------------ diagnostics sheet
 
+/** Contents of the diagnostics sheet: GPS verdict, satellites, jamming, cells, debug switches. */
 @Composable
-private fun DiagnosticsContent(ui: UiState, g: AppGraph, onOpenLog: () -> Unit) {
+private fun DiagnosticsContent(ui: UiState, app: AppGraph, onOpenLog: () -> Unit) {
     val res = LocalResources.current
     val nav = ui.guidance
     val none = stringResource(R.string.none)
@@ -648,9 +672,8 @@ private fun DiagnosticsContent(ui: UiState, g: AppGraph, onOpenLog: () -> Unit) 
                 null -> null
             },
         )
-        if (!verdict?.reasons.isNullOrEmpty()) {
-            DiagRow(stringResource(R.string.diag_reasons), verdict!!.reasons.joinToString(", "), mono = true)
-        }
+        val reasons = verdict?.reasons.orEmpty()
+        if (reasons.isNotEmpty()) DiagRow(stringResource(R.string.diag_reasons), reasons.joinToString(", "), mono = true)
         val gn = ui.gnss
         DiagRow(stringResource(R.string.diag_satellites), "${gn.satellitesUsed} / ${gn.satellitesVisible}")
         DiagRow(stringResource(R.string.diag_signal), gn.meanCn0Used?.let { "%.0f ± %.1f dB-Hz".format(it, gn.cn0SpreadUsed ?: 0f) } ?: none)
@@ -666,12 +689,13 @@ private fun DiagnosticsContent(ui: UiState, g: AppGraph, onOpenLog: () -> Unit) 
                 Text(stringResource(R.string.simulate_gps_loss), style = MaterialTheme.typography.bodyLarge)
                 Text(stringResource(R.string.simulate_gps_loss_summary), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Switch(checked = ui.simulateGpsLoss, onCheckedChange = { g.setSimulateGpsLoss(it) })
+            Switch(checked = ui.simulateGpsLoss, onCheckedChange = { app.setSimulateGpsLoss(it) })
         }
         TextButton(onClick = onOpenLog) { Text(stringResource(R.string.diag_open_log)) }
     }
 }
 
+/** One "label: value" row in the diagnostics sheet. */
 @Composable
 private fun DiagRow(label: String, value: String, valueColor: Color? = null, mono: Boolean = false) {
     Row {

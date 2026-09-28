@@ -107,11 +107,11 @@ class TrustClassifier(private val config: TrustConfig = TrustConfig(), private v
         val speed = fix.speedMps
         if (prevRaw != null && (fix.elapsedMs <= prevRaw.elapsedMs || fix.timeMs <= prevRaw.timeMs)) r.hard += "dup_time"
         val frozen = prevRaw != null && fix.lat == prevRaw.lat && fix.lon == prevRaw.lon && speed != null && speed > c.frozenMinSpeedMps
-        if (!frozen) {
+        if (prevRaw == null || !frozen) {
             frozenSinceMs = -1L
             return
         }
-        if (frozenSinceMs < 0) frozenSinceMs = prevRaw!!.elapsedMs
+        if (frozenSinceMs < 0) frozenSinceMs = prevRaw.elapsedMs
         val frozenS = (fix.elapsedMs - frozenSinceMs) / 1000
         if (frozenS >= c.frozenBadS) {
             r.hard += "frozen=${frozenS}s"

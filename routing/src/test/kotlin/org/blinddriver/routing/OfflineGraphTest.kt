@@ -4,7 +4,10 @@ import com.graphhopper.GHRequest
 import com.graphhopper.GraphHopper
 import com.graphhopper.util.shapes.GHPoint
 import org.blinddriver.core.geo.GeoPoint
+import org.blinddriver.core.search.AddressSearch
+import org.blinddriver.core.search.ResultKind
 import java.io.File
+import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -89,19 +92,19 @@ class OfflineGraphTest {
             // Offline search index built next to the graph.
             JdbcSearchDb(File(dir, SearchIndexBuilder.FILE)).use { db ->
                 val near = GeoPoint(50.455, 30.505)
-                val town = org.blinddriver.core.search.AddressSearch.search(db, "тесто", near)
+                val town = AddressSearch.search(db, "тесто", near)
                 assertEquals("Тестове", town.first().title, "prefix match on a settlement: $town")
-                assertEquals("Тестове", org.blinddriver.core.search.AddressSearch.search(db, "Testove", near).first().title, "English name")
-                val street = org.blinddriver.core.search.AddressSearch.search(db, "вул. Eastway", near)
+                assertEquals("Тестове", AddressSearch.search(db, "Testove", near).first().title, "English name")
+                val street = AddressSearch.search(db, "вул. Eastway", near)
                 assertEquals("Eastway", street.first().title, "street-type word ignored: $street")
                 assertEquals("Тестове", street.first().subtitle, "street attached to its settlement")
-                val house = org.blinddriver.core.search.AddressSearch.search(db, "Eastway 5а", near)
-                assertEquals(org.blinddriver.core.search.ResultKind.ADDRESS, house.first().kind, "house number found: $house")
+                val house = AddressSearch.search(db, "Eastway 5а", near)
+                assertEquals(ResultKind.ADDRESS, house.first().kind, "house number found: $house")
                 assertEquals(50.4612, house.first().point.lat, 1e-6)
-                val combo = org.blinddriver.core.search.AddressSearch.search(db, "Тестове Northway 12", near)
+                val combo = AddressSearch.search(db, "Тестове Northway 12", near)
                 assertEquals("Northway, 12", combo.first().title, "settlement + street + number: $combo")
             }
-            assertTrue(matched.geometry.all { kotlin.math.abs(it.lon - 30.500) < 1e-4 || kotlin.math.abs(it.lat - 50.461) < 1e-4 }, "matched points lie on the roads")
+            assertTrue(matched.geometry.all { abs(it.lon - 30.500) < 1e-4 || abs(it.lat - 50.461) < 1e-4 }, "matched points lie on the roads")
         }
         tmp.deleteRecursively()
     }

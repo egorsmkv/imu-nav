@@ -18,6 +18,7 @@ import org.blinddriver.core.search.StreetRow
 import java.io.File
 import java.sql.Connection
 import java.sql.DriverManager
+import java.sql.Types
 import kotlin.math.floor
 
 /**
@@ -32,7 +33,10 @@ object SearchIndexBuilder {
     /** Settlement "reach" used to attach streets: a city claims streets much farther away than a hamlet. */
     private val REACH_M = mapOf("city" to 9_000.0, "town" to 3_500.0, "village" to 1_500.0, "hamlet" to 700.0)
 
+    /** A settlement or district from an OSM `place=*` node; [alt] holds other-language / old names for searching. */
     private class Place(val id: Long, val name: String, val nameEn: String?, val alt: String, val kind: String, val lat: Double, val lon: Double, val pop: Int)
+
+    /** A house number on a street, with its position. */
     private class Addr(val number: String, val street: String, val lat: Double, val lon: Double)
 
     /** Street accumulated from named graph edges: centroid plus candidate midpoints. */
@@ -44,6 +48,7 @@ object SearchIndexBuilder {
         val mids = ArrayList<DoubleArray>()
     }
 
+    /** Build `search.db` into [out] from the OSM extract and the already built [hopper] graph. */
     fun build(osm: File, hopper: GraphHopper, out: File, withAddresses: Boolean, log: (String) -> Unit = ::println) {
         out.delete()
         val (places, addrs) = readPlacesAndAddresses(osm, withAddresses, log)
@@ -102,10 +107,12 @@ object SearchIndexBuilder {
         return places to addrs
     }
 
+    /** An OSM node → [Place] if it is a named settlement of a kind we index. */
     private fun placeOf(e: ReaderNode, id: Long): Place? {
         val place = e.getTag("place", null as String?)
         val name = e.getTag("name", null as String?)
         if (place == null || place !in PLACE_KINDS || name == null) return null
+        /** A tag value or null. */
         fun tag(k: String) = e.getTag(k, null as String?)
         val alt = listOfNotNull(tag("name:uk"), tag("name:en"), tag("name:ru"), tag("old_name"), tag("alt_name")).joinToString(" ")
         val population = tag("population")?.filter { it.isDigit() }?.take(9)?.toIntOrNull() ?: 0
@@ -120,10 +127,13 @@ object SearchIndexBuilder {
             settlements.forEach { grid.getOrPut(key(cellOf(it.lat), cellOf(it.lon))) { ArrayList() } += it }
         }
 
+        /** Grid cell index for a coordinate (0.05° ≈ 5.5 km). */
         private fun cellOf(deg: Double) = floor(deg / 0.05).toLong()
 
+        /** One number for a (row, column) grid cell, usable as a map key. */
         private fun key(cy: Long, cx: Long) = cy * 100_000 + cx
 
+        /** The settlement a street at this point belongs to: nearest relative to each place's reach, or null if none is close. */
         fun settlementOf(lat: Double, lon: Double): Place? {
             var best: Place? = null
             var score = Double.MAX_VALUE
@@ -168,6 +178,7 @@ object SearchIndexBuilder {
         return streets
     }
 
+    /** Tables: place / street / addr plus FTS4 full-text tables for fast prefix search. */
     private fun createSchema(c: Connection) = c.createStatement().use { st ->
         st.executeUpdate("CREATE TABLE place(id INTEGER PRIMARY KEY, name TEXT, name_en TEXT, kind TEXT, lat REAL, lon REAL, population INTEGER)")
         st.executeUpdate("CREATE VIRTUAL TABLE place_fts USING fts4(names)")
@@ -177,6 +188,7 @@ object SearchIndexBuilder {
         st.executeUpdate("CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT)")
     }
 
+    /** Insert all places and their searchable names. */
     private fun writePlaces(c: Connection, places: List<Place>) {
         c.prepareStatement("INSERT INTO place VALUES (?,?,?,?,?,?,?)").use { ps ->
             c.prepareStatement("INSERT INTO place_fts(rowid, names) VALUES (?,?)").use { fts ->
@@ -215,7 +227,7 @@ object SearchIndexBuilder {
                     val rep = a.mids.minBy { Geo.distance(cLat, cLon, it[0], it[1]) }
                     ps.setLong(1, id)
                     ps.setString(2, a.name)
-                    if (a.placeId != null) ps.setLong(3, a.placeId) else ps.setNull(3, java.sql.Types.INTEGER)
+                    if (a.placeId != null) ps.setLong(3, a.placeId) else ps.setNull(3, Types.INTEGER)
                     ps.setDouble(4, rep[0])
                     ps.setDouble(5, rep[1])
                     ps.setDouble(6, a.length)
@@ -259,6 +271,7 @@ object SearchIndexBuilder {
         return matched
     }
 
+    /** Stream an .osm.pbf file element by element (constant memory, even for a whole country). */
     private fun readOsm(osm: File, skip: SkipOptions, onElement: (ReaderElement) -> Unit) {
         val input = OSMInputFile(osm).setWorkerThreads(2).setSkipOptions(skip).open()
         try {

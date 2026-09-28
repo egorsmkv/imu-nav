@@ -1,5 +1,8 @@
 package org.blinddriver.app.ui
 
+import android.app.Activity
+import android.content.Intent
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -7,6 +10,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -37,6 +41,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
@@ -51,6 +56,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -60,31 +66,46 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import org.blinddriver.app.AppGraph
+import org.blinddriver.app.AppLanguage
+import org.blinddriver.app.MapStartMode
+import org.blinddriver.app.MapStartPrefs
 import org.blinddriver.app.R
 import org.blinddriver.app.UiState
 import org.blinddriver.app.cells.CellSource
+import org.blinddriver.app.power.PowerMode
+import org.blinddriver.app.power.PowerProfile
 import org.blinddriver.core.cells.Radio
+import org.blinddriver.core.geo.GeoPoint
 import java.text.NumberFormat
+import java.util.Locale
 
 private val RADIO_CHOICES = listOf(Radio.GSM to "2G", Radio.UMTS to "3G", Radio.LTE to "4G", Radio.NR to "5G")
 
+/**
+ * Settings: language, map start, battery, offline routing, cell towers, sharing server and diagnostics.
+ * Text fields are saved when leaving the screen (see `save()`).
+ */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun SettingsScreen(ui: UiState, g: AppGraph, onBack: () -> Unit, onOpenLog: () -> Unit) {
+fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: () -> Unit) {
     val context = LocalContext.current
     val c = ui.cells
-    val mgr = g.cells
+    val mgr = app.cells
     val busy = c.busy != null
     val snackbar = remember { SnackbarHostState() }
     val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -95,15 +116,17 @@ fun SettingsScreen(ui: UiState, g: AppGraph, onBack: () -> Unit, onOpenLog: () -
     var syncKey by remember { mutableStateOf(mgr.savedSyncKey()) }
     var autoSync by remember { mutableStateOf(c.autoSync) }
     var confirmReset by remember { mutableStateOf(false) }
+
+    /** Store the typed server settings. */
     fun save() = mgr.saveSettings(syncUrl, syncKey, autoSync, mccs)
 
     val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) mgr.importFile { context.contentResolver.openInputStream(uri) }
     }
-    val routing by g.offlineRouting.status.collectAsStateWithLifecycle()
+    val routing by app.offlineRouting.status.collectAsStateWithLifecycle()
     var packUrl by remember { mutableStateOf(routing.packUrl) }
     val pickPack = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) g.offlineRouting.importZip { context.contentResolver.openInputStream(uri) }
+        if (uri != null) app.offlineRouting.importZip { context.contentResolver.openInputStream(uri) }
     }
     LaunchedEffect(c.message) { c.message?.let { snackbar.showSnackbar(it) } }
     LaunchedEffect(routing.message) { routing.message?.let { snackbar.showSnackbar(it) } }
@@ -111,7 +134,7 @@ fun SettingsScreen(ui: UiState, g: AppGraph, onBack: () -> Unit, onOpenLog: () -
     Scaffold(
         modifier = Modifier.nestedScroll(scroll.nestedScrollConnection),
         topBar = {
-            androidx.compose.material3.LargeTopAppBar(
+            LargeTopAppBar(
                 title = { Text(stringResource(R.string.settings_title)) },
                 navigationIcon = {
                     IconButton(onClick = {
@@ -139,17 +162,17 @@ fun SettingsScreen(ui: UiState, g: AppGraph, onBack: () -> Unit, onOpenLog: () -
 
             // ---------------- Language
             SectionHeader(stringResource(R.string.sec_language))
-            val language by g.language.collectAsStateWithLifecycle()
+            val language by app.language.collectAsStateWithLifecycle()
             ListItem(
                 headlineContent = { Text(stringResource(R.string.language_title)) },
                 supportingContent = {
                     Column {
                         Text(stringResource(R.string.language_hint))
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            org.blinddriver.app.AppLanguage.CHOICES.forEach { choice ->
+                            AppLanguage.CHOICES.forEach { choice ->
                                 val label = when (choice) {
-                                    org.blinddriver.app.AppLanguage.UKRAINIAN -> "Українська"
-                                    org.blinddriver.app.AppLanguage.ENGLISH -> "English"
+                                    AppLanguage.UKRAINIAN -> "Українська"
+                                    AppLanguage.ENGLISH -> "English"
                                     else -> stringResource(R.string.language_system)
                                 }
                                 FilterChip(
@@ -157,8 +180,8 @@ fun SettingsScreen(ui: UiState, g: AppGraph, onBack: () -> Unit, onOpenLog: () -
                                     onClick = {
                                         if (language != choice) {
                                             save()
-                                            g.setLanguage(choice)
-                                            (context as? android.app.Activity)?.recreate()
+                                            app.setLanguage(choice)
+                                            (context as? Activity)?.recreate()
                                         }
                                     },
                                     label = { Text(label) },
@@ -167,52 +190,52 @@ fun SettingsScreen(ui: UiState, g: AppGraph, onBack: () -> Unit, onOpenLog: () -
                         }
                     }
                 },
-                leadingContent = { Icon(androidx.compose.material.icons.Icons.Filled.Translate, contentDescription = null) },
+                leadingContent = { Icon(Icons.Filled.Translate, contentDescription = null) },
             )
 
             // ---------------- Map start
-            MapStartSection(g, ui)
+            MapStartSection(app, ui)
 
             // ---------------- Battery
             SectionHeader(stringResource(R.string.sec_power))
-            val powerMode by g.powerMode.collectAsStateWithLifecycle()
-            val profile by g.powerProfile.collectAsStateWithLifecycle()
-            val screenOn by g.keepScreenOn.collectAsStateWithLifecycle()
+            val powerMode by app.powerMode.collectAsStateWithLifecycle()
+            val profile by app.powerProfile.collectAsStateWithLifecycle()
+            val screenOn by app.keepScreenOn.collectAsStateWithLifecycle()
             ListItem(
                 headlineContent = { Text(stringResource(R.string.power_title)) },
                 supportingContent = {
                     Column {
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            org.blinddriver.app.power.PowerMode.entries.forEach { m ->
-                                FilterChip(selected = powerMode == m, onClick = { g.setPowerMode(m) }, label = { Text(powerModeName(m)) })
+                            PowerMode.entries.forEach { m ->
+                                FilterChip(selected = powerMode == m, onClick = { app.setPowerMode(m) }, label = { Text(powerModeName(m)) })
                             }
                         }
                         Text(
                             stringResource(
                                 when (powerMode) {
-                                    org.blinddriver.app.power.PowerMode.AUTO -> R.string.power_auto_hint
-                                    org.blinddriver.app.power.PowerMode.PERFORMANCE -> R.string.power_performance_hint
-                                    org.blinddriver.app.power.PowerMode.BALANCED -> R.string.power_balanced_hint
-                                    org.blinddriver.app.power.PowerMode.SAVER -> R.string.power_saver_hint
+                                    PowerMode.AUTO -> R.string.power_auto_hint
+                                    PowerMode.PERFORMANCE -> R.string.power_performance_hint
+                                    PowerMode.BALANCED -> R.string.power_balanced_hint
+                                    PowerMode.SAVER -> R.string.power_saver_hint
                                 },
                             ),
                         )
-                        if (powerMode == org.blinddriver.app.power.PowerMode.AUTO) {
+                        if (powerMode == PowerMode.AUTO) {
                             val active = when (profile) {
-                                org.blinddriver.app.power.PowerProfile.PERFORMANCE -> org.blinddriver.app.power.PowerMode.PERFORMANCE
-                                org.blinddriver.app.power.PowerProfile.SAVER -> org.blinddriver.app.power.PowerMode.SAVER
-                                else -> org.blinddriver.app.power.PowerMode.BALANCED
+                                PowerProfile.PERFORMANCE -> PowerMode.PERFORMANCE
+                                PowerProfile.SAVER -> PowerMode.SAVER
+                                else -> PowerMode.BALANCED
                             }
                             Text(
-                                stringResource(R.string.power_auto_now, powerModeName(active), g.power.batteryPercent()?.let { "$it %" } ?: "—"),
+                                stringResource(R.string.power_auto_now, powerModeName(active), app.power.batteryPercent()?.let { "$it %" } ?: "—"),
                                 color = MaterialTheme.colorScheme.primary,
                             )
                         }
                     }
                 },
-                leadingContent = { Icon(androidx.compose.material.icons.Icons.Filled.BatteryChargingFull, contentDescription = null) },
+                leadingContent = { Icon(Icons.Filled.BatteryChargingFull, contentDescription = null) },
             )
-            SwitchItem(stringResource(R.string.power_screen_on), stringResource(R.string.power_screen_on_summary), screenOn) { g.setKeepScreenOn(it) }
+            SwitchItem(stringResource(R.string.power_screen_on), stringResource(R.string.power_screen_on_summary), screenOn) { app.setKeepScreenOn(it) }
 
             // ---------------- Offline routing
             SectionHeader(stringResource(R.string.sec_routing))
@@ -234,23 +257,23 @@ fun SettingsScreen(ui: UiState, g: AppGraph, onBack: () -> Unit, onOpenLog: () -
                         else -> {}
                     }
                 },
-                leadingContent = { Icon(androidx.compose.material.icons.Icons.Filled.Route, contentDescription = null) },
+                leadingContent = { Icon(Icons.Filled.Route, contentDescription = null) },
             )
             routing.busy?.let {
                 Column(Modifier.padding(horizontal = 16.dp)) {
                     LinearProgressIndicator(Modifier.fillMaxWidth())
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(it, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                        TextButton(onClick = { g.offlineRouting.cancel() }) { Text(stringResource(R.string.action_cancel)) }
+                        TextButton(onClick = { app.offlineRouting.cancel() }) { Text(stringResource(R.string.action_cancel)) }
                     }
                 }
             }
             Field(packUrl, {
                 packUrl = it
-                g.offlineRouting.setPackUrl(it)
+                app.offlineRouting.setPackUrl(it)
             }, stringResource(R.string.routing_url), "https://…/graph-ukraine.zip", keyboard = KeyboardType.Uri)
             FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(onClick = { g.offlineRouting.download(packUrl) }, enabled = packUrl.isNotBlank() && routing.busy == null) {
+                Button(onClick = { app.offlineRouting.download(packUrl) }, enabled = packUrl.isNotBlank() && routing.busy == null) {
                     Text(stringResource(R.string.action_download))
                 }
                 OutlinedButton(onClick = { pickPack.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) }, enabled = routing.busy == null) {
@@ -258,18 +281,18 @@ fun SettingsScreen(ui: UiState, g: AppGraph, onBack: () -> Unit, onOpenLog: () -
                 }
                 val bundled = routing.bundled
                 if (pack == null && bundled != null) {
-                    OutlinedButton(onClick = { g.offlineRouting.installBundled() }, enabled = routing.busy == null) {
+                    OutlinedButton(onClick = { app.offlineRouting.installBundled() }, enabled = routing.busy == null) {
                         Text(stringResource(R.string.routing_install_builtin, bundled.name))
                     }
                 }
                 if (pack != null) {
-                    TextButton(onClick = { g.offlineRouting.remove() }, enabled = routing.busy == null) {
+                    TextButton(onClick = { app.offlineRouting.remove() }, enabled = routing.busy == null) {
                         Text(stringResource(R.string.routing_remove), color = MaterialTheme.colorScheme.error)
                     }
                 }
             }
             SwitchItem(stringResource(R.string.routing_allow_online), stringResource(R.string.routing_allow_online_summary), routing.allowOnline) {
-                g.offlineRouting.setAllowOnline(it)
+                app.offlineRouting.setAllowOnline(it)
             }
 
             // ---------------- Cell towers
@@ -376,7 +399,7 @@ fun SettingsScreen(ui: UiState, g: AppGraph, onBack: () -> Unit, onOpenLog: () -
             SectionHeader(stringResource(R.string.sec_learning))
             SwitchItem(stringResource(R.string.learning_title), stringResource(R.string.learning_summary), c.learning) {
                 mgr.setLearning(it)
-                g.refresh()
+                app.refresh()
             }
 
             // ---------------- Database
@@ -396,10 +419,10 @@ fun SettingsScreen(ui: UiState, g: AppGraph, onBack: () -> Unit, onOpenLog: () -
             // ---------------- Diagnostics
             SectionHeader(stringResource(R.string.sec_diagnostics))
             var unrestricted by remember { mutableStateOf(isBatteryUnrestricted(context)) }
-            val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
-            androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
-                val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
-                    if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) unrestricted = isBatteryUnrestricted(context)
+            val lifecycleOwner = LocalLifecycleOwner.current
+            DisposableEffect(lifecycleOwner) {
+                val obs = LifecycleEventObserver { _, e ->
+                    if (e == Lifecycle.Event.ON_RESUME) unrestricted = isBatteryUnrestricted(context)
                 }
                 lifecycleOwner.lifecycle.addObserver(obs)
                 onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
@@ -415,15 +438,15 @@ fun SettingsScreen(ui: UiState, g: AppGraph, onBack: () -> Unit, onOpenLog: () -
                 modifier = Modifier.clickable(enabled = !unrestricted) {
                     runCatching {
                         @android.annotation.SuppressLint("BatteryLife")
-                        val intent = android.content.Intent(
-                            android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                        val intent = Intent(
+                            Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
                             "package:${context.packageName}".toUri(),
                         )
                         context.startActivity(intent)
                     }
                 },
             )
-            SwitchItem(stringResource(R.string.simulate_gps_loss), stringResource(R.string.simulate_gps_loss_summary), ui.simulateGpsLoss) { g.setSimulateGpsLoss(it) }
+            SwitchItem(stringResource(R.string.simulate_gps_loss), stringResource(R.string.simulate_gps_loss_summary), ui.simulateGpsLoss) { app.setSimulateGpsLoss(it) }
             ListItem(
                 headlineContent = { Text(stringResource(R.string.trip_log)) },
                 leadingContent = { Icon(Icons.AutoMirrored.Filled.Article, contentDescription = null) },
@@ -470,16 +493,18 @@ fun SettingsScreen(ui: UiState, g: AppGraph, onBack: () -> Unit, onOpenLog: () -
     }
 }
 
+/** Localised name of a power mode. */
 @Composable
-private fun powerModeName(m: org.blinddriver.app.power.PowerMode): String = stringResource(
+private fun powerModeName(m: PowerMode): String = stringResource(
     when (m) {
-        org.blinddriver.app.power.PowerMode.AUTO -> R.string.power_auto
-        org.blinddriver.app.power.PowerMode.PERFORMANCE -> R.string.power_performance
-        org.blinddriver.app.power.PowerMode.BALANCED -> R.string.power_balanced
-        org.blinddriver.app.power.PowerMode.SAVER -> R.string.power_saver
+        PowerMode.AUTO -> R.string.power_auto
+        PowerMode.PERFORMANCE -> R.string.power_performance
+        PowerMode.BALANCED -> R.string.power_balanced
+        PowerMode.SAVER -> R.string.power_saver
     },
 )
 
+/** Localised name of a tower database source. */
 @Composable
 private fun sourceName(s: CellSource): String = stringResource(
     when (s) {
@@ -491,6 +516,7 @@ private fun sourceName(s: CellSource): String = stringResource(
     },
 )
 
+/** Section title with a divider, in the Material 3 settings style. */
 @Composable
 private fun SectionHeader(text: String) {
     Column {
@@ -504,6 +530,7 @@ private fun SectionHeader(text: String) {
     }
 }
 
+/** A settings row with a title, optional summary and a switch. */
 @Composable
 private fun SwitchItem(title: String, summary: String?, checked: Boolean, onChange: (Boolean) -> Unit) {
     ListItem(
@@ -514,6 +541,7 @@ private fun SwitchItem(title: String, summary: String?, checked: Boolean, onChan
     )
 }
 
+/** A single-line text field; [secret] hides the text (for keys and tokens). */
 @Composable
 private fun Field(value: String, onChange: (String) -> Unit, label: String, placeholder: String?, secret: Boolean = false, keyboard: KeyboardType = KeyboardType.Text) {
     OutlinedTextField(
@@ -522,7 +550,7 @@ private fun Field(value: String, onChange: (String) -> Unit, label: String, plac
         label = { Text(label) },
         placeholder = placeholder?.let { { Text(it) } },
         singleLine = true,
-        visualTransformation = if (secret) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
+        visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
         keyboardOptions = KeyboardOptions(keyboardType = if (secret) KeyboardType.Password else keyboard),
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
     )
@@ -530,11 +558,11 @@ private fun Field(value: String, onChange: (String) -> Unit, label: String, plac
 
 /** Settings → Map start: open the map at the phone's position, or at a fixed place. */
 @Composable
-private fun MapStartSection(g: AppGraph, ui: UiState) {
-    val mode by g.mapStartMode.collectAsStateWithLifecycle()
-    val fixed by g.mapStartFixed.collectAsStateWithLifecycle()
+private fun MapStartSection(app: AppGraph, ui: UiState) {
+    val mode by app.mapStartMode.collectAsStateWithLifecycle()
+    val fixed by app.mapStartFixed.collectAsStateWithLifecycle()
     var text by remember(fixed) { mutableStateOf(fixed?.let { formatLatLon(it) }.orEmpty()) }
-    val parsed = org.blinddriver.app.MapStartPrefs.parse(text)
+    val parsed = MapStartPrefs.parse(text)
     val position = ui.currentPosition.takeIf { ui.hasTrustedPosition }
 
     SectionHeader(stringResource(R.string.sec_map_start))
@@ -544,30 +572,30 @@ private fun MapStartSection(g: AppGraph, ui: UiState) {
             Column {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
-                        selected = mode == org.blinddriver.app.MapStartMode.GPS,
-                        onClick = { g.setMapStart(org.blinddriver.app.MapStartMode.GPS, fixed) },
+                        selected = mode == MapStartMode.GPS,
+                        onClick = { app.setMapStart(MapStartMode.GPS, fixed) },
                         label = { Text(stringResource(R.string.map_start_gps)) },
                     )
                     FilterChip(
-                        selected = mode == org.blinddriver.app.MapStartMode.FIXED,
+                        selected = mode == MapStartMode.FIXED,
                         onClick = {
                             // Picking "fixed" without a place yet: start from where the user is or looks.
-                            val p = fixed ?: position ?: g.lastMapCenter
-                            g.setMapStart(org.blinddriver.app.MapStartMode.FIXED, p)
+                            val p = fixed ?: position ?: app.lastMapCenter
+                            app.setMapStart(MapStartMode.FIXED, p)
                         },
                         label = { Text(stringResource(R.string.map_start_fixed)) },
                     )
                 }
                 Text(
                     stringResource(
-                        if (mode == org.blinddriver.app.MapStartMode.GPS) R.string.map_start_gps_hint else R.string.map_start_fixed_hint,
+                        if (mode == MapStartMode.GPS) R.string.map_start_gps_hint else R.string.map_start_fixed_hint,
                     ),
                 )
             }
         },
-        leadingContent = { Icon(androidx.compose.material.icons.Icons.Filled.Place, contentDescription = null) },
+        leadingContent = { Icon(Icons.Filled.Place, contentDescription = null) },
     )
-    if (mode != org.blinddriver.app.MapStartMode.FIXED) return
+    if (mode != MapStartMode.FIXED) return
 
     OutlinedTextField(
         value = text,
@@ -582,31 +610,32 @@ private fun MapStartSection(g: AppGraph, ui: UiState) {
     )
     FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Button(
-            onClick = { parsed?.let { g.setMapStart(org.blinddriver.app.MapStartMode.FIXED, it) } },
+            onClick = { parsed?.let { app.setMapStart(MapStartMode.FIXED, it) } },
             enabled =
             parsed != null && formatLatLon(parsed) != fixed?.let { formatLatLon(it) },
         ) {
             Text(stringResource(R.string.action_apply))
         }
-        OutlinedButton(onClick = { position?.let { g.setMapStart(org.blinddriver.app.MapStartMode.FIXED, it) } }, enabled = position != null) {
+        OutlinedButton(onClick = { position?.let { app.setMapStart(MapStartMode.FIXED, it) } }, enabled = position != null) {
             Text(stringResource(R.string.map_start_use_position))
         }
-        OutlinedButton(onClick = { g.lastMapCenter?.let { g.setMapStart(org.blinddriver.app.MapStartMode.FIXED, it) } }, enabled = g.lastMapCenter != null) {
+        OutlinedButton(onClick = { app.lastMapCenter?.let { app.setMapStart(MapStartMode.FIXED, it) } }, enabled = app.lastMapCenter != null) {
             Text(stringResource(R.string.map_start_use_center))
         }
     }
 }
 
-private fun formatLatLon(p: org.blinddriver.core.geo.GeoPoint) = String.format(java.util.Locale.US, "%.5f, %.5f", p.lat, p.lon)
+private fun formatLatLon(p: GeoPoint) = String.format(Locale.US, "%.5f, %.5f", p.lat, p.lon)
 
+/** Shows the latest trip-log lines (refreshed every second, newest at the bottom). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LogScreen(g: AppGraph, onBack: () -> Unit) {
-    var lines by remember { mutableStateOf(g.tripLog.recent) }
+fun LogScreen(app: AppGraph, onBack: () -> Unit) {
+    var lines by remember { mutableStateOf(app.tripLog.recent) }
     val list = rememberLazyListState()
     LaunchedEffect(Unit) {
         while (true) {
-            lines = g.tripLog.recent
+            lines = app.tripLog.recent
             delay(1000)
         }
     }
@@ -622,7 +651,7 @@ fun LogScreen(g: AppGraph, onBack: () -> Unit) {
         if (lines.isEmpty()) {
             Text(stringResource(R.string.trip_log_empty), modifier = Modifier.padding(padding).padding(16.dp))
         } else {
-            LazyColumn(state = list, modifier = Modifier.fillMaxSize().padding(padding), contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp)) {
+            LazyColumn(state = list, modifier = Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(12.dp)) {
                 items(lines) { line ->
                     Text(line.substringAfter("] "), fontFamily = FontFamily.Monospace, fontSize = 11.sp, modifier = Modifier.padding(vertical = 2.dp))
                 }

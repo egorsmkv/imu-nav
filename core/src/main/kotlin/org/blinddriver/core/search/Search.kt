@@ -3,6 +3,7 @@ package org.blinddriver.core.search
 import org.blinddriver.core.geo.Geo
 import org.blinddriver.core.geo.GeoPoint
 import java.util.Locale
+import kotlin.math.ln
 
 enum class ResultKind { PLACE, STREET, ADDRESS }
 
@@ -92,7 +93,7 @@ object AddressSearch {
         }
         for (p in places) {
             val d = dist(p.lat, p.lon)
-            val weight = (KIND_WEIGHT[p.kind] ?: 1.0) * (1 + kotlin.math.ln(1.0 + p.population / 1000.0))
+            val weight = (KIND_WEIGHT[p.kind] ?: 1.0) * (1 + ln(1.0 + p.population / 1000.0))
             val exact = if (normalize(p.name) == words.joinToString(" ")) 4.0 else 1.0
             out += -(weight * exact * 1e6) / (1 + (d ?: 50_000.0) / 20_000.0) to
                 SearchResult(ResultKind.PLACE, p.name, p.kind, GeoPoint(p.lat, p.lon), d)

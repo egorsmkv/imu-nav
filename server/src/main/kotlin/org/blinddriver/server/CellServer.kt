@@ -11,6 +11,7 @@ import org.blinddriver.core.cells.Radio
 import org.blinddriver.core.geo.Geo
 import org.blinddriver.core.geo.ServiceArea
 import java.io.File
+import java.io.IOException
 import java.io.InputStream
 import java.net.InetSocketAddress
 import java.net.URLDecoder
@@ -46,6 +47,7 @@ data class Policy(
 /** What one device (or the seed dataset) says about one cell. */
 data class Contribution(val lat: Double, val lon: Double, val rangeM: Double, val samples: Int, val updatedS: Long)
 
+/** The server's agreed position of a cell, from how many independent devices, and whether the seed import confirms it. */
 data class Consensus(val tower: CellTower, val devices: Int, val seeded: Boolean, val updatedS: Long)
 
 /**
@@ -57,7 +59,10 @@ class CellStore(private val file: File?, val policy: Policy = Policy()) {
     private val contributions = ConcurrentHashMap<CellKey, ConcurrentHashMap<String, Contribution>>()
     private val consensus = ConcurrentHashMap<CellKey, Consensus>()
 
+    /** Number of cells currently published (confirmed). */
     val size: Int get() = consensus.count { published(it.value) }
+
+    /** Total number of stored (cell, device) contributions. */
     val contributionCount: Int get() = contributions.values.sumOf { it.size }
 
     init {
@@ -65,38 +70,42 @@ class CellStore(private val file: File?, val policy: Policy = Policy()) {
         contributions.keys.forEach { recompute(it) }
     }
 
+    /** Only confirmed cells are served: from the seed import, or agreed on by [Policy.minDevices] phones. */
     private fun published(c: Consensus) = c.seeded || c.devices >= policy.minDevices
 
+    /** How many rows of an upload were stored / rejected. */
     data class UploadResult(val accepted: Int, val rejected: Int)
 
     /** Merge one device's upload. [device] = SEED marks trusted admin imports. */
     @Synchronized
     fun contribute(device: String, towers: List<CellTower>, nowS: Long = System.currentTimeMillis() / 1000): UploadResult {
-        var ok = 0
-        var bad = 0
-        val seed = device == SEED
-        for (t in towers) {
-            if (!plausible(t)) {
-                bad++
+        var accepted = 0
+        var rejected = 0
+        val isSeed = device == SEED
+        for (tower in towers) {
+            if (!plausible(tower)) {
+                rejected++
                 continue
             }
-            val perDevice = contributions.getOrPut(t.key) { ConcurrentHashMap() }
-            val prev = perDevice[device]
-            if (!seed && prev != null && Geo.distance(prev.lat, prev.lon, t.lat, t.lon) > policy.maxJumpM) {
-                bad++
+            val perDevice = contributions.getOrPut(tower.key) { ConcurrentHashMap() }
+            val previous = perDevice[device]
+            // A real tower does not move kilometres between two uploads of the same phone.
+            if (!isSeed && previous != null && Geo.distance(previous.lat, previous.lon, tower.lat, tower.lon) > policy.maxJumpM) {
+                rejected++
                 continue
             }
-            val cap = if (seed) Int.MAX_VALUE else policy.maxSamplesPerDevice
-            perDevice[device] = Contribution(t.lat, t.lon, t.rangeM, min(max(t.samples, 1), cap), nowS)
-            recompute(t.key)
-            ok++
+            val sampleCap = if (isSeed) Int.MAX_VALUE else policy.maxSamplesPerDevice
+            perDevice[device] = Contribution(tower.lat, tower.lon, tower.rangeM, min(max(tower.samples, 1), sampleCap), nowS)
+            recompute(tower.key)
+            accepted++
         }
-        return UploadResult(ok, bad)
+        return UploadResult(accepted, rejected)
     }
 
-    private fun plausible(t: CellTower): Boolean = t.rangeM > 0 && t.rangeM <= policy.maxRangeM && t.samples > 0 &&
-        t.lat in -90.0..90.0 && t.lon in -180.0..180.0 &&
-        (policy.area?.contains(t.lat, t.lon) ?: true)
+    /** Basic sanity: valid coordinates inside the service area, a sensible range and sample count. */
+    private fun plausible(tower: CellTower): Boolean = tower.rangeM > 0 && tower.rangeM <= policy.maxRangeM && tower.samples > 0 &&
+        tower.lat in -90.0..90.0 && tower.lon in -180.0..180.0 &&
+        (policy.area?.contains(tower.lat, tower.lon) ?: true)
 
     /** Robust aggregate of all devices' contributions for one cell. */
     private fun recompute(key: CellKey) {
@@ -105,32 +114,35 @@ class CellStore(private val file: File?, val policy: Policy = Policy()) {
             consensus.remove(key)
             return
         }
-        val seedW = 200.0
-        fun w(e: Map.Entry<String, Contribution>) = if (e.key == SEED) seedW else e.value.samples.toDouble()
+        // Weight in the final average: the seed import counts like 200 samples.
+        fun weight(entry: Map.Entry<String, Contribution>) = if (entry.key == SEED) SEED_WEIGHT else entry.value.samples.toDouble()
+
         // One device, one vote for the centre and the outlier test — sample counts only weight the
         // final average among agreeing devices, so extra identities or inflated counts cannot outvote.
-        val vote = { e: Map.Entry<String, Contribution> -> if (e.key == SEED) 3.0 else 1.0 }
-        val lat0 = weightedMedian(all.map { it.value.lat to vote(it) })
-        val lon0 = weightedMedian(all.map { it.value.lon to vote(it) })
+        fun vote(entry: Map.Entry<String, Contribution>) = if (entry.key == SEED) SEED_VOTE else 1.0
+        val medianLat = weightedMedian(all.map { it.value.lat to vote(it) })
+        val medianLon = weightedMedian(all.map { it.value.lon to vote(it) })
         var inliers = all
         if (all.size >= 3) {
-            val dist = all.map { Geo.distance(lat0, lon0, it.value.lat, it.value.lon) }
-            val mad = dist.sorted()[dist.size / 2]
-            val limit = max(3 * mad, policy.outlierMinM)
-            inliers = all.filterIndexed { i, _ -> dist[i] <= limit }.ifEmpty { all }
+            // Median absolute deviation: the typical distance from the median. Anything more than
+            // 3 × that (at least outlierMinM) away is an outlier — probably a fake upload.
+            val distances = all.map { Geo.distance(medianLat, medianLon, it.value.lat, it.value.lon) }
+            val typical = distances.sorted()[distances.size / 2]
+            val limit = max(3 * typical, policy.outlierMinM)
+            inliers = all.filterIndexed { i, _ -> distances[i] <= limit }.ifEmpty { all }
         } else if (all.size == 2) {
             // Two sources that disagree: trust the seed, else the better-sampled one — and publish neither as "confirmed".
             val (a, b) = all
             if (Geo.distance(a.value.lat, a.value.lon, b.value.lat, b.value.lon) > policy.outlierMinM * 2) {
-                inliers = listOf(if (w(a) >= w(b)) a else b)
+                inliers = listOf(if (weight(a) >= weight(b)) a else b)
             }
         }
-        val wSum = inliers.sumOf { w(it) }
-        val lat = inliers.sumOf { it.value.lat * w(it) } / wSum
-        val lon = inliers.sumOf { it.value.lon * w(it) } / wSum
+        val weightSum = inliers.sumOf { weight(it) }
+        val lat = inliers.sumOf { it.value.lat * weight(it) } / weightSum
+        val lon = inliers.sumOf { it.value.lon * weight(it) } / weightSum
         val spread = inliers.maxOf { Geo.distance(lat, lon, it.value.lat, it.value.lon) }
         val range = max(inliers.map { it.value.rangeM }.sorted()[inliers.size / 2], spread)
-        val samples = inliers.sumOf { if (it.key == SEED) it.value.samples else it.value.samples }.coerceAtMost(1_000_000)
+        val samples = inliers.sumOf { it.value.samples }.coerceAtMost(1_000_000)
         consensus[key] = Consensus(
             CellTower(key, lat, lon, range, samples),
             devices = inliers.count { it.key != SEED },
@@ -139,6 +151,7 @@ class CellStore(private val file: File?, val policy: Policy = Policy()) {
         )
     }
 
+    /** The value where half of the total weight lies on each side (a median that respects votes). */
     private fun weightedMedian(values: List<Pair<Double, Double>>): Double {
         val sorted = values.sortedBy { it.first }
         val half = sorted.sumOf { it.second } / 2
@@ -153,8 +166,10 @@ class CellStore(private val file: File?, val policy: Policy = Policy()) {
     /** Published (confirmed) towers changed since [sinceS]. */
     fun query(mccs: Set<Int>?, sinceS: Long): List<Consensus> = consensus.values.filter { published(it) && (mccs == null || it.tower.key.mcc in mccs) && it.updatedS >= sinceS }
 
+    /** The consensus for one cell, published or not (for tests and diagnostics). */
     fun consensusOf(key: CellKey): Consensus? = consensus[key]
 
+    /** Write all contributions to the data file (gzip CSV), atomically via a temp file. */
     @Synchronized
     fun save() {
         val target = file ?: return
@@ -173,6 +188,7 @@ class CellStore(private val file: File?, val policy: Policy = Policy()) {
         }
     }
 
+    /** Read contributions back from the data file. */
     private fun load(f: File) {
         GZIPInputStream(f.inputStream()).bufferedReader().useLines { lines ->
             for (line in lines) {
@@ -187,7 +203,14 @@ class CellStore(private val file: File?, val policy: Policy = Policy()) {
     }
 
     companion object {
+        /** Device name for trusted admin imports (`--import`); phones can never use it. */
         const val SEED = "seed"
+
+        /** The seed counts like this many samples in averages… */
+        private const val SEED_WEIGHT = 200.0
+
+        /** …and like this many phones in the vote. */
+        private const val SEED_VOTE = 3.0
     }
 }
 
@@ -195,6 +218,7 @@ class CellStore(private val file: File?, val policy: Policy = Policy()) {
 class RateLimiter(private val limit: Int, private val windowMs: Long) {
     private val hits = ConcurrentHashMap<String, ArrayDeque<Long>>()
 
+    /** True if [key] may make another request now (and counts it). */
     @Synchronized
     fun allow(key: String, now: Long = System.currentTimeMillis()): Boolean {
         val q = hits.getOrPut(key) { ArrayDeque() }
@@ -232,12 +256,16 @@ class CellServer(private val store: CellStore, private val apiKey: String?, port
         http.createContext("/v1/cells.csv.gz") { ex -> handleDownload(ex) }
     }
 
+    /** Start listening on the configured port. */
     fun start() = http.start()
 
+    /** Stop the HTTP server. */
     fun stop() = http.stop(0)
 
+    /** Send a JSON error `{"status":"error","message":…}` with HTTP [code]. */
     private fun error(ex: HttpExchange, code: Int, message: String) = respond(ex, code, "application/json", "{\"status\":\"error\",\"message\":\"$message\"}".toByteArray())
 
+    /** `POST /v1/cells`: check the client, read the gzip CSV body and merge it. */
     private fun handleUpload(ex: HttpExchange) {
         try {
             val ip = ex.remoteAddress.address.hostAddress
@@ -250,14 +278,14 @@ class CellServer(private val store: CellStore, private val apiKey: String?, port
                 CellCsv.read(body) { if (towers.size < policy.maxRowsPerUpload) towers += it }
             } catch (e: IllegalStateException) {
                 return error(ex, 413, e.message ?: "UPLOAD_TOO_LARGE")
-            } catch (_: java.io.IOException) {
+            } catch (_: IOException) {
                 return error(ex, 400, "BAD_BODY") // broken gzip, truncated upload
             }
             val r = store.contribute(device, towers)
             store.save()
             log("upload $device@$ip: ${towers.size} rows, ${r.accepted} accepted, ${r.rejected} rejected, published=${store.size}")
             respond(ex, 200, "application/json", "{\"status\":\"ok\",\"accepted\":${r.accepted},\"rejected\":${r.rejected}}".toByteArray())
-        } catch (e: java.io.IOException) {
+        } catch (e: IOException) {
             // Client disconnected mid-upload, or the data file could not be saved.
             log("upload_failed ${e.javaClass.simpleName}: ${e.message}")
             runCatching { error(ex, 500, "SERVER_ERROR") }
@@ -284,6 +312,7 @@ class CellServer(private val store: CellStore, private val apiKey: String?, port
         return true
     }
 
+    /** `GET /v1/cells.csv.gz?mcc=…&since=…`: published cells as gzip CSV. */
     private fun handleDownload(ex: HttpExchange) {
         if (ex.requestMethod != "GET") return error(ex, 405, "GET_ONLY")
         val params = (ex.requestURI.rawQuery ?: "").split('&').filter { '=' in it }.associate {
@@ -300,6 +329,7 @@ class CellServer(private val store: CellStore, private val apiKey: String?, port
         log("download mcc=${mccs ?: "all"} since=$since: ${rows.size} rows")
     }
 
+    /** Send [body] with status [code] and content type [type]. */
     private fun respond(ex: HttpExchange, code: Int, type: String, body: ByteArray) {
         ex.responseHeaders.add("Content-Type", type)
         ex.sendResponseHeaders(code, body.size.toLong())

@@ -122,6 +122,7 @@ class SensorHub(context: Context, private val hub: PositioningHub, private val o
         }
     }
 
+    /** Rotation-vector sensor event: derive the compass heading and the vertical turn rate, then emit an [ImuSample]. */
     private fun onRotation(values: FloatArray) {
         SensorManager.getRotationMatrixFromVector(rotation, values)
         // Heading of the device's "forward" axis, choosing the axis that is most horizontal so
@@ -182,6 +183,7 @@ class SensorHub(context: Context, private val hub: PositioningHub, private val o
         if (running) applyConfig()
     }
 
+    /** (Re-)register listeners so they match the current power profile; only what changed is touched. */
     @SuppressLint("MissingPermission")
     private fun applyConfig() {
         val p = profile
@@ -223,6 +225,7 @@ class SensorHub(context: Context, private val hub: PositioningHub, private val o
         lastSummary = summary
     }
 
+    /** Start GPS, network location, satellite status and motion sensors. */
     @SuppressLint("MissingPermission")
     fun start() {
         if (running) return
@@ -237,6 +240,7 @@ class SensorHub(context: Context, private val hub: PositioningHub, private val o
         applyConfig()
     }
 
+    /** Stop everything [start] registered. */
     fun stop() {
         if (!running) return
         running = false
@@ -257,6 +261,7 @@ class SensorHub(context: Context, private val hub: PositioningHub, private val o
         log("agps_inject reason=$reason xtra=$xtra time=$time")
     }
 
+    /** Android [Location] → our platform-independent [RawFix]. */
     private fun Location.toRawFix(source: FixSource) = RawFix(
         source = source,
         timeMs = time,
