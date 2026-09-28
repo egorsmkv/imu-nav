@@ -207,4 +207,23 @@
     <string name="task_bundled_done">Built-in database ready: %1$d towers</string>
     <string name="task_cancelled">Cancelled</string>
     <string name="task_failed">Failed: %1$s</string>
+
+    <!-- Offline routing -->
+    <string name="sec_routing">Offline routing</string>
+    <string name="routing_none">No offline map installed — routes need the internet</string>
+    <string name="routing_pack">%1$s · %2$d MB · built %3$s</string>
+    <string name="routing_coverage">Covers %1$.2f–%2$.2f° N, %3$.2f–%4$.2f° E</string>
+    <string name="routing_load_failed">Installed, but the pack could not be loaded</string>
+    <string name="routing_import">Import pack</string>
+    <string name="routing_url">Pack URL (.zip)</string>
+    <string name="routing_remove">Remove</string>
+    <string name="routing_allow_online">Allow online routing</string>
+    <string name="routing_allow_online_summary">Used when the offline map cannot answer. Sends start and destination to router.project-osrm.org.</string>
+    <string name="routing_installing">Installing pack… %1$d MB</string>
+    <string name="routing_downloading">Downloading pack… %1$d of %2$d MB (%3$d%%)</string>
+    <string name="routing_removing">Removing pack…</string>
+    <string name="routing_removed">Offline map removed</string>
+    <string name="routing_installed">Offline map installed: %1$s</string>
+    <string name="routing_not_a_pack">Not a routing pack (pack.json and graph files expected)</string>
+    <string name="routing_no_coverage">The offline map does not cover this trip, and online routing is off</string>
 </resources>

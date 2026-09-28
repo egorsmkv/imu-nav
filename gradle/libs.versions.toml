@@ -9,6 +9,7 @@ coreKtx = "1.17.0"
 maplibre = "13.6.1"
 materialIcons = "1.7.8"
 junit = "4.13.2"
+graphhopper = "11.0"
 
 [libraries]
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
@@ -24,6 +25,7 @@ compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview"
 compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended", version.ref = "materialIcons" }
 maplibre-android = { module = "org.maplibre.gl:android-sdk", version.ref = "maplibre" }
 junit = { module = "junit:junit", version.ref = "junit" }
+graphhopper-core = { module = "com.graphhopper:graphhopper-core", version.ref = "graphhopper" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

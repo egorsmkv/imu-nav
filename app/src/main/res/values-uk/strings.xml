@@ -205,4 +205,23 @@
     <string name="task_bundled_done">Вбудована база готова: %1$d вишок</string>
     <string name="task_cancelled">Скасовано</string>
     <string name="task_failed">Помилка: %1$s</string>
+
+    <!-- Офлайн-маршрути -->
+    <string name="sec_routing">Офлайн-маршрути</string>
+    <string name="routing_none">Офлайн-карту не встановлено — для маршрутів потрібен інтернет</string>
+    <string name="routing_pack">%1$s · %2$d МБ · створено %3$s</string>
+    <string name="routing_coverage">Охоплює %1$.2f–%2$.2f° пн. ш., %3$.2f–%4$.2f° сх. д.</string>
+    <string name="routing_load_failed">Встановлено, але пакет не вдалося завантажити</string>
+    <string name="routing_import">Імпорт пакета</string>
+    <string name="routing_url">Адреса пакета (.zip)</string>
+    <string name="routing_remove">Видалити</string>
+    <string name="routing_allow_online">Дозволити онлайн-маршрути</string>
+    <string name="routing_allow_online_summary">Коли офлайн-карта не може прокласти маршрут. Надсилає старт і пункт призначення на router.project-osrm.org.</string>
+    <string name="routing_installing">Встановлення пакета… %1$d МБ</string>
+    <string name="routing_downloading">Завантаження пакета… %1$d з %2$d МБ (%3$d%%)</string>
+    <string name="routing_removing">Видалення пакета…</string>
+    <string name="routing_removed">Офлайн-карту видалено</string>
+    <string name="routing_installed">Офлайн-карту встановлено: %1$s</string>
+    <string name="routing_not_a_pack">Це не пакет маршрутів (потрібні pack.json і файли графа)</string>
+    <string name="routing_no_coverage">Офлайн-карта не охоплює цю поїздку, а онлайн-маршрути вимкнено</string>
 </resources>

@@ -49,6 +49,8 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.material.icons.filled.Route
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -93,7 +95,13 @@ fun SettingsScreen(ui: UiState, g: AppGraph, onBack: () -> Unit, onOpenLog: () -
     val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) mgr.importFile { context.contentResolver.openInputStream(uri) }
     }
+    val routing by g.offlineRouting.status.collectAsStateWithLifecycle()
+    var packUrl by remember { mutableStateOf(routing.packUrl) }
+    val pickPack = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) g.offlineRouting.importZip { context.contentResolver.openInputStream(uri) }
+    }
     LaunchedEffect(c.message) { c.message?.let { snackbar.showSnackbar(it) } }
+    LaunchedEffect(routing.message) { routing.message?.let { snackbar.showSnackbar(it) } }
 
     Scaffold(
         modifier = Modifier.nestedScroll(scroll.nestedScrollConnection),
@@ -119,6 +127,52 @@ fun SettingsScreen(ui: UiState, g: AppGraph, onBack: () -> Unit, onOpenLog: () -
                         if (c.busyCancellable) TextButton(onClick = { mgr.cancelTask() }) { Text(stringResource(R.string.action_cancel)) }
                     }
                 }
+            }
+
+            // ---------------- Offline routing
+            SectionHeader(stringResource(R.string.sec_routing))
+            val pack = routing.pack
+            ListItem(
+                headlineContent = {
+                    Text(
+                        if (pack == null) stringResource(R.string.routing_none)
+                        else stringResource(R.string.routing_pack, pack.name, (pack.sizeBytes / 1_048_576).toInt(), pack.builtAt.take(10))
+                    )
+                },
+                supportingContent = {
+                    when {
+                        pack != null && !routing.loaded -> Text(stringResource(R.string.routing_load_failed), color = MaterialTheme.colorScheme.error)
+                        pack != null -> Text(stringResource(R.string.routing_coverage, pack.bounds[0], pack.bounds[1], pack.bounds[2], pack.bounds[3]))
+                        else -> {}
+                    }
+                },
+                leadingContent = { Icon(androidx.compose.material.icons.Icons.Filled.Route, contentDescription = null) },
+            )
+            routing.busy?.let {
+                Column(Modifier.padding(horizontal = 16.dp)) {
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(it, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { g.offlineRouting.cancel() }) { Text(stringResource(R.string.action_cancel)) }
+                    }
+                }
+            }
+            Field(packUrl, { packUrl = it; g.offlineRouting.setPackUrl(it) }, stringResource(R.string.routing_url), "https://…/graph-ukraine.zip", keyboard = KeyboardType.Uri)
+            FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(onClick = { g.offlineRouting.download(packUrl) }, enabled = packUrl.isNotBlank() && routing.busy == null) {
+                    Text(stringResource(R.string.action_download))
+                }
+                OutlinedButton(onClick = { pickPack.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) }, enabled = routing.busy == null) {
+                    Text(stringResource(R.string.routing_import))
+                }
+                if (pack != null) {
+                    TextButton(onClick = { g.offlineRouting.remove() }, enabled = routing.busy == null) {
+                        Text(stringResource(R.string.routing_remove), color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
+            SwitchItem(stringResource(R.string.routing_allow_online), stringResource(R.string.routing_allow_online_summary), routing.allowOnline) {
+                g.offlineRouting.setAllowOnline(it)
             }
 
             // ---------------- Cell towers

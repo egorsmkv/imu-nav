@@ -14,6 +14,8 @@ import org.blinddriver.app.cells.CellManager
 import org.blinddriver.app.cells.CellStatus
 import org.blinddriver.app.routing.OsrmRouter
 import org.blinddriver.app.routing.Router
+import org.blinddriver.app.routing.OfflineRouting
+import org.blinddriver.app.routing.SmartRouter
 import org.blinddriver.app.sensors.SensorHub
 import org.blinddriver.app.voice.Voice
 import org.blinddriver.core.Tuning
@@ -65,7 +67,9 @@ class AppGraph(private val context: Context) {
     /** UI and voice follow the phone's language: Ukrainian on Ukrainian phones, English otherwise. */
     private val ukrainian = java.util.Locale.getDefault().language == "uk"
     private val voice = Voice(context, if (ukrainian) java.util.Locale.forLanguageTag("uk-UA") else java.util.Locale.getDefault())
-    private val router: Router = OsrmRouter()
+    /** Offline GraphHopper pack first; OSRM online only as an allowed fallback. */
+    val offlineRouting = OfflineRouting(context, scope, tripLog::write)
+    private val router: Router = SmartRouter(offlineRouting, OsrmRouter(), tripLog::write) { context.getString(R.string.routing_no_coverage) }
 
     val tuning = MutableStateFlow(Tuning.DEFAULT)
 

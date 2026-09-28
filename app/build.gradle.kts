@@ -13,8 +13,8 @@ android {
         applicationId = "org.blinddriver.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.3.0"
+        versionCode = 5
+        versionName = "0.4.0"
     }
 
     // Release signing: create keystore.properties (see README) — it and the keystore are gitignored.
@@ -52,10 +52,18 @@ android {
     buildFeatures {
         compose = true
     }
+
+    packaging {
+        resources {
+            // GraphHopper's dependencies ship overlapping licence/manifest files.
+            excludes += listOf("META-INF/DEPENDENCIES", "META-INF/LICENSE*", "META-INF/NOTICE*", "META-INF/INDEX.LIST", "META-INF/*.md")
+        }
+    }
 }
 
 dependencies {
     implementation(project(":core"))
+    implementation(project(":routing"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

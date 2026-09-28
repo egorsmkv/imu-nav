@@ -37,6 +37,26 @@ remaining along-track drift is repeatedly corrected by landmarks.
 
 | Offline cell positioning | `core/.../cells/Cells.kt`, `app/.../cells/` | Scans visible cells (LTE/GSM/UMTS/NR) every 5 s, looks them up in an on-device SQLite tower database and computes a weighted-centroid fix (serving cell, signal strength and cell size as weights; outlier towers dropped; LTE timing advance bounds single-cell accuracy). Works without Google services or internet, and is immune to GNSS jamming. Fixes enter the engine as `CELL` and stand in for network location. |
 
+### Offline routing
+Routes are computed on the phone with **GraphHopper 11** from a *routing pack*: a road graph with
+contraction hierarchies built on a computer from an OpenStreetMap extract. OSRM (online) is only a
+fallback, and can be switched off in **Settings → Offline routing**. Packs also provide real speed
+limits (OSM `maxspeed`) for the speed sign and the dead-reckoning speed prior.
+
+Build a pack (needs a desktop JVM; the full Ukraine takes a few minutes and ~10 GB RAM):
+```bash
+curl -LO https://download.geofabrik.de/europe/ukraine-latest.osm.pbf
+./gradlew :routing:run --args="--osm ukraine-latest.osm.pbf --out graph-ukraine --name Ukraine"
+# → graph-ukraine/ and graph-ukraine.zip
+```
+Install it in the app with **Import pack** (the `.zip`) or **Download** from any HTTP(S) URL — the
+zip is unpacked while it streams, and interrupted downloads resume. The graph is memory-mapped, so
+large regions do not need a large heap.
+
+Android cannot compile GraphHopper's custom models at runtime (Janino generates JVM bytecode), so
+`PhoneGraphHopper` builds the same weighting from plain code; `GraphSpec` holds everything the
+builder and the phone must agree on, and `OfflineGraphTest` checks both give identical routes.
+
 ### Cell tower database
 Tower locations come from four sources, each in its own table and looked up in this order:
 
@@ -123,9 +143,8 @@ Trip logs are written to `files/logs/` in app storage.
 
 ## Status and limitations
 
-- Routing uses the public OSRM demo server (online, no traffic signals, rarely speed limits).
-  For real use run your own OSRM, or add an offline router (e.g. GraphHopper with a Ukraine
-  extract) implementing `Router` and filling `Route.signals` / `maxspeedKmh`.
+- Offline routing packs carry no traffic-signal data yet, so the stop-at-signal snap and signal
+  speed plan stay inactive. The OSRM fallback uses the public demo server — self-host it for real use.
 - The service area defaults to a coarse Ukraine outline (`ServiceArea.UKRAINE_COARSE`); fixes
   outside it are rejected as spoofed. Change it in `AppGraph` to use the app elsewhere.
 - Free-drive (no route) dead reckoning, speed cameras, saved places and settings UI are not
