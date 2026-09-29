@@ -2,11 +2,13 @@ package org.blinddriver.app.ui
 
 import android.app.Activity
 import android.content.Intent
+import android.content.res.Configuration
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -17,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -69,6 +72,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalResources
@@ -118,6 +122,7 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
     val busy = c.busy != null
     val snackbar = remember { SnackbarHostState() }
     val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     var mccs by remember { mutableStateOf(c.mccs) }
     var token by remember { mutableStateOf(mgr.savedToken()) }
@@ -145,369 +150,375 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
     Scaffold(
         modifier = Modifier.nestedScroll(scroll.nestedScrollConnection),
         topBar = {
-            LargeTopAppBar(
-                title = { Text(stringResource(R.string.settings_title)) },
-                navigationIcon = {
-                    IconButton(onClick = {
-                        save()
-                        onBack()
-                    }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
-                    }
-                },
-                scrollBehavior = scroll,
-            )
+            val navigationIcon: @Composable () -> Unit = {
+                IconButton(onClick = {
+                    save()
+                    onBack()
+                }) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
+                }
+            }
+            if (landscape) {
+                TopAppBar(title = { Text(stringResource(R.string.settings_title)) }, navigationIcon = navigationIcon, scrollBehavior = scroll)
+            } else {
+                LargeTopAppBar(title = { Text(stringResource(R.string.settings_title)) }, navigationIcon = navigationIcon, scrollBehavior = scroll)
+            }
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
-        Column(Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
-            if (busy) {
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                    LinearProgressIndicator(Modifier.fillMaxWidth())
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(c.busy.orEmpty(), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                        if (c.busyCancellable) TextButton(onClick = { mgr.cancelTask() }) { Text(stringResource(R.string.action_cancel)) }
+        Box(Modifier.fillMaxSize().padding(padding)) {
+            Column(Modifier.align(Alignment.TopCenter).widthIn(max = 840.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
+                if (busy) {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(c.busy.orEmpty(), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                            if (c.busyCancellable) TextButton(onClick = { mgr.cancelTask() }) { Text(stringResource(R.string.action_cancel)) }
+                        }
                     }
                 }
-            }
 
-            // ---------------- Language
-            SectionHeader(stringResource(R.string.sec_language))
-            val language by app.language.collectAsStateWithLifecycle()
-            ListItem(
-                headlineContent = { Text(stringResource(R.string.language_title)) },
-                supportingContent = {
-                    Column {
-                        Text(stringResource(R.string.language_hint))
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            AppLanguage.CHOICES.forEach { choice ->
-                                val label = when (choice) {
-                                    AppLanguage.UKRAINIAN -> "Українська"
-                                    AppLanguage.ENGLISH -> "English"
-                                    else -> stringResource(R.string.language_system)
+                // ---------------- Language
+                SectionHeader(stringResource(R.string.sec_language))
+                val language by app.language.collectAsStateWithLifecycle()
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.language_title)) },
+                    supportingContent = {
+                        Column {
+                            Text(stringResource(R.string.language_hint))
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                AppLanguage.CHOICES.forEach { choice ->
+                                    val label = when (choice) {
+                                        AppLanguage.UKRAINIAN -> "Українська"
+                                        AppLanguage.ENGLISH -> "English"
+                                        AppLanguage.RUSSIAN -> "Русский"
+                                        else -> stringResource(R.string.language_system)
+                                    }
+                                    FilterChip(
+                                        selected = language == choice,
+                                        onClick = {
+                                            if (language != choice) {
+                                                save()
+                                                app.setLanguage(choice)
+                                                (context as? Activity)?.recreate()
+                                            }
+                                        },
+                                        label = { Text(label) },
+                                    )
                                 }
-                                FilterChip(
-                                    selected = language == choice,
-                                    onClick = {
-                                        if (language != choice) {
-                                            save()
-                                            app.setLanguage(choice)
-                                            (context as? Activity)?.recreate()
-                                        }
-                                    },
-                                    label = { Text(label) },
-                                )
                             }
                         }
-                    }
-                },
-                leadingContent = { Icon(Icons.Filled.Translate, contentDescription = null) },
-            )
+                    },
+                    leadingContent = { Icon(Icons.Filled.Translate, contentDescription = null) },
+                )
 
-            // ---------------- Map start
-            MapStartSection(app, ui)
+                // ---------------- Map start
+                MapStartSection(app, ui)
 
-            // ---------------- Navigation without GPS
-            SectionHeader(stringResource(R.string.sec_navigation_method))
-            val navigationMethod by app.navigationMethod.collectAsStateWithLifecycle()
-            ListItem(
-                headlineContent = { Text(stringResource(R.string.navigation_method_title)) },
-                supportingContent = {
-                    Column {
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            NavigationMethod.entries.forEach { method ->
-                                FilterChip(
-                                    selected = navigationMethod == method,
-                                    onClick = { app.setNavigationMethod(method) },
-                                    label = { Text(navigationMethodName(method)) },
-                                )
-                            }
-                        }
-                        Text(
-                            stringResource(
-                                when (navigationMethod) {
-                                    NavigationMethod.DEAD_RECKONING -> R.string.navigation_method_dr_summary
-                                    NavigationMethod.CELL_TOWERS -> R.string.navigation_method_cells_summary
-                                    NavigationMethod.HYBRID -> R.string.navigation_method_hybrid_summary
-                                },
-                            ),
-                        )
-                    }
-                },
-            )
-
-            // ---------------- Battery
-            SectionHeader(stringResource(R.string.sec_power))
-            val powerMode by app.powerMode.collectAsStateWithLifecycle()
-            val profile by app.powerProfile.collectAsStateWithLifecycle()
-            val screenOn by app.keepScreenOn.collectAsStateWithLifecycle()
-            ListItem(
-                headlineContent = { Text(stringResource(R.string.power_title)) },
-                supportingContent = {
-                    Column {
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            PowerMode.entries.forEach { m ->
-                                FilterChip(selected = powerMode == m, onClick = { app.setPowerMode(m) }, label = { Text(powerModeName(m)) })
-                            }
-                        }
-                        Text(
-                            stringResource(
-                                when (powerMode) {
-                                    PowerMode.AUTO -> R.string.power_auto_hint
-                                    PowerMode.PERFORMANCE -> R.string.power_performance_hint
-                                    PowerMode.BALANCED -> R.string.power_balanced_hint
-                                    PowerMode.SAVER -> R.string.power_saver_hint
-                                },
-                            ),
-                        )
-                        if (powerMode == PowerMode.AUTO) {
-                            val active = when (profile) {
-                                PowerProfile.PERFORMANCE -> PowerMode.PERFORMANCE
-                                PowerProfile.SAVER -> PowerMode.SAVER
-                                else -> PowerMode.BALANCED
+                // ---------------- Navigation without GPS
+                SectionHeader(stringResource(R.string.sec_navigation_method))
+                val navigationMethod by app.navigationMethod.collectAsStateWithLifecycle()
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.navigation_method_title)) },
+                    supportingContent = {
+                        Column {
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                NavigationMethod.entries.forEach { method ->
+                                    FilterChip(
+                                        selected = navigationMethod == method,
+                                        onClick = { app.setNavigationMethod(method) },
+                                        label = { Text(navigationMethodName(method)) },
+                                    )
+                                }
                             }
                             Text(
-                                stringResource(R.string.power_auto_now, powerModeName(active), app.power.batteryPercent()?.let { "$it %" } ?: "—"),
-                                color = MaterialTheme.colorScheme.primary,
+                                stringResource(
+                                    when (navigationMethod) {
+                                        NavigationMethod.DEAD_RECKONING -> R.string.navigation_method_dr_summary
+                                        NavigationMethod.CELL_TOWERS -> R.string.navigation_method_cells_summary
+                                        NavigationMethod.HYBRID -> R.string.navigation_method_hybrid_summary
+                                    },
+                                ),
                             )
                         }
-                    }
-                },
-                leadingContent = { Icon(Icons.Filled.BatteryChargingFull, contentDescription = null) },
-            )
-            SwitchItem(stringResource(R.string.power_screen_on), stringResource(R.string.power_screen_on_summary), screenOn) { app.setKeepScreenOn(it) }
+                    },
+                )
+                val voiceEnabled by app.voiceEnabled.collectAsStateWithLifecycle()
+                SwitchItem(stringResource(R.string.voice_title), stringResource(R.string.voice_summary), voiceEnabled) { app.setVoiceEnabled(it) }
 
-            // ---------------- Offline routing
-            SectionHeader(stringResource(R.string.sec_routing))
-            val pack = routing.pack
-            ListItem(
-                headlineContent = {
-                    Text(
-                        if (pack == null) {
-                            stringResource(R.string.routing_none)
-                        } else {
-                            stringResource(R.string.routing_pack, pack.name, (pack.sizeBytes / 1_048_576).toInt(), pack.builtAt.take(10))
-                        },
-                    )
-                },
-                supportingContent = {
-                    when {
-                        pack != null && !routing.loaded -> Text(stringResource(R.string.routing_load_failed), color = MaterialTheme.colorScheme.error)
-                        pack != null -> Text(stringResource(R.string.routing_coverage, pack.bounds[0], pack.bounds[1], pack.bounds[2], pack.bounds[3]))
-                        else -> {}
-                    }
-                },
-                leadingContent = { Icon(Icons.Filled.Route, contentDescription = null) },
-            )
-            routing.busy?.let {
-                Column(Modifier.padding(horizontal = 16.dp)) {
-                    LinearProgressIndicator(Modifier.fillMaxWidth())
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(it, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                        TextButton(onClick = { app.offlineRouting.cancel() }) { Text(stringResource(R.string.action_cancel)) }
-                    }
-                }
-            }
-            Field(packUrl, {
-                packUrl = it
-                app.offlineRouting.setPackUrl(it)
-            }, stringResource(R.string.routing_url), "https://…/graph-ukraine.zip", keyboard = KeyboardType.Uri)
-            FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(onClick = { app.offlineRouting.download(packUrl) }, enabled = packUrl.isNotBlank() && routing.busy == null) {
-                    Text(stringResource(R.string.action_download))
-                }
-                OutlinedButton(onClick = { pickPack.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) }, enabled = routing.busy == null) {
-                    Text(stringResource(R.string.routing_import))
-                }
-                val bundled = routing.bundled
-                if (pack == null && bundled != null) {
-                    OutlinedButton(onClick = { app.offlineRouting.installBundled() }, enabled = routing.busy == null) {
-                        Text(stringResource(R.string.routing_install_builtin, bundled.name))
-                    }
-                }
-                if (pack != null) {
-                    TextButton(onClick = { app.offlineRouting.remove() }, enabled = routing.busy == null) {
-                        Text(stringResource(R.string.routing_remove), color = MaterialTheme.colorScheme.error)
-                    }
-                }
-            }
-            SwitchItem(stringResource(R.string.routing_allow_online), stringResource(R.string.routing_allow_online_summary), routing.allowOnline) {
-                app.offlineRouting.setAllowOnline(it)
-            }
-
-            // ---------------- Offline map display (tiles pack + route corridors)
-            OfflineMapSection(app, offlineMap)
-
-            // ---------------- Address search (online fallback server)
-            SearchServerSection(app, onlineAllowed = routing.allowOnline)
-
-            // ---------------- Cell towers
-            SectionHeader(stringResource(R.string.sec_cells))
-            SwitchItem(stringResource(R.string.cells_show_map), null, c.showTowers) { mgr.setShowTowers(it) }
-            ListItem(
-                headlineContent = { Text(stringResource(R.string.cells_types)) },
-                supportingContent = {
-                    Column {
-                        Text(stringResource(R.string.cells_types_hint))
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            RADIO_CHOICES.forEach { (radio, label) ->
-                                FilterChip(selected = radio in c.radios, onClick = { mgr.setRadioEnabled(radio, radio !in c.radios) }, label = { Text(label) })
+                // ---------------- Battery
+                SectionHeader(stringResource(R.string.sec_power))
+                val powerMode by app.powerMode.collectAsStateWithLifecycle()
+                val profile by app.powerProfile.collectAsStateWithLifecycle()
+                val screenOn by app.keepScreenOn.collectAsStateWithLifecycle()
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.power_title)) },
+                    supportingContent = {
+                        Column {
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                PowerMode.entries.forEach { m ->
+                                    FilterChip(selected = powerMode == m, onClick = { app.setPowerMode(m) }, label = { Text(powerModeName(m)) })
+                                }
+                            }
+                            Text(
+                                stringResource(
+                                    when (powerMode) {
+                                        PowerMode.AUTO -> R.string.power_auto_hint
+                                        PowerMode.PERFORMANCE -> R.string.power_performance_hint
+                                        PowerMode.BALANCED -> R.string.power_balanced_hint
+                                        PowerMode.SAVER -> R.string.power_saver_hint
+                                    },
+                                ),
+                            )
+                            if (powerMode == PowerMode.AUTO) {
+                                val active = when (profile) {
+                                    PowerProfile.PERFORMANCE -> PowerMode.PERFORMANCE
+                                    PowerProfile.SAVER -> PowerMode.SAVER
+                                    else -> PowerMode.BALANCED
+                                }
+                                Text(
+                                    stringResource(R.string.power_auto_now, powerModeName(active), app.power.batteryPercent()?.let { "$it %" } ?: "—"),
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
                             }
                         }
-                        if (c.radios.isEmpty()) Text(stringResource(R.string.cells_none_warning), color = MaterialTheme.colorScheme.error)
-                    }
-                },
-            )
-            val nf = NumberFormat.getIntegerInstance()
-            val names = CellSource.entries.associateWith { sourceName(it) }
-            ListItem(
-                headlineContent = { Text(stringResource(R.string.cells_total, nf.format(c.total))) },
-                supportingContent = {
-                    Text(
-                        CellSource.entries.filter { (c.counts[it] ?: 0) > 0 }.joinToString(" · ") { "${names[it]}: ${nf.format(c.counts[it] ?: 0)}" },
-                    )
-                },
-            )
-            Field(mccs, {
-                mccs = it
-                save()
-            }, stringResource(R.string.cells_region), stringResource(R.string.cells_region_hint), keyboard = KeyboardType.Number)
+                    },
+                    leadingContent = { Icon(Icons.Filled.BatteryChargingFull, contentDescription = null) },
+                )
+                SwitchItem(stringResource(R.string.power_screen_on), stringResource(R.string.power_screen_on_summary), screenOn) { app.setKeepScreenOn(it) }
 
-            // ---------------- Data sources
-            SectionHeader(stringResource(R.string.sec_sources))
-            ListItem(
-                headlineContent = { Text(stringResource(R.string.mozilla_title)) },
-                supportingContent = { Text(stringResource(R.string.mozilla_summary)) },
-                trailingContent = {
-                    TextButton(onClick = {
-                        save()
-                        mgr.downloadMozilla()
-                    }, enabled = !busy) { Text(stringResource(R.string.action_download)) }
-                },
-            )
-            ListItem(
-                headlineContent = { Text(stringResource(R.string.ocid_title)) },
-                supportingContent = { Text(stringResource(R.string.ocid_summary)) },
-            )
-            Field(token, { token = it }, stringResource(R.string.ocid_token), null, secret = true)
-            Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(onClick = {
-                    save()
-                    mgr.downloadOpenCellId(token)
-                }, enabled = token.isNotBlank() && !busy) { Text(stringResource(R.string.action_download)) }
-                OutlinedButton(onClick = {
-                    save()
-                    pickFile.launch(arrayOf("*/*"))
-                }, enabled = !busy) {
-                    Icon(Icons.Filled.FileUpload, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.size(8.dp))
-                    Text(stringResource(R.string.action_import_file))
-                }
-            }
-
-            // ---------------- Sharing server
-            SectionHeader(stringResource(R.string.sec_sync))
-            Text(
-                stringResource(R.string.sync_summary),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-            )
-            Field(syncUrl, {
-                syncUrl = it
-                save()
-            }, stringResource(R.string.sync_url), "https://cells.example.org", keyboard = KeyboardType.Uri)
-            Field(syncKey, {
-                syncKey = it
-                save()
-            }, stringResource(R.string.sync_key), null, secret = true)
-            if (syncUrl.trim().startsWith("http://") && syncKey.isNotBlank()) {
-                Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.size(8.dp))
-                    Text(stringResource(R.string.sync_http_warning), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                }
-            }
-            SwitchItem(stringResource(R.string.sync_auto), stringResource(R.string.sync_auto_summary), autoSync) {
-                autoSync = it
-                save()
-            }
-            Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Button(onClick = {
-                    save()
-                    mgr.sync()
-                }, enabled = syncUrl.isNotBlank() && !busy) { Text(stringResource(R.string.action_sync_now)) }
-                Spacer(Modifier.size(12.dp))
-                c.lastSync?.let { Text(stringResource(R.string.sync_last, it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            }
-
-            // ---------------- Learning
-            SectionHeader(stringResource(R.string.sec_learning))
-            SwitchItem(stringResource(R.string.learning_title), stringResource(R.string.learning_summary), c.learning) {
-                mgr.setLearning(it)
-                app.refresh()
-            }
-
-            // ---------------- Database
-            SectionHeader(stringResource(R.string.sec_database))
-            ListItem(
-                headlineContent = { Text(stringResource(R.string.action_export)) },
-                supportingContent = { Text(stringResource(R.string.export_summary)) },
-                modifier = Modifier.clickable(enabled = !busy) { mgr.exportDatabase() },
-            )
-            ListItem(
-                headlineContent = { Text(stringResource(R.string.action_reset), color = MaterialTheme.colorScheme.error) },
-                supportingContent = { Text(stringResource(R.string.reset_summary)) },
-                leadingContent = { Icon(Icons.Filled.DeleteForever, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
-                modifier = Modifier.clickable(enabled = !busy) { confirmReset = true },
-            )
-
-            // ---------------- Diagnostics
-            SectionHeader(stringResource(R.string.sec_diagnostics))
-            var unrestricted by remember { mutableStateOf(isBatteryUnrestricted(context)) }
-            val lifecycleOwner = LocalLifecycleOwner.current
-            DisposableEffect(lifecycleOwner) {
-                val obs = LifecycleEventObserver { _, e ->
-                    if (e == Lifecycle.Event.ON_RESUME) unrestricted = isBatteryUnrestricted(context)
-                }
-                lifecycleOwner.lifecycle.addObserver(obs)
-                onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
-            }
-            ListItem(
-                headlineContent = { Text(stringResource(R.string.battery_title)) },
-                supportingContent = {
-                    Text(
-                        stringResource(if (unrestricted) R.string.battery_unrestricted else R.string.battery_restricted),
-                        color = if (unrestricted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
-                    )
-                },
-                modifier = Modifier.clickable(enabled = !unrestricted) {
-                    runCatching {
-                        @android.annotation.SuppressLint("BatteryLife")
-                        val intent = Intent(
-                            Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                            "package:${context.packageName}".toUri(),
+                // ---------------- Offline routing
+                SectionHeader(stringResource(R.string.sec_routing))
+                val pack = routing.pack
+                ListItem(
+                    headlineContent = {
+                        Text(
+                            if (pack == null) {
+                                stringResource(R.string.routing_none)
+                            } else {
+                                stringResource(R.string.routing_pack, pack.name, (pack.sizeBytes / 1_048_576).toInt(), pack.builtAt.take(10))
+                            },
                         )
-                        context.startActivity(intent)
+                    },
+                    supportingContent = {
+                        when {
+                            pack != null && !routing.loaded -> Text(stringResource(R.string.routing_load_failed), color = MaterialTheme.colorScheme.error)
+                            pack != null -> Text(stringResource(R.string.routing_coverage, pack.bounds[0], pack.bounds[1], pack.bounds[2], pack.bounds[3]))
+                            else -> {}
+                        }
+                    },
+                    leadingContent = { Icon(Icons.Filled.Route, contentDescription = null) },
+                )
+                routing.busy?.let {
+                    Column(Modifier.padding(horizontal = 16.dp)) {
+                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(it, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                            TextButton(onClick = { app.offlineRouting.cancel() }) { Text(stringResource(R.string.action_cancel)) }
+                        }
                     }
-                },
-            )
-            SwitchItem(stringResource(R.string.simulate_gps_loss), stringResource(R.string.simulate_gps_loss_summary), ui.simulateGpsLoss) { app.setSimulateGpsLoss(it) }
-            ListItem(
-                headlineContent = { Text(stringResource(R.string.trip_log)) },
-                leadingContent = { Icon(Icons.AutoMirrored.Filled.Article, contentDescription = null) },
-                modifier = Modifier.clickable(onClick = onOpenLog),
-            )
+                }
+                Field(packUrl, {
+                    packUrl = it
+                    app.offlineRouting.setPackUrl(it)
+                }, stringResource(R.string.routing_url), "https://…/graph-ukraine.zip", keyboard = KeyboardType.Uri)
+                FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(onClick = { app.offlineRouting.download(packUrl) }, enabled = packUrl.isNotBlank() && routing.busy == null) {
+                        Text(stringResource(R.string.action_download))
+                    }
+                    OutlinedButton(onClick = { pickPack.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) }, enabled = routing.busy == null) {
+                        Text(stringResource(R.string.routing_import))
+                    }
+                    val bundled = routing.bundled
+                    if (pack == null && bundled != null) {
+                        OutlinedButton(onClick = { app.offlineRouting.installBundled() }, enabled = routing.busy == null) {
+                            Text(stringResource(R.string.routing_install_builtin, bundled.name))
+                        }
+                    }
+                    if (pack != null) {
+                        TextButton(onClick = { app.offlineRouting.remove() }, enabled = routing.busy == null) {
+                            Text(stringResource(R.string.routing_remove), color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
+                SwitchItem(stringResource(R.string.routing_allow_online), stringResource(R.string.routing_allow_online_summary), routing.allowOnline) {
+                    app.offlineRouting.setAllowOnline(it)
+                }
 
-            // ---------------- About
-            SectionHeader(stringResource(R.string.sec_about))
-            val version = remember {
-                runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull().orEmpty()
+                // ---------------- Offline map display (tiles pack + route corridors)
+                OfflineMapSection(app, offlineMap)
+
+                // ---------------- Address search (online fallback server)
+                SearchServerSection(app, onlineAllowed = routing.allowOnline)
+
+                // ---------------- Cell towers
+                SectionHeader(stringResource(R.string.sec_cells))
+                SwitchItem(stringResource(R.string.cells_show_map), null, c.showTowers) { mgr.setShowTowers(it) }
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.cells_types)) },
+                    supportingContent = {
+                        Column {
+                            Text(stringResource(R.string.cells_types_hint))
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                RADIO_CHOICES.forEach { (radio, label) ->
+                                    FilterChip(selected = radio in c.radios, onClick = { mgr.setRadioEnabled(radio, radio !in c.radios) }, label = { Text(label) })
+                                }
+                            }
+                            if (c.radios.isEmpty()) Text(stringResource(R.string.cells_none_warning), color = MaterialTheme.colorScheme.error)
+                        }
+                    },
+                )
+                val nf = NumberFormat.getIntegerInstance()
+                val names = CellSource.entries.associateWith { sourceName(it) }
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.cells_total, nf.format(c.total))) },
+                    supportingContent = {
+                        Text(
+                            CellSource.entries.filter { (c.counts[it] ?: 0) > 0 }.joinToString(" · ") { "${names[it]}: ${nf.format(c.counts[it] ?: 0)}" },
+                        )
+                    },
+                )
+                Field(mccs, {
+                    mccs = it
+                    save()
+                }, stringResource(R.string.cells_region), stringResource(R.string.cells_region_hint), keyboard = KeyboardType.Number)
+
+                // ---------------- Data sources
+                SectionHeader(stringResource(R.string.sec_sources))
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.mozilla_title)) },
+                    supportingContent = { Text(stringResource(R.string.mozilla_summary)) },
+                    trailingContent = {
+                        TextButton(onClick = {
+                            save()
+                            mgr.downloadMozilla()
+                        }, enabled = !busy) { Text(stringResource(R.string.action_download)) }
+                    },
+                )
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.ocid_title)) },
+                    supportingContent = { Text(stringResource(R.string.ocid_summary)) },
+                )
+                Field(token, { token = it }, stringResource(R.string.ocid_token), null, secret = true)
+                Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(onClick = {
+                        save()
+                        mgr.downloadOpenCellId(token)
+                    }, enabled = token.isNotBlank() && !busy) { Text(stringResource(R.string.action_download)) }
+                    OutlinedButton(onClick = {
+                        save()
+                        pickFile.launch(arrayOf("*/*"))
+                    }, enabled = !busy) {
+                        Icon(Icons.Filled.FileUpload, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.size(8.dp))
+                        Text(stringResource(R.string.action_import_file))
+                    }
+                }
+
+                // ---------------- Sharing server
+                SectionHeader(stringResource(R.string.sec_sync))
+                Text(
+                    stringResource(R.string.sync_summary),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+                Field(syncUrl, {
+                    syncUrl = it
+                    save()
+                }, stringResource(R.string.sync_url), "https://cells.example.org", keyboard = KeyboardType.Uri)
+                Field(syncKey, {
+                    syncKey = it
+                    save()
+                }, stringResource(R.string.sync_key), null, secret = true)
+                if (syncUrl.trim().startsWith("http://") && syncKey.isNotBlank()) {
+                    Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.size(8.dp))
+                        Text(stringResource(R.string.sync_http_warning), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+                SwitchItem(stringResource(R.string.sync_auto), stringResource(R.string.sync_auto_summary), autoSync) {
+                    autoSync = it
+                    save()
+                }
+                Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Button(onClick = {
+                        save()
+                        mgr.sync()
+                    }, enabled = syncUrl.isNotBlank() && !busy) { Text(stringResource(R.string.action_sync_now)) }
+                    Spacer(Modifier.size(12.dp))
+                    c.lastSync?.let { Text(stringResource(R.string.sync_last, it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                }
+
+                // ---------------- Learning
+                SectionHeader(stringResource(R.string.sec_learning))
+                SwitchItem(stringResource(R.string.learning_title), stringResource(R.string.learning_summary), c.learning) {
+                    mgr.setLearning(it)
+                    app.refresh()
+                }
+
+                // ---------------- Database
+                SectionHeader(stringResource(R.string.sec_database))
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.action_export)) },
+                    supportingContent = { Text(stringResource(R.string.export_summary)) },
+                    modifier = Modifier.clickable(enabled = !busy) { mgr.exportDatabase() },
+                )
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.action_reset), color = MaterialTheme.colorScheme.error) },
+                    supportingContent = { Text(stringResource(R.string.reset_summary)) },
+                    leadingContent = { Icon(Icons.Filled.DeleteForever, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                    modifier = Modifier.clickable(enabled = !busy) { confirmReset = true },
+                )
+
+                // ---------------- Diagnostics
+                SectionHeader(stringResource(R.string.sec_diagnostics))
+                var unrestricted by remember { mutableStateOf(isBatteryUnrestricted(context)) }
+                val lifecycleOwner = LocalLifecycleOwner.current
+                DisposableEffect(lifecycleOwner) {
+                    val obs = LifecycleEventObserver { _, e ->
+                        if (e == Lifecycle.Event.ON_RESUME) unrestricted = isBatteryUnrestricted(context)
+                    }
+                    lifecycleOwner.lifecycle.addObserver(obs)
+                    onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+                }
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.battery_title)) },
+                    supportingContent = {
+                        Text(
+                            stringResource(if (unrestricted) R.string.battery_unrestricted else R.string.battery_restricted),
+                            color = if (unrestricted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+                        )
+                    },
+                    modifier = Modifier.clickable(enabled = !unrestricted) {
+                        runCatching {
+                            @android.annotation.SuppressLint("BatteryLife")
+                            val intent = Intent(
+                                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                "package:${context.packageName}".toUri(),
+                            )
+                            context.startActivity(intent)
+                        }
+                    },
+                )
+                SwitchItem(stringResource(R.string.simulate_gps_loss), stringResource(R.string.simulate_gps_loss_summary), ui.simulateGpsLoss) { app.setSimulateGpsLoss(it) }
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.trip_log)) },
+                    leadingContent = { Icon(Icons.AutoMirrored.Filled.Article, contentDescription = null) },
+                    modifier = Modifier.clickable(onClick = onOpenLog),
+                )
+
+                // ---------------- About
+                SectionHeader(stringResource(R.string.sec_about))
+                val version = remember {
+                    runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull().orEmpty()
+                }
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.about_version, version)) },
+                    supportingContent = { Text(stringResource(R.string.about_credits) + "\n\n" + stringResource(R.string.about_disclaimer)) },
+                )
             }
-            ListItem(
-                headlineContent = { Text(stringResource(R.string.about_version, version)) },
-                supportingContent = { Text(stringResource(R.string.about_credits) + "\n\n" + stringResource(R.string.about_disclaimer)) },
-            )
         }
     }
 

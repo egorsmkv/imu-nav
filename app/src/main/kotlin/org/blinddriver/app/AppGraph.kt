@@ -40,6 +40,7 @@ import org.blinddriver.core.nav.GuidanceState
 import org.blinddriver.core.nav.NavListener
 import org.blinddriver.core.nav.NavigationEngine
 import org.blinddriver.core.nav.NavigationMethod
+import org.blinddriver.core.nav.RussianPhrases
 import org.blinddriver.core.nav.UkrainianPhrases
 import org.blinddriver.core.route.TravelMode
 import org.blinddriver.core.speed.SpeedProfile
@@ -109,8 +110,9 @@ class AppGraph(private val context: Context) {
     val tripLog = TripLog(context)
 
     /** UI and voice language: the in-app choice, or the phone's language by default. */
-    private val ukrainian get() = AppLanguage.isUkrainian(context)
-    private val voice = Voice(context, AppLanguage.locale(AppLanguage.get(context)))
+    private val voicePrefs = context.getSharedPreferences("voice", Context.MODE_PRIVATE)
+    val voiceEnabled = MutableStateFlow(voicePrefs.getBoolean("enabled", true))
+    private val voice = Voice(context, AppLanguage.locale(AppLanguage.get(context)), voiceEnabled.value)
     val language = MutableStateFlow(AppLanguage.get(context))
 
     /** Switch UI + voice language; the activity recreates itself to pick up new resources. */
@@ -122,8 +124,20 @@ class AppGraph(private val context: Context) {
         tripLog.write("language $choice")
     }
 
+    /** Enable or silence spoken navigation while keeping visual guidance unchanged. */
+    fun setVoiceEnabled(enabled: Boolean) {
+        voicePrefs.edit { putBoolean("enabled", enabled) }
+        voiceEnabled.value = enabled
+        voice.setEnabled(enabled)
+        tripLog.write("voice enabled=$enabled")
+    }
+
     /** Voice phrases in the current language. */
-    private fun phrasesFor() = if (ukrainian) UkrainianPhrases else EnglishPhrases
+    private fun phrasesFor() = when (AppLanguage.locale(AppLanguage.get(context)).language) {
+        "uk" -> UkrainianPhrases
+        "ru" -> RussianPhrases
+        else -> EnglishPhrases
+    }
 
     /** Offline GraphHopper pack first; OSRM online only as an allowed fallback. */
     val offlineRouting = OfflineRouting(context, scope, tripLog::write)

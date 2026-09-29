@@ -177,7 +177,8 @@ gyro turn is matched against route turns 400 m behind … 300 m ahead (turn-sign
 
 ## Build
 
-Requirements: JDK 17+, Android SDK 36.
+Runs on Android 8.0 (API 26) and newer; targets Android 16 (API 36). Build requirements: JDK 17+
+and Android SDK 36.
 
 ```bash
 ./gradlew test                # engine, routing/search, server and replay tests
@@ -190,6 +191,10 @@ dependencies. The flavor boundary prevents future Play-only SDKs from leaking in
 automated dependency check rejects common proprietary/tracking SDK groups. F-Droid builds exclude
 the optional untracked routing bundle and do not read the developer signing key. See
 [`docs/FDROID.md`](docs/FDROID.md) for release, validation and submission instructions.
+
+The app uses MapLibre's OpenGL renderer for the broadest device compatibility. GPS, gyroscope,
+compass and step-detector hardware are optional install-time features; missing sensors reduce
+navigation accuracy or disable their corresponding corrections rather than blocking installation.
 
 ### Code checks
 
@@ -242,8 +247,9 @@ uses cell/network fixes to constrain drift. Trusted GPS remains preferred in all
 Other settings cover cell types, tower sources, sharing, learning, the database, diagnostics and about.
 The map opens at the phone's last GPS position (spoofed or out-of-area fixes are ignored) or, if set in
 **Settings → Map start**, at a fixed place (typed coordinates, your position or the map centre).
-The interface and voice follow the phone's language (Ukrainian or English) unless changed in
-**Settings → Language**, and the phone's light/dark theme. Text trip logs are written to
+The interface and voice follow the phone's language (Ukrainian, English or Russian) unless changed in
+**Settings → Language**, and the phone's light/dark theme. Spoken directions can be disabled under
+**Settings → Navigation without GPS**. Map and settings layouts adapt to portrait and landscape. Text trip logs are written to
 `files/logs/`, trip recordings to `files/trips/` in app storage.
 
 ## Status and limitations

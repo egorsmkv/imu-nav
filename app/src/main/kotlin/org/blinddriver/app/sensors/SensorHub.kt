@@ -185,7 +185,15 @@ class SensorHub(
     }
 
     /** False when the user switched Location off system-wide: no provider will deliver fixes. */
-    val locationEnabled: Boolean get() = locationManager.isLocationEnabled
+    val locationEnabled: Boolean
+        get() = if (Build.VERSION.SDK_INT >= 28) {
+            locationManager.isLocationEnabled
+        } else {
+            runCatching {
+                locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
+                    locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+            }.getOrDefault(false)
+        }
 
     /** What is currently registered; [configure] only touches what changed. */
     private var profile: PowerProfile = PowerProfile.BALANCED
@@ -209,8 +217,9 @@ class SensorHub(
     /** Walking trip in progress: listen to the step detector. */
     private var walking = false
 
-    /** Steps need the "physical activity" permission (Android 10+). */
-    private fun canCountSteps(): Boolean = ContextCompat.checkSelfPermission(context, Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
+    /** Steps need the "physical activity" permission on Android 10 and newer. */
+    private fun canCountSteps(): Boolean = Build.VERSION.SDK_INT < 29 ||
+        ContextCompat.checkSelfPermission(context, Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
 
     private fun applyStepConfig() {
         val want = running && navigating && walking && hasStepDetector && canCountSteps()

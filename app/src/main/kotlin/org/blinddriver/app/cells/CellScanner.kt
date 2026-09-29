@@ -8,16 +8,14 @@ import android.os.Looper
 import android.os.SystemClock
 import android.telephony.CellIdentityGsm
 import android.telephony.CellIdentityLte
-import android.telephony.CellIdentityNr
 import android.telephony.CellIdentityWcdma
 import android.telephony.CellInfo
 import android.telephony.CellInfoGsm
 import android.telephony.CellInfoLte
-import android.telephony.CellInfoNr
 import android.telephony.CellInfoWcdma
-import android.telephony.CellSignalStrengthNr
 import android.telephony.SubscriptionManager
 import android.telephony.TelephonyManager
+import androidx.annotation.RequiresApi
 import org.blinddriver.core.cells.CellFix
 import org.blinddriver.core.cells.CellKey
 import org.blinddriver.core.cells.CellObservation
@@ -89,21 +87,9 @@ class CellScanner(
 
     /** One TelephonyManager per active SIM; falls back to the default one. */
     private fun managers(): List<Pair<Int, TelephonyManager>> {
+        if (Build.VERSION.SDK_INT < 29) return listOf(-1 to telephony)
         val ids = runCatching {
-            val slots = if (Build.VERSION.SDK_INT >= 30) {
-                telephony.activeModemCount
-            } else {
-                @Suppress("DEPRECATION")
-                telephony.phoneCount
-            }
-            (0 until slots).flatMap { slot ->
-                if (Build.VERSION.SDK_INT >= 34) {
-                    listOf(SubscriptionManager.getSubscriptionId(slot))
-                } else {
-                    @Suppress("DEPRECATION")
-                    subscriptions?.getSubscriptionIds(slot)?.toList().orEmpty()
-                }
-            }.filter { it >= 0 }.distinct()
+            Android10CellApi.subscriptionIds(telephony, subscriptions)
         }.getOrDefault(emptyList())
         if (ids.isEmpty()) return listOf(-1 to telephony)
         return ids.map { it to telephony.createForSubscriptionId(it) }
@@ -113,18 +99,27 @@ class CellScanner(
     @SuppressLint("MissingPermission")
     private fun scan() {
         for ((subId, tm) in managers()) {
-            runCatching {
-                tm.requestCellInfoUpdate(
-                    worker,
-                    object : TelephonyManager.CellInfoCallback() {
-                        override fun onCellInfo(cells: MutableList<CellInfo>) = onSimCells(subId, cells)
-                        override fun onError(errorCode: Int, detail: Throwable?) {
-                            runCatching { tm.allCellInfo }.getOrNull()?.let { onSimCells(subId, it) }
-                        }
-                    },
-                )
-            }.onFailure { log("cell_scan_failed sub=$subId ${it.javaClass.simpleName}: ${it.message}") }
+            if (Build.VERSION.SDK_INT >= 29) {
+                runCatching {
+                    Android10CellApi.requestUpdate(tm, worker, { onSimCells(subId, it) }) {
+                        runCatching { tm.allCellInfo }.getOrNull()?.let { onSimCells(subId, it) }
+                    }
+                }.onFailure { logScanFailure(subId, it) }
+            } else {
+                // Before Android 10 there is no asynchronous refresh API. Read the cached modem
+                // list on our worker so a slow radio service can never block the main thread.
+                worker.execute {
+                    runCatching { tm.allCellInfo.orEmpty() }
+                        .onSuccess { onSimCells(subId, it) }
+                        .onFailure { logScanFailure(subId, it) }
+                }
+            }
         }
+    }
+
+    /** Keep the scanner's stable key=value failure message identical on every Android version. */
+    private fun logScanFailure(subId: Int, error: Throwable) {
+        log("cell_scan_failed sub=$subId ${error.javaClass.simpleName}: ${error.message}")
     }
 
     /** Runs on the worker thread: merge this SIM's cells with other SIMs' recent ones. */
@@ -193,8 +188,7 @@ class CellScanner(
                 is CellInfoLte -> lte(cell, mcc, mnc)
                 is CellInfoGsm -> gsm(cell, mcc, mnc)
                 is CellInfoWcdma -> umts(cell, mcc, mnc)
-                is CellInfoNr -> nr(cell, mcc, mnc)
-                else -> null // CDMA/TD-SCDMA: not used in Ukraine
+                else -> if (Build.VERSION.SDK_INT >= 29) Android10CellApi.nrObservation(cell, mcc, mnc) else null // CDMA/TD-SCDMA: not used in Ukraine
             }
         }
     }
@@ -223,32 +217,99 @@ class CellScanner(
         return CellObservation(CellKey(Radio.UMTS, mcc, mnc, id.lac, id.cid.toLong()), cell.cellSignalStrength.dbm.takeIf(::valid), cell.isRegistered)
     }
 
-    private fun nr(cell: CellInfoNr, mcc: Int, mnc: Int): CellObservation? {
-        val id = cell.cellIdentity as CellIdentityNr
-        if (id.nci == CellInfo.UNAVAILABLE_LONG || !valid(id.tac)) return null
-        val signal = cell.cellSignalStrength as CellSignalStrengthNr
-        return CellObservation(CellKey(Radio.NR, mcc, mnc, id.tac, id.nci), signal.ssRsrp.takeIf(::valid) ?: signal.dbm.takeIf(::valid), cell.isRegistered)
-    }
-
     /**
      * The cell's operator as (MCC, MNC) numbers, either may be null.
-     * (`CellInfo.getCellIdentity()` only exists since Android 11, so we ask each subtype, which works from Android 10.)
+     * Newer releases provide strings that preserve leading zeroes; Android 8 uses the older
+     * integer properties. NR access stays isolated in [Android10CellApi] so Android 8 can load
+     * this class without resolving Android 10-only platform types.
      */
     private fun operator(cell: CellInfo): Pair<Int?, Int?> {
+        if (Build.VERSION.SDK_INT >= 29) Android10CellApi.nrOperator(cell)?.let { return it }
+        return if (Build.VERSION.SDK_INT >= 28) operatorStrings(cell) else operatorLegacy(cell)
+    }
+
+    /** Read MCC/MNC using the non-deprecated Android 9 string properties. */
+    @RequiresApi(28)
+    private fun operatorStrings(cell: CellInfo): Pair<Int?, Int?> {
         val codes: Pair<String?, String?> = when (cell) {
             is CellInfoLte -> cell.cellIdentity.let { it.mccString to it.mncString }
             is CellInfoGsm -> cell.cellIdentity.let { it.mccString to it.mncString }
             is CellInfoWcdma -> cell.cellIdentity.let { it.mccString to it.mncString }
-            is CellInfoNr -> (cell.cellIdentity as CellIdentityNr).let { it.mccString to it.mncString }
             else -> null to null
         }
         return codes.first?.toIntOrNull() to codes.second?.toIntOrNull()
     }
 
+    /** Android 8 fallback for MCC/MNC, where only integer properties are available. */
+    @Suppress("DEPRECATION")
+    private fun operatorLegacy(cell: CellInfo): Pair<Int?, Int?> = when (cell) {
+        is CellInfoLte -> cell.cellIdentity.let { it.mcc.takeIf(::valid) to it.mnc.takeIf(::valid) }
+        is CellInfoGsm -> cell.cellIdentity.let { it.mcc.takeIf(::valid) to it.mnc.takeIf(::valid) }
+        is CellInfoWcdma -> cell.cellIdentity.let { it.mcc.takeIf(::valid) to it.mnc.takeIf(::valid) }
+        else -> null to null
+    }
+
     /** Android reports "unknown" as UNAVAILABLE / Int.MAX_VALUE; we treat those and negatives as missing. */
-    private fun valid(value: Int) = value != CellInfo.UNAVAILABLE && value != Int.MAX_VALUE && value >= 0
+    private fun valid(value: Int) = value != Int.MAX_VALUE && value >= 0
 
     private companion object {
         const val SCAN_LOG_EVERY_MS = 30_000L
     }
+}
+
+/** Android 10-only cell APIs, isolated so older runtimes never resolve their platform classes. */
+@RequiresApi(29)
+private object Android10CellApi {
+    /** Return the active subscription ids across every modem slot. */
+    fun subscriptionIds(telephony: TelephonyManager, subscriptions: SubscriptionManager?): List<Int> {
+        val slots = if (Build.VERSION.SDK_INT >= 30) {
+            telephony.activeModemCount
+        } else {
+            @Suppress("DEPRECATION")
+            telephony.phoneCount
+        }
+        return (0 until slots).flatMap { slot ->
+            if (Build.VERSION.SDK_INT >= 34) {
+                listOf(SubscriptionManager.getSubscriptionId(slot))
+            } else {
+                @Suppress("DEPRECATION")
+                subscriptions?.getSubscriptionIds(slot)?.toList().orEmpty()
+            }
+        }.filter { it >= 0 }.distinct()
+    }
+
+    /**
+     * Request a fresh cell list using the asynchronous Android 10 modem API.
+     * [CellScanner] starts only after fine-location permission is granted and catches a race where
+     * the user revokes it immediately before this call, so the permission warning is handled.
+     */
+    @SuppressLint("MissingPermission")
+    fun requestUpdate(telephony: TelephonyManager, worker: java.util.concurrent.Executor, onCells: (List<CellInfo>) -> Unit, onError: () -> Unit) {
+        telephony.requestCellInfoUpdate(
+            worker,
+            object : TelephonyManager.CellInfoCallback() {
+                override fun onCellInfo(cells: MutableList<CellInfo>) = onCells(cells)
+                override fun onError(errorCode: Int, detail: Throwable?) = onError()
+            },
+        )
+    }
+
+    /** Convert a 5G NR platform cell to the app's platform-independent observation. */
+    fun nrObservation(cell: CellInfo, mcc: Int, mnc: Int): CellObservation? {
+        if (cell !is android.telephony.CellInfoNr) return null
+        val id = cell.cellIdentity as android.telephony.CellIdentityNr
+        if (id.nci == Long.MAX_VALUE || !valid(id.tac)) return null
+        val signal = cell.cellSignalStrength as android.telephony.CellSignalStrengthNr
+        return CellObservation(CellKey(Radio.NR, mcc, mnc, id.tac, id.nci), signal.ssRsrp.takeIf(::valid) ?: signal.dbm.takeIf(::valid), cell.isRegistered)
+    }
+
+    /** Read the operator codes from a 5G NR cell, or return null for another radio type. */
+    fun nrOperator(cell: CellInfo): Pair<Int?, Int?>? {
+        if (cell !is android.telephony.CellInfoNr) return null
+        val id = cell.cellIdentity as android.telephony.CellIdentityNr
+        return id.mccString?.toIntOrNull() to id.mncString?.toIntOrNull()
+    }
+
+    /** Android reports unavailable signal and identity integers as [Int.MAX_VALUE]. */
+    private fun valid(value: Int) = value != Int.MAX_VALUE && value >= 0
 }

@@ -161,6 +161,48 @@ object UkrainianPhrases : Phrases {
     override fun blindMissedTurn(seconds: Int) = "Схоже, ви проїхали поворот. Автоперебудова через $seconds секунд"
 }
 
+/** Russian spoken navigation phrases used when the UI language is Russian. */
+object RussianPhrases : Phrases {
+    private fun distance(m: Double): String =
+        if (m >= 1000) "через ${String.format(Locale.US, "%.1f", m / 1000).replace('.', ',')} км" else "через ${((m / 10).roundToInt() * 10)} метров"
+
+    private fun action(step: Step): String {
+        val direction = when (step.modifier) {
+            "left" -> "налево"
+            "right" -> "направо"
+            "slight left" -> "плавно налево"
+            "slight right" -> "плавно направо"
+            "sharp left" -> "резко налево"
+            "sharp right" -> "резко направо"
+            "uturn" -> "разворот"
+            else -> "прямо"
+        }
+        val onto = if (step.name.isNotBlank()) " на ${step.name}" else ""
+        return when (step.type) {
+            "roundabout", "rotary" -> "на круговом движении выберите ${step.roundaboutExit?.let { "$it-й съезд" } ?: "съезд"}$onto"
+            "fork" -> "держитесь $direction$onto"
+            "off ramp" -> "съезд $direction$onto"
+            "on ramp", "merge" -> "выезд $direction$onto"
+            "arrive" -> "пункт назначения"
+            "new name", "continue" -> if (step.modifier == null || step.modifier == "straight") "продолжайте прямо$onto" else "держитесь $direction$onto"
+            else -> if (step.modifier == "uturn") "выполните разворот$onto" else "поверните $direction$onto"
+        }
+    }
+
+    override fun maneuver(step: Step, distanceM: Double?): String =
+        if (distanceM == null) action(step).replaceFirstChar { it.uppercase() } else "${distance(distanceM).replaceFirstChar { it.uppercase() }} ${action(step)}"
+
+    override fun arrived() = "Вы прибыли в пункт назначения"
+    override fun gpsLost() = "Сигнал GPS потерян. Позиция рассчитывается"
+    override fun gpsRestored() = "GPS восстановлен"
+    override fun rerouted() = "Маршрут перестроен"
+    override fun offRouteRerouting() = "Вы сошли с маршрута. Перестраиваю маршрут"
+    override fun offRouteAsk() = "Вы сошли с маршрута. Нажмите «Перестроить», чтобы проложить новый"
+    override fun blindUturn(seconds: Int) = "Похоже, вы развернулись. Автоперестроение через $seconds секунд"
+    override fun blindOffRoute(seconds: Int) = "Похоже, вы сошли с маршрута. Автоперестроение через $seconds секунд"
+    override fun blindMissedTurn(seconds: Int) = "Похоже, вы пропустили поворот. Автоперестроение через $seconds секунд"
+}
+
 object EnglishPhrases : Phrases {
     private fun distance(m: Double): String = if (m >= 1000) "In ${String.format(Locale.US, "%.1f", m / 1000)} kilometres" else "In ${((m / 10).roundToInt() * 10)} metres"
 

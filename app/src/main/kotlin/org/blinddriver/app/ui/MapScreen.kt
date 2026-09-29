@@ -4,6 +4,8 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
+import android.os.Build
 import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.Settings
@@ -28,6 +30,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -82,6 +85,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
@@ -128,6 +132,7 @@ private val InfoBlue = Color(0xFF1A73E8)
 @Composable
 fun MapScreen(ui: UiState, app: AppGraph, hasLocation: Boolean, onRequestPermission: () -> Unit, onOpenSettings: () -> Unit, onOpenLog: () -> Unit, onOpenHistory: () -> Unit) {
     val context = LocalContext.current
+    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     val res = LocalResources.current
     val nav = ui.guidance
     val controller = remember { MapController() }
@@ -215,8 +220,10 @@ fun MapScreen(ui: UiState, app: AppGraph, hasLocation: Boolean, onRequestPermiss
 
         // ---- Top: maneuver banner, warnings, status pill
         Column(
-            Modifier.align(Alignment.TopCenter).onGloballyPositioned { topInsetPx = it.positionInRoot().y.toInt() + it.size.height }
-                .statusBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp).fillMaxWidth(),
+            Modifier.align(if (landscape) Alignment.TopEnd else Alignment.TopCenter)
+                .onGloballyPositioned { topInsetPx = it.positionInRoot().y.toInt() + it.size.height }
+                .statusBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp)
+                .then(if (landscape) Modifier.widthIn(max = 300.dp).fillMaxWidth() else Modifier.fillMaxWidth()),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (nav.active && !nav.arrived) ManeuverBanner(nav)
@@ -274,8 +281,9 @@ fun MapScreen(ui: UiState, app: AppGraph, hasLocation: Boolean, onRequestPermiss
 
         // ---- Bottom: legend, snackbars, panel
         Column(
-            Modifier.align(Alignment.BottomCenter).onGloballyPositioned { bottomInsetPx = it.size.height }
-                .navigationBarsPadding().padding(12.dp).fillMaxWidth(),
+            Modifier.align(if (landscape) Alignment.BottomStart else Alignment.BottomCenter).onGloballyPositioned { bottomInsetPx = it.size.height }
+                .navigationBarsPadding().padding(12.dp)
+                .then(if (landscape) Modifier.widthIn(max = 600.dp).fillMaxWidth() else Modifier.fillMaxWidth()),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (ui.cells.showTowers) TowerLegend(towerLayer, ui.cells.radios)
@@ -293,7 +301,9 @@ fun MapScreen(ui: UiState, app: AppGraph, hasLocation: Boolean, onRequestPermiss
                     onModeChange = { mode ->
                         app.setTravelMode(mode)
                         // The step counter needs the "physical activity" permission; without it walking still works at a fixed pace.
-                        if (mode == TravelMode.FOOT && !hasActivityPermission(context)) activityPermission.launch(Manifest.permission.ACTIVITY_RECOGNITION)
+                        if (mode == TravelMode.FOOT && Build.VERSION.SDK_INT >= 29 && !hasActivityPermission(context)) {
+                            activityPermission.launch(Manifest.permission.ACTIVITY_RECOGNITION)
+                        }
                     },
                     routingBusy = routing.busy,
                     pickStart = pickStart,
@@ -612,7 +622,7 @@ private fun TravelModeSelector(mode: TravelMode, walkingAvailable: Boolean, onMo
 }
 
 /** Has the user allowed step counting ("physical activity")? */
-private fun hasActivityPermission(context: Context): Boolean =
+private fun hasActivityPermission(context: Context): Boolean = Build.VERSION.SDK_INT < 29 ||
     ContextCompat.checkSelfPermission(context, Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
 
 /** One line of text with a small leading icon. */

@@ -8,7 +8,7 @@ code; `README.md` explains what the app does and how its algorithms work.
 **IMU Nav** — an Android car navigator for Ukraine that keeps working when GPS is jammed or
 spoofed. It classifies every GPS fix (GOOD / SUSPECT / BAD) and, without trusted GPS, dead-reckons
 along the planned route using IMU, cell towers and map knowledge. Routing and address search work
-offline (GraphHopper packs). UI: Jetpack Compose + MapLibre, Ukrainian and English.
+offline (GraphHopper packs). UI: Jetpack Compose + MapLibre, Ukrainian, English and Russian.
 
 ## Modules
 
@@ -92,8 +92,9 @@ Requirements: JDK 17+, Android SDK platform 36. `adb` lives at `~/Library/Androi
 
 - **compileSdk is 36.** Several newest AndroidX libs and OkHttp 5.5+ require 37 — versions in
   `gradle/libs.versions.toml` are pinned deliberately (OkHttp is 5.4.0). Check AAR metadata before upgrading.
-- **minSdk is 29 (Android 10).** Lint catches API ≥ 30 calls (e.g. `CellInfo.getCellIdentity()` crashed
-  Android 10); use typed subclasses or `Build.VERSION` checks.
+- **minSdk is 26 (Android 8.0).** Lint catches newer API calls; guard them with `Build.VERSION` checks
+  and keep fallbacks working on the minimum version. In particular, 5G NR and asynchronous cell scans
+  start on Android 10, while MCC/MNC string access starts on Android 9.
 - **GraphHopper on Android:** Janino cannot generate bytecode on ART, so `PhoneGraphHopper` builds the
   weighting in plain code; `GraphSpec` must stay identical between phone and desktop builder
   (`OfflineGraphTest` checks both give the same routes). `close()` of memory-mapped graphs throws on

@@ -1,0 +1,368 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="notification_channel">Навигация</string>
+    <string name="notification_title">Навигация продолжается</string>
+
+    <!-- Единицы -->
+    <string name="unit_m">%1$d м</string>
+    <string name="unit_km">%1$.1f км</string>
+    <string name="unit_min">%1$d мин</string>
+    <string name="unit_h_min">%1$d ч %2$d мин</string>
+    <string name="unit_kmh">%1$d км/ч</string>
+    <string name="accuracy_pm">±%1$s</string>
+
+    <!-- Карточка ожидания -->
+    <string name="idle_title_choose">Куда едем?</string>
+    <string name="idle_hint_long_press">Удерживайте палец на карте, чтобы выбрать пункт назначения</string>
+    <string name="idle_title_ready">Пункт назначения выбран</string>
+    <string name="idle_waiting_position">Определяем ваше местоположение…</string>
+    <string name="idle_position_gps">Позиция по GPS, %1$s</string>
+    <string name="idle_position_cell">Позиция по вышкам связи, %1$s</string>
+    <string name="idle_position_manual">Точка старта установлена на карте</string>
+    <string name="idle_gps_spoofed">Похоже, GPS подменён или заглушён — он игнорируется</string>
+    <string name="idle_set_start_hint">Переместите карту так, чтобы прицел был на вашей позиции, затем нажмите «Старт здесь»</string>
+    <string name="action_start">Поехали</string>
+    <string name="action_set_start">Старт здесь</string>
+    <string name="action_move_start">Перенести старт</string>
+    <string name="planning">Прокладываем маршрут…</string>
+
+    <!-- Навигация -->
+    <string name="action_stop">Стоп</string>
+    <string name="action_reroute">Перестроить</string>
+    <string name="rerouting">Перестроение…</string>
+    <string name="arrived">Вы прибыли</string>
+    <string name="action_done">Готово</string>
+    <string name="nav_arrival_at">Прибытие в %1$s</string>
+    <string name="then">Затем</string>
+    <string name="speed_limit_cd">Ограничение скорости %1$d</string>
+
+    <!-- Манёвры -->
+    <string name="mv_turn_left">Поверните налево</string>
+    <string name="mv_turn_right">Поверните направо</string>
+    <string name="mv_slight_left">Плавно налево</string>
+    <string name="mv_slight_right">Плавно направо</string>
+    <string name="mv_sharp_left">Резко налево</string>
+    <string name="mv_sharp_right">Резко направо</string>
+    <string name="mv_uturn">Развернитесь</string>
+    <string name="mv_straight">Продолжайте прямо</string>
+    <string name="mv_roundabout_exit">На круговом движении выберите %1$d-й съезд</string>
+    <string name="mv_roundabout">Въезжайте на круговое движение</string>
+    <string name="mv_keep_left">Держитесь левее</string>
+    <string name="mv_keep_right">Держитесь правее</string>
+    <string name="mv_merge">Встройтесь в поток</string>
+    <string name="mv_ramp_left">Съезд налево</string>
+    <string name="mv_ramp_right">Съезд направо</string>
+    <string name="mv_arrive">Пункт назначения</string>
+    <string name="mv_onto">на %1$s</string>
+
+    <!-- Источники позиции -->
+    <string name="src_none">Позиция неизвестна</string>
+    <string name="src_gps">GPS</string>
+    <string name="src_gps_suspect">GPS (не проверен)</string>
+    <string name="src_dr">Расчётная</string>
+    <string name="src_dr_net">Расчётная + сеть</string>
+    <string name="src_stopped">Остановка</string>
+    <string name="src_cells">Вышки связи</string>
+
+    <!-- Состояние GPS -->
+    <string name="gps_ok">GPS в норме</string>
+    <string name="gps_weak">Слабый GPS</string>
+    <string name="gps_lost">GPS потерян</string>
+    <string name="gps_rejected">GPS отклонён</string>
+    <string name="gps_jammed">Обнаружено глушение</string>
+
+    <!-- Предупреждения -->
+    <string name="location_off_title">Геолокация выключена</string>
+    <string name="location_off_text">Пока геолокация выключена, Android не передаёт координаты.</string>
+    <string name="action_turn_on">Включить</string>
+    <string name="permission_title">Нужен доступ к геолокации</string>
+    <string name="permission_text">Для навигации приложению нужна точная геолокация.</string>
+    <string name="action_allow">Разрешить</string>
+    <string name="error_location_off">Геолокация на телефоне выключена</string>
+    <string name="error_no_position">Нет достоверной позиции. Наведите прицел на своё местоположение и нажмите «Старт здесь».</string>
+
+    <!-- Диалог отклонения -->
+    <string name="deviation_title">Сошли с маршрута?</string>
+    <string name="deviation_text">Автоматическое перестроение через %1$d с.</string>
+    <string name="action_reroute_now">Перестроить сейчас</string>
+    <string name="action_on_route">Я на маршруте</string>
+
+    <!-- Управление картой -->
+    <string name="cd_zoom_in">Приблизить</string>
+    <string name="cd_zoom_out">Отдалить</string>
+    <string name="cd_recenter">Центрировать</string>
+    <string name="cd_towers">Вышки на карте</string>
+    <string name="cd_settings">Настройки</string>
+    <string name="cd_back">Назад</string>
+    <string name="legend_seen_now">видны сейчас</string>
+    <string name="legend_sample">Выборка из %1$d — приблизьте, чтобы увидеть все</string>
+    <string name="legend_zoom_in">Приблизьте, чтобы увидеть вышки</string>
+
+    <!-- Диагностика -->
+    <string name="diag_title">Позиционирование</string>
+    <string name="diag_source">Источник позиции</string>
+    <string name="diag_uncertainty">Погрешность</string>
+    <string name="diag_without_gps">Без GPS</string>
+    <string name="diag_seconds">%1$d с</string>
+    <string name="diag_gps">GPS</string>
+    <string name="diag_last_fix">Последняя позиция GPS</string>
+    <string name="verdict_good">Достоверная</string>
+    <string name="verdict_suspect">Сомнительная</string>
+    <string name="verdict_bad">Отклонена</string>
+    <string name="diag_reasons">Причины</string>
+    <string name="diag_satellites">Спутники: использовано / видно</string>
+    <string name="diag_signal">Сигнал (C/N0)</string>
+    <string name="diag_agc">Усиление приёмника (AGC)</string>
+    <string name="diag_cells">Вышки: найдено / видно</string>
+    <string name="diag_sensors">Датчики</string>
+    <string name="diag_sensors_full">Гироскоп и компас доступны</string>
+    <string name="diag_open_log">Журнал поездки</string>
+
+    <!-- Настройки -->
+    <string name="settings_title">Настройки</string>
+    <string name="sec_navigation_method">Навигация без GPS</string>
+    <string name="navigation_method_title">Резервный метод</string>
+    <string name="navigation_method_dr">Счисление пути</string>
+    <string name="navigation_method_cells">Вышки связи</string>
+    <string name="navigation_method_hybrid">Гибридный</string>
+    <string name="navigation_method_dr_summary">Использует скорость, датчики движения и данные маршрута. Позиции по вышкам не вносят поправки.</string>
+    <string name="navigation_method_cells_summary">Использует приблизительные позиции по вышкам, привязанные к маршруту, и удерживает позицию между сканированиями.</string>
+    <string name="navigation_method_hybrid_summary">Сочетает непрерывное счисление пути с поправками по вышкам и сети. Рекомендуется.</string>
+    <string name="voice_title">Голосовые подсказки</string>
+    <string name="voice_summary">Озвучивать повороты, состояние GPS и изменения маршрута во время навигации.</string>
+    <string name="sec_cells">Вышки связи</string>
+    <string name="cells_show_map">Показывать вышки на карте</string>
+    <string name="cells_types">Типы сетей</string>
+    <string name="cells_types_hint">Используются для позиционирования и показываются на карте</string>
+    <string name="cells_none_warning">Не выбран ни один тип — позиционирование по вышкам выключено</string>
+    <string name="cells_region">Коды стран (MCC)</string>
+    <string name="cells_region_hint">255 = Украина; несколько кодов разделяйте запятыми</string>
+    <string name="cells_total">В базе %1$s вышек</string>
+    <string name="src_label_shared">сервер обмена</string>
+    <string name="src_label_ocid">OpenCellID</string>
+    <string name="src_label_learned">изученные</string>
+    <string name="src_label_mozilla">Mozilla</string>
+    <string name="src_label_bundled">встроенные</string>
+
+    <string name="sec_sources">Источники данных</string>
+    <string name="mozilla_title">Mozilla Location Service</string>
+    <string name="mozilla_summary">Открытые данные (2024). Загружает ~1,5 ГБ и сохраняет только ваш регион — используйте Wi-Fi.</string>
+    <string name="ocid_title">OpenCellID</string>
+    <string name="ocid_summary">Загрузка по вашему API-токену или импорт файла .csv / .csv.gz</string>
+    <string name="ocid_token">API-токен</string>
+    <string name="action_download">Загрузить</string>
+    <string name="action_import_file">Импорт файла</string>
+    <string name="action_cancel">Отмена</string>
+
+    <string name="sec_sync">Сервер обмена</string>
+    <string name="sync_summary">Отправляет вышки, определённые этим телефоном (только координаты вышек, никогда не ваш маршрут), и загружает общие данные.</string>
+    <string name="sync_url">Адрес сервера</string>
+    <string name="sync_key">API-ключ (необязательно)</string>
+    <string name="sync_http_warning">http:// передаёт ключ без шифрования — вне собственной сети используйте https://</string>
+    <string name="sync_auto">Синхронизировать автоматически</string>
+    <string name="sync_auto_summary">Каждые 6 часов и после поездок</string>
+    <string name="action_sync_now">Синхронизировать</string>
+    <string name="sync_last">Последняя синхронизация: %1$s</string>
+
+    <string name="sec_learning">Обучение</string>
+    <string name="learning_title">Изучать расположение вышек</string>
+    <string name="learning_summary">Записывает видимые вышки, когда GPS достоверен</string>
+
+    <string name="sec_database">База вышек</string>
+    <string name="action_export">Экспортировать базу</string>
+    <string name="export_summary">Сохраняет все вышки в Android/data/org.blinddriver.app/files/cells-export.csv.gz</string>
+    <string name="action_reset">Сбросить базу вышек</string>
+    <string name="reset_summary">Удалить загруженные вышки и восстановить встроенную базу</string>
+    <string name="reset_title">Сбросить базу вышек?</string>
+    <string name="reset_text">Будут удалены вышки OpenCellID, Mozilla и сервера обмена, затем восстановится встроенная база. Загрузки можно повторить позже.</string>
+    <string name="action_reset_confirm">Сбросить</string>
+
+    <string name="sec_diagnostics">Диагностика</string>
+    <string name="trip_log">Журнал поездки</string>
+    <string name="trip_log_empty">Записей пока нет</string>
+    <string name="simulate_gps_loss">Имитировать потерю GPS</string>
+    <string name="simulate_gps_loss_summary">Игнорировать GPS, чтобы проверить навигацию без него</string>
+
+    <string name="sec_about">О приложении</string>
+    <string name="about_version">Версия %1$s</string>
+    <string name="about_credits">Данные вышек: участники OpenCellID (CC BY-SA 4.0) и Mozilla Location Service (общественное достояние). Карты и данные маршрутов © участники OpenStreetMap (ODbL), OpenFreeMap. Маршрутизация: GraphHopper, OSRM. Исходный код: лицензия MIT.</string>
+    <string name="about_disclaimer">Исследовательский прототип. Никогда не полагайтесь на него как на систему безопасности.</string>
+
+    <!-- Фоновые задачи -->
+    <string name="task_importing">Импорт… сохранено %1$d, прочитано %2$d</string>
+    <string name="task_imported">Импортировано вышек: %1$d</string>
+    <string name="task_downloading_ocid">Загрузка OpenCellID… %1$d КБ</string>
+    <string name="task_importing_towers">Импорт… вышек: %1$d</string>
+    <string name="task_ocid_done">OpenCellID: импортировано вышек: %1$d</string>
+    <string name="task_connecting">Подключение…</string>
+    <string name="task_mozilla_progress">Mozilla: %1$d из %2$d МБ (%3$d%%)</string>
+    <string name="task_mozilla_done">Mozilla: импортировано вышек: %1$d</string>
+    <string name="task_syncing">Синхронизация…</string>
+    <string name="task_uploading">Отправляем вышки: %1$d…</string>
+    <string name="task_downloading_shared">Загружаем общие вышки…</string>
+    <string name="task_sync_done">Синхронизация: отправлено вышек %1$d, получено %2$d</string>
+    <string name="task_sync_no_url">Сначала укажите адрес сервера</string>
+    <string name="task_exporting">Экспорт… вышек: %1$d</string>
+    <string name="task_exported">Экспортировано вышек: %1$d (%2$d КБ)</string>
+    <string name="task_clearing">Очищаем базу вышек…</string>
+    <string name="task_compacting">Сжимаем базу…</string>
+    <string name="task_cleared">База вышек очищена</string>
+    <string name="task_cleared_kept">База вышек очищена (изученные вышки сохранены)</string>
+    <string name="task_bundled_progress">Готовим встроенные вышки… %1$d</string>
+    <string name="task_bundled_done">Встроенная база готова, вышек: %1$d</string>
+    <string name="task_cancelled">Отменено</string>
+    <string name="task_failed">Ошибка: %1$s</string>
+
+    <!-- Офлайн-маршруты -->
+    <string name="sec_routing">Офлайн-маршруты</string>
+    <string name="sec_map_start">Начальная позиция карты</string>
+    <string name="map_start_title">Где открывается карта</string>
+    <string name="map_start_gps">Моя позиция (GPS)</string>
+    <string name="map_start_fixed">Выбранное место</string>
+    <string name="map_start_gps_hint">Открывается на последней GPS-позиции телефона (или последней позиции, которой приложение доверяло), затем переходит к первой достоверной. Поддельные позиции и позиции вне зоны игнорируются.</string>
+    <string name="map_start_fixed_hint">Всегда открывается здесь. Кнопка центрирования по-прежнему показывает вашу позицию.</string>
+    <string name="map_start_coords">Широта, долгота</string>
+    <string name="map_start_coords_invalid">Введите два числа, например 50.4501, 30.5234</string>
+    <string name="map_start_use_position">Моя позиция</string>
+    <string name="map_start_use_center">Центр карты</string>
+    <string name="action_apply">Применить</string>
+    <string name="sec_offline_map">Офлайн-карта</string>
+    <string name="offline_map_none">Офлайн-карта не установлена</string>
+    <string name="offline_map_none_hint">Карта загружается из интернета (OpenFreeMap). Установите пакет карты, чтобы видеть улицы без подключения.</string>
+    <string name="offline_map_pack">%1$s · %2$d МБ · создано %3$s</string>
+    <string name="offline_map_url">Адрес пакета карты (.zip)</string>
+    <string name="offline_map_use">Использовать офлайн-карту</string>
+    <string name="offline_map_use_summary">Отображать карту из установленного пакета, с интернетом или без.</string>
+    <string name="offline_map_installed">Офлайн-карта установлена: %1$s</string>
+    <string name="offline_map_removed">Офлайн-карта удалена</string>
+    <string name="offline_map_not_a_pack">Этот файл не является пакетом карты</string>
+    <string name="corridor_title">Сохранять карту вдоль маршрута</string>
+    <string name="corridor_summary">Когда поездка начинается с интернетом, карта на 1 км по обе стороны маршрута сохраняется на телефоне.</string>
+    <string name="corridor_summary_pack">Не требуется, пока используется офлайн-карта.</string>
+    <string name="corridor_progress">Сохраняем карту вдоль маршрута: %1$d%%</string>
+    <string name="corridor_done">Карта вдоль маршрута сохранена (%1$d МБ)</string>
+    <string name="corridor_too_long">Маршрут слишком длинный, чтобы сохранить карту вдоль него</string>
+    <string name="sec_search">Поиск адресов</string>
+    <string name="search_server_title">Онлайн-сервер поиска (Photon)</string>
+    <string name="search_server_hint">Используется только тогда, когда офлайн-индекс ничего не находит. Оставьте пустым для публичного сервера или укажите собственный сервер Photon (например, http://192.168.1.10:2322).</string>
+    <string name="search_server_hint_offline">Онлайн-сервисы выключены (см. «Разрешить онлайн-маршруты и поиск» выше), поэтому этот сервер не используется.</string>
+    <string name="search_server_url">Адрес сервера</string>
+    <string name="search_server_invalid">Введите адрес http:// или https://</string>
+    <string name="search_server_in_use">Используется: %1$s</string>
+    <string name="search_server_test">Проверить</string>
+    <string name="search_server_testing">Проверяем…</string>
+    <string name="search_server_failed">Ошибка: %1$s</string>
+    <string name="search_server_reset">Публичный сервер</string>
+    <string name="mode_car">Авто</string>
+    <string name="mode_walk">Пешком</string>
+    <string name="mode_walk_needs_pack">Для пешеходных маршрутов нужен пакет карты с пешеходными данными (обновите пакет).</string>
+    <string name="routing_no_walking">Для пешеходных маршрутов нужна офлайн-карта с пешеходными данными; онлайн-варианта для ходьбы нет.</string>
+    <string name="sec_power">Батарея</string>
+    <string name="power_title">Режим питания</string>
+    <string name="power_auto">Авто</string>
+    <string name="power_performance">Максимальная точность</string>
+    <string name="power_balanced">Сбалансированный</string>
+    <string name="power_saver">Экономия батареи</string>
+    <string name="power_auto_hint" formatted="false">Максимальная точность при зарядке, экономия ниже 20 % или когда включено энергосбережение телефона, иначе сбалансированный режим.</string>
+    <string name="power_auto_now">Сейчас: %1$s · батарея %2$s</string>
+    <string name="power_performance_hint">Датчики 50 Гц, сканирование вышек каждые 5 с, плавная карта 60 кадр/с. Лучшее счисление пути, максимальный расход.</string>
+    <string name="power_balanced_hint">Датчики 25 Гц, сканирование вышек каждые 5–10 с, карта 30 кадр/с. Рекомендуется.</string>
+    <string name="power_saver_hint">Датчики 10 Гц, реже сканирование вышек и сети, без индикатора глушения (AGC), карта без анимации 15 кадр/с. Немного менее точное распознавание поворотов.</string>
+    <string name="power_screen_on">Не выключать экран во время навигации</string>
+    <string name="power_screen_on_summary">Экран расходует больше всего энергии. Выключите, чтобы ехать с голосовыми подсказками при погашенном экране.</string>
+    <string name="sec_language">Язык</string>
+    <string name="language_title">Язык приложения и голоса</string>
+    <string name="language_hint">Экраны и голосовые подсказки.</string>
+    <string name="language_system">Как в телефоне</string>
+    <string name="routing_none">Офлайн-карта не установлена — для маршрутов нужен интернет</string>
+    <string name="routing_pack">%1$s · %2$d МБ · создано %3$s</string>
+    <string name="routing_coverage">Охватывает %1$.2f–%2$.2f° с. ш., %3$.2f–%4$.2f° в. д.</string>
+    <string name="routing_load_failed">Установлено, но пакет не удалось загрузить</string>
+    <string name="routing_import">Импорт пакета</string>
+    <string name="routing_url">Адрес пакета (.zip)</string>
+    <string name="routing_remove">Удалить</string>
+    <string name="routing_allow_online">Разрешить онлайн-маршруты и поиск</string>
+    <string name="routing_allow_online_summary">Используется, когда офлайн-карта или поисковый индекс не могут ответить. Отправляет старт и пункт назначения на router.project-osrm.org, а текст поиска — на сервер поиска адресов ниже.</string>
+    <string name="routing_installing">Установка пакета… %1$d МБ</string>
+    <string name="routing_downloading">Загрузка пакета… %1$d из %2$d МБ (%3$d%%)</string>
+    <string name="routing_removing">Удаление пакета…</string>
+    <string name="routing_removed">Офлайн-карта удалена</string>
+    <string name="routing_installed">Офлайн-карта установлена: %1$s</string>
+    <string name="routing_not_a_pack">Это не пакет маршрутов (нужны pack.json и файлы графа)</string>
+    <string name="routing_no_coverage">Офлайн-карта не охватывает эту поездку, а онлайн-маршруты выключены</string>
+    <string name="routing_preparing_builtin">Готовим офлайн-карту… %1$d из %2$d МБ</string>
+    <string name="routing_install_builtin">Установить встроенную карту (%1$s)</string>
+
+    <!-- История поездок -->
+    <string name="history_title">История поездок</string>
+    <string name="cd_history">История поездок</string>
+    <string name="history_empty">Поездок пока нет. Завершённые поездки появятся здесь вместе со статистикой.</string>
+    <string name="history_blind_total">%1$s без GPS</string>
+    <string name="trip_line">%1$s · %2$s · %3$d%% без GPS</string>
+    <string name="trip_arrived">Прибыли</string>
+    <string name="trip_not_arrived">Остановлено раньше</string>
+    <string name="trip_stat_distance">Пройденное расстояние</string>
+    <string name="trip_stat_duration">Продолжительность</string>
+    <string name="trip_stat_moving">Время в движении</string>
+    <string name="trip_stat_avg">Средняя скорость движения</string>
+    <string name="trip_stat_blind">Без GPS</string>
+    <string name="trip_stat_blind_value">%1$s · %2$s</string>
+    <string name="trip_stat_uncertainty">Наибольшая погрешность</string>
+    <string name="trip_stat_route">Запланированный маршрут</string>
+    <string name="trip_stat_reroutes">Перестроений маршрута</string>
+    <string name="trip_stat_matched">Расстояние по дорогам (привязка к дорогам)</string>
+    <string name="trip_legend_gps">достоверный GPS</string>
+    <string name="trip_legend_engine">расчётная</string>
+    <string name="trip_legend_matched">по дорогам</string>
+    <string name="action_map_match">Привязать к дорогам</string>
+    <string name="map_matching">Привязываем к дорогам…</string>
+    <string name="map_match_no_pack">Для привязки к дорогам нужна офлайн-карта</string>
+    <string name="map_match_no_gps">В этой поездке недостаточно достоверных данных GPS для привязки</string>
+    <string name="action_delete">Удалить</string>
+    <string name="trip_delete_title">Удалить эту поездку?</string>
+    <string name="trip_loading">Загружаем запись…</string>
+
+    <!-- Батарея -->
+    <string name="battery_title">Оптимизация батареи</string>
+    <string name="battery_restricted">Ограничено — Android может остановить навигацию в фоне. Нажмите, чтобы разрешить.</string>
+    <string name="battery_unrestricted">Без ограничений — навигация работает при выключенном экране</string>
+
+    <!-- Поиск -->
+    <string name="search_hint">Поиск адреса или места</string>
+    <string name="search_recent">Недавние</string>
+    <string name="search_no_results">Ничего не найдено</string>
+    <string name="search_offline_missing">Установите офлайн-карту, чтобы искать без интернета</string>
+    <string name="search_online_badge">онлайн</string>
+    <string name="kind_city">город</string>
+    <string name="kind_town">город</string>
+    <string name="kind_village">село</string>
+    <string name="kind_hamlet">посёлок</string>
+    <string name="kind_suburb">район</string>
+    <string name="kind_quarter">квартал</string>
+    <string name="kind_neighbourhood">микрорайон</string>
+    <string name="cd_clear">Очистить</string>
+    <plurals name="legend_count">
+        <item quantity="one">%1$d вышка</item>
+        <item quantity="few">%1$d вышки</item>
+        <item quantity="many">%1$d вышек</item>
+        <item quantity="other">%1$d вышки</item>
+    </plurals>
+    <plurals name="reset_learned">
+        <item quantity="one">Также удалить %1$d вышку, изученную этим телефоном</item>
+        <item quantity="few">Также удалить %1$d вышки, изученные этим телефоном</item>
+        <item quantity="many">Также удалить %1$d вышек, изученных этим телефоном</item>
+        <item quantity="other">Также удалить %1$d вышки, изученные этим телефоном</item>
+    </plurals>
+    <plurals name="history_totals">
+        <item quantity="one">%1$d поездка · %2$s · %3$s</item>
+        <item quantity="few">%1$d поездки · %2$s · %3$s</item>
+        <item quantity="many">%1$d поездок · %2$s · %3$s</item>
+        <item quantity="other">%1$d поездки · %2$s · %3$s</item>
+    </plurals>
+    <plurals name="search_server_ok">
+        <item quantity="one">Работает: %1$d результат для «Киев»</item>
+        <item quantity="few">Работает: %1$d результата для «Киев»</item>
+        <item quantity="many">Работает: %1$d результатов для «Киев»</item>
+        <item quantity="other">Работает: %1$d результата для «Киев»</item>
+    </plurals>
+</resources>

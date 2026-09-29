@@ -16,6 +16,7 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <!-- Not required: without GNSS the app still positions from cell towers and dead reckoning. -->
+    <uses-feature android:name="android.hardware.location" android:required="false" />
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
     <uses-feature android:name="android.hardware.sensor.gyroscope" android:required="false" />
     <uses-feature android:name="android.hardware.sensor.compass" android:required="false" />
@@ -33,7 +34,6 @@
 
         <activity
             android:name=".ui.MainActivity"
-            android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
             android:exported="true"
             android:launchMode="singleTask">
             <intent-filter>

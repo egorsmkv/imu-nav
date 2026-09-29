@@ -130,6 +130,8 @@
     <string name="navigation_method_dr_summary">Uses speed, motion sensors and route knowledge. Cell fixes do not correct the position.</string>
     <string name="navigation_method_cells_summary">Uses coarse cell-tower positions projected onto the route and holds between scans.</string>
     <string name="navigation_method_hybrid_summary">Combines continuous dead reckoning with cell and network corrections. Recommended.</string>
+    <string name="voice_title">Spoken directions</string>
+    <string name="voice_summary">Speak turns, GPS status and route changes during navigation.</string>
     <string name="sec_cells">Cell towers</string>
     <string name="cells_show_map">Show towers on map</string>
     <string name="cells_types">Cell types</string>

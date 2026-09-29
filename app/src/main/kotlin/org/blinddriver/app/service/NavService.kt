@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.os.Build
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
@@ -50,7 +51,8 @@ class NavService : LifecycleService() {
             return START_NOT_STICKY
         }
         // Must be called within a few seconds of startForegroundService(), or Android kills the app.
-        ServiceCompat.startForeground(this, NOTIFICATION_ID, notification("…"), ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+        val serviceType = if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0
+        ServiceCompat.startForeground(this, NOTIFICATION_ID, notification("…"), serviceType)
         if (wakeLock == null) {
             wakeLock = getSystemService(PowerManager::class.java)
                 .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "blinddriver:nav")

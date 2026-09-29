@@ -8,30 +8,29 @@ import androidx.core.content.edit
 import java.util.Locale
 
 /**
- * In-app language choice: follow the phone, or force Ukrainian / English. Stored in prefs and
+ * In-app language choice: follow the phone, or force Ukrainian / English / Russian. Stored in prefs and
  * applied to the application and each activity (via attachBaseContext) so it works on every API level.
  */
 object AppLanguage {
     const val SYSTEM = "system"
     const val UKRAINIAN = "uk"
     const val ENGLISH = "en"
-    val CHOICES = listOf(SYSTEM, UKRAINIAN, ENGLISH)
+    const val RUSSIAN = "ru"
+    val CHOICES = listOf(SYSTEM, UKRAINIAN, ENGLISH, RUSSIAN)
 
     private const val PREFS = "language"
     private const val KEY = "tag"
 
-    /** The saved choice: [SYSTEM], [UKRAINIAN] or [ENGLISH]. */
+    /** The saved choice: [SYSTEM], [UKRAINIAN], [ENGLISH] or [RUSSIAN]. */
     fun get(context: Context): String = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, SYSTEM) ?: SYSTEM
 
     /** The locale in effect for [choice]. */
     fun locale(choice: String): Locale = when (choice) {
         UKRAINIAN -> Locale.forLanguageTag("uk-UA")
         ENGLISH -> Locale.ENGLISH
+        RUSSIAN -> Locale.forLanguageTag("ru-RU")
         else -> Resources.getSystem().configuration.locales[0]
     }
-
-    /** Is the effective language Ukrainian? */
-    fun isUkrainian(context: Context) = locale(get(context)).language == "uk"
 
     /** Context whose resources use the chosen language (for Application/Activity.attachBaseContext). */
     fun wrap(base: Context): Context {

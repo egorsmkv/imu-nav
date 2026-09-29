@@ -10,7 +10,7 @@ import java.util.Locale
  * The engine takes a moment to start. Anything said before it is ready is queued in [pending]
  * and spoken as soon as it is.
  */
-class Voice(context: Context, private var locale: Locale = Locale.forLanguageTag("uk-UA")) {
+class Voice(context: Context, private var locale: Locale = Locale.forLanguageTag("uk-UA"), private var enabled: Boolean = true) {
     private var ready = false
     private val pending = ArrayList<String>()
 
@@ -29,6 +29,15 @@ class Voice(context: Context, private var locale: Locale = Locale.forLanguageTag
         if (ready) applyLanguage()
     }
 
+    /** Enable spoken prompts, or stop and discard speech immediately when disabled. */
+    fun setEnabled(value: Boolean) {
+        enabled = value
+        if (!value) {
+            pending.clear()
+            tts.stop()
+        }
+    }
+
     /** Use [locale]; if the phone has no voice for it, fall back to the phone's own language. */
     private fun applyLanguage() {
         val result = tts.setLanguage(locale)
@@ -40,6 +49,7 @@ class Voice(context: Context, private var locale: Locale = Locale.forLanguageTag
      * others wait their turn.
      */
     fun speak(text: String, urgent: Boolean) {
+        if (!enabled) return
         if (!ready) {
             pending += text
             return

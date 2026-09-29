@@ -10,7 +10,7 @@ Features include:
 * cell-tower positioning from a bundled database or user-imported data
 * trip history, recording, recovery, replay, and map matching
 * optional online OSRM routing and Photon search fallback
-* English and Ukrainian interfaces
+* English, Ukrainian, and Russian interfaces with optional spoken directions
 
 The app has no advertising, analytics, crash reporting, Google Play Services, or Firebase. Optional online routing and search can be disabled, and supported servers can be self-hosted or configured in the app.
 
