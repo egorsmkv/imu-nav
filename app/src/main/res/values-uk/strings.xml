@@ -125,6 +125,23 @@
 
     <!-- Налаштування -->
     <string name="settings_title">Налаштування</string>
+    <string name="settings_intro_title">Можна починати навігацію</string>
+    <string name="settings_intro_body">Рекомендовані налаштування вже підходять більшості користувачів. Зміни зберігаються, коли ви повертаєтеся до карти.</string>
+    <string name="settings_group_everyday">Щоденні налаштування</string>
+    <string name="settings_group_everyday_summary">Мова, голос, початковий вигляд карти та батарея</string>
+    <string name="settings_help_everyday">Рекомендовано: комбіноване позиціювання, автоматичний режим живлення та голосові підказки.</string>
+    <string name="settings_group_maps">Карти й побудова маршрутів</string>
+    <string name="settings_group_maps_setup">Налаштуйте навігацію без інтернету, карти й пошук адрес</string>
+    <string name="settings_group_maps_ready">Офлайн-маршрути готові; керуйте картами й пошуком адрес</string>
+    <string name="settings_help_maps">Пакет маршрутів будує шлях, а пакет карти показує вулиці. Це окремі завантаження.</string>
+    <string name="settings_group_cells">Резерв за вежами без GPS</string>
+    <string name="settings_group_cells_summary">Покращує позиціювання, коли GPS недоступний</string>
+    <string name="settings_help_cells">Необов’язково. Вбудована база веж працює автоматично; додаткові дані можуть підвищити точність.</string>
+    <string name="settings_group_advanced">Додатково й підтримка</string>
+    <string name="settings_group_advanced_summary">Керування даними, тести, журнали та інформація про застосунок</string>
+    <string name="settings_help_advanced">Більшості користувачів не потрібно змінювати ці параметри.</string>
+    <string name="settings_expand_section">Розгорнути розділ</string>
+    <string name="settings_collapse_section">Згорнути розділ</string>
     <string name="sec_navigation_method">Навігація без GPS</string>
     <string name="navigation_method_title">Резервний метод</string>
     <string name="navigation_method_dr">Числення шляху</string>
@@ -239,6 +256,7 @@
     <string name="offline_map_none_hint">Карта завантажується з інтернету (OpenFreeMap). Встановіть пакет карти, щоб бачити вулиці без зв’язку.</string>
     <string name="offline_map_pack">%1$s · %2$d МБ · створено %3$s</string>
     <string name="offline_map_url">Адреса пакета карти (.zip)</string>
+    <string name="offline_map_url_help">Вставте посилання на пакет карти або імпортуйте завантажений файл .zip.</string>
     <string name="offline_map_use">Використовувати офлайн-карту</string>
     <string name="offline_map_use_summary">Малювати карту з встановленого пакета, з інтернетом чи без.</string>
     <string name="offline_map_installed">Офлайн-карту встановлено: %1$s</string>
@@ -282,24 +300,25 @@
     <string name="language_title">Мова застосунку та голосу</string>
     <string name="language_hint">Екрани та голосові підказки.</string>
     <string name="language_system">Як у телефоні</string>
-    <string name="routing_none">Офлайн-карту не встановлено — для маршрутів потрібен інтернет</string>
+    <string name="routing_none">Пакет офлайн-маршрутів не встановлено — для маршрутів потрібен інтернет</string>
     <string name="routing_pack">%1$s · %2$d МБ · створено %3$s</string>
     <string name="routing_coverage">Охоплює %1$.2f–%2$.2f° пн. ш., %3$.2f–%4$.2f° сх. д.</string>
     <string name="routing_load_failed">Встановлено, але пакет не вдалося завантажити</string>
     <string name="routing_import">Імпорт пакета</string>
     <string name="routing_url">Адреса пакета (.zip)</string>
+    <string name="routing_url_help">Вставте посилання на пакет маршрутів або імпортуйте завантажений файл .zip.</string>
     <string name="routing_remove">Видалити</string>
     <string name="routing_allow_online">Дозволити онлайн-маршрути та пошук</string>
     <string name="routing_allow_online_summary">Коли офлайн-карта чи пошуковий індекс не можуть відповісти. Надсилає старт і пункт призначення на router.project-osrm.org, а текст пошуку — на сервер пошуку адрес нижче.</string>
     <string name="routing_installing">Встановлення пакета… %1$d МБ</string>
     <string name="routing_downloading">Завантаження пакета… %1$d з %2$d МБ (%3$d%%)</string>
     <string name="routing_removing">Видалення пакета…</string>
-    <string name="routing_removed">Офлайн-карту видалено</string>
-    <string name="routing_installed">Офлайн-карту встановлено: %1$s</string>
+    <string name="routing_removed">Пакет офлайн-маршрутів видалено</string>
+    <string name="routing_installed">Пакет офлайн-маршрутів встановлено: %1$s</string>
     <string name="routing_not_a_pack">Це не пакет маршрутів (потрібні pack.json і файли графа)</string>
-    <string name="routing_no_coverage">Офлайн-карта не охоплює цю поїздку, а онлайн-маршрути вимкнено</string>
-    <string name="routing_preparing_builtin">Готуємо офлайн-карту… %1$d з %2$d МБ</string>
-    <string name="routing_install_builtin">Встановити вбудовану карту (%1$s)</string>
+    <string name="routing_no_coverage">Пакет офлайн-маршрутів не охоплює цю поїздку, а онлайн-маршрути вимкнено</string>
+    <string name="routing_preparing_builtin">Готуємо вбудований пакет маршрутів… %1$d з %2$d МБ</string>
+    <string name="routing_install_builtin">Встановити вбудований пакет маршрутів (%1$s)</string>
 
     <!-- Історія поїздок -->
     <string name="history_title">Історія поїздок</string>

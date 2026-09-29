@@ -1,15 +1,17 @@
 package org.imunav.app.ui
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
-import android.content.res.Configuration
 import android.provider.Settings
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -24,17 +26,23 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.filled.BatteryChargingFull
+import androidx.compose.material.icons.filled.CellTower
 import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Route
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.TravelExplore
 import androidx.compose.material.icons.filled.Warning
@@ -46,7 +54,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
@@ -55,6 +62,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -71,8 +79,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalResources
@@ -125,8 +133,7 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
     val mgr = app.cells
     val busy = c.busy != null
     val snackbar = remember { SnackbarHostState() }
-    val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
-    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val scroll = TopAppBarDefaults.pinnedScrollBehavior()
 
     var mccs by remember { mutableStateOf(c.mccs) }
     var token by remember { mutableStateOf(mgr.savedToken()) }
@@ -137,6 +144,14 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
 
     /** Store the typed server settings. */
     fun save() = mgr.saveSettings(syncUrl, syncKey, autoSync, mccs)
+
+    /** Save every editable field before either back affordance returns to the map. */
+    fun leaveSettings() {
+        save()
+        onBack()
+    }
+
+    BackHandler(onBack = ::leaveSettings)
 
     val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) mgr.importFile { context.contentResolver.openInputStream(uri) }
@@ -155,18 +170,11 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
         modifier = Modifier.nestedScroll(scroll.nestedScrollConnection),
         topBar = {
             val navigationIcon: @Composable () -> Unit = {
-                IconButton(onClick = {
-                    save()
-                    onBack()
-                }) {
+                IconButton(onClick = ::leaveSettings) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
                 }
             }
-            if (landscape) {
-                TopAppBar(title = { Text(stringResource(R.string.settings_title)) }, navigationIcon = navigationIcon, scrollBehavior = scroll)
-            } else {
-                LargeTopAppBar(title = { Text(stringResource(R.string.settings_title)) }, navigationIcon = navigationIcon, scrollBehavior = scroll)
-            }
+            TopAppBar(title = { Text(stringResource(R.string.settings_title)) }, navigationIcon = navigationIcon, scrollBehavior = scroll)
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
@@ -182,352 +190,382 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                     }
                 }
 
-                // ---------------- Language
-                SectionHeader(stringResource(R.string.sec_language))
-                val language by app.language.collectAsStateWithLifecycle()
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.language_title)) },
-                    supportingContent = {
-                        Column {
-                            Text(stringResource(R.string.language_hint))
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                AppLanguage.CHOICES.forEach { choice ->
-                                    val label = when (choice) {
-                                        AppLanguage.UKRAINIAN -> "Українська"
-                                        AppLanguage.ENGLISH -> "English"
-                                        AppLanguage.RUSSIAN -> "Русский"
-                                        else -> stringResource(R.string.language_system)
+                SettingsIntro()
+
+                SettingsGroup(
+                    title = stringResource(R.string.settings_group_everyday),
+                    summary = stringResource(R.string.settings_group_everyday_summary),
+                    icon = Icons.Filled.Translate,
+                ) {
+                    SettingsHelp(stringResource(R.string.settings_help_everyday))
+
+                    // ---------------- Language
+                    SectionHeader(stringResource(R.string.sec_language))
+                    val language by app.language.collectAsStateWithLifecycle()
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.language_title)) },
+                        supportingContent = {
+                            Column {
+                                Text(stringResource(R.string.language_hint))
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    AppLanguage.CHOICES.forEach { choice ->
+                                        val label = when (choice) {
+                                            AppLanguage.UKRAINIAN -> "Українська"
+                                            AppLanguage.ENGLISH -> "English"
+                                            AppLanguage.RUSSIAN -> "Русский"
+                                            else -> stringResource(R.string.language_system)
+                                        }
+                                        FilterChip(
+                                            selected = language == choice,
+                                            onClick = {
+                                                if (language != choice) {
+                                                    save()
+                                                    app.setLanguage(choice)
+                                                    (context as? Activity)?.recreate()
+                                                }
+                                            },
+                                            label = { Text(label) },
+                                        )
                                     }
-                                    FilterChip(
-                                        selected = language == choice,
-                                        onClick = {
-                                            if (language != choice) {
-                                                save()
-                                                app.setLanguage(choice)
-                                                (context as? Activity)?.recreate()
-                                            }
-                                        },
-                                        label = { Text(label) },
-                                    )
                                 }
                             }
-                        }
-                    },
-                    leadingContent = { Icon(Icons.Filled.Translate, contentDescription = null) },
-                )
+                        },
+                        leadingContent = { Icon(Icons.Filled.Translate, contentDescription = null) },
+                    )
 
-                // ---------------- Map start
-                MapStartSection(app, ui)
+                    // ---------------- Map start
+                    MapStartSection(app, ui)
 
-                // ---------------- Navigation without GPS
-                SectionHeader(stringResource(R.string.sec_navigation_method))
-                val navigationMethod by app.navigationMethod.collectAsStateWithLifecycle()
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.navigation_method_title)) },
-                    supportingContent = {
-                        Column {
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                NavigationMethod.entries.forEach { method ->
-                                    FilterChip(
-                                        selected = navigationMethod == method,
-                                        onClick = { app.setNavigationMethod(method) },
-                                        label = { Text(navigationMethodName(method)) },
-                                    )
-                                }
-                            }
-                            Text(
-                                stringResource(
-                                    when (navigationMethod) {
-                                        NavigationMethod.DEAD_RECKONING -> R.string.navigation_method_dr_summary
-                                        NavigationMethod.CELL_TOWERS -> R.string.navigation_method_cells_summary
-                                        NavigationMethod.HYBRID -> R.string.navigation_method_hybrid_summary
-                                    },
-                                ),
-                            )
-                        }
-                    },
-                )
-                val voiceEnabled by app.voiceEnabled.collectAsStateWithLifecycle()
-                SwitchItem(stringResource(R.string.voice_title), stringResource(R.string.voice_summary), voiceEnabled) { app.setVoiceEnabled(it) }
-
-                // ---------------- Battery
-                SectionHeader(stringResource(R.string.sec_power))
-                val powerMode by app.powerMode.collectAsStateWithLifecycle()
-                val profile by app.powerProfile.collectAsStateWithLifecycle()
-                val screenOn by app.keepScreenOn.collectAsStateWithLifecycle()
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.power_title)) },
-                    supportingContent = {
-                        Column {
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                PowerMode.entries.forEach { m ->
-                                    FilterChip(selected = powerMode == m, onClick = { app.setPowerMode(m) }, label = { Text(powerModeName(m)) })
-                                }
-                            }
-                            Text(
-                                stringResource(
-                                    when (powerMode) {
-                                        PowerMode.AUTO -> R.string.power_auto_hint
-                                        PowerMode.PERFORMANCE -> R.string.power_performance_hint
-                                        PowerMode.BALANCED -> R.string.power_balanced_hint
-                                        PowerMode.SAVER -> R.string.power_saver_hint
-                                    },
-                                ),
-                            )
-                            if (powerMode == PowerMode.AUTO) {
-                                val active = when (profile) {
-                                    PowerProfile.PERFORMANCE -> PowerMode.PERFORMANCE
-                                    PowerProfile.SAVER -> PowerMode.SAVER
-                                    else -> PowerMode.BALANCED
+                    // ---------------- Navigation without GPS
+                    SectionHeader(stringResource(R.string.sec_navigation_method))
+                    val navigationMethod by app.navigationMethod.collectAsStateWithLifecycle()
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.navigation_method_title)) },
+                        supportingContent = {
+                            Column {
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    NavigationMethod.entries.forEach { method ->
+                                        FilterChip(
+                                            selected = navigationMethod == method,
+                                            onClick = { app.setNavigationMethod(method) },
+                                            label = { Text(navigationMethodName(method)) },
+                                        )
+                                    }
                                 }
                                 Text(
-                                    stringResource(R.string.power_auto_now, powerModeName(active), app.power.batteryPercent()?.let { "$it %" } ?: "—"),
-                                    color = MaterialTheme.colorScheme.primary,
+                                    stringResource(
+                                        when (navigationMethod) {
+                                            NavigationMethod.DEAD_RECKONING -> R.string.navigation_method_dr_summary
+                                            NavigationMethod.CELL_TOWERS -> R.string.navigation_method_cells_summary
+                                            NavigationMethod.HYBRID -> R.string.navigation_method_hybrid_summary
+                                        },
+                                    ),
                                 )
                             }
-                        }
-                    },
-                    leadingContent = { Icon(Icons.Filled.BatteryChargingFull, contentDescription = null) },
-                )
-                SwitchItem(stringResource(R.string.power_screen_on), stringResource(R.string.power_screen_on_summary), screenOn) { app.setKeepScreenOn(it) }
+                        },
+                    )
+                    val voiceEnabled by app.voiceEnabled.collectAsStateWithLifecycle()
+                    SwitchItem(stringResource(R.string.voice_title), stringResource(R.string.voice_summary), voiceEnabled) { app.setVoiceEnabled(it) }
 
-                // ---------------- Offline routing
-                SectionHeader(stringResource(R.string.sec_routing))
-                val pack = routing.pack
-                ListItem(
-                    headlineContent = {
-                        Text(
-                            if (pack == null) {
-                                stringResource(R.string.routing_none)
-                            } else {
-                                stringResource(R.string.routing_pack, pack.name, (pack.sizeBytes / 1_048_576).toInt(), pack.builtAt.take(10))
-                            },
-                        )
-                    },
-                    supportingContent = {
-                        when {
-                            pack != null && !routing.loaded -> Text(stringResource(R.string.routing_load_failed), color = MaterialTheme.colorScheme.error)
-                            pack != null -> Text(stringResource(R.string.routing_coverage, pack.bounds[0], pack.bounds[1], pack.bounds[2], pack.bounds[3]))
-                            else -> {}
-                        }
-                    },
-                    leadingContent = { Icon(Icons.Filled.Route, contentDescription = null) },
-                )
-                routing.busy?.let {
-                    Column(Modifier.padding(horizontal = 16.dp)) {
-                        LinearProgressIndicator(Modifier.fillMaxWidth())
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(it, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                            TextButton(onClick = { app.offlineRouting.cancel() }) { Text(stringResource(R.string.action_cancel)) }
-                        }
-                    }
-                }
-                Field(packUrl, {
-                    packUrl = it
-                    app.offlineRouting.setPackUrl(it)
-                }, stringResource(R.string.routing_url), "https://…/graph-ukraine.zip", keyboard = KeyboardType.Uri)
-                FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(onClick = { app.offlineRouting.download(packUrl) }, enabled = packUrl.isNotBlank() && routing.busy == null) {
-                        Text(stringResource(R.string.action_download))
-                    }
-                    OutlinedButton(onClick = { pickPack.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) }, enabled = routing.busy == null) {
-                        Text(stringResource(R.string.routing_import))
-                    }
-                    val bundled = routing.bundled
-                    if (pack == null && bundled != null) {
-                        OutlinedButton(onClick = { app.offlineRouting.installBundled() }, enabled = routing.busy == null) {
-                            Text(stringResource(R.string.routing_install_builtin, bundled.name))
-                        }
-                    }
-                    if (pack != null) {
-                        TextButton(onClick = { app.offlineRouting.remove() }, enabled = routing.busy == null) {
-                            Text(stringResource(R.string.routing_remove), color = MaterialTheme.colorScheme.error)
-                        }
-                    }
-                }
-                SwitchItem(stringResource(R.string.routing_allow_online), stringResource(R.string.routing_allow_online_summary), routing.allowOnline) {
-                    app.offlineRouting.setAllowOnline(it)
-                }
-
-                // ---------------- Offline map display (tiles pack + route corridors)
-                OfflineMapSection(app, offlineMap)
-
-                // ---------------- Address search (online fallback server)
-                SearchServerSection(app, onlineAllowed = routing.allowOnline)
-
-                // ---------------- Cell towers
-                SectionHeader(stringResource(R.string.sec_cells))
-                SwitchItem(stringResource(R.string.cells_show_map), null, c.showTowers) { mgr.setShowTowers(it) }
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.cells_types)) },
-                    supportingContent = {
-                        Column {
-                            Text(stringResource(R.string.cells_types_hint))
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                RADIO_CHOICES.forEach { (radio, label) ->
-                                    FilterChip(selected = radio in c.radios, onClick = { mgr.setRadioEnabled(radio, radio !in c.radios) }, label = { Text(label) })
+                    // ---------------- Battery
+                    SectionHeader(stringResource(R.string.sec_power))
+                    val powerMode by app.powerMode.collectAsStateWithLifecycle()
+                    val profile by app.powerProfile.collectAsStateWithLifecycle()
+                    val screenOn by app.keepScreenOn.collectAsStateWithLifecycle()
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.power_title)) },
+                        supportingContent = {
+                            Column {
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    PowerMode.entries.forEach { m ->
+                                        FilterChip(selected = powerMode == m, onClick = { app.setPowerMode(m) }, label = { Text(powerModeName(m)) })
+                                    }
+                                }
+                                Text(
+                                    stringResource(
+                                        when (powerMode) {
+                                            PowerMode.AUTO -> R.string.power_auto_hint
+                                            PowerMode.PERFORMANCE -> R.string.power_performance_hint
+                                            PowerMode.BALANCED -> R.string.power_balanced_hint
+                                            PowerMode.SAVER -> R.string.power_saver_hint
+                                        },
+                                    ),
+                                )
+                                if (powerMode == PowerMode.AUTO) {
+                                    val active = when (profile) {
+                                        PowerProfile.PERFORMANCE -> PowerMode.PERFORMANCE
+                                        PowerProfile.SAVER -> PowerMode.SAVER
+                                        else -> PowerMode.BALANCED
+                                    }
+                                    Text(
+                                        stringResource(R.string.power_auto_now, powerModeName(active), app.power.batteryPercent()?.let { "$it %" } ?: "—"),
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
                                 }
                             }
-                            if (c.radios.isEmpty()) Text(stringResource(R.string.cells_none_warning), color = MaterialTheme.colorScheme.error)
-                        }
-                    },
-                )
-                val nf = NumberFormat.getIntegerInstance()
-                val names = CellSource.entries.associateWith { sourceName(it) }
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.cells_total, nf.format(c.total))) },
-                    supportingContent = {
-                        Text(
-                            CellSource.entries.filter { (c.counts[it] ?: 0) > 0 }.joinToString(" · ") { "${names[it]}: ${nf.format(c.counts[it] ?: 0)}" },
-                        )
-                    },
-                )
-                Field(mccs, {
-                    mccs = it
-                    save()
-                }, stringResource(R.string.cells_region), stringResource(R.string.cells_region_hint), keyboard = KeyboardType.Number)
-
-                // ---------------- Data sources
-                SectionHeader(stringResource(R.string.sec_sources))
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.mozilla_title)) },
-                    supportingContent = { Text(stringResource(R.string.mozilla_summary)) },
-                    trailingContent = {
-                        TextButton(onClick = {
-                            save()
-                            mgr.downloadMozilla()
-                        }, enabled = !busy) { Text(stringResource(R.string.action_download)) }
-                    },
-                )
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.ocid_title)) },
-                    supportingContent = { Text(stringResource(R.string.ocid_summary)) },
-                )
-                Field(token, { token = it }, stringResource(R.string.ocid_token), null, secret = true)
-                Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(onClick = {
-                        save()
-                        mgr.downloadOpenCellId(token)
-                    }, enabled = token.isNotBlank() && !busy) { Text(stringResource(R.string.action_download)) }
-                    OutlinedButton(onClick = {
-                        save()
-                        pickFile.launch(arrayOf("*/*"))
-                    }, enabled = !busy) {
-                        Icon(Icons.Filled.FileUpload, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.size(8.dp))
-                        Text(stringResource(R.string.action_import_file))
-                    }
+                        },
+                        leadingContent = { Icon(Icons.Filled.BatteryChargingFull, contentDescription = null) },
+                    )
+                    SwitchItem(stringResource(R.string.power_screen_on), stringResource(R.string.power_screen_on_summary), screenOn) { app.setKeepScreenOn(it) }
+                    BatteryOptimizationItem(context)
                 }
 
-                // ---------------- Sharing server
-                SectionHeader(stringResource(R.string.sec_sync))
-                Text(
-                    stringResource(R.string.sync_summary),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                )
-                Field(syncUrl, {
-                    syncUrl = it
-                    save()
-                }, stringResource(R.string.sync_url), "https://cells.example.org", keyboard = KeyboardType.Uri)
-                Field(syncKey, {
-                    syncKey = it
-                    save()
-                }, stringResource(R.string.sync_key), null, secret = true)
-                if (syncUrl.trim().startsWith("http://") && syncKey.isNotBlank()) {
-                    Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.size(8.dp))
-                        Text(stringResource(R.string.sync_http_warning), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                    }
-                }
-                SwitchItem(stringResource(R.string.sync_auto), stringResource(R.string.sync_auto_summary), autoSync) {
-                    autoSync = it
-                    save()
-                }
-                Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Button(onClick = {
-                        save()
-                        mgr.sync()
-                    }, enabled = syncUrl.isNotBlank() && !busy) { Text(stringResource(R.string.action_sync_now)) }
-                    Spacer(Modifier.size(12.dp))
-                    c.lastSync?.let { Text(stringResource(R.string.sync_last, it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                }
+                SettingsGroup(
+                    title = stringResource(R.string.settings_group_maps),
+                    summary = stringResource(if (routing.pack == null) R.string.settings_group_maps_setup else R.string.settings_group_maps_ready),
+                    icon = Icons.Filled.Route,
+                ) {
+                    SettingsHelp(stringResource(R.string.settings_help_maps))
 
-                // ---------------- Learning
-                SectionHeader(stringResource(R.string.sec_learning))
-                SwitchItem(stringResource(R.string.learning_title), stringResource(R.string.learning_summary), c.learning) {
-                    mgr.setLearning(it)
-                    app.refresh()
-                }
-
-                // ---------------- Database
-                SectionHeader(stringResource(R.string.sec_database))
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.action_export)) },
-                    supportingContent = { Text(stringResource(R.string.export_summary)) },
-                    modifier = Modifier.clickable(enabled = !busy) { mgr.exportDatabase() },
-                )
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.action_reset), color = MaterialTheme.colorScheme.error) },
-                    supportingContent = { Text(stringResource(R.string.reset_summary)) },
-                    leadingContent = { Icon(Icons.Filled.DeleteForever, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
-                    modifier = Modifier.clickable(enabled = !busy) { confirmReset = true },
-                )
-
-                // ---------------- Diagnostics
-                SectionHeader(stringResource(R.string.sec_diagnostics))
-                var unrestricted by remember { mutableStateOf(isBatteryUnrestricted(context)) }
-                val lifecycleOwner = LocalLifecycleOwner.current
-                DisposableEffect(lifecycleOwner) {
-                    val obs = LifecycleEventObserver { _, e ->
-                        if (e == Lifecycle.Event.ON_RESUME) unrestricted = isBatteryUnrestricted(context)
-                    }
-                    lifecycleOwner.lifecycle.addObserver(obs)
-                    onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
-                }
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.battery_title)) },
-                    supportingContent = {
-                        Text(
-                            stringResource(if (unrestricted) R.string.battery_unrestricted else R.string.battery_restricted),
-                            color = if (unrestricted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
-                        )
-                    },
-                    modifier = Modifier.clickable(enabled = !unrestricted) {
-                        runCatching {
-                            @android.annotation.SuppressLint("BatteryLife")
-                            val intent = Intent(
-                                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                                "package:${context.packageName}".toUri(),
+                    // ---------------- Offline routing
+                    SectionHeader(stringResource(R.string.sec_routing))
+                    val pack = routing.pack
+                    ListItem(
+                        headlineContent = {
+                            Text(
+                                if (pack == null) {
+                                    stringResource(R.string.routing_none)
+                                } else {
+                                    stringResource(R.string.routing_pack, pack.name, (pack.sizeBytes / 1_048_576).toInt(), pack.builtAt.take(10))
+                                },
                             )
-                            context.startActivity(intent)
+                        },
+                        supportingContent = {
+                            when {
+                                pack != null && !routing.loaded -> Text(stringResource(R.string.routing_load_failed), color = MaterialTheme.colorScheme.error)
+                                pack != null -> Text(stringResource(R.string.routing_coverage, pack.bounds[0], pack.bounds[1], pack.bounds[2], pack.bounds[3]))
+                                else -> {}
+                            }
+                        },
+                        leadingContent = { Icon(Icons.Filled.Route, contentDescription = null) },
+                    )
+                    routing.busy?.let {
+                        Column(Modifier.padding(horizontal = 16.dp)) {
+                            LinearProgressIndicator(Modifier.fillMaxWidth())
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(it, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                TextButton(onClick = { app.offlineRouting.cancel() }) { Text(stringResource(R.string.action_cancel)) }
+                            }
                         }
-                    },
-                )
-                SwitchItem(stringResource(R.string.simulate_gps_loss), stringResource(R.string.simulate_gps_loss_summary), ui.simulateGpsLoss) { app.setSimulateGpsLoss(it) }
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.trip_log)) },
-                    leadingContent = { Icon(Icons.AutoMirrored.Filled.Article, contentDescription = null) },
-                    modifier = Modifier.clickable(onClick = onOpenLog),
-                )
+                    }
+                    Field(
+                        packUrl,
+                        {
+                            packUrl = it
+                            app.offlineRouting.setPackUrl(it)
+                        },
+                        stringResource(R.string.routing_url),
+                        "https://…/graph-ukraine.zip",
+                        keyboard = KeyboardType.Uri,
+                        helper = stringResource(R.string.routing_url_help),
+                    )
+                    FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(onClick = { app.offlineRouting.download(packUrl) }, enabled = packUrl.isNotBlank() && routing.busy == null) {
+                            Text(stringResource(R.string.action_download))
+                        }
+                        OutlinedButton(onClick = { pickPack.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) }, enabled = routing.busy == null) {
+                            Text(stringResource(R.string.routing_import))
+                        }
+                        val bundled = routing.bundled
+                        if (pack == null && bundled != null) {
+                            OutlinedButton(onClick = { app.offlineRouting.installBundled() }, enabled = routing.busy == null) {
+                                Text(stringResource(R.string.routing_install_builtin, bundled.name))
+                            }
+                        }
+                        if (pack != null) {
+                            TextButton(onClick = { app.offlineRouting.remove() }, enabled = routing.busy == null) {
+                                Text(stringResource(R.string.routing_remove), color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    }
+                    SwitchItem(stringResource(R.string.routing_allow_online), stringResource(R.string.routing_allow_online_summary), routing.allowOnline) {
+                        app.offlineRouting.setAllowOnline(it)
+                    }
 
-                // ---------------- About
-                SectionHeader(stringResource(R.string.sec_about))
-                val version = remember {
-                    runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull().orEmpty()
+                    // ---------------- Offline map display (tiles pack + route corridors)
+                    OfflineMapSection(app, offlineMap)
+
+                    // ---------------- Address search (online fallback server)
+                    SearchServerSection(app, onlineAllowed = routing.allowOnline)
                 }
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.about_version, version)) },
-                    supportingContent = { Text(stringResource(R.string.about_credits) + "\n\n" + stringResource(R.string.about_disclaimer)) },
-                )
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.telegram_group)) },
-                    modifier = Modifier.clickable { uriHandler.openUri(TELEGRAM_GROUP_URL) },
-                )
-                DonationLink(stringResource(R.string.donate_monobank), BuildConfig.MONOBANK_DONATION_URL) { uriHandler.openUri(it) }
-                DonationLink(stringResource(R.string.donate_privatbank), BuildConfig.PRIVATBANK_DONATION_URL) { uriHandler.openUri(it) }
+
+                SettingsGroup(
+                    title = stringResource(R.string.settings_group_cells),
+                    summary = stringResource(R.string.settings_group_cells_summary),
+                    icon = Icons.Filled.CellTower,
+                ) {
+                    SettingsHelp(stringResource(R.string.settings_help_cells))
+
+                    // ---------------- Cell towers
+                    SectionHeader(stringResource(R.string.sec_cells))
+                    SwitchItem(stringResource(R.string.cells_show_map), null, c.showTowers) { mgr.setShowTowers(it) }
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.cells_types)) },
+                        supportingContent = {
+                            Column {
+                                Text(stringResource(R.string.cells_types_hint))
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    RADIO_CHOICES.forEach { (radio, label) ->
+                                        FilterChip(selected = radio in c.radios, onClick = { mgr.setRadioEnabled(radio, radio !in c.radios) }, label = { Text(label) })
+                                    }
+                                }
+                                if (c.radios.isEmpty()) Text(stringResource(R.string.cells_none_warning), color = MaterialTheme.colorScheme.error)
+                            }
+                        },
+                    )
+                    val nf = NumberFormat.getIntegerInstance()
+                    val names = CellSource.entries.associateWith { sourceName(it) }
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.cells_total, nf.format(c.total))) },
+                        supportingContent = {
+                            Text(
+                                CellSource.entries.filter { (c.counts[it] ?: 0) > 0 }.joinToString(" · ") { "${names[it]}: ${nf.format(c.counts[it] ?: 0)}" },
+                            )
+                        },
+                    )
+                    Field(
+                        mccs,
+                        {
+                            mccs = it
+                            save()
+                        },
+                        stringResource(R.string.cells_region),
+                        "255",
+                        keyboard = KeyboardType.Number,
+                        helper = stringResource(R.string.cells_region_hint),
+                    )
+
+                    // ---------------- Data sources
+                    SectionHeader(stringResource(R.string.sec_sources))
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.mozilla_title)) },
+                        supportingContent = { Text(stringResource(R.string.mozilla_summary)) },
+                        trailingContent = {
+                            TextButton(onClick = {
+                                save()
+                                mgr.downloadMozilla()
+                            }, enabled = !busy) { Text(stringResource(R.string.action_download)) }
+                        },
+                    )
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.ocid_title)) },
+                        supportingContent = { Text(stringResource(R.string.ocid_summary)) },
+                    )
+                    Field(token, { token = it }, stringResource(R.string.ocid_token), null, secret = true)
+                    Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(onClick = {
+                            save()
+                            mgr.downloadOpenCellId(token)
+                        }, enabled = token.isNotBlank() && !busy) { Text(stringResource(R.string.action_download)) }
+                        OutlinedButton(onClick = {
+                            save()
+                            pickFile.launch(arrayOf("*/*"))
+                        }, enabled = !busy) {
+                            Icon(Icons.Filled.FileUpload, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.size(8.dp))
+                            Text(stringResource(R.string.action_import_file))
+                        }
+                    }
+
+                    // ---------------- Sharing server
+                    SectionHeader(stringResource(R.string.sec_sync))
+                    Text(
+                        stringResource(R.string.sync_summary),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    )
+                    Field(syncUrl, {
+                        syncUrl = it
+                        save()
+                    }, stringResource(R.string.sync_url), "https://cells.example.org", keyboard = KeyboardType.Uri)
+                    Field(syncKey, {
+                        syncKey = it
+                        save()
+                    }, stringResource(R.string.sync_key), null, secret = true)
+                    if (syncUrl.trim().startsWith("http://") && syncKey.isNotBlank()) {
+                        Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.size(8.dp))
+                            Text(stringResource(R.string.sync_http_warning), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                    SwitchItem(stringResource(R.string.sync_auto), stringResource(R.string.sync_auto_summary), autoSync) {
+                        autoSync = it
+                        save()
+                    }
+                    Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Button(onClick = {
+                            save()
+                            mgr.sync()
+                        }, enabled = syncUrl.isNotBlank() && !busy) { Text(stringResource(R.string.action_sync_now)) }
+                        Spacer(Modifier.size(12.dp))
+                        c.lastSync?.let {
+                            Text(
+                                stringResource(R.string.sync_last, it),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+
+                    // ---------------- Learning
+                    SectionHeader(stringResource(R.string.sec_learning))
+                    SwitchItem(stringResource(R.string.learning_title), stringResource(R.string.learning_summary), c.learning) {
+                        mgr.setLearning(it)
+                        app.refresh()
+                    }
+                }
+
+                SettingsGroup(
+                    title = stringResource(R.string.settings_group_advanced),
+                    summary = stringResource(R.string.settings_group_advanced_summary),
+                    icon = Icons.Filled.Settings,
+                ) {
+                    SettingsHelp(stringResource(R.string.settings_help_advanced))
+
+                    // ---------------- Database
+                    SectionHeader(stringResource(R.string.sec_database))
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.action_export)) },
+                        supportingContent = { Text(stringResource(R.string.export_summary)) },
+                        modifier =
+                        Modifier.clickable(enabled = !busy) {
+                            mgr.exportDatabase()
+                        },
+                    )
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.action_reset), color = MaterialTheme.colorScheme.error) },
+                        supportingContent = { Text(stringResource(R.string.reset_summary)) },
+                        leadingContent = { Icon(Icons.Filled.DeleteForever, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                        modifier = Modifier.clickable(enabled = !busy) { confirmReset = true },
+                    )
+
+                    // ---------------- Diagnostics
+                    SectionHeader(stringResource(R.string.sec_diagnostics))
+                    SwitchItem(stringResource(R.string.simulate_gps_loss), stringResource(R.string.simulate_gps_loss_summary), ui.simulateGpsLoss) { app.setSimulateGpsLoss(it) }
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.trip_log)) },
+                        leadingContent = { Icon(Icons.AutoMirrored.Filled.Article, contentDescription = null) },
+                        modifier = Modifier.clickable(onClick = onOpenLog),
+                    )
+
+                    // ---------------- About
+                    SectionHeader(stringResource(R.string.sec_about))
+                    val version = remember {
+                        runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull().orEmpty()
+                    }
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.about_version, version)) },
+                        supportingContent = { Text(stringResource(R.string.about_credits) + "\n\n" + stringResource(R.string.about_disclaimer)) },
+                    )
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.telegram_group)) },
+                        modifier = Modifier.clickable { uriHandler.openUri(TELEGRAM_GROUP_URL) },
+                    )
+                    DonationLink(stringResource(R.string.donate_monobank), BuildConfig.MONOBANK_DONATION_URL) { uriHandler.openUri(it) }
+                    DonationLink(stringResource(R.string.donate_privatbank), BuildConfig.PRIVATBANK_DONATION_URL) { uriHandler.openUri(it) }
+                }
             }
         }
     }
@@ -558,6 +596,111 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
             dismissButton = { TextButton(onClick = { confirmReset = false }) { Text(stringResource(R.string.action_cancel)) } },
         )
     }
+}
+
+/** Reassures users that the defaults are safe and explains when edits are stored. */
+@Composable
+private fun SettingsIntro() {
+    Surface(
+        color = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        shape = MaterialTheme.shapes.large,
+        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp).fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+            Icon(Icons.Filled.Info, contentDescription = null)
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(stringResource(R.string.settings_intro_title), style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.settings_intro_body), style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+    }
+}
+
+/** Expandable group that keeps the settings screen short and explains what each group controls. */
+@Composable
+private fun SettingsGroup(title: String, summary: String, icon: ImageVector, initiallyExpanded: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
+    var expanded by remember { mutableStateOf(initiallyExpanded) }
+    val toggleDescription = stringResource(if (expanded) R.string.settings_collapse_section else R.string.settings_expand_section)
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        tonalElevation = 2.dp,
+        shadowElevation = 1.dp,
+        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp).fillMaxWidth(),
+    ) {
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.secondaryContainer) {
+                    Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+                        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                    }
+                }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(title, style = MaterialTheme.typography.titleMedium)
+                    Text(summary, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Icon(
+                    if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    contentDescription = toggleDescription,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (expanded) {
+                HorizontalDivider()
+                Column(content = content)
+            }
+        }
+    }
+}
+
+/** Short plain-language guidance shown at the start of an expanded settings group. */
+@Composable
+private fun SettingsHelp(text: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Icon(Icons.Filled.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+        Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** Shows whether Android may stop navigation in the background and opens the system fix. */
+@Composable
+private fun BatteryOptimizationItem(context: Context) {
+    var unrestricted by remember { mutableStateOf(isBatteryUnrestricted(context)) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) unrestricted = isBatteryUnrestricted(context)
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    ListItem(
+        headlineContent = { Text(stringResource(R.string.battery_title)) },
+        supportingContent = {
+            Text(
+                stringResource(if (unrestricted) R.string.battery_unrestricted else R.string.battery_restricted),
+                color = if (unrestricted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+            )
+        },
+        modifier = Modifier.clickable(enabled = !unrestricted) {
+            runCatching {
+                @android.annotation.SuppressLint("BatteryLife")
+                val intent = Intent(
+                    Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    "package:${context.packageName}".toUri(),
+                )
+                context.startActivity(intent)
+            }
+        },
+    )
 }
 
 /** Shows a donation destination only when its URL was configured for this build. */
@@ -631,12 +774,21 @@ private fun SwitchItem(title: String, summary: String?, checked: Boolean, onChan
 
 /** A single-line text field; [secret] hides the text (for keys and tokens). */
 @Composable
-private fun Field(value: String, onChange: (String) -> Unit, label: String, placeholder: String?, secret: Boolean = false, keyboard: KeyboardType = KeyboardType.Text) {
+private fun Field(
+    value: String,
+    onChange: (String) -> Unit,
+    label: String,
+    placeholder: String?,
+    secret: Boolean = false,
+    keyboard: KeyboardType = KeyboardType.Text,
+    helper: String? = null,
+) {
     OutlinedTextField(
         value = value,
         onValueChange = onChange,
         label = { Text(label) },
         placeholder = placeholder?.let { { Text(it) } },
+        supportingText = helper?.let { { Text(it) } },
         singleLine = true,
         visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
         keyboardOptions = KeyboardOptions(keyboardType = if (secret) KeyboardType.Password else keyboard),
@@ -680,7 +832,14 @@ private fun OfflineMapSection(app: AppGraph, state: OfflineMapStatus) {
             }
         }
     }
-    Field(url, { url = it }, stringResource(R.string.offline_map_url), "https://…/map-ukraine.zip", keyboard = KeyboardType.Uri)
+    Field(
+        url,
+        { url = it },
+        stringResource(R.string.offline_map_url),
+        "https://…/map-ukraine.zip",
+        keyboard = KeyboardType.Uri,
+        helper = stringResource(R.string.offline_map_url_help),
+    )
     FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Button(onClick = { app.offlineMap.download(url) }, enabled = url.isNotBlank() && state.busy == null) {
             Text(stringResource(R.string.action_download))

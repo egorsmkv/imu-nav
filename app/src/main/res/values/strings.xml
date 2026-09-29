@@ -127,6 +127,23 @@
 
     <!-- Settings -->
     <string name="settings_title">Settings</string>
+    <string name="settings_intro_title">Ready to navigate</string>
+    <string name="settings_intro_body">Recommended settings already work for most people. Changes are saved when you return to the map.</string>
+    <string name="settings_group_everyday">Everyday settings</string>
+    <string name="settings_group_everyday_summary">Language, voice, starting view and battery use</string>
+    <string name="settings_help_everyday">Recommended: Hybrid positioning, Auto power and spoken directions.</string>
+    <string name="settings_group_maps">Maps and route planning</string>
+    <string name="settings_group_maps_setup">Set up offline navigation, maps and address search</string>
+    <string name="settings_group_maps_ready">Offline routing is ready; manage maps and address search</string>
+    <string name="settings_help_maps">The routing pack calculates a route. The map pack draws streets. They are separate downloads.</string>
+    <string name="settings_group_cells">Cell-tower GPS backup</string>
+    <string name="settings_group_cells_summary">Improve positioning when GPS is unavailable</string>
+    <string name="settings_help_cells">Optional. The built-in tower database works automatically; adding data can improve cell positioning.</string>
+    <string name="settings_group_advanced">Advanced and support</string>
+    <string name="settings_group_advanced_summary">Data tools, tests, logs and app information</string>
+    <string name="settings_help_advanced">Most users can leave these settings unchanged.</string>
+    <string name="settings_expand_section">Expand section</string>
+    <string name="settings_collapse_section">Collapse section</string>
     <string name="sec_navigation_method">Navigation without GPS</string>
     <string name="navigation_method_title">Fallback method</string>
     <string name="navigation_method_dr">Dead reckoning</string>
@@ -241,6 +258,7 @@
     <string name="offline_map_none_hint">The map is drawn from the internet (OpenFreeMap). Install a map pack to see streets without a connection.</string>
     <string name="offline_map_pack">%1$s · %2$d MB · built %3$s</string>
     <string name="offline_map_url">Map pack URL (.zip)</string>
+    <string name="offline_map_url_help">Paste a map-pack link, or import a downloaded .zip file.</string>
     <string name="offline_map_use">Use the offline map</string>
     <string name="offline_map_use_summary">Draw the map from the installed pack, with or without internet.</string>
     <string name="offline_map_installed">Offline map installed: %1$s</string>
@@ -284,24 +302,25 @@
     <string name="language_title">App and voice language</string>
     <string name="language_hint">Screens and spoken prompts.</string>
     <string name="language_system">Phone default</string>
-    <string name="routing_none">No offline map installed — routes need the internet</string>
+    <string name="routing_none">No offline routing pack installed — routes need the internet</string>
     <string name="routing_pack">%1$s · %2$d MB · built %3$s</string>
     <string name="routing_coverage">Covers %1$.2f–%2$.2f° N, %3$.2f–%4$.2f° E</string>
     <string name="routing_load_failed">Installed, but the pack could not be loaded</string>
     <string name="routing_import">Import pack</string>
     <string name="routing_url">Pack URL (.zip)</string>
+    <string name="routing_url_help">Paste a routing-pack link, or import a downloaded .zip file.</string>
     <string name="routing_remove">Remove</string>
     <string name="routing_allow_online">Allow online routing and search</string>
     <string name="routing_allow_online_summary">Used when the offline map or search index cannot answer. Sends start and destination to router.project-osrm.org, and search text to the address-search server below.</string>
     <string name="routing_installing">Installing pack… %1$d MB</string>
     <string name="routing_downloading">Downloading pack… %1$d of %2$d MB (%3$d%%)</string>
     <string name="routing_removing">Removing pack…</string>
-    <string name="routing_removed">Offline map removed</string>
-    <string name="routing_installed">Offline map installed: %1$s</string>
+    <string name="routing_removed">Offline routing pack removed</string>
+    <string name="routing_installed">Offline routing pack installed: %1$s</string>
     <string name="routing_not_a_pack">Not a routing pack (pack.json and graph files expected)</string>
-    <string name="routing_no_coverage">The offline map does not cover this trip, and online routing is off</string>
-    <string name="routing_preparing_builtin">Preparing offline map… %1$d of %2$d MB</string>
-    <string name="routing_install_builtin">Install built-in map (%1$s)</string>
+    <string name="routing_no_coverage">The offline routing pack does not cover this trip, and online routing is off</string>
+    <string name="routing_preparing_builtin">Preparing built-in routing pack… %1$d of %2$d MB</string>
+    <string name="routing_install_builtin">Install built-in routing pack (%1$s)</string>
 
     <!-- Trip history -->
     <string name="history_title">Trip history</string>

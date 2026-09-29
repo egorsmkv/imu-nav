@@ -40,7 +40,7 @@ remaining along-track drift is repeatedly corrected by landmarks.
 ### Offline routing
 Routes are computed on the phone with **GraphHopper 11** from a *routing pack*: a road graph with
 contraction hierarchies built on a computer from an OpenStreetMap extract. OSRM (online) is only a
-fallback, and can be switched off in **Settings → Offline routing**. Packs also provide real speed
+fallback, and can be switched off in **Settings → Maps and route planning → Offline routing**. Packs also provide real speed
 limits (OSM `maxspeed`) for the speed sign and the dead-reckoning speed prior.
 
 Packs contain two profiles, **car** and **foot** (walking: footways, paths, steps, pedestrian
@@ -62,7 +62,7 @@ cp graph-ukraine/pack.json app/src/play/assets/routing/pack.json
 ```
 On first start the app unpacks it in the background (~20 s for Ukraine) and uses it. It is only
 reinstalled when an update ships a newer pack, and stays removed if the user removes it (Settings
-offers *Install built-in map*). The APK grows by the zip size (~400+ MB for Ukraine with car and
+offers *Install built-in routing pack*). The APK grows by the zip size (~400+ MB for Ukraine with car and
 foot profiles and the search index, making the APK ~450+ MB — over Google Play's 200 MB base-APK limit, fine for
 sideloading); both files are gitignored. The F-Droid flavor deliberately never bundles this locally
 generated pack: users can import or download the same freely licensed data pack in the app.
@@ -82,9 +82,9 @@ numbers built from the same OSM extract (~87 MB for Ukraine; skip with `--no-add
 work offline in a few milliseconds; street-type words are ignored and results near you rank first.
 The route panel uses the same text search for both the starting address and the destination; the
 current trusted position remains the default start until the user chooses another one.
-When the offline index finds nothing and online use is allowed (**Settings → Offline routing →
+When the offline index finds nothing and online use is allowed (**Settings → Maps and route planning → Offline routing →
 Allow online routing and search**), a [Photon](https://github.com/komoot/photon) geocoder is asked.
-The public server `photon.komoot.io` is the default; **Settings → Address search** accepts your own
+The public server `photon.komoot.io` is the default; **Settings → Maps and route planning → Address search** accepts your own
 server instead (a host such as `http://192.168.1.10:2322` or the full `…/api` URL), with a *Test*
 button that runs a sample query. Self-hosting keeps search text off third-party servers.
 
@@ -99,7 +99,7 @@ samples, satellite/AGC status, routes and the engine's own estimates (gzip text,
   the app mid-trip, the next start (within 3 h) restores the route and position — widening the
   uncertainty for the time lost — restarts the foreground service and keeps recording into the same
   file (a recording cut off by the kill is salvaged first). Accept the battery-optimisation exemption
-  when offered (Settings → Diagnostics) so this is rare.
+  when offered (**Settings → Everyday settings → Battery**) so this is rare.
 - **Replay tool:** re-runs recordings through the engine on a computer, optionally hiding GPS after
   N seconds, and compares the engine against the real (trusted GPS) track:
   ```bash
@@ -256,15 +256,17 @@ choose a destination, then tap **Start**. The current trusted position is used w
 changed. If GPS is untrusted and there is no cell fix, search for the starting address or pan the
 crosshair onto your position and tap **Start here** first. Tap the status pill for
 positioning diagnostics (satellites, spoofing reasons, cells, *Simulate GPS loss*, trip log); the gear
-opens **Settings**. **Settings → Navigation without GPS** selects dead reckoning only, cell-tower
+opens **Settings**. Its four expandable groups keep common controls separate from maps, cell-tower
+data and advanced tools. **Everyday settings → Navigation without GPS** selects dead reckoning only, cell-tower
 positions only (held between scans), or the recommended hybrid that dead-reckons continuously and
 uses cell/network fixes to constrain drift. Trusted GPS remains preferred in all three modes.
-Other settings cover cell types, tower sources, sharing, learning, the database, diagnostics and about.
+Each group starts with a short explanation; the map group also distinguishes routing packs (which
+calculate routes) from map packs (which draw streets).
 The map opens at the phone's last GPS position (spoofed or out-of-area fixes are ignored) or, if set in
-**Settings → Map start**, at a fixed place (typed coordinates, your position or the map centre).
+**Settings → Everyday settings → Map start**, at a fixed place (typed coordinates, your position or the map centre).
 The interface and voice follow the phone's language (Ukrainian, English or Russian) unless changed in
-**Settings → Language**, and the phone's light/dark theme. Spoken directions can be disabled under
-**Settings → Navigation without GPS**. Map and settings layouts adapt to portrait and landscape. Text trip logs are written to
+**Settings → Everyday settings → Language**, and the phone's light/dark theme. Spoken directions can be disabled under
+**Settings → Everyday settings → Navigation without GPS**. Map and settings layouts adapt to portrait and landscape. Text trip logs are written to
 `files/logs/`, trip recordings to `files/trips/` in app storage.
 
 ## Status and limitations
