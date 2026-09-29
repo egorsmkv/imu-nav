@@ -209,10 +209,8 @@
     <string name="trip_log_filter_position">Позиція</string>
     <string name="trip_log_filter_navigation">Навігація</string>
     <string name="trip_log_follow">Стежити за новими</string>
-    <string name="trip_log_count">Показано %1$d із %2$d записів</string>
     <string name="trip_log_no_matches">Немає подій, що відповідають цим фільтрам</string>
     <string name="trip_log_copy">Копіювати видимі події</string>
-    <string name="trip_log_copied">Скопійовано подій: %1$d</string>
     <string name="trip_log_share">Надіслати видимі події як текстовий файл</string>
     <string name="trip_log_share_title">Надіслати журнал поїздки</string>
     <string name="trip_log_share_failed">Не вдалося створити файл журналу</string>
@@ -406,5 +404,17 @@
         <item quantity="few">Працює: %1$d результати для «Київ»</item>
         <item quantity="many">Працює: %1$d результатів для «Київ»</item>
         <item quantity="other">Працює: %1$d результату для «Київ»</item>
+    </plurals>
+    <plurals name="trip_log_count">
+        <item quantity="one">Показано %1$d із %2$d запису</item>
+        <item quantity="few">Показано %1$d із %2$d записів</item>
+        <item quantity="many">Показано %1$d із %2$d записів</item>
+        <item quantity="other">Показано %1$d із %2$d запису</item>
+    </plurals>
+    <plurals name="trip_log_copied">
+        <item quantity="one">Скопійовано %1$d подію</item>
+        <item quantity="few">Скопійовано %1$d події</item>
+        <item quantity="many">Скопійовано %1$d подій</item>
+        <item quantity="other">Скопійовано %1$d події</item>
     </plurals>
 </resources>

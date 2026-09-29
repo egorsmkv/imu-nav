@@ -1067,7 +1067,9 @@ fun LogScreen(app: AppGraph, onBack: () -> Unit) {
                             context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(
                                 ClipData.newPlainText(resources.getString(R.string.trip_log), visibleLines.joinToString("\n")),
                             )
-                            scope.launch { snackbar.showSnackbar(resources.getString(R.string.trip_log_copied, visibleLines.size)) }
+                            scope.launch {
+                                snackbar.showSnackbar(resources.getQuantityString(R.plurals.trip_log_copied, visibleLines.size, visibleLines.size))
+                            }
                         },
                     ) {
                         Icon(Icons.Filled.ContentCopy, contentDescription = stringResource(R.string.trip_log_copy))
@@ -1132,7 +1134,7 @@ fun LogScreen(app: AppGraph, onBack: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text(
-                    stringResource(R.string.trip_log_count, visibleLines.size, lines.size),
+                    pluralStringResource(R.plurals.trip_log_count, visibleLines.size, visibleLines.size, lines.size),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),

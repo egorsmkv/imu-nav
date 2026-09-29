@@ -209,10 +209,8 @@
     <string name="trip_log_filter_position">Позиция</string>
     <string name="trip_log_filter_navigation">Навигация</string>
     <string name="trip_log_follow">Следить за новыми</string>
-    <string name="trip_log_count">Показано %1$d из %2$d записей</string>
     <string name="trip_log_no_matches">Нет событий, соответствующих этим фильтрам</string>
     <string name="trip_log_copy">Копировать видимые события</string>
-    <string name="trip_log_copied">Скопировано событий: %1$d</string>
     <string name="trip_log_share">Отправить видимые события как текстовый файл</string>
     <string name="trip_log_share_title">Отправить журнал поездки</string>
     <string name="trip_log_share_failed">Не удалось создать файл журнала</string>
@@ -406,5 +404,17 @@
         <item quantity="few">Работает: %1$d результата для «Киев»</item>
         <item quantity="many">Работает: %1$d результатов для «Киев»</item>
         <item quantity="other">Работает: %1$d результата для «Киев»</item>
+    </plurals>
+    <plurals name="trip_log_count">
+        <item quantity="one">Показана %1$d из %2$d записи</item>
+        <item quantity="few">Показано %1$d из %2$d записей</item>
+        <item quantity="many">Показано %1$d из %2$d записей</item>
+        <item quantity="other">Показано %1$d из %2$d записи</item>
+    </plurals>
+    <plurals name="trip_log_copied">
+        <item quantity="one">Скопировано %1$d событие</item>
+        <item quantity="few">Скопировано %1$d события</item>
+        <item quantity="many">Скопировано %1$d событий</item>
+        <item quantity="other">Скопировано %1$d события</item>
     </plurals>
 </resources>

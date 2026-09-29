@@ -211,10 +211,8 @@
     <string name="trip_log_filter_position">Position</string>
     <string name="trip_log_filter_navigation">Navigation</string>
     <string name="trip_log_follow">Follow newest</string>
-    <string name="trip_log_count">Showing %1$d of %2$d entries</string>
     <string name="trip_log_no_matches">No events match these filters</string>
     <string name="trip_log_copy">Copy visible events</string>
-    <string name="trip_log_copied">Copied %1$d events</string>
     <string name="trip_log_share">Share visible events as a text file</string>
     <string name="trip_log_share_title">Share trip log</string>
     <string name="trip_log_share_failed">Couldn’t create the log file</string>
@@ -400,5 +398,13 @@
     <plurals name="search_server_ok">
         <item quantity="one">Works: %1$d result for “Київ”</item>
         <item quantity="other">Works: %1$d results for “Київ”</item>
+    </plurals>
+    <plurals name="trip_log_count">
+        <item quantity="one">Showing %1$d of %2$d entry</item>
+        <item quantity="other">Showing %1$d of %2$d entries</item>
+    </plurals>
+    <plurals name="trip_log_copied">
+        <item quantity="one">Copied %1$d event</item>
+        <item quantity="other">Copied %1$d events</item>
     </plurals>
 </resources>
