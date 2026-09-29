@@ -18,13 +18,17 @@
     <string name="idle_waiting_position">Визначаємо вашу позицію…</string>
     <string name="idle_position_gps">Позиція за GPS, %1$s</string>
     <string name="idle_position_cell">Позиція за вишками зв’язку, %1$s</string>
-    <string name="idle_position_manual">Точку старту встановлено на карті</string>
+    <string name="idle_position_manual">Точку старту обрано</string>
     <string name="idle_gps_spoofed">Схоже, GPS підмінено або заглушено — його ігноруємо</string>
     <string name="idle_set_start_hint">Посуньте карту так, щоб приціл був на вашій позиції, і натисніть «Старт тут»</string>
     <string name="action_start">Поїхали</string>
     <string name="action_set_start">Старт тут</string>
     <string name="action_move_start">Перенести старт</string>
     <string name="planning">Прокладаємо маршрут…</string>
+    <string name="route_from">Звідки</string>
+    <string name="route_to">Куди</string>
+    <string name="route_current_position">Поточна позиція</string>
+    <string name="route_point_on_map">Точка, обрана на карті</string>
 
     <!-- Навігація -->
     <string name="action_stop">Стоп</string>
@@ -332,6 +336,8 @@
 
     <!-- Пошук -->
     <string name="search_hint">Пошук адреси або місця</string>
+    <string name="search_from_hint">Пошук адреси старту</string>
+    <string name="search_to_hint">Пошук пункту призначення</string>
     <string name="search_recent">Нещодавні</string>
     <string name="search_no_results">Нічого не знайдено</string>
     <string name="search_offline_missing">Встановіть офлайн-карту, щоб шукати без інтернету</string>

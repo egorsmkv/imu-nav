@@ -71,7 +71,7 @@ fun SearchPill(onClick: () -> Unit, modifier: Modifier = Modifier) {
 
 /** Full-screen search: type-ahead offline results (online fallback), recent picks when empty. */
 @Composable
-fun SearchScreen(search: PlaceSearch, near: GeoPoint?, onPick: (SearchResult) -> Unit, onClose: () -> Unit) {
+fun SearchScreen(search: PlaceSearch, near: GeoPoint?, hint: String, onPick: (SearchResult) -> Unit, onClose: () -> Unit) {
     val res = LocalResources.current
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
@@ -95,7 +95,7 @@ fun SearchScreen(search: PlaceSearch, near: GeoPoint?, onPick: (SearchResult) ->
             TextField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = { Text(stringResource(R.string.search_hint)) },
+                placeholder = { Text(hint) },
                 leadingIcon = { IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.cd_back)) } },
                 trailingIcon = {
                     if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Close, stringResource(R.string.cd_clear)) }

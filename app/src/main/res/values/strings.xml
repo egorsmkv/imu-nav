@@ -19,13 +19,17 @@
     <string name="idle_waiting_position">Waiting for your position…</string>
     <string name="idle_position_gps">Position from GPS, %1$s</string>
     <string name="idle_position_cell">Position from cell towers, %1$s</string>
-    <string name="idle_position_manual">Start point set on the map</string>
+    <string name="idle_position_manual">Start point selected</string>
     <string name="idle_gps_spoofed">GPS looks spoofed or jammed — it is being ignored</string>
     <string name="idle_set_start_hint">Move the map so the crosshair is on your position, then tap “Start here”</string>
     <string name="action_start">Start</string>
     <string name="action_set_start">Start here</string>
     <string name="action_move_start">Move start</string>
     <string name="planning">Planning route…</string>
+    <string name="route_from">From</string>
+    <string name="route_to">To</string>
+    <string name="route_current_position">Current position</string>
+    <string name="route_point_on_map">Point selected on map</string>
 
     <!-- Navigation -->
     <string name="action_stop">Stop</string>
@@ -334,6 +338,8 @@
 
     <!-- Search -->
     <string name="search_hint">Search address or place</string>
+    <string name="search_from_hint">Search starting address</string>
+    <string name="search_to_hint">Search destination</string>
     <string name="search_recent">Recent</string>
     <string name="search_no_results">Nothing found</string>
     <string name="search_offline_missing">Install the offline map to search without internet</string>

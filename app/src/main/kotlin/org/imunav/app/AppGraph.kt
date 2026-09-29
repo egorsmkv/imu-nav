@@ -63,8 +63,12 @@ data class UiState(
     val currentPosition: GeoPoint? = null,
     /** Destination picked on the map or in search, before navigation starts. */
     val destination: GeoPoint? = null,
-    /** Start point chosen by the user when no trusted position exists (GPS spoofed/jammed, no network). */
+    /** Address shown for a destination chosen in search; null for a point chosen directly on the map. */
+    val destinationLabel: String? = null,
+    /** Start point chosen by the user on the map or in search; it overrides the trusted position. */
     val manualStart: GeoPoint? = null,
+    /** Address shown for a start chosen in search; null for a point chosen directly on the map. */
+    val manualStartLabel: String? = null,
     val hasTrustedPosition: Boolean = false,
     /** Accuracy of the best trusted position, metres (null = none). */
     val trustedAccuracyM: Double? = null,
@@ -333,10 +337,10 @@ class AppGraph(private val context: Context) {
      */
     fun currentPosition(): GeoPoint? = hub.lastGood?.point ?: hub.lastNet?.point
 
-    /** The user placed the start by hand ("Start here") because no trusted position exists. */
-    fun setManualStart(p: GeoPoint?) {
+    /** Use [p] as the route origin instead of the trusted position; [label] is from address search. */
+    fun setManualStart(p: GeoPoint?, label: String? = null) {
         tripLog.write("manual_start ${p?.let { "%.5f %.5f".format(Locale.US, it.lat, it.lon) }}")
-        _ui.value = _ui.value.copy(manualStart = p, error = null)
+        _ui.value = _ui.value.copy(manualStart = p, manualStartLabel = label.takeIf { p != null }, error = null)
     }
 
     /** The error message was shown; forget it. */
@@ -344,9 +348,9 @@ class AppGraph(private val context: Context) {
         _ui.value = _ui.value.copy(error = null)
     }
 
-    /** Destination picked on the map / in search (null clears it). */
-    fun setDestination(p: GeoPoint?) {
-        _ui.value = _ui.value.copy(destination = p, error = null)
+    /** Destination picked on the map or in search; [label] is shown for a search result. */
+    fun setDestination(p: GeoPoint?, label: String? = null) {
+        _ui.value = _ui.value.copy(destination = p, destinationLabel = label.takeIf { p != null }, error = null)
     }
 
     /**

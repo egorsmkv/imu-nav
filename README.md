@@ -80,6 +80,8 @@ Routing packs also contain `search.db`, an SQLite FTS4 index of settlements, str
 numbers built from the same OSM extract (~87 MB for Ukraine; skip with `--no-addresses` or
 `--no-search`). Queries like `Хрещатик 22`, `Київ Хрещатик`, `вул. Шевченка, Львів` or `Буча`
 work offline in a few milliseconds; street-type words are ignored and results near you rank first.
+The route panel uses the same text search for both the starting address and the destination; the
+current trusted position remains the default start until the user chooses another one.
 When the offline index finds nothing and online use is allowed (**Settings → Offline routing →
 Allow online routing and search**), a [Photon](https://github.com/komoot/photon) geocoder is asked.
 The public server `photon.komoot.io` is the default; **Settings → Address search** accepts your own
@@ -249,8 +251,10 @@ Cell-tower and network corrections apply when the Hybrid fallback is selected. S
 permission (asked when choosing *Walk*); without it or without a step sensor, a 1.3 m/s pace is
 assumed while the phone is moving. Walk recordings contain the steps, so the replay tool works for them too.
 
-Usage: long-press the map to choose a destination and tap **Start**. If GPS is untrusted and there is
-no cell fix, pan the crosshair onto your position and tap **Start here** first. Tap the status pill for
+Usage: search for the **From** and **To** addresses in the route panel, or long-press the map to
+choose a destination, then tap **Start**. The current trusted position is used when **From** is not
+changed. If GPS is untrusted and there is no cell fix, search for the starting address or pan the
+crosshair onto your position and tap **Start here** first. Tap the status pill for
 positioning diagnostics (satellites, spoofing reasons, cells, *Simulate GPS loss*, trip log); the gear
 opens **Settings**. **Settings → Navigation without GPS** selects dead reckoning only, cell-tower
 positions only (held between scans), or the recommended hybrid that dead-reckons continuously and

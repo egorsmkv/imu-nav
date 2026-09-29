@@ -58,6 +58,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -114,6 +115,8 @@ import org.imunav.core.gnss.TrustLevel
 import org.imunav.core.nav.GuidanceState
 import org.imunav.core.nav.PositionSource
 import org.imunav.core.route.TravelMode
+import org.imunav.core.search.ResultKind
+import org.imunav.core.search.SearchResult
 import java.util.Date
 
 private val GoodGreen = Color(0xFF1E8E3E)
@@ -147,7 +150,7 @@ fun MapScreen(ui: UiState, app: AppGraph, hasLocation: Boolean, onRequestPermiss
     var mapCenter by remember { mutableStateOf<GeoPoint?>(null) }
     var following by remember { mutableStateOf(true) }
     var showDiagnostics by remember { mutableStateOf(false) }
-    var showSearch by remember { mutableStateOf(false) }
+    var searchTarget by remember { mutableStateOf<RoutePoint?>(null) }
     // Opening view: the last known GPS / trusted position, or the fixed place from Settings.
     val startView = remember { app.mapStart.initialView() }
     val startMode by app.mapStartMode.collectAsStateWithLifecycle()
@@ -227,7 +230,7 @@ fun MapScreen(ui: UiState, app: AppGraph, hasLocation: Boolean, onRequestPermiss
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (nav.active && !nav.arrived) ManeuverBanner(nav)
-            if (!nav.active) SearchPill(onClick = { showSearch = true })
+            if (!nav.active) SearchPill(onClick = { searchTarget = RoutePoint.DESTINATION })
             when {
                 !hasLocation -> WarningBanner(
                     Icons.Filled.LocationOff,
@@ -309,6 +312,9 @@ fun MapScreen(ui: UiState, app: AppGraph, hasLocation: Boolean, onRequestPermiss
                     pickStart = pickStart,
                     canStart = hasLocation && ui.destination != null && !ui.planning && (ui.hasTrustedPosition || ui.manualStart != null),
                     onSetStart = { mapCenter?.let { app.setManualStart(it) } },
+                    onSearchStart = { searchTarget = RoutePoint.START },
+                    onSearchDestination = { searchTarget = RoutePoint.DESTINATION },
+                    onClearStart = { app.setManualStart(null) },
                     onStart = {
                         requestBatteryExemptionOnce(context)
                         app.startNavigation { NavService.start(context) }
@@ -330,17 +336,21 @@ fun MapScreen(ui: UiState, app: AppGraph, hasLocation: Boolean, onRequestPermiss
         )
     }
 
-    if (showSearch) {
+    searchTarget?.let { target ->
         SearchScreen(
             search = app.search,
-            near = ui.currentPosition ?: mapCenter,
+            near = if (target == RoutePoint.DESTINATION) ui.manualStart ?: ui.currentPosition ?: mapCenter else ui.currentPosition ?: mapCenter,
+            hint = stringResource(if (target == RoutePoint.START) R.string.search_from_hint else R.string.search_to_hint),
             onPick = { r ->
                 app.search.remember(r)
-                app.setDestination(r.point)
+                when (target) {
+                    RoutePoint.START -> app.setManualStart(r.point, r.routePointLabel())
+                    RoutePoint.DESTINATION -> app.setDestination(r.point, r.routePointLabel())
+                }
                 controller.moveTo(r.point, 16.0)
-                showSearch = false
+                searchTarget = null
             },
-            onClose = { showSearch = false },
+            onClose = { searchTarget = null },
         )
     }
 
@@ -543,22 +553,44 @@ private fun IdlePanel(
     pickStart: Boolean,
     canStart: Boolean,
     onSetStart: () -> Unit,
+    onSearchStart: () -> Unit,
+    onSearchDestination: () -> Unit,
+    onClearStart: () -> Unit,
     onStart: () -> Unit,
     onClearDestination: () -> Unit,
 ) {
     val res = LocalResources.current
     PanelSurface {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                stringResource(if (ui.destination == null) R.string.idle_title_choose else R.string.idle_title_ready),
-                style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.weight(1f),
-            )
-            if (ui.destination != null) {
-                TextButton(onClick = onClearDestination) { Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.action_cancel)) }
-            }
-        }
+        Text(
+            stringResource(if (ui.destination == null) R.string.idle_title_choose else R.string.idle_title_ready),
+            style = MaterialTheme.typography.titleLarge,
+        )
         Spacer(Modifier.size(4.dp))
+        RoutePointField(
+            icon = Icons.Filled.TripOrigin,
+            label = stringResource(R.string.route_from),
+            value = when {
+                ui.manualStartLabel != null -> ui.manualStartLabel
+                ui.manualStart != null -> stringResource(R.string.route_point_on_map)
+                ui.hasTrustedPosition -> stringResource(R.string.route_current_position)
+                else -> stringResource(R.string.search_from_hint)
+            },
+            onClick = onSearchStart,
+            onClear = onClearStart.takeIf { ui.manualStart != null },
+        )
+        Spacer(Modifier.size(8.dp))
+        RoutePointField(
+            icon = Icons.Filled.Navigation,
+            label = stringResource(R.string.route_to),
+            value = when {
+                ui.destinationLabel != null -> ui.destinationLabel
+                ui.destination != null -> stringResource(R.string.route_point_on_map)
+                else -> stringResource(R.string.search_to_hint)
+            },
+            onClick = onSearchDestination,
+            onClear = onClearDestination.takeIf { ui.destination != null },
+        )
+        Spacer(Modifier.size(8.dp))
         val positionLine = when {
             ui.manualStart != null -> stringResource(R.string.idle_position_manual)
             ui.hasTrustedPosition && ui.trustedFromGps -> stringResource(R.string.idle_position_gps, formatAccuracy(res, ui.trustedAccuracyM ?: 0.0))
@@ -599,6 +631,35 @@ private fun IdlePanel(
         }
     }
 }
+
+/** One searchable route endpoint. Clearing the origin returns it to automatic positioning. */
+@Composable
+private fun RoutePointField(icon: ImageVector, label: String, value: String, onClick: () -> Unit, onClear: (() -> Unit)?) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Row(Modifier.fillMaxWidth().padding(start = 14.dp, top = 10.dp, bottom = 10.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(value, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (onClear != null) {
+                IconButton(onClick = onClear) { Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.cd_clear)) }
+            }
+        }
+    }
+}
+
+/** Which endpoint a search result should replace. */
+private enum class RoutePoint { START, DESTINATION }
+
+/** Compact address shown in the route editor after a search result is selected. */
+private fun SearchResult.routePointLabel(): String = if (kind == ResultKind.PLACE || subtitle.isBlank()) title else "$title, $subtitle"
 
 /** Car / Walk choice before starting. Walking is disabled when the map pack has no walking data. */
 @OptIn(ExperimentalMaterial3Api::class)
