@@ -22,6 +22,7 @@
     <string name="idle_position_manual">Start point selected</string>
     <string name="idle_gps_spoofed">GPS looks spoofed or jammed — it is being ignored</string>
     <string name="idle_set_start_hint">Move the map so the crosshair is on your position, then tap “Start here”</string>
+    <string name="idle_move_start_hint">Move the map so the crosshair is on the new start, then tap “Move start”</string>
     <string name="action_start">Start</string>
     <string name="action_set_start">Start here</string>
     <string name="action_move_start">Move start</string>

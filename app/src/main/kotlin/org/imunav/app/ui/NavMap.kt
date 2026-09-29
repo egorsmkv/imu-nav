@@ -95,6 +95,9 @@ fun NavMap(
     /** Heights (px) covered by overlays at the top and bottom; the camera centres between them. */
     insetTopPx: Int = 0,
     insetBottomPx: Int = 0,
+    /** Camera-only padding for layouts where an overlay covers just the left or bottom map pane. */
+    cameraInsetStartPx: Int = 0,
+    cameraInsetBottomPx: Int = insetBottomPx,
     /** Frame-rate cap (power mode); lower = less GPU work while the camera follows the car. */
     maxFps: Int = 60,
     /** Glide the camera between positions, or jump (one frame per update instead of a 450 ms animation). */
@@ -186,10 +189,10 @@ fun NavMap(
     }
 
     // Keep the followed position, compass and attribution inside the visible (uncovered) map area.
-    LaunchedEffect(style, insetTopPx, insetBottomPx) {
+    LaunchedEffect(style, insetTopPx, insetBottomPx, cameraInsetStartPx, cameraInsetBottomPx) {
         val m = controller.map ?: return@LaunchedEffect
         val margin = (8 * density).toInt()
-        m.moveCamera(CameraUpdateFactory.paddingTo(0.0, insetTopPx.toDouble(), 0.0, insetBottomPx.toDouble()))
+        m.moveCamera(CameraUpdateFactory.paddingTo(cameraInsetStartPx.toDouble(), insetTopPx.toDouble(), 0.0, cameraInsetBottomPx.toDouble()))
         m.uiSettings.setCompassMargins(0, insetTopPx + margin, margin * 2, 0)
         m.uiSettings.setAttributionMargins(margin, 0, 0, insetBottomPx + margin)
     }

@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -77,6 +78,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -96,6 +98,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -123,6 +126,7 @@ private val GoodGreen = Color(0xFF1E8E3E)
 private val WarnAmber = Color(0xFFE37400)
 private val BadRed = Color(0xFFD93025)
 private val InfoBlue = Color(0xFF1A73E8)
+private const val LANDSCAPE_PANEL_MAX_WIDTH_DP = 600
 
 /**
  * The main screen: full-screen map with the search pill and status on top, map buttons on the
@@ -135,7 +139,8 @@ private val InfoBlue = Color(0xFF1A73E8)
 @Composable
 fun MapScreen(ui: UiState, app: AppGraph, hasLocation: Boolean, onRequestPermission: () -> Unit, onOpenSettings: () -> Unit, onOpenLog: () -> Unit, onOpenHistory: () -> Unit) {
     val context = LocalContext.current
-    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val configuration = LocalConfiguration.current
+    val landscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     val res = LocalResources.current
     val nav = ui.guidance
     val controller = remember { MapController() }
@@ -156,8 +161,9 @@ fun MapScreen(ui: UiState, app: AppGraph, hasLocation: Boolean, onRequestPermiss
     val startMode by app.mapStartMode.collectAsStateWithLifecycle()
     var centeredOnce by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
-    var topInsetPx by remember { mutableStateOf(0) }
-    var bottomInsetPx by remember { mutableStateOf(0) }
+    var topInsetPx by remember { mutableIntStateOf(0) }
+    var bottomInsetPx by remember { mutableIntStateOf(0) }
+    var bottomInsetWidthPx by remember { mutableIntStateOf(0) }
 
     // Offer a hand-placed start when there is no trusted position or only a coarse one.
     val pickStart = !nav.active && (!ui.hasTrustedPosition || (ui.trustedAccuracyM ?: 0.0) > 500.0)
@@ -210,6 +216,8 @@ fun MapScreen(ui: UiState, app: AppGraph, hasLocation: Boolean, onRequestPermiss
                 modifier = Modifier.fillMaxSize(),
                 insetTopPx = topInsetPx,
                 insetBottomPx = bottomInsetPx,
+                cameraInsetStartPx = if (landscape) bottomInsetWidthPx else 0,
+                cameraInsetBottomPx = if (landscape) 0 else bottomInsetPx,
                 maxFps = power.mapMaxFps,
                 animateCamera = power.animateCamera,
                 initialCenter = startView.point,
@@ -219,7 +227,14 @@ fun MapScreen(ui: UiState, app: AppGraph, hasLocation: Boolean, onRequestPermiss
             )
         }
 
-        if (pickStart) Crosshair(Modifier.align(Alignment.Center))
+        if (pickStart) {
+            val crosshairModifier = if (landscape) {
+                Modifier.align(Alignment.Center).offset { IntOffset(bottomInsetWidthPx / 2, topInsetPx / 2) }
+            } else {
+                Modifier.align(Alignment.Center).offset { IntOffset(0, (topInsetPx - bottomInsetPx) / 2) }
+            }
+            Crosshair(crosshairModifier)
+        }
 
         // ---- Top: maneuver banner, warnings, status pill
         Column(
@@ -264,8 +279,13 @@ fun MapScreen(ui: UiState, app: AppGraph, hasLocation: Boolean, onRequestPermiss
         }
 
         // ---- Right: map controls
+        val mapControlsModifier = if (landscape) {
+            Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 12.dp, bottom = 12.dp)
+        } else {
+            Modifier.align(Alignment.CenterEnd).offset { IntOffset(0, (topInsetPx - bottomInsetPx) / 2) }.padding(end = 12.dp)
+        }
         Column(
-            Modifier.align(Alignment.CenterEnd).padding(end = 12.dp),
+            mapControlsModifier,
             verticalArrangement = Arrangement.spacedBy(10.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -284,9 +304,12 @@ fun MapScreen(ui: UiState, app: AppGraph, hasLocation: Boolean, onRequestPermiss
 
         // ---- Bottom: legend, snackbars, panel
         Column(
-            Modifier.align(if (landscape) Alignment.BottomStart else Alignment.BottomCenter).onGloballyPositioned { bottomInsetPx = it.size.height }
+            Modifier.align(if (landscape) Alignment.BottomStart else Alignment.BottomCenter).onGloballyPositioned {
+                bottomInsetPx = it.size.height
+                bottomInsetWidthPx = it.size.width
+            }
                 .navigationBarsPadding().padding(12.dp)
-                .then(if (landscape) Modifier.widthIn(max = 600.dp).fillMaxWidth() else Modifier.fillMaxWidth()),
+                .then(if (landscape) Modifier.widthIn(max = LANDSCAPE_PANEL_MAX_WIDTH_DP.dp).fillMaxWidth() else Modifier.fillMaxWidth()),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (ui.cells.showTowers) TowerLegend(towerLayer, ui.cells.radios)
@@ -309,6 +332,7 @@ fun MapScreen(ui: UiState, app: AppGraph, hasLocation: Boolean, onRequestPermiss
                         }
                     },
                     routingBusy = routing.busy,
+                    compact = landscape,
                     pickStart = pickStart,
                     canStart = hasLocation && ui.destination != null && !ui.planning && (ui.hasTrustedPosition || ui.manualStart != null),
                     onSetStart = { mapCenter?.let { app.setManualStart(it) } },
@@ -536,9 +560,9 @@ private fun TowerLegend(layer: TowerLayer, radios: Set<Radio>) {
 
 /** The rounded card at the bottom of the map that the panels live in. */
 @Composable
-private fun PanelSurface(content: @Composable () -> Unit) {
+private fun PanelSurface(compact: Boolean = false, content: @Composable () -> Unit) {
     Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surface, shadowElevation = 8.dp, tonalElevation = 2.dp) {
-        Column(Modifier.fillMaxWidth().padding(20.dp)) { content() }
+        Column(Modifier.fillMaxWidth().padding(if (compact) 12.dp else 20.dp)) { content() }
     }
 }
 
@@ -550,6 +574,7 @@ private fun IdlePanel(
     walkingAvailable: Boolean,
     onModeChange: (TravelMode) -> Unit,
     routingBusy: String?,
+    compact: Boolean,
     pickStart: Boolean,
     canStart: Boolean,
     onSetStart: () -> Unit,
@@ -560,37 +585,35 @@ private fun IdlePanel(
     onClearDestination: () -> Unit,
 ) {
     val res = LocalResources.current
-    PanelSurface {
+    val startValue = when {
+        ui.manualStartLabel != null -> ui.manualStartLabel
+        ui.manualStart != null -> stringResource(R.string.route_point_on_map)
+        ui.hasTrustedPosition -> stringResource(R.string.route_current_position)
+        else -> stringResource(R.string.search_from_hint)
+    }
+    val destinationValue = when {
+        ui.destinationLabel != null -> ui.destinationLabel
+        ui.destination != null -> stringResource(R.string.route_point_on_map)
+        else -> stringResource(R.string.search_to_hint)
+    }
+    val startHint = stringResource(if (ui.manualStart == null) R.string.idle_set_start_hint else R.string.idle_move_start_hint)
+    PanelSurface(compact) {
         Text(
             stringResource(if (ui.destination == null) R.string.idle_title_choose else R.string.idle_title_ready),
-            style = MaterialTheme.typography.titleLarge,
+            style = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
         Spacer(Modifier.size(4.dp))
-        RoutePointField(
-            icon = Icons.Filled.TripOrigin,
-            label = stringResource(R.string.route_from),
-            value = when {
-                ui.manualStartLabel != null -> ui.manualStartLabel
-                ui.manualStart != null -> stringResource(R.string.route_point_on_map)
-                ui.hasTrustedPosition -> stringResource(R.string.route_current_position)
-                else -> stringResource(R.string.search_from_hint)
-            },
-            onClick = onSearchStart,
-            onClear = onClearStart.takeIf { ui.manualStart != null },
+        RoutePointEditor(
+            startValue = startValue,
+            destinationValue = destinationValue,
+            compact = compact,
+            onSearchStart = onSearchStart,
+            onSearchDestination = onSearchDestination,
+            onClearStart = onClearStart.takeIf { ui.manualStart != null },
+            onClearDestination = onClearDestination.takeIf { ui.destination != null },
         )
-        Spacer(Modifier.size(8.dp))
-        RoutePointField(
-            icon = Icons.Filled.Navigation,
-            label = stringResource(R.string.route_to),
-            value = when {
-                ui.destinationLabel != null -> ui.destinationLabel
-                ui.destination != null -> stringResource(R.string.route_point_on_map)
-                else -> stringResource(R.string.search_to_hint)
-            },
-            onClick = onSearchDestination,
-            onClear = onClearDestination.takeIf { ui.destination != null },
-        )
-        Spacer(Modifier.size(8.dp))
         val positionLine = when {
             ui.manualStart != null -> stringResource(R.string.idle_position_manual)
             ui.hasTrustedPosition && ui.trustedFromGps -> stringResource(R.string.idle_position_gps, formatAccuracy(res, ui.trustedAccuracyM ?: 0.0))
@@ -598,13 +621,19 @@ private fun IdlePanel(
             ui.gpsRejectReasons.isNotEmpty() -> stringResource(R.string.idle_gps_spoofed)
             else -> stringResource(R.string.idle_waiting_position)
         }
-        IconLine(Icons.Filled.TripOrigin, positionLine)
-        if (pickStart) IconLine(Icons.Filled.Add, stringResource(R.string.idle_set_start_hint))
-        if (ui.destination == null) IconLine(Icons.Filled.Navigation, stringResource(R.string.idle_hint_long_press))
-        Spacer(Modifier.size(12.dp))
+        if (!compact) IconLine(Icons.Filled.TripOrigin, positionLine)
+        if (pickStart) IconLine(Icons.Filled.Add, startHint)
+        if (!compact && ui.destination == null) IconLine(Icons.Filled.Navigation, stringResource(R.string.idle_hint_long_press))
+        Spacer(Modifier.size(if (compact) 8.dp else 12.dp))
         TravelModeSelector(mode, walkingAvailable, onModeChange)
         if (!walkingAvailable) {
-            Text(stringResource(R.string.mode_walk_needs_pack), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                stringResource(R.string.mode_walk_needs_pack),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = if (compact) 1 else Int.MAX_VALUE,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
         if (routingBusy != null) {
             Spacer(Modifier.size(8.dp))
@@ -616,7 +645,7 @@ private fun IdlePanel(
             LinearProgressIndicator(Modifier.fillMaxWidth())
             Text(stringResource(R.string.planning), style = MaterialTheme.typography.bodySmall)
         }
-        Spacer(Modifier.size(12.dp))
+        Spacer(Modifier.size(if (compact) 8.dp else 12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             if (pickStart) {
                 OutlinedButton(onClick = onSetStart, modifier = Modifier.weight(1f)) {
@@ -632,11 +661,62 @@ private fun IdlePanel(
     }
 }
 
+/** Start and destination fields are side by side when vertical space is scarce. */
+@Composable
+private fun RoutePointEditor(
+    startValue: String,
+    destinationValue: String,
+    compact: Boolean,
+    onSearchStart: () -> Unit,
+    onSearchDestination: () -> Unit,
+    onClearStart: (() -> Unit)?,
+    onClearDestination: (() -> Unit)?,
+) {
+    if (compact) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            RoutePointField(
+                icon = Icons.Filled.TripOrigin,
+                label = stringResource(R.string.route_from),
+                value = startValue,
+                onClick = onSearchStart,
+                onClear = onClearStart,
+                modifier = Modifier.weight(1f),
+            )
+            RoutePointField(
+                icon = Icons.Filled.Navigation,
+                label = stringResource(R.string.route_to),
+                value = destinationValue,
+                onClick = onSearchDestination,
+                onClear = onClearDestination,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    } else {
+        RoutePointField(
+            icon = Icons.Filled.TripOrigin,
+            label = stringResource(R.string.route_from),
+            value = startValue,
+            onClick = onSearchStart,
+            onClear = onClearStart,
+        )
+        Spacer(Modifier.size(8.dp))
+        RoutePointField(
+            icon = Icons.Filled.Navigation,
+            label = stringResource(R.string.route_to),
+            value = destinationValue,
+            onClick = onSearchDestination,
+            onClear = onClearDestination,
+        )
+    }
+    Spacer(Modifier.size(8.dp))
+}
+
 /** One searchable route endpoint. Clearing the origin returns it to automatic positioning. */
 @Composable
-private fun RoutePointField(icon: ImageVector, label: String, value: String, onClick: () -> Unit, onClear: (() -> Unit)?) {
+private fun RoutePointField(icon: ImageVector, label: String, value: String, onClick: () -> Unit, onClear: (() -> Unit)?, modifier: Modifier = Modifier) {
     Surface(
         onClick = onClick,
+        modifier = modifier,
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),

@@ -21,6 +21,7 @@
     <string name="idle_position_manual">Точка старта выбрана</string>
     <string name="idle_gps_spoofed">Похоже, GPS подменён или заглушён — он игнорируется</string>
     <string name="idle_set_start_hint">Переместите карту так, чтобы прицел был на вашей позиции, затем нажмите «Старт здесь»</string>
+    <string name="idle_move_start_hint">Переместите карту так, чтобы прицел был на новой точке старта, затем нажмите «Перенести старт»</string>
     <string name="action_start">Поехали</string>
     <string name="action_set_start">Старт здесь</string>
     <string name="action_move_start">Перенести старт</string>
