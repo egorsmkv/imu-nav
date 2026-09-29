@@ -201,7 +201,18 @@
 
     <string name="sec_diagnostics">Діагностика</string>
     <string name="trip_log">Журнал поїздки</string>
+    <string name="trip_log_summary">Пошук, фільтрування та копіювання останніх діагностичних подій</string>
     <string name="trip_log_empty">Записів поки немає</string>
+    <string name="trip_log_search">Пошук подій</string>
+    <string name="trip_log_filter_all">Усі</string>
+    <string name="trip_log_filter_problems">Проблеми</string>
+    <string name="trip_log_filter_position">Позиція</string>
+    <string name="trip_log_filter_navigation">Навігація</string>
+    <string name="trip_log_follow">Стежити за новими</string>
+    <string name="trip_log_count">Показано %1$d із %2$d записів</string>
+    <string name="trip_log_no_matches">Немає подій, що відповідають цим фільтрам</string>
+    <string name="trip_log_copy">Копіювати видимі події</string>
+    <string name="trip_log_copied">Скопійовано подій: %1$d</string>
     <string name="simulate_gps_loss">Імітувати втрату GPS</string>
     <string name="simulate_gps_loss_summary">Ігнорувати GPS, щоб перевірити навігацію без нього</string>
 

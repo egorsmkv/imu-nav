@@ -203,7 +203,18 @@
 
     <string name="sec_diagnostics">Diagnostics</string>
     <string name="trip_log">Trip log</string>
+    <string name="trip_log_summary">Search, filter and copy recent diagnostic events</string>
     <string name="trip_log_empty">No entries yet</string>
+    <string name="trip_log_search">Search events</string>
+    <string name="trip_log_filter_all">All</string>
+    <string name="trip_log_filter_problems">Problems</string>
+    <string name="trip_log_filter_position">Position</string>
+    <string name="trip_log_filter_navigation">Navigation</string>
+    <string name="trip_log_follow">Follow newest</string>
+    <string name="trip_log_count">Showing %1$d of %2$d entries</string>
+    <string name="trip_log_no_matches">No events match these filters</string>
+    <string name="trip_log_copy">Copy visible events</string>
+    <string name="trip_log_copied">Copied %1$d events</string>
     <string name="simulate_gps_loss">Simulate GPS loss</string>
     <string name="simulate_gps_loss_summary">Ignore GPS to test navigation without it</string>
 

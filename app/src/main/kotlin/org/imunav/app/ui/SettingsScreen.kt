@@ -1,13 +1,17 @@
 package org.imunav.app.ui
 
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,12 +32,15 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.CellTower
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -42,6 +49,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Route
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.TravelExplore
@@ -546,6 +554,7 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                     SwitchItem(stringResource(R.string.simulate_gps_loss), stringResource(R.string.simulate_gps_loss_summary), ui.simulateGpsLoss) { app.setSimulateGpsLoss(it) }
                     ListItem(
                         headlineContent = { Text(stringResource(R.string.trip_log)) },
+                        supportingContent = { Text(stringResource(R.string.trip_log_summary)) },
                         leadingContent = { Icon(Icons.AutoMirrored.Filled.Article, contentDescription = null) },
                         modifier = Modifier.clickable(onClick = onOpenLog),
                     )
@@ -1006,35 +1015,144 @@ private fun MapStartSection(app: AppGraph, ui: UiState) {
 
 private fun formatLatLon(p: GeoPoint) = String.format(Locale.US, "%.5f, %.5f", p.lat, p.lon)
 
-/** Shows the latest trip-log lines (refreshed every second, newest at the bottom). */
+/** Categories that reduce a busy diagnostic log to the subsystem the user is investigating. */
+private enum class LogFilter(@get:StringRes val label: Int) {
+    ALL(R.string.trip_log_filter_all),
+    PROBLEMS(R.string.trip_log_filter_problems),
+    POSITION(R.string.trip_log_filter_position),
+    NAVIGATION(R.string.trip_log_filter_navigation),
+}
+
+/** Shows, searches and copies the latest trip-log lines without forcing the user back to the bottom. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LogScreen(app: AppGraph, onBack: () -> Unit) {
+    val context = LocalContext.current
+    val resources = LocalResources.current
+    val scope = rememberCoroutineScope()
+    val snackbar = remember { SnackbarHostState() }
     var lines by remember { mutableStateOf(app.tripLog.recent) }
+    var query by remember { mutableStateOf("") }
+    var filter by remember { mutableStateOf(LogFilter.ALL) }
+    var followNewest by remember { mutableStateOf(true) }
     val list = rememberLazyListState()
+    val visibleLines = remember(lines, query, filter) {
+        lines.filter { line -> filter.matches(line) && (query.isBlank() || line.contains(query.trim(), ignoreCase = true)) }
+    }
     LaunchedEffect(Unit) {
         while (true) {
             lines = app.tripLog.recent
             delay(1000)
         }
     }
-    LaunchedEffect(lines.size) { if (lines.isNotEmpty()) list.scrollToItem(lines.lastIndex) }
+    LaunchedEffect(visibleLines.lastOrNull(), followNewest, query, filter) {
+        if (followNewest && visibleLines.isNotEmpty()) list.scrollToItem(visibleLines.lastIndex)
+    }
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.trip_log)) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back)) } },
+                actions = {
+                    IconButton(
+                        enabled = visibleLines.isNotEmpty(),
+                        onClick = {
+                            context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(
+                                ClipData.newPlainText(resources.getString(R.string.trip_log), visibleLines.joinToString("\n")),
+                            )
+                            scope.launch { snackbar.showSnackbar(resources.getString(R.string.trip_log_copied, visibleLines.size)) }
+                        },
+                    ) {
+                        Icon(Icons.Filled.ContentCopy, contentDescription = stringResource(R.string.trip_log_copy))
+                    }
+                },
             )
         },
+        snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
-        if (lines.isEmpty()) {
-            Text(stringResource(R.string.trip_log_empty), modifier = Modifier.padding(padding).padding(16.dp))
-        } else {
-            LazyColumn(state = list, modifier = Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(12.dp)) {
-                items(lines) { line ->
-                    Text(line.substringAfter("] "), fontFamily = FontFamily.Monospace, fontSize = 11.sp, modifier = Modifier.padding(vertical = 2.dp))
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                label = { Text(stringResource(R.string.trip_log_search)) },
+                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (query.isNotEmpty()) {
+                        IconButton(onClick = { query = "" }) {
+                            Icon(Icons.Filled.Clear, contentDescription = stringResource(R.string.cd_clear))
+                        }
+                    }
+                },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                LogFilter.entries.forEach { choice ->
+                    FilterChip(selected = filter == choice, onClick = { filter = choice }, label = { Text(stringResource(choice.label)) })
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    stringResource(R.string.trip_log_count, visibleLines.size, lines.size),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                FilterChip(
+                    selected = followNewest,
+                    onClick = { followNewest = !followNewest },
+                    label = { Text(stringResource(R.string.trip_log_follow)) },
+                )
+            }
+            when {
+                lines.isEmpty() -> Text(stringResource(R.string.trip_log_empty), modifier = Modifier.padding(16.dp))
+
+                visibleLines.isEmpty() -> Text(stringResource(R.string.trip_log_no_matches), modifier = Modifier.padding(16.dp))
+
+                else -> SelectionContainer {
+                    LazyColumn(state = list, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 12.dp)) {
+                        items(visibleLines) { line -> LogLine(line) }
+                    }
                 }
             }
         }
     }
 }
+
+/** A compact timestamp and message row that highlights failures without changing the log text. */
+@Composable
+private fun LogLine(line: String) {
+    val hasPrefix = "] " in line
+    val message = if (hasPrefix) line.substringAfter("] ") else line
+    val prefix = if (hasPrefix) line.substringBefore("] ") + "]" else ""
+    Surface(color = if (isProblemLog(message)) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.45f) else Color.Transparent) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
+            if (prefix.isNotEmpty()) {
+                Text(prefix, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontFamily = FontFamily.Monospace)
+            }
+            Text(message, fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface)
+        }
+    }
+    HorizontalDivider()
+}
+
+/** True when [line] belongs to this high-level diagnostic category. */
+private fun LogFilter.matches(line: String): Boolean {
+    val message = line.substringAfter("] ").lowercase(Locale.US)
+    return when (this) {
+        LogFilter.ALL -> true
+        LogFilter.PROBLEMS -> isProblemLog(message)
+        LogFilter.POSITION -> listOf("gps", "cell", "signal", "compass", "position", "agps", "net_").any(message::contains)
+        LogFilter.NAVIGATION -> listOf("nav", "route", "turn", "trip", "blind", "reroute", "manual_start", "start_accuracy").any(message::contains)
+    }
+}
+
+/** Detect log keys that normally require attention, for filtering and a subtle warning background. */
+private fun isProblemLog(line: String): Boolean = listOf("fail", "error", "reject", "lost", "off_route", "discard", "spoof").any(line.lowercase(Locale.US)::contains)
