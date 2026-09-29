@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name" translatable="false">Blind Driver</string>
+    <string name="app_name" translatable="false">IMU Nav</string>
     <string name="notification_channel">Navigation</string>
     <string name="notification_title">Navigating</string>
 

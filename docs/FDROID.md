@@ -1,6 +1,6 @@
 # F-Droid publication
 
-Blind Driver has a dedicated `fdroid` distribution flavor. It keeps the application ID
+IMU Nav has a dedicated `fdroid` distribution flavor. It keeps the application ID
 `org.blinddriver.app` and is built entirely from the source and freely licensed dependencies in
 this repository and trusted Maven repositories.
 

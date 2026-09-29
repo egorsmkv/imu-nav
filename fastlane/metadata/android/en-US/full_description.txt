@@ -1,4 +1,4 @@
-Blind Driver is a research-prototype navigator for Ukraine that continues estimating progress along a planned route when GPS is jammed, spoofed, or otherwise untrusted.
+IMU Nav is a research-prototype navigator for Ukraine that continues estimating progress along a planned route when GPS is jammed, spoofed, or otherwise untrusted.
 
 Every GPS fix is classified as good, suspect, or bad. When trusted GPS is unavailable, the app follows the selected route using phone motion sensors, cell-tower positioning, road data, and map knowledge. Car and walking modes use separate motion models.
 
@@ -14,4 +14,4 @@ Features include:
 
 The app has no advertising, analytics, crash reporting, Google Play Services, or Firebase. Optional online routing and search can be disabled, and supported servers can be self-hosted or configured in the app.
 
-Blind Driver is not road-tested safety equipment. Treat it as a research prototype and never rely on it as a safety system.
+IMU Nav is not road-tested safety equipment. Treat it as a research prototype and never rely on it as a safety system.

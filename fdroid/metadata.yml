@@ -4,7 +4,7 @@ License: MIT
 SourceCode: https://github.com/egorsmkv/blinddriver-os
 # TODO: add IssueTracker after the repository is public and GitHub Issues is enabled.
 
-AutoName: Blind Driver
+AutoName: IMU Nav
 
 RepoType: git
 Repo: https://github.com/egorsmkv/blinddriver-os.git

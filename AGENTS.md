@@ -5,7 +5,7 @@ code; `README.md` explains what the app does and how its algorithms work.
 
 ## What this is
 
-**Blind Driver** — an Android car navigator for Ukraine that keeps working when GPS is jammed or
+**IMU Nav** — an Android car navigator for Ukraine that keeps working when GPS is jammed or
 spoofed. It classifies every GPS fix (GOOD / SUSPECT / BAD) and, without trusted GPS, dead-reckons
 along the planned route using IMU, cell towers and map knowledge. Routing and address search work
 offline (GraphHopper packs). UI: Jetpack Compose + MapLibre, Ukrainian and English.
