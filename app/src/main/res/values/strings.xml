@@ -338,7 +338,6 @@
     <string name="battery_unrestricted">Unrestricted — navigation keeps running with the screen off</string>
 
     <!-- Search -->
-    <string name="search_hint">Search address or place</string>
     <string name="search_from_hint">Search starting address</string>
     <string name="search_to_hint">Search destination</string>
     <string name="search_recent">Recent</string>

@@ -336,7 +336,6 @@
     <string name="battery_unrestricted">Без ограничений — навигация работает при выключенном экране</string>
 
     <!-- Поиск -->
-    <string name="search_hint">Поиск адреса или места</string>
     <string name="search_from_hint">Поиск адреса старта</string>
     <string name="search_to_hint">Поиск пункта назначения</string>
     <string name="search_recent">Недавние</string>

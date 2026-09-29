@@ -336,7 +336,6 @@
     <string name="battery_unrestricted">Без обмежень — навігація працює з вимкненим екраном</string>
 
     <!-- Пошук -->
-    <string name="search_hint">Пошук адреси або місця</string>
     <string name="search_from_hint">Пошук адреси старту</string>
     <string name="search_to_hint">Пошук пункту призначення</string>
     <string name="search_recent">Нещодавні</string>

@@ -129,8 +129,8 @@ private val InfoBlue = Color(0xFF1A73E8)
 private const val LANDSCAPE_PANEL_MAX_WIDTH_DP = 600
 
 /**
- * The main screen: full-screen map with the search pill and status on top, map buttons on the
- * right, and either the "Where to?" panel or the navigation panel at the bottom.
+ * The main screen: full-screen map with status on top, map buttons on the right, and either the
+ * route editor or the navigation panel at the bottom.
  *
  * @param ui everything to show (re-drawn whenever it changes)
  * @param app for actions (start navigation, search, settings…)
@@ -245,7 +245,6 @@ fun MapScreen(ui: UiState, app: AppGraph, hasLocation: Boolean, onRequestPermiss
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (nav.active && !nav.arrived) ManeuverBanner(nav)
-            if (!nav.active) SearchPill(onClick = { searchTarget = RoutePoint.DESTINATION })
             when {
                 !hasLocation -> WarningBanner(
                     Icons.Filled.LocationOff,
