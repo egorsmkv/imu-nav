@@ -18,7 +18,7 @@ kotlin {
 
 // `./gradlew :routing:run --args="--osm ukraine.osm.pbf --out graph-ukraine"` builds an offline routing pack.
 application {
-    mainClass.set("org.blinddriver.routing.BuildGraphKt")
+    mainClass.set("org.imunav.routing.BuildGraphKt")
     applicationDefaultJvmArgs = listOf("-Xmx10g")
 }
 

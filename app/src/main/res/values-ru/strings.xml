@@ -170,7 +170,7 @@
 
     <string name="sec_database">База вышек</string>
     <string name="action_export">Экспортировать базу</string>
-    <string name="export_summary">Сохраняет все вышки в Android/data/org.blinddriver.app/files/cells-export.csv.gz</string>
+    <string name="export_summary">Сохраняет все вышки в Android/data/org.imunav.app/files/cells-export.csv.gz</string>
     <string name="action_reset">Сбросить базу вышек</string>
     <string name="reset_summary">Удалить загруженные вышки и восстановить встроенную базу</string>
     <string name="reset_title">Сбросить базу вышек?</string>
@@ -187,6 +187,9 @@
     <string name="about_version">Версия %1$s</string>
     <string name="about_credits">Данные вышек: участники OpenCellID (CC BY-SA 4.0) и Mozilla Location Service (общественное достояние). Карты и данные маршрутов © участники OpenStreetMap (ODbL), OpenFreeMap. Маршрутизация: GraphHopper, OSRM. Исходный код: лицензия MIT.</string>
     <string name="about_disclaimer">Исследовательский прототип. Никогда не полагайтесь на него как на систему безопасности.</string>
+    <string name="telegram_group">Группа в Telegram</string>
+    <string name="donate_monobank">Поддержать через monobank</string>
+    <string name="donate_privatbank">Поддержать через ПриватБанк</string>
 
     <!-- Фоновые задачи -->
     <string name="task_importing">Импорт… сохранено %1$d, прочитано %2$d</string>

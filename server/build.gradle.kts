@@ -17,7 +17,7 @@ kotlin {
 }
 
 application {
-    mainClass.set("org.blinddriver.server.MainKt")
+    mainClass.set("org.imunav.server.MainKt")
 }
 
 dependencies {

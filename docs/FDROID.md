@@ -1,7 +1,7 @@
 # F-Droid publication
 
 IMU Nav has a dedicated `fdroid` distribution flavor. It keeps the application ID
-`org.blinddriver.app` and is built entirely from the source and freely licensed dependencies in
+`org.imunav.app` and is built entirely from the source and freely licensed dependencies in
 this repository and trusted Maven repositories.
 
 ## Architecture and flavor boundary
@@ -125,7 +125,7 @@ its verified URL as `IssueTracker` in the metadata template.
 ## Preparing fdroiddata metadata
 
 Copy `fdroid/metadata.yml` to a current `fdroiddata` checkout as
-`metadata/org.blinddriver.app.yml`. Replace the template's TODO tag with the real release tag if a
+`metadata/org.imunav.app.yml`. Replace the template's TODO tag with the real release tag if a
 different naming scheme was used. No `sudo`, `prebuild`, `scanignore`, `scandelete`, NDK, secret, or
 custom binary download step should be necessary. The important build fields are:
 
@@ -149,10 +149,10 @@ the `fdroiddata` root, after copying the metadata file, run:
 
 ```bash
 fdroid readmeta
-fdroid rewritemeta org.blinddriver.app
-fdroid lint org.blinddriver.app
-fdroid checkupdates --allow-dirty org.blinddriver.app
-fdroid build org.blinddriver.app
+fdroid rewritemeta org.imunav.app
+fdroid lint org.imunav.app
+fdroid checkupdates --allow-dirty org.imunav.app
+fdroid build org.imunav.app
 ```
 
 Review the source scanner output instead of suppressing findings. In particular, explain that the
@@ -170,7 +170,7 @@ The authoritative process and policy are documented by F-Droid:
 ## Submission
 
 1. Fork <https://gitlab.com/fdroid/fdroiddata> and create a branch named for the application ID.
-2. Add `metadata/org.blinddriver.app.yml`, run all commands above, and commit it as a new app.
+2. Add `metadata/org.imunav.app.yml`, run all commands above, and commit it as a new app.
 3. Push the branch and open a merge request to `fdroid/fdroiddata` using the `New App` label.
 4. Link the public source repository and release tag, state that upstream authorizes inclusion, and
    summarize the dependency/native/data audit.

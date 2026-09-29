@@ -172,7 +172,7 @@
 
     <string name="sec_database">Tower database</string>
     <string name="action_export">Export database</string>
-    <string name="export_summary">Saves all towers to Android/data/org.blinddriver.app/files/cells-export.csv.gz</string>
+    <string name="export_summary">Saves all towers to Android/data/org.imunav.app/files/cells-export.csv.gz</string>
     <string name="action_reset">Reset tower database</string>
     <string name="reset_summary">Delete downloaded towers and reload the built-in database</string>
     <string name="reset_title">Reset tower database?</string>
@@ -189,6 +189,9 @@
     <string name="about_version">Version %1$s</string>
     <string name="about_credits">Cell data: OpenCellID contributors (CC BY-SA 4.0) and Mozilla Location Service (public domain). Maps and routing data © OpenStreetMap contributors (ODbL), OpenFreeMap. Routing: GraphHopper, OSRM. Source code: MIT licence.</string>
     <string name="about_disclaimer">Research prototype. Never rely on it as a safety system.</string>
+    <string name="telegram_group">Telegram group</string>
+    <string name="donate_monobank">Donate via monobank</string>
+    <string name="donate_privatbank">Donate via PrivatBank</string>
 
     <!-- Background tasks -->
     <string name="task_importing">Importing… kept %1$d, read %2$d</string>

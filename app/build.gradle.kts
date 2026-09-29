@@ -5,17 +5,32 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+val linkProperties =
+    Properties().apply {
+        rootProject.file("links.properties").inputStream().use { load(it) }
+    }
+
+/** Reads an optional public HTTPS link and rejects values Android cannot safely open. */
+fun configuredLink(name: String): String = linkProperties.getProperty(name, "").trim().also { value ->
+    require(value.isEmpty() || value.startsWith("https://")) { "$name in links.properties must be empty or use HTTPS" }
+}
+
+/** Quotes a configurable value so Gradle can emit it as a BuildConfig String field. */
+fun buildConfigString(value: String): String = "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+
 android {
-    namespace = "org.blinddriver.app"
+    namespace = "org.imunav.app"
     compileSdk = 36
     buildToolsVersion = "36.0.0"
 
     defaultConfig {
-        applicationId = "org.blinddriver.app"
+        applicationId = "org.imunav.app"
         minSdk = 26
         targetSdk = 36
         versionCode = 7
         versionName = "0.6.0"
+        buildConfigField("String", "MONOBANK_DONATION_URL", buildConfigString(configuredLink("monobankDonationUrl")))
+        buildConfigField("String", "PRIVATBANK_DONATION_URL", buildConfigString(configuredLink("privatbankDonationUrl")))
     }
 
     // Release signing: create keystore.properties (see README) — it and the keystore are gitignored.
@@ -62,6 +77,7 @@ android {
     }
 
     buildFeatures {
+        buildConfig = true
         compose = true
     }
 

@@ -170,7 +170,7 @@
 
     <string name="sec_database">База вишок</string>
     <string name="action_export">Експортувати базу</string>
-    <string name="export_summary">Зберігає всі вишки у Android/data/org.blinddriver.app/files/cells-export.csv.gz</string>
+    <string name="export_summary">Зберігає всі вишки у Android/data/org.imunav.app/files/cells-export.csv.gz</string>
     <string name="action_reset">Скинути базу вишок</string>
     <string name="reset_summary">Видалити завантажені вишки й відновити вбудовану базу</string>
     <string name="reset_title">Скинути базу вишок?</string>
@@ -187,6 +187,9 @@
     <string name="about_version">Версія %1$s</string>
     <string name="about_credits">Дані вишок: учасники OpenCellID (CC BY-SA 4.0) і Mozilla Location Service (суспільне надбання). Карти й дані маршрутів © учасники OpenStreetMap (ODbL), OpenFreeMap. Маршрути: GraphHopper, OSRM. Вихідний код: ліцензія MIT.</string>
     <string name="about_disclaimer">Дослідницький прототип. Ніколи не покладайтеся на нього як на систему безпеки.</string>
+    <string name="telegram_group">Група в Telegram</string>
+    <string name="donate_monobank">Підтримати через monobank</string>
+    <string name="donate_privatbank">Підтримати через ПриватБанк</string>
 
     <!-- Фонові завдання -->
     <string name="task_importing">Імпорт… збережено %1$d, прочитано %2$d</string>

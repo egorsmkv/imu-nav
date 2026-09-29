@@ -20,7 +20,7 @@ offline (GraphHopper packs). UI: Jetpack Compose + MapLibre, Ukrainian, English 
 | `:server` | JVM app | reference cell-sharing server (JDK `HttpServer`, anti-poisoning consensus) |
 | `:replay` | JVM app | CLI that replays recorded trips (`.rec.gz`) through the engine and reports errors |
 
-Package root: `org.blinddriver.<module>`. Put new logic in `:core` whenever it does not need Android.
+Package root: `org.imunav.<module>`. Put new logic in `:core` whenever it does not need Android.
 
 ## Commands
 
@@ -72,7 +72,7 @@ Requirements: JDK 17+, Android SDK platform 36. `adb` lives at `~/Library/Androi
 - **Threading:** `AppGraph` and all engine access run on the main thread. Disk, network and database
   work goes to `Dispatchers.IO` or the dedicated single-thread executors (`TripLog`, `TripManager`);
   results are posted back. HTTP calls are blocking — never call them on the main thread.
-- **HTTP:** always through `org.blinddriver.core.net.Http` (shared OkHttp client). Do not add
+- **HTTP:** always through `org.imunav.core.net.Http` (shared OkHttp client). Do not add
   `HttpURLConnection` or new clients; use `Http.client.newBuilder()` for different timeouts.
 - **Travel mode** (`TravelMode.CAR` / `FOOT`) selects the GraphHopper profile and the engine's motion
   model. Car-only corrections must stay gated by `mode == CAR` (or `Tuning.forWalking()`); walking uses
@@ -117,7 +117,7 @@ Requirements: JDK 17+, Android SDK platform 36. `adb` lives at `~/Library/Androi
 - Emulator: `emulator-5554`, 1080×2400. Screenshots from `adb exec-out screencap -p` are often shown
   scaled — map tap coordinates accordingly. The emulator's GPS is always classified BAD (spoof-like
   signals), so use **Start here** to place a manual start; map matching needs a real drive.
-- `adb emu geo fix <lon> <lat>` sets the emulator's GPS; `adb shell am force-stop org.blinddriver.app`
+- `adb emu geo fix <lon> <lat>` sets the emulator's GPS; `adb shell am force-stop org.imunav.app`
   before relaunching to get a cold start (`install -r` alone may reuse the process).
 - Release builds are not debuggable: app-private files (`run-as`) are not accessible.
 - Real phone: over Wi-Fi adb only when the user has enabled wireless debugging; never unlock the phone

@@ -123,10 +123,10 @@ All imports are filtered to the configured country codes (default `255`, Ukraine
 
 #### Updating the built-in database
 1. On a phone with the data you want (after *Download Mozilla data* / *Download OpenCellID* / syncs), open **Cells → Export database**.
-   It writes every tower once — choosing the entry lookups would use — to `Android/data/org.blinddriver.app/files/cells-export.csv.gz`.
+   It writes every tower once — choosing the entry lookups would use — to `Android/data/org.imunav.app/files/cells-export.csv.gz`.
 2. Copy it into the project and rebuild:
    ```bash
-   adb pull /sdcard/Android/data/org.blinddriver.app/files/cells-export.csv.gz app/src/main/assets/cells/bundled-cells.csv.gz
+   adb pull /sdcard/Android/data/org.imunav.app/files/cells-export.csv.gz app/src/main/assets/cells/bundled-cells.csv.gz
    ./gradlew :app:assembleRelease
    ```
 3. Installed apps re-import it once after updating (detected by the file's SHA-256).
@@ -191,6 +191,17 @@ dependencies. The flavor boundary prevents future Play-only SDKs from leaking in
 automated dependency check rejects common proprietary/tracking SDK groups. F-Droid builds exclude
 the optional untracked routing bundle and do not read the developer signing key. See
 [`docs/FDROID.md`](docs/FDROID.md) for release, validation and submission instructions.
+
+Public donation destinations are configured in `links.properties` at the repository root:
+
+```properties
+monobankDonationUrl=
+privatbankDonationUrl=
+```
+
+Set each value to its public donation-page URL. Only HTTPS URLs are accepted; an empty value hides
+that bank's row in **Settings → About**. The Telegram group link in the same section always opens
+<https://t.me/imu_nav>.
 
 The app uses MapLibre's OpenGL renderer for the broadest device compatibility. GPS, gyroscope,
 compass and step-detector hardware are optional install-time features; missing sensors reduce

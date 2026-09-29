@@ -18,7 +18,7 @@ kotlin {
 
 // ./gradlew :replay:run --args="trip-20260928-101500.rec.gz --hide-gps-after 30,60,120 --out report"
 application {
-    mainClass.set("org.blinddriver.replay.MainKt")
+    mainClass.set("org.imunav.replay.MainKt")
 }
 
 dependencies {
