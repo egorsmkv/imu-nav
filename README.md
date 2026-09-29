@@ -268,7 +268,7 @@ The interface and voice follow the phone's language (Ukrainian, English or Russi
 **Settings → Everyday settings → Language**, and the phone's light/dark theme. Spoken directions can be disabled under
 **Settings → Everyday settings → Navigation without GPS**. Map and settings layouts adapt to portrait and landscape. Text trip logs are written to
 `files/logs/`, trip recordings to `files/trips/` in app storage. The in-app trip-log viewer shows timestamps, highlights problems, and can search,
-filter, follow or copy the latest diagnostic events.
+filter, follow, copy or share the latest diagnostic events as a text file.
 
 ## Status and limitations
 

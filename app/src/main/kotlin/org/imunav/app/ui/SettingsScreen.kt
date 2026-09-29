@@ -51,6 +51,7 @@ import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.TravelExplore
 import androidx.compose.material.icons.filled.Warning
@@ -101,12 +102,15 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.imunav.app.AppGraph
 import org.imunav.app.AppLanguage
 import org.imunav.app.BuildConfig
@@ -122,7 +126,10 @@ import org.imunav.core.cells.Radio
 import org.imunav.core.geo.GeoPoint
 import org.imunav.core.nav.NavigationMethod
 import org.imunav.core.search.PhotonServer
+import java.io.File
 import java.text.NumberFormat
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
 private val RADIO_CHOICES = listOf(Radio.GSM to "2G", Radio.UMTS to "3G", Radio.LTE to "4G", Radio.NR to "5G")
@@ -1065,6 +1072,31 @@ fun LogScreen(app: AppGraph, onBack: () -> Unit) {
                     ) {
                         Icon(Icons.Filled.ContentCopy, contentDescription = stringResource(R.string.trip_log_copy))
                     }
+                    IconButton(
+                        enabled = visibleLines.isNotEmpty(),
+                        onClick = {
+                            scope.launch {
+                                val file = runCatching { createSharedLogFile(context, visibleLines) }.getOrElse {
+                                    snackbar.showSnackbar(resources.getString(R.string.trip_log_share_failed))
+                                    return@launch
+                                }
+                                val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                                val share = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_STREAM, uri)
+                                    clipData = ClipData.newUri(context.contentResolver, file.name, uri)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                runCatching {
+                                    context.startActivity(Intent.createChooser(share, resources.getString(R.string.trip_log_share_title)))
+                                }.onFailure {
+                                    snackbar.showSnackbar(resources.getString(R.string.trip_log_share_failed))
+                                }
+                            }
+                        },
+                    ) {
+                        Icon(Icons.Filled.Share, contentDescription = stringResource(R.string.trip_log_share))
+                    }
                 },
             )
         },
@@ -1156,3 +1188,16 @@ private fun LogFilter.matches(line: String): Boolean {
 
 /** Detect log keys that normally require attention, for filtering and a subtle warning background. */
 private fun isProblemLog(line: String): Boolean = listOf("fail", "error", "reject", "lost", "off_route", "discard", "spoof").any(line.lowercase(Locale.US)::contains)
+
+/** Writes the filtered log snapshot off the main thread so Android can share it as a text attachment. */
+private suspend fun createSharedLogFile(context: Context, lines: List<String>): File = withContext(Dispatchers.IO) {
+    val directory = File(context.cacheDir, "log-shares").apply { mkdirs() }
+    val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
+    File(directory, "imu-nav-log-$stamp.txt").apply {
+        bufferedWriter().use { writer ->
+            lines.forEach { line ->
+                writer.appendLine(line)
+            }
+        }
+    }
+}

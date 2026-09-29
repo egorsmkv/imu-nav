@@ -203,7 +203,7 @@
 
     <string name="sec_diagnostics">Diagnostics</string>
     <string name="trip_log">Trip log</string>
-    <string name="trip_log_summary">Search, filter and copy recent diagnostic events</string>
+    <string name="trip_log_summary">Search, filter, copy and share recent diagnostic events</string>
     <string name="trip_log_empty">No entries yet</string>
     <string name="trip_log_search">Search events</string>
     <string name="trip_log_filter_all">All</string>
@@ -215,6 +215,9 @@
     <string name="trip_log_no_matches">No events match these filters</string>
     <string name="trip_log_copy">Copy visible events</string>
     <string name="trip_log_copied">Copied %1$d events</string>
+    <string name="trip_log_share">Share visible events as a text file</string>
+    <string name="trip_log_share_title">Share trip log</string>
+    <string name="trip_log_share_failed">Couldn’t create the log file</string>
     <string name="simulate_gps_loss">Simulate GPS loss</string>
     <string name="simulate_gps_loss_summary">Ignore GPS to test navigation without it</string>
 

@@ -201,7 +201,7 @@
 
     <string name="sec_diagnostics">Диагностика</string>
     <string name="trip_log">Журнал поездки</string>
-    <string name="trip_log_summary">Поиск, фильтрация и копирование последних диагностических событий</string>
+    <string name="trip_log_summary">Поиск, фильтрация, копирование и отправка последних диагностических событий</string>
     <string name="trip_log_empty">Записей пока нет</string>
     <string name="trip_log_search">Поиск событий</string>
     <string name="trip_log_filter_all">Все</string>
@@ -213,6 +213,9 @@
     <string name="trip_log_no_matches">Нет событий, соответствующих этим фильтрам</string>
     <string name="trip_log_copy">Копировать видимые события</string>
     <string name="trip_log_copied">Скопировано событий: %1$d</string>
+    <string name="trip_log_share">Отправить видимые события как текстовый файл</string>
+    <string name="trip_log_share_title">Отправить журнал поездки</string>
+    <string name="trip_log_share_failed">Не удалось создать файл журнала</string>
     <string name="simulate_gps_loss">Имитировать потерю GPS</string>
     <string name="simulate_gps_loss_summary">Игнорировать GPS, чтобы проверить навигацию без него</string>
 
