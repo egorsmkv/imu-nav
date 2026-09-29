@@ -1,0 +1,3 @@
+Initial F-Droid-ready release of version 0.6.0.
+
+Includes offline car and walking routing, address search, GPS trust classification, route-constrained dead reckoning, cell positioning, and trip recording/replay.

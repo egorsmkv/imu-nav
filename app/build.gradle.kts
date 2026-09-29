@@ -8,6 +8,7 @@ plugins {
 android {
     namespace = "org.blinddriver.app"
     compileSdk = 36
+    buildToolsVersion = "36.0.0"
 
     defaultConfig {
         applicationId = "org.blinddriver.app"
@@ -32,13 +33,24 @@ android {
         }
     }
 
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("play") {
+            dimension = "distribution"
+            // Only Play releases use the developer key. F-Droid builds and signs its own APK.
+            signingConfig = signingConfigs.findByName("release")
+        }
+        create("fdroid") {
+            dimension = "distribution"
+        }
+    }
+
     buildTypes {
         release {
             // R8: strip unused library code and resources.
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.findByName("release")
             // Phones are ARM; x86 builds only serve emulators (debug builds keep them).
             ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
         }
@@ -54,7 +66,7 @@ android {
     }
 
     androidResources {
-        // The bundled routing pack is already a zip; store it as-is so first-start unpacking is fast.
+        // A Play-only bundled routing pack is already a zip; store it as-is so first-start unpacking is fast.
         noCompress += "zip"
     }
 
@@ -72,7 +84,7 @@ android {
         }
     }
 
-    // Android Lint: `./gradlew :app:lintRelease` (also part of `check`). Deliberate exceptions live in lint.xml.
+    // Android Lint: `./gradlew :app:lintFdroidRelease` (debug lint is also part of `check`). Deliberate exceptions live in lint.xml.
     lint {
         abortOnError = true
         warningsAsErrors = true
@@ -110,4 +122,38 @@ configurations.configureEach {
         exclude(group = "org.openstreetmap.osmosis", module = "osmosis-osm-binary")
         exclude(group = "com.google.protobuf", module = "protobuf-java")
     }
+}
+
+val forbiddenFdroidDependencyGroups =
+    listOf(
+        "com.android.billingclient",
+        "com.appsflyer",
+        "com.crashlytics.android",
+        "com.google.android.gms",
+        "com.google.android.play",
+        "com.google.firebase",
+        "com.google.mlkit",
+        "com.mixpanel.android",
+        "com.segment.analytics",
+        "com.adjust.sdk",
+        "io.fabric.sdk.android",
+        "io.sentry",
+    )
+
+val verifyFdroidDependencies = tasks.register("verifyFdroidDependencies") {
+    group = "verification"
+    description = "Fails if the F-Droid runtime graph contains a known proprietary or tracking SDK."
+    doLast {
+        val runtime = configurations.getByName("fdroidReleaseRuntimeClasspath")
+        val forbidden =
+            runtime.resolvedConfiguration.resolvedArtifacts
+                .map { artifact -> "${artifact.moduleVersion.id.group}:${artifact.name}" }
+                .filter { coordinate -> forbiddenFdroidDependencyGroups.any { group -> coordinate.startsWith("$group:") } }
+                .sorted()
+        check(forbidden.isEmpty()) { "F-Droid runtime contains forbidden dependencies: ${forbidden.joinToString()}" }
+    }
+}
+
+tasks.matching { it.name == "assembleFdroidRelease" }.configureEach {
+    dependsOn(verifyFdroidDependencies)
 }

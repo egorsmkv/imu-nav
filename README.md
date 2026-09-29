@@ -54,16 +54,18 @@ curl -LO https://download.geofabrik.de/europe/ukraine-latest.osm.pbf
 ./gradlew :routing:run --args="--osm ukraine-latest.osm.pbf --out graph-ukraine --name Ukraine"
 # → graph-ukraine/ and graph-ukraine.zip
 ```
-**Bundling a pack in the APK:** copy the zip and its metadata into the app's assets before building —
+**Bundling a pack in a Play APK:** copy the zip and its metadata into the Play-only assets before building —
 ```bash
-cp graph-ukraine.zip app/src/main/assets/routing/pack.zip
-cp graph-ukraine/pack.json app/src/main/assets/routing/pack.json
+mkdir -p app/src/play/assets/routing
+cp graph-ukraine.zip app/src/play/assets/routing/pack.zip
+cp graph-ukraine/pack.json app/src/play/assets/routing/pack.json
 ```
 On first start the app unpacks it in the background (~20 s for Ukraine) and uses it. It is only
 reinstalled when an update ships a newer pack, and stays removed if the user removes it (Settings
 offers *Install built-in map*). The APK grows by the zip size (~400+ MB for Ukraine with car and
 foot profiles and the search index, making the APK ~450+ MB — over Google Play's 200 MB base-APK limit, fine for
-sideloading); both files are gitignored.
+sideloading); both files are gitignored. The F-Droid flavor deliberately never bundles this locally
+generated pack: users can import or download the same freely licensed data pack in the app.
 
 Packs can also be installed at runtime with **Import pack** (the `.zip`) or **Download** from any HTTP(S) URL — the
 zip is unpacked while it streams, and interrupted downloads resume. The graph is memory-mapped, so
@@ -179,8 +181,15 @@ Requirements: JDK 17+, Android SDK 36.
 
 ```bash
 ./gradlew test                # engine, routing/search, server and replay tests
-./gradlew :app:assembleDebug  # app/build/outputs/apk/debug/app-debug.apk
+./gradlew :app:assemblePlayDebug    # normal development build
+./gradlew :app:assembleFdroidRelease # unsigned F-Droid release build
 ```
+
+The `play` and `fdroid` distribution flavors currently use the same FOSS application code and
+dependencies. The flavor boundary prevents future Play-only SDKs from leaking into F-Droid, and an
+automated dependency check rejects common proprietary/tracking SDK groups. F-Droid builds exclude
+the optional untracked routing bundle and do not read the developer signing key. See
+[`docs/FDROID.md`](docs/FDROID.md) for release, validation and submission instructions.
 
 ### Code checks
 
@@ -196,12 +205,12 @@ the definition of done — are in [`AGENTS.md`](AGENTS.md).
 |---|---|---|
 | **ktlint** (via Spotless) — formatting and style | `spotlessCheck` / `spotlessApply` | `.editorconfig` (IntelliJ style, 180 columns) |
 | **detekt** — complexity, exception handling, naming, bug patterns | `detekt` | `config/detekt.yml` (defaults + documented adjustments) |
-| **Android Lint** — API levels, resources, translations, Compose, manifest | `:app:lintRelease` | `app/lint.xml`; warnings are errors |
+| **Android Lint** — API levels, resources, translations, Compose, manifest | `:app:lintFdroidRelease` / `:app:lintPlayRelease` | `app/lint.xml`; warnings are errors |
 
-Reports land in `*/build/reports/detekt/` and `app/build/reports/lint-results-release.html`.
+Reports land in `*/build/reports/detekt/` and `app/build/reports/lint-results-<variant>.html`.
 Exceptions are kept few and commented where they are configured; prefer fixing over suppressing.
 
-Release builds are signed from `keystore.properties` in the project root (gitignored):
+Play release builds are signed from `keystore.properties` in the project root (gitignored):
 
 ```properties
 storeFile=keystore/release.jks
@@ -211,7 +220,8 @@ keyPassword=...
 ```
 
 Keep a backup of the keystore: Android only installs updates signed with the same key.
-Without `keystore.properties`, `assembleRelease` produces an unsigned APK.
+Without `keystore.properties`, `assemblePlayRelease` produces an unsigned APK. The
+`assembleFdroidRelease` task is always unsigned so F-Droid can apply its repository signing key.
 
 ### Walking without GPS
 On foot the engine replaces the car speed model with the phone's **step detector**: speed = steps

@@ -1,0 +1,24 @@
+Categories:
+  - Navigation
+License: MIT
+SourceCode: https://github.com/egorsmkv/blinddriver-os
+# TODO: add IssueTracker after the repository is public and GitHub Issues is enabled.
+
+AutoName: Blind Driver
+
+RepoType: git
+Repo: https://github.com/egorsmkv/blinddriver-os.git
+
+Builds:
+  - versionName: 0.6.0
+    versionCode: 7
+    # TODO: create and push this tag on the exact release commit before fdroiddata submission.
+    commit: v0.6.0
+    subdir: app
+    gradle:
+      - fdroid
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags
+CurrentVersion: 0.6.0
+CurrentVersionCode: 7
