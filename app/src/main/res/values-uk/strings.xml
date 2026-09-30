@@ -219,7 +219,7 @@
     <string name="action_reset">Скинути базу вишок</string>
     <string name="reset_summary">Видалити завантажені вишки й відновити вбудовану базу</string>
     <string name="reset_title">Скинути базу вишок?</string>
-    <string name="reset_text">Буде видалено вишки OpenCellID, Mozilla та сервера обміну, після чого відновиться вбудована база. Завантаження можна повторити пізніше.</string>
+    <string name="reset_text">Буде видалено вишки OpenCellID, Mozilla та сервера обміну. Вбудована база відновиться лише якщо ви обрали її встановлення. Завантаження можна повторити пізніше.</string>
     <string name="action_reset_confirm">Скинути</string>
 
     <string name="sec_diagnostics">Діагностика</string>
@@ -459,7 +459,11 @@
     <string name="setup_approximate">Доступне приблизне місцезнаходження. Для GPS і сканування веж потрібне точне.</string>
     <string name="setup_data">Офлайн-дані</string>
     <string name="setup_routing">Маршрути та пошук адрес</string>
-    <string name="setup_cells">База даних стільникових веж</string>
+    <string name="setup_cells">База стільникових веж (необов’язково)</string>
+    <string name="setup_optional">Не встановлено — необов’язково</string>
+    <string name="setup_cells_install">Встановити вбудовані вежі</string>
+    <string name="setup_cells_hint">Пропустіть цей архів, щоб вивчати вежі за довіреним GPS і збирати дані з власного сервера обміну. Вбудовану базу можна встановити пізніше з цього списку.</string>
+    <string name="setup_cells_server">Налаштувати власний сервер: Налаштування → Стільникові вежі</string>
     <string name="setup_checking">Перевірка встановлених даних…</string>
     <string name="setup_preparing">Підготовка вбудованих даних…</string>
     <string name="setup_ready">Готово</string>
@@ -469,7 +473,7 @@
     <string name="setup_retry">Повторити</string>
     <string name="setup_continue">Продовжити</string>
     <string name="setup_continue_limited">Продовжити з обмеженими можливостями</string>
-    <string name="setup_limited_hint">Без дозволів обмежено позиціювання, ходьбу, швидкість OBD, сповіщення або фонову роботу. Для офлайн-маршрутів і позиціювання за вежами потрібні дані. Підготовка триває у фоні.</string>
+    <string name="setup_limited_hint">Без дозволів обмежено позиціювання, ходьбу, швидкість OBD, сповіщення або фонову роботу. Для офлайн-маршрутів потрібен пакет маршрутизації. Підготовка обраних даних триває у фоні.</string>
     <string name="setup_manage_data">Офлайн-дані в налаштуваннях</string>
     <string name="setup_system_unavailable">Android не зміг відкрити потрібні налаштування. Ви можете надати доступ пізніше в системних налаштуваннях.</string>
     <string name="setup_location_services">Місцезнаходження на телефоні</string>

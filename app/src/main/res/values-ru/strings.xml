@@ -219,7 +219,7 @@
     <string name="action_reset">Сбросить базу вышек</string>
     <string name="reset_summary">Удалить загруженные вышки и восстановить встроенную базу</string>
     <string name="reset_title">Сбросить базу вышек?</string>
-    <string name="reset_text">Будут удалены вышки OpenCellID, Mozilla и сервера обмена, затем восстановится встроенная база. Загрузки можно повторить позже.</string>
+    <string name="reset_text">Будут удалены вышки OpenCellID, Mozilla и сервера обмена. Встроенная база восстановится только если вы выбрали её установку. Загрузки можно повторить позже.</string>
     <string name="action_reset_confirm">Сбросить</string>
 
     <string name="sec_diagnostics">Диагностика</string>
@@ -459,7 +459,11 @@
     <string name="setup_approximate">Доступно приблизительное местоположение. Для GPS и сканирования вышек нужно точное.</string>
     <string name="setup_data">Офлайн-данные</string>
     <string name="setup_routing">Маршруты и поиск адресов</string>
-    <string name="setup_cells">База данных сотовых вышек</string>
+    <string name="setup_cells">База сотовых вышек (необязательно)</string>
+    <string name="setup_optional">Не установлено — необязательно</string>
+    <string name="setup_cells_install">Установить встроенные вышки</string>
+    <string name="setup_cells_hint">Пропустите этот архив, чтобы изучать вышки по доверенному GPS и собирать данные с собственного сервера обмена. Встроенную базу можно установить позже из этого списка.</string>
+    <string name="setup_cells_server">Настроить свой сервер: Настройки → Сотовые вышки</string>
     <string name="setup_checking">Проверка установленных данных…</string>
     <string name="setup_preparing">Подготовка встроенных данных…</string>
     <string name="setup_ready">Готово</string>
@@ -469,7 +473,7 @@
     <string name="setup_retry">Повторить</string>
     <string name="setup_continue">Продолжить</string>
     <string name="setup_continue_limited">Продолжить с ограниченными возможностями</string>
-    <string name="setup_limited_hint">Без разрешений ограничены позиционирование, ходьба, скорость OBD, уведомления или фоновая работа. Для офлайн-маршрутов и позиционирования по вышкам нужны данные. Подготовка продолжается в фоне.</string>
+    <string name="setup_limited_hint">Без разрешений ограничены позиционирование, ходьба, скорость OBD, уведомления или фоновая работа. Для офлайн-маршрутов нужен пакет маршрутизации. Подготовка выбранных данных продолжается в фоне.</string>
     <string name="setup_manage_data">Офлайн-данные в настройках</string>
     <string name="setup_system_unavailable">Android не смог открыть нужные настройки. Вы можете предоставить доступ позже в системных настройках.</string>
     <string name="setup_location_services">Местоположение на телефоне</string>

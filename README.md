@@ -15,8 +15,15 @@ the phone's Location switch and opens system settings if it is off. Disabling Lo
 on Android 8–10 as well as newer phones; it does not stop the app or its inertial navigation. Declined permissions can
 be enabled later, including through Android Settings when the permission dialog is no longer offered.
 
-The checklist shows background preparation of bundled routing/address-search data and the cell tower
-database, with retries after failures. Play builds can include the routing archive; F-Droid builds
+Choose the UI and voice language directly in onboarding: phone default, Ukrainian, English or Russian.
+The selection is saved and the checklist stays open when the language changes.
+
+The checklist shows background preparation of bundled routing/address-search data, with retries after
+failures. The built-in cell tower database is **optional**: it is not unpacked until you tap **Install
+built-in towers**. Skip it to learn towers from trusted GPS and use your own sharing server; the checklist
+links to **Settings → Cell towers → Sharing server**. Skipping towers does not block setup completion.
+Existing tower data is preserved, and database resets only reinstall the archive after explicit opt-in.
+Play builds can include the routing archive; F-Droid builds
 require a routing pack imported or downloaded in Settings. Missing archives or denied permissions
 do not block **Continue with limited functionality**, and preparation continues in the background.
 Reopen the checklist from **Settings → Set up IMU Nav**. Previously removed routing packs stay removed
@@ -150,7 +157,7 @@ Tower locations come from four sources, each in its own table and looked up in t
 | **Learned** | While GPS is GOOD (≤ 30 m), every visible cell's position is refined from the fix. |
 | **Mozilla** | *Download Mozilla data* streams the Mozilla Location Service final export (1.5 GB, public domain, March 2024) from archive.org, keeping only your region's MCCs; resumes after network drops, nothing large is stored. |
 
-| **Built-in** | Shipped inside the APK (`app/src/main/assets/cells/bundled-cells.csv.gz`, ~530k Ukrainian towers compiled from OpenCellID + Mozilla) and imported automatically on first launch (~20 s). Lowest priority, so anything downloaded later wins. |
+| **Built-in** | Shipped inside the APK (`app/src/main/assets/cells/bundled-cells.csv.gz`, ~530k Ukrainian towers compiled from OpenCellID + Mozilla). Optional: choose **Install built-in towers** in onboarding (or reopen **Settings → Set up IMU Nav**) to import it (~20 s). After opting in, changed archives are imported on app updates. Lowest priority, so anything downloaded later wins. |
 
 All imports are filtered to the configured country codes (default `255`, Ukraine).
 

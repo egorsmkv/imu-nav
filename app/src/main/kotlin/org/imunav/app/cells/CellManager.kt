@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.imunav.app.R
 import org.imunav.app.setup.Preparation
+import org.imunav.app.setup.bundledCellPreparation
 import org.imunav.core.cells.CellSyncClient
 import org.imunav.core.cells.CellTower
 import org.imunav.core.cells.Radio
@@ -355,10 +356,20 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
 
     /**
      * Import the tower database shipped in the APK (assets/cells/bundled-cells.csv.gz) into the
-     * BUNDLED source on first run, and again only when an app update ships a different file
+     * BUNDLED source after explicit opt-in, and again only when an app update ships a different file
      * (detected by SHA-256 of the asset).
      */
     private suspend fun installBundledIfNeeded(force: Boolean = false) {
+        val preparation = bundledCellPreparation(
+            enabled = prefs.getBoolean("bundled_enabled", false),
+            installed = prefs.contains("bundled_sha256") && (_status.value.counts[CellSource.BUNDLED] ?: 0) > 0,
+        )
+        _status.update { it.copy(preparation = preparation) }
+        if (preparation == Preparation.CHECKING) importBundled(force)
+    }
+
+    /** Verify the opted-in archive and publish READY only after a complete, cancellable import. */
+    private suspend fun importBundled(force: Boolean) {
         // The Android build un-gzips *.gz assets and drops the extension, so accept either name.
         // Finding and hashing the asset reads tens of MB: done on the IO dispatcher, not the main thread.
         _status.update { it.copy(preparation = Preparation.CHECKING) }
@@ -405,9 +416,10 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
         if (_status.value.preparation == Preparation.PREPARING) _status.update { it.copy(preparation = Preparation.FAILED) }
     }
 
-    /** Retry a failed built-in import without overlapping another database task. */
+    /** Opt in to built-in towers (or retry their import), without overlapping another database task. */
     fun retryBundled() {
         if (task?.isActive == true || _status.value.preparation in setOf(Preparation.CHECKING, Preparation.PREPARING)) return
+        prefs.edit { putBoolean("bundled_enabled", true) }
         _status.update { it.copy(preparation = Preparation.CHECKING) }
         scope.launch { installBundledIfNeeded() }
     }
@@ -432,7 +444,7 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
 
     /**
      * Delete downloaded/imported towers (all sources except, optionally, the ones this phone learned),
-     * compact the file, then re-import the database bundled with the APK.
+     * compact the file, then re-import the database bundled with the APK only if the user opted in.
      */
     fun resetDatabase(deleteLearned: Boolean) {
         runTask(str(R.string.task_clearing)) {

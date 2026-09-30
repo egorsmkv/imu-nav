@@ -221,7 +221,7 @@
     <string name="action_reset">Reset tower database</string>
     <string name="reset_summary">Delete downloaded towers and reload the built-in database</string>
     <string name="reset_title">Reset tower database?</string>
-    <string name="reset_text">Removes OpenCellID, Mozilla and sharing-server towers, then reloads the built-in database. Downloads can be repeated later.</string>
+    <string name="reset_text">Removes OpenCellID, Mozilla and sharing-server towers. The built-in database is reloaded only if you chose to install it. Downloads can be repeated later.</string>
     <string name="action_reset_confirm">Reset</string>
 
     <string name="sec_diagnostics">Diagnostics</string>
@@ -449,7 +449,11 @@
     <string name="setup_approximate">Approximate location is enabled. Precise location is still needed for GPS and cell scanning.</string>
     <string name="setup_data">Offline data</string>
     <string name="setup_routing">Routing and address search</string>
-    <string name="setup_cells">Cell tower database</string>
+    <string name="setup_cells">Cell tower database (optional)</string>
+    <string name="setup_optional">Not installed — optional</string>
+    <string name="setup_cells_install">Install built-in towers</string>
+    <string name="setup_cells_hint">Skip this archive to learn towers from trusted GPS and gather data from your own sharing server. You can install the built-in database later from this checklist.</string>
+    <string name="setup_cells_server">Configure own server in Settings → Cell towers</string>
     <string name="setup_checking">Checking installed data…</string>
     <string name="setup_preparing">Preparing bundled data…</string>
     <string name="setup_ready">Ready</string>
@@ -459,7 +463,7 @@
     <string name="setup_retry">Retry</string>
     <string name="setup_continue">Continue</string>
     <string name="setup_continue_limited">Continue with limited functionality</string>
-    <string name="setup_limited_hint">Missing permissions limit positioning, walking, OBD speed, notifications or background operation. Offline routing and cell positioning need their data. Preparation continues in the background.</string>
+    <string name="setup_limited_hint">Missing permissions limit positioning, walking, OBD speed, notifications or background operation. Offline routing needs a routing pack. Selected data preparation continues in the background.</string>
     <string name="setup_manage_data">Manage offline data in Settings</string>
     <string name="setup_system_unavailable">Android could not open the requested settings. You can enable access later in the system settings.</string>
     <string name="setup_location_services">Phone location</string>

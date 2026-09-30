@@ -144,7 +144,7 @@ fun OnboardingScreen(app: AppGraph, onPermissionsChanged: () -> Unit, onContinue
     val granted = remember(permissionRevision) {
         permissionItems.associateWith { item -> item.permissions.all { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED } }
     }
-    val allReady = granted.values.all { it } && locationEnabled && batteryUnrestricted && routing.preparation == Preparation.READY && cells.preparation == Preparation.READY
+    val allReady = granted.values.all { it } && locationEnabled && batteryUnrestricted && routing.preparation == Preparation.READY
     Column(
         Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -152,6 +152,7 @@ fun OnboardingScreen(app: AppGraph, onPermissionsChanged: () -> Unit, onContinue
         Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text(stringResource(R.string.setup_title), style = MaterialTheme.typography.headlineMedium)
             Text(stringResource(R.string.setup_intro), style = MaterialTheme.typography.bodyLarge)
+            LanguageSelector(app)
             if (granted.values.any { !it }) {
                 Button(onClick = { request(permissionItems.filter { granted[it] != true }.flatMap { it.permissions }) }) {
                     Text(stringResource(R.string.setup_enable_permissions))
@@ -203,6 +204,8 @@ fun OnboardingScreen(app: AppGraph, onPermissionsChanged: () -> Unit, onContinue
             Text(stringResource(R.string.setup_data), style = MaterialTheme.typography.titleLarge)
             PreparationCard(R.string.setup_routing, routing.preparation, routing.busy, routing.message, routing.busy == null) { app.offlineRouting.retryBundled() }
             PreparationCard(R.string.setup_cells, cells.preparation, cells.busy, cells.message, cells.busy == null) { app.cells.retryBundled() }
+            Text(stringResource(R.string.setup_cells_hint), style = MaterialTheme.typography.bodyMedium)
+            TextButton(onClick = onSettings) { Text(stringResource(R.string.setup_cells_server)) }
             if (systemUnavailable) Text(stringResource(R.string.setup_system_unavailable), color = MaterialTheme.colorScheme.error)
             if (!allReady) Text(stringResource(R.string.setup_limited_hint), style = MaterialTheme.typography.bodyMedium)
             Button(onClick = onContinue, modifier = Modifier.fillMaxWidth()) {
@@ -233,6 +236,7 @@ private fun PreparationCard(title: Int, preparation: Preparation, progress: Stri
         Preparation.CHECKING -> R.string.setup_checking
         Preparation.PREPARING -> R.string.setup_preparing
         Preparation.READY -> R.string.setup_ready
+        Preparation.OPTIONAL -> R.string.setup_optional
         Preparation.UNAVAILABLE -> R.string.setup_unavailable
         Preparation.REMOVED -> R.string.setup_removed
         Preparation.FAILED -> R.string.setup_failed
@@ -245,6 +249,9 @@ private fun PreparationCard(title: Int, preparation: Preparation, progress: Stri
         if (preparation == Preparation.FAILED) {
             message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             OutlinedButton(onClick = retry, enabled = canRetry) { Text(stringResource(R.string.setup_retry)) }
+        }
+        if (preparation == Preparation.OPTIONAL) {
+            OutlinedButton(onClick = retry, enabled = canRetry) { Text(stringResource(R.string.setup_cells_install)) }
         }
     }
 }

@@ -1,6 +1,5 @@
 package org.imunav.app.ui
 
-import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -113,7 +112,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.imunav.app.AppGraph
-import org.imunav.app.AppLanguage
 import org.imunav.app.BuildConfig
 import org.imunav.app.MapStartMode
 import org.imunav.app.MapStartPrefs
@@ -222,37 +220,7 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
 
                     // ---------------- Language
                     SectionHeader(stringResource(R.string.sec_language))
-                    val language by app.language.collectAsStateWithLifecycle()
-                    ListItem(
-                        headlineContent = { Text(stringResource(R.string.language_title)) },
-                        supportingContent = {
-                            Column {
-                                Text(stringResource(R.string.language_hint))
-                                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    AppLanguage.CHOICES.forEach { choice ->
-                                        val label = when (choice) {
-                                            AppLanguage.UKRAINIAN -> "Українська"
-                                            AppLanguage.ENGLISH -> "English"
-                                            AppLanguage.RUSSIAN -> "Русский"
-                                            else -> stringResource(R.string.language_system)
-                                        }
-                                        FilterChip(
-                                            selected = language == choice,
-                                            onClick = {
-                                                if (language != choice) {
-                                                    save()
-                                                    app.setLanguage(choice)
-                                                    (context as? Activity)?.recreate()
-                                                }
-                                            },
-                                            label = { Text(label) },
-                                        )
-                                    }
-                                }
-                            }
-                        },
-                        leadingContent = { Icon(Icons.Filled.Translate, contentDescription = null) },
-                    )
+                    LanguageSelector(app, onBeforeChange = ::save)
 
                     // ---------------- Map start
                     MapStartSection(app, ui)
