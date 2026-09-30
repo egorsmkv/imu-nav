@@ -28,7 +28,7 @@ enum class CellSource(val table: String, val label: String) {
     /** Mozilla Location Service final export (public domain, March 2024). */
     MOZILLA("mozilla", "Mozilla"),
 
-    /** Database shipped inside the APK (assets/cells/bundled-cells.csv.gz), imported on first run. */
+    /** Database shipped inside the APK (assets/cells/bundled-cells.csv.gz), imported after explicit opt-in. */
     BUNDLED("bundled", "built-in"),
 }
 

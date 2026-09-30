@@ -247,6 +247,14 @@
     <string name="about_credits">Cell data: OpenCellID contributors (CC BY-SA 4.0) and Mozilla Location Service (public domain). Maps and routing data © OpenStreetMap contributors (ODbL), OpenFreeMap. Routing: GraphHopper, OSRM. Source code: MIT licence.</string>
     <string name="about_disclaimer">Research prototype. Never rely on it as a safety system.</string>
     <string name="telegram_group">Telegram group</string>
+    <string name="cell_history_title">Cell tower usage history</string>
+    <string name="cell_history_hint">Towers that contributed to cell-position fixes while the app was sensing, including outside trips. Sharing includes timestamps, tower coordinates and estimated locations; share only with people you trust.</string>
+    <string name="cell_history_count">Recorded tower contributions: %1$d</string>
+    <string name="cell_history_empty">No tower usage recorded yet. Known towers and location permission are required.</string>
+    <string name="cell_history_failed">Could not record or share cell tower history. Check available storage and try again.</string>
+    <string name="cell_history_share">Share history as CSV</string>
+    <string name="cell_history_recent">Show / hide latest 20 contributions</string>
+    <string name="cell_history_entry">%1$s · %2$s %3$d-%4$d / %5$d / %6$d</string>
     <string name="donate_monobank">Donate via monobank</string>
     <string name="donate_privatbank">Donate via PrivatBank</string>
 

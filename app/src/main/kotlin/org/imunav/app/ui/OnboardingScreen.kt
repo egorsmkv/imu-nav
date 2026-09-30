@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
@@ -71,6 +72,7 @@ private fun setupPermissions(): List<SetupPermission> = buildList {
 @Composable
 fun OnboardingScreen(app: AppGraph, onPermissionsChanged: () -> Unit, onContinue: () -> Unit, onSettings: () -> Unit) {
     val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
     val activity = context as Activity
     val preferences = remember(context) { context.getSharedPreferences("setup", Context.MODE_PRIVATE) }
     val permissionItems = remember { setupPermissions() }
@@ -153,6 +155,7 @@ fun OnboardingScreen(app: AppGraph, onPermissionsChanged: () -> Unit, onContinue
             Text(stringResource(R.string.setup_title), style = MaterialTheme.typography.headlineMedium)
             Text(stringResource(R.string.setup_intro), style = MaterialTheme.typography.bodyLarge)
             LanguageSelector(app)
+            TextButton(onClick = { uriHandler.openUri(TELEGRAM_GROUP_URL) }) { Text(stringResource(R.string.telegram_group)) }
             if (granted.values.any { !it }) {
                 Button(onClick = { request(permissionItems.filter { granted[it] != true }.flatMap { it.permissions }) }) {
                     Text(stringResource(R.string.setup_enable_permissions))

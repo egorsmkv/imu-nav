@@ -17,6 +17,7 @@ be enabled later, including through Android Settings when the permission dialog 
 
 Choose the UI and voice language directly in onboarding: phone default, Ukrainian, English or Russian.
 The selection is saved and the checklist stays open when the language changes.
+The **Telegram group** link opens <https://t.me/imu_nav> from onboarding as well as Settings.
 
 The checklist shows background preparation of bundled routing/address-search data, with retries after
 failures. The built-in cell tower database is **optional**: it is not unpacked until you tap **Install
@@ -160,6 +161,17 @@ Tower locations come from four sources, each in its own table and looked up in t
 | **Built-in** | Shipped inside the APK (`app/src/main/assets/cells/bundled-cells.csv.gz`, ~530k Ukrainian towers compiled from OpenCellID + Mozilla). Optional: choose **Install built-in towers** in onboarding (or reopen **Settings → Set up IMU Nav**) to import it (~20 s). After opting in, changed archives are imported on app updates. Lowest priority, so anything downloaded later wins. |
 
 All imports are filtered to the configured country codes (default `255`, Ukraine).
+
+**Usage history:** **Settings → Cell towers → Cell tower usage history** shows the latest 20 tower
+contributions and can share the complete history as a UTF-8 CSV file through Android's share sheet.
+Recording starts with this version and runs whenever cell scanning produces a fix, including outside
+active trips. Each scan records only towers actually used after outlier filtering, not unknown or
+disabled cells. The CSV includes app-session id, Unix/elapsed timestamps in ms, radio, MCC/MNC,
+area/cell id, signal, serving flag, timing advance, tower geometry and the estimated fix/accuracy.
+Coordinates can reflect a cell-id or site match rather than an exact tower match. History persists
+across app restarts and positioning-database resets; old trips cannot be reconstructed retroactively.
+It stays on the device unless you explicitly share it. The file reveals approximate locations and
+times: share only with trusted recipients.
 
 #### Updating the built-in database
 1. On a phone with the data you want (after *Download Mozilla data* / *Download OpenCellID* / syncs), open **Cells → Export database**.

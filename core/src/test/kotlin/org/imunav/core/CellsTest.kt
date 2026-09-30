@@ -55,6 +55,8 @@ class CellsTest {
         val obs = (1L..5L).map { CellObservation(key(it), -90) }
         val fix = assertNotNull(CellPositioner.locate(obs, InMemoryCellTowerDb(towers)))
         assertEquals(3, fix.towersUsed)
+        assertEquals(listOf(key(1), key(2), key(3)), fix.contributions.map { it.observation.key })
+        assertEquals(towers.take(3), fix.contributions.map { it.tower })
         assertEquals(5, fix.towersSeen)
         assertTrue(Geo.distance(fix.lat, fix.lon, 50.45, 30.51) < 2000)
         assertNull(CellPositioner.locate(listOf(CellObservation(key(99))), InMemoryCellTowerDb(towers)))

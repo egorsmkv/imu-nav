@@ -245,6 +245,14 @@
     <string name="about_credits">Дані вишок: учасники OpenCellID (CC BY-SA 4.0) і Mozilla Location Service (суспільне надбання). Карти й дані маршрутів © учасники OpenStreetMap (ODbL), OpenFreeMap. Маршрути: GraphHopper, OSRM. Вихідний код: ліцензія MIT.</string>
     <string name="about_disclaimer">Дослідницький прототип. Ніколи не покладайтеся на нього як на систему безпеки.</string>
     <string name="telegram_group">Група в Telegram</string>
+    <string name="cell_history_title">Історія використання стільникових веж</string>
+    <string name="cell_history_hint">Вежі, що брали участь у визначенні позиції, коли застосунок збирав дані, зокрема поза поїздками. Файл містить час, координати веж та оцінені позиції; діліться лише з тими, кому довіряєте.</string>
+    <string name="cell_history_count">Записано участей веж: %1$d</string>
+    <string name="cell_history_empty">Історія поки порожня. Потрібні відомі вежі та дозвіл на геолокацію.</string>
+    <string name="cell_history_failed">Не вдалося записати історію веж або поділитися нею. Перевірте вільне місце та спробуйте ще раз.</string>
+    <string name="cell_history_share">Поділитися історією у CSV</string>
+    <string name="cell_history_recent">Показати / приховати останні 20 участей</string>
+    <string name="cell_history_entry">%1$s · %2$s %3$d-%4$d / %5$d / %6$d</string>
     <string name="donate_monobank">Підтримати через monobank</string>
     <string name="donate_privatbank">Підтримати через ПриватБанк</string>
 

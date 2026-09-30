@@ -38,8 +38,11 @@ data class CellObservation(
     val timingAdvance: Int? = null,
 )
 
-/** A position estimate computed from cell towers. */
-data class CellFix(val lat: Double, val lon: Double, val accuracyM: Double, val towersUsed: Int, val towersSeen: Int)
+/** One tower that survived the positioner's outlier filter and contributed to its weighted fix. */
+data class CellContribution(val observation: CellObservation, val tower: CellTower)
+
+/** A position estimate computed from cell towers, with the exact contributing observations for diagnostics. */
+data class CellFix(val lat: Double, val lon: Double, val accuracyM: Double, val towersUsed: Int, val towersSeen: Int, val contributions: List<CellContribution> = emptyList())
 
 /** Somewhere tower positions can be looked up (SQLite on the phone, a map in tests). */
 interface CellTowerDb {
@@ -95,7 +98,14 @@ object CellPositioner {
         val centerY = located.sumOf { it.weight * it.y } / weightSum
         val center = flat.toGeo(centerX, centerY)
 
-        return CellFix(center.lat, center.lon, accuracy(located, centerX, centerY, weightSum), located.size, observations.size)
+        return CellFix(
+            center.lat,
+            center.lon,
+            accuracy(located, centerX, centerY, weightSum),
+            located.size,
+            observations.size,
+            located.map { CellContribution(it.observation, it.tower) },
+        )
     }
 
     /**

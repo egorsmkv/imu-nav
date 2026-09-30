@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
+    <cache-path name="shared_cell_history" path="cell-history-shares/" />
     <cache-path
         name="shared_logs"
         path="log-shares/" />

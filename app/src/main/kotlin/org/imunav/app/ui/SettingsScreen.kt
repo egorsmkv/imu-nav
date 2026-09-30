@@ -133,7 +133,7 @@ import java.util.Date
 import java.util.Locale
 
 private val RADIO_CHOICES = listOf(Radio.GSM to "2G", Radio.UMTS to "3G", Radio.LTE to "4G", Radio.NR to "5G")
-private const val TELEGRAM_GROUP_URL = "https://t.me/imu_nav"
+internal const val TELEGRAM_GROUP_URL = "https://t.me/imu_nav"
 
 /**
  * Settings: language, map start, battery, offline routing, cell towers, sharing server and diagnostics.
@@ -396,6 +396,7 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
 
                     // ---------------- Cell towers
                     SectionHeader(stringResource(R.string.sec_cells))
+                    CellHistorySection(app.cells.usageHistory)
                     SwitchItem(stringResource(R.string.cells_show_map), null, c.showTowers) { mgr.setShowTowers(it) }
                     ListItem(
                         headlineContent = { Text(stringResource(R.string.cells_types)) },

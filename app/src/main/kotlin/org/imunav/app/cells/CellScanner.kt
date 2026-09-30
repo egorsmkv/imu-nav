@@ -35,6 +35,8 @@ class CellScanner(
     private val db: CellDatabase,
     private val onFix: (RawFix, CellFix) -> Unit,
     private val log: (String) -> Unit,
+    /** Persist the exact contributing towers on this worker, without delaying main-thread consumers. */
+    private val onUsage: (RawFix, CellFix) -> Unit = { _, _ -> },
     /** Cell types used for positioning; others are still recorded for learning. */
     private val enabledRadios: () -> Set<Radio> = { Radio.entries.toSet() },
     /** Scan period; re-read after every scan so power-mode changes apply at once. */
@@ -156,6 +158,7 @@ class CellScanner(
             accuracyM = fix.accuracyM.toFloat(),
         )
         main.post { onFix(raw, fix) } // consumers expect the main thread
+        onUsage(raw, fix)
     }
 
     /**

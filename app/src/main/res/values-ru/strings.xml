@@ -245,6 +245,14 @@
     <string name="about_credits">Данные вышек: участники OpenCellID (CC BY-SA 4.0) и Mozilla Location Service (общественное достояние). Карты и данные маршрутов © участники OpenStreetMap (ODbL), OpenFreeMap. Маршрутизация: GraphHopper, OSRM. Исходный код: лицензия MIT.</string>
     <string name="about_disclaimer">Исследовательский прототип. Никогда не полагайтесь на него как на систему безопасности.</string>
     <string name="telegram_group">Группа в Telegram</string>
+    <string name="cell_history_title">История использования сотовых вышек</string>
+    <string name="cell_history_hint">Вышки, участвовавшие в определении позиции, когда приложение собирало данные, в том числе вне поездок. Файл содержит время, координаты вышек и оценённые позиции; делитесь только с теми, кому доверяете.</string>
+    <string name="cell_history_count">Записано участий вышек: %1$d</string>
+    <string name="cell_history_empty">История пока пуста. Нужны известные вышки и разрешение на геолокацию.</string>
+    <string name="cell_history_failed">Не удалось записать историю вышек или поделиться ею. Проверьте свободное место и попробуйте снова.</string>
+    <string name="cell_history_share">Поделиться историей в CSV</string>
+    <string name="cell_history_recent">Показать / скрыть последние 20 участий</string>
+    <string name="cell_history_entry">%1$s · %2$s %3$d-%4$d / %5$d / %6$d</string>
     <string name="donate_monobank">Поддержать через monobank</string>
     <string name="donate_privatbank">Поддержать через ПриватБанк</string>
 

@@ -103,6 +103,8 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
     private var lastViewport: DoubleArray? = null
     private var lastQuery: DoubleArray? = null
 
+    val usageHistory = CellUsageHistory(context, scope, log)
+
     val scanner = CellScanner(
         context,
         db,
@@ -114,6 +116,7 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
             }
         },
         log = log,
+        onUsage = usageHistory::record,
         enabledRadios = ::enabledRadios,
     )
 
