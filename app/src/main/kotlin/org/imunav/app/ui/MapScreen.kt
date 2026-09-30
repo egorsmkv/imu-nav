@@ -37,9 +37,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.AltRoute
 import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AltRoute
 import androidx.compose.material.icons.filled.CellTower
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DirectionsCar
@@ -86,10 +86,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -137,8 +139,19 @@ private const val LANDSCAPE_PANEL_MAX_WIDTH_DP = 600
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MapScreen(ui: UiState, app: AppGraph, hasLocation: Boolean, onRequestPermission: () -> Unit, onOpenSettings: () -> Unit, onOpenLog: () -> Unit, onOpenHistory: () -> Unit) {
+fun MapScreen(
+    ui: UiState,
+    app: AppGraph,
+    hasLocation: Boolean,
+    onRequestPermission: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenLog: () -> Unit,
+    onOpenHistory: () -> Unit,
+    mapActive: Boolean = true,
+) {
     val context = LocalContext.current
+    // Short taps of the vibrator confirm the actions that matter while driving (follows the phone's touch-feedback setting).
+    val haptic = LocalHapticFeedback.current
     val configuration = LocalConfiguration.current
     val landscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     val res = LocalResources.current
@@ -206,7 +219,12 @@ fun MapScreen(ui: UiState, app: AppGraph, hasLocation: Boolean, onRequestPermiss
                 destination = ui.destination ?: nav.destination,
                 following = nav.active && following,
                 towers = if (ui.cells.showTowers) towerLayer else null,
-                onLongPress = { if (!nav.active) app.setDestination(it) },
+                onLongPress = {
+                    if (!nav.active) {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        app.setDestination(it)
+                    }
+                },
                 onCenterChanged = {
                     mapCenter = it
                     app.lastMapCenter = it
@@ -224,6 +242,7 @@ fun MapScreen(ui: UiState, app: AppGraph, hasLocation: Boolean, onRequestPermiss
                 initialZoom = startView.zoom,
                 followZoomDefault = if (nav.travelMode == TravelMode.FOOT) 17.5 else 16.0,
                 offlineStyleJson = if (offlineMapStatus.offlineInUse) app.offlineMap.styleJson(dark) else null,
+                active = mapActive,
             )
         }
 
@@ -315,6 +334,7 @@ fun MapScreen(ui: UiState, app: AppGraph, hasLocation: Boolean, onRequestPermiss
             SnackbarHost(snackbar)
             if (nav.active) {
                 NavigationPanel(nav, onStop = {
+                    haptic.performHapticFeedback(HapticFeedbackType.Confirm)
                     app.stopNavigation()
                     NavService.stop(context)
                 }, onReroute = { app.engine.requestManualReroute() })
@@ -324,6 +344,7 @@ fun MapScreen(ui: UiState, app: AppGraph, hasLocation: Boolean, onRequestPermiss
                     mode = travelMode,
                     walkingAvailable = routing.walking,
                     onModeChange = { mode ->
+                        haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
                         app.setTravelMode(mode)
                         // The step counter needs the "physical activity" permission; without it walking still works at a fixed pace.
                         if (mode == TravelMode.FOOT && Build.VERSION.SDK_INT >= 29 && !hasActivityPermission(context)) {
@@ -334,11 +355,17 @@ fun MapScreen(ui: UiState, app: AppGraph, hasLocation: Boolean, onRequestPermiss
                     compact = landscape,
                     pickStart = pickStart,
                     canStart = hasLocation && ui.destination != null && !ui.planning && (ui.hasTrustedPosition || ui.manualStart != null),
-                    onSetStart = { mapCenter?.let { app.setManualStart(it) } },
+                    onSetStart = {
+                        mapCenter?.let {
+                            haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                            app.setManualStart(it)
+                        }
+                    },
                     onSearchStart = { searchTarget = RoutePoint.START },
                     onSearchDestination = { searchTarget = RoutePoint.DESTINATION },
                     onClearStart = { app.setManualStart(null) },
                     onStart = {
+                        haptic.performHapticFeedback(HapticFeedbackType.Confirm)
                         requestBatteryExemptionOnce(context)
                         app.startNavigation { NavService.start(context) }
                     },
@@ -351,7 +378,7 @@ fun MapScreen(ui: UiState, app: AppGraph, hasLocation: Boolean, onRequestPermiss
     if (nav.blindDeviation) {
         AlertDialog(
             onDismissRequest = {},
-            icon = { Icon(Icons.Filled.AltRoute, null) },
+            icon = { Icon(Icons.AutoMirrored.Filled.AltRoute, null) },
             title = { Text(stringResource(R.string.deviation_title)) },
             text = { Text(stringResource(R.string.deviation_text, nav.blindDeviationSecLeft)) },
             confirmButton = { TextButton(onClick = { app.engine.confirmDeviation(SystemClock.elapsedRealtime()) }) { Text(stringResource(R.string.action_reroute_now)) } },
@@ -365,6 +392,7 @@ fun MapScreen(ui: UiState, app: AppGraph, hasLocation: Boolean, onRequestPermiss
             near = if (target == RoutePoint.DESTINATION) ui.manualStart ?: ui.currentPosition ?: mapCenter else ui.currentPosition ?: mapCenter,
             hint = stringResource(if (target == RoutePoint.START) R.string.search_from_hint else R.string.search_to_hint),
             onPick = { r ->
+                haptic.performHapticFeedback(HapticFeedbackType.Confirm)
                 app.search.remember(r)
                 when (target) {
                     RoutePoint.START -> app.setManualStart(r.point, r.routePointLabel())

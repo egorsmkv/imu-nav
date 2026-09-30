@@ -186,7 +186,15 @@ and Android SDK 36.
 ./gradlew test                # engine, routing/search, server and replay tests
 ./gradlew :app:assemblePlayDebug    # normal development build
 ./gradlew :app:assembleFdroidRelease # unsigned F-Droid release build
+./gradlew :app:assemblePlayBenchmark # release speed + freeze diagnostics, installs as org.imunav.app.bench
 ```
+
+**Responsiveness.** Debug and benchmark builds enable StrictMode and a main-thread watchdog
+(`MainThreadWatchdog`): any UI-thread task longer than 200 ms is logged with its stack under the
+`MainThreadWatchdog` Logcat tag. Benchmark builds are R8-shrunk, so read their stacks with R8 retrace
+and `app/build/outputs/mapping/playBenchmark/mapping.txt`. Text-to-speech, sensor registration, cell
+scans, trip saving and history I/O run on background threads, and the map view stays loaded while
+Settings or History is open, so returning to the map is instant.
 
 The `play` and `fdroid` distribution flavors currently use the same FOSS application code and
 dependencies. The flavor boundary prevents future Play-only SDKs from leaking into F-Droid, and an
@@ -266,7 +274,11 @@ The map opens at the phone's last GPS position (spoofed or out-of-area fixes are
 **Settings → Everyday settings → Map start**, at a fixed place (typed coordinates, your position or the map centre).
 The interface and voice follow the phone's language (Ukrainian, English or Russian) unless changed in
 **Settings → Everyday settings → Language**, and the phone's light/dark theme. Spoken directions can be disabled under
-**Settings → Everyday settings → Navigation without GPS**. Map and settings layouts adapt to portrait and landscape. Text trip logs are written to
+**Settings → Everyday settings → Navigation without GPS**. The phone vibrates as well, with a different
+pattern for an upcoming turn (one buzz), the turn itself (two), leaving the route (three short), GPS lost
+(long + short), GPS back, a new route and arrival, so alerts can be told apart without looking. Turn that off with
+**Vibrate on turns and alerts** in the same group. Start, Stop, the Car/Walk selector and choosing a destination
+also give a short tap of feedback, following the phone's touch-feedback setting. Map and settings layouts adapt to portrait and landscape. Text trip logs are written to
 `files/logs/`, trip recordings to `files/trips/` in app storage. The in-app trip-log viewer shows timestamps, highlights problems, and can search,
 filter, follow, copy or share the latest diagnostic events as a text file.
 

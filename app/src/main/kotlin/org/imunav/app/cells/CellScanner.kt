@@ -67,7 +67,8 @@ class CellScanner(
     private val poll = object : Runnable {
         override fun run() {
             if (!running) return
-            scan()
+            // Asking the modem is a call into the phone service (100–300 ms); keep it off the main thread.
+            worker.execute { scan() }
             main.postDelayed(this, intervalMs())
         }
     }

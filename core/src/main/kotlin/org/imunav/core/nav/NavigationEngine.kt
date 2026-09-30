@@ -196,6 +196,7 @@ class NavigationEngine(
         installRoute(route, nowMs)
         deviation.clear(nowMs, 40_000)
         log("rerouted len=${route.length.toInt()}")
+        listener.onAlert(NavAlert.REROUTED)
         say(phrases.rerouted(), urgent = false)
     }
 
@@ -400,6 +401,7 @@ class NavigationEngine(
         if (offRouteDeclared) return
         offRouteDeclared = true
         log("off_route ${offRouteM.toInt()}m $detail".trim())
+        listener.onAlert(NavAlert.OFF_ROUTE)
         if (autoReroute) {
             say(phrases.offRouteRerouting(), urgent = true)
             log("auto_reroute")
@@ -944,6 +946,7 @@ class NavigationEngine(
         deviationFrom = from
         deviation.pendingUntilMs = nowMs + settings().blindDeviationDelayS * 1000L
         log(logLine)
+        listener.onAlert(NavAlert.OFF_ROUTE)
         say(speech, urgent = true)
     }
 
@@ -1035,15 +1038,18 @@ class NavigationEngine(
         if (arrived) {
             if (!arrivedAnnounced) {
                 arrivedAnnounced = true
+                listener.onAlert(NavAlert.ARRIVED)
                 say(phrases.arrived(), urgent = false)
             }
             return
         }
         if (source.isGps && gpsLostAnnounced) {
             gpsLostAnnounced = false
+            listener.onAlert(NavAlert.GPS_RESTORED)
             say(phrases.gpsRestored(), urgent = false)
         } else if (!source.isGps && source != PositionSource.NONE && lastGpsUseMs > 0 && !gpsLostAnnounced && blindS >= 5) {
             gpsLostAnnounced = true
+            listener.onAlert(NavAlert.GPS_LOST)
             say(phrases.gpsLost(), urgent = false)
         }
         if (step == null || next < 0) return
@@ -1056,6 +1062,10 @@ class NavigationEngine(
         for (skipped in 0..level) announced += next * 10 + skipped
         // "In 1 km…" is pointless in slow city traffic (below 50 km/h).
         if (mode == TravelMode.CAR && level == 0 && currentSpeed < 14.0) return
+        when (level) {
+            announceAt.lastIndex -> listener.onAlert(NavAlert.TURN_NOW)
+            announceAt.lastIndex - 1 -> listener.onAlert(NavAlert.TURN_SOON)
+        }
         say(phrases.maneuver(step, if (level == announceAt.lastIndex) null else dist), urgent = level >= 2)
     }
 

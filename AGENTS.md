@@ -29,6 +29,7 @@ Package root: `org.imunav.<module>`. Put new logic in `:core` whenever it does n
 ./gradlew spotlessApply         # auto-format before committing
 ./gradlew :core:test            # fast: engine, classifier, cells, HTTP, replay tests
 ./gradlew :app:assembleRelease  # signed, R8-shrunk, ARM-only APK (~350 MB with bundled map)
+./gradlew :app:assemblePlayBenchmark  # release build + StrictMode/MainThreadWatchdog, appId suffix .bench
 ./gradlew :app:lintRelease      # Android Lint only
 ./gradlew detekt                # static analysis only
 GRAPH_DIR=/path/to/graph-ukraine ./gradlew :routing:test --tests '*PackSmokeTest*'   # needs a real pack
@@ -72,6 +73,16 @@ Requirements: JDK 17+, Android SDK platform 36. `adb` lives at `~/Library/Androi
 - **Threading:** `AppGraph` and all engine access run on the main thread. Disk, network and database
   work goes to `Dispatchers.IO` or the dedicated single-thread executors (`TripLog`, `TripManager`);
   results are posted back. HTTP calls are blocking — never call them on the main thread.
+  System services that talk over binder count as I/O: text-to-speech (`Voice` worker thread), sensor
+  and location registration (`SensorHub` control thread), cell scans, vibration (`Haptics`). Don't build
+  large strings (route encoding, JSON with the route) on the main thread either — do it on the executor.
+  Check with the benchmark build: nothing of ours may appear in `MainThreadWatchdog` reports.
+- **Haptics:** engine events that deserve a vibration go through `NavListener.onAlert(NavAlert)`,
+  called next to the matching voice phrase; patterns live in `haptics/Haptics.kt`. UI taps use Compose
+  `LocalHapticFeedback`, not the vibrator.
+- **Map view:** `MapScreen` stays composed under the other screens (`AppRoot` overlays them), and
+  `NavMap(active = false)` only pauses the MapView. Don't move the map inside a `when (screen)` again —
+  recreating a MapView costs 200–700 ms on the main thread.
 - **HTTP:** always through `org.imunav.core.net.Http` (shared OkHttp client). Do not add
   `HttpURLConnection` or new clients; use `Http.client.newBuilder()` for different timeouts.
 - **Travel mode** (`TravelMode.CAR` / `FOOT`) selects the GraphHopper profile and the engine's motion
@@ -109,6 +120,9 @@ Requirements: JDK 17+, Android SDK platform 36. `adb` lives at `~/Library/Androi
   `pack.zip` is stored uncompressed (`noCompress += "zip"`) and gitignored.
 - **Trip recordings** are gzip streams that may be truncated by a kill; always read them with
   `TripFormat.read` (salvages the tail) and `TripFormat.repair` before appending.
+- **Debug builds cannot load the offline routing pack:** D8 desugars GraphHopper's Java records and the
+  debug APK then fails with `NoClassDefFoundError: com/android/tools/r8/RecordTag`. Use the `benchmark`
+  build type (R8, debug-signed) for anything involving offline routing or performance measurements.
 - **In-app language** is applied via `AppLanguage.wrap` in `attachBaseContext` (app + activity); in
   Compose read resources with `LocalResources.current`, not `LocalContext.current.resources`.
 

@@ -91,10 +91,40 @@ data class GuidanceState(
     val blindDeviationSecLeft: Int = 0,
 )
 
+/**
+ * Moments the driver should notice without looking at the screen. The app turns them into
+ * vibration patterns (see the app's `Haptics`); they come together with the matching voice phrase.
+ */
+enum class NavAlert {
+    /** A maneuver is close (150 m by car, 50 m on foot). */
+    TURN_SOON,
+
+    /** The maneuver is right here (40 m by car, 15 m on foot). */
+    TURN_NOW,
+
+    /** GPS says we left the route, or the sensors suggest a missed turn / U-turn without GPS. */
+    OFF_ROUTE,
+
+    /** A new route was installed. */
+    REROUTED,
+
+    /** GPS became unusable (jamming/spoofing); navigation continues without it. */
+    GPS_LOST,
+
+    /** Trusted GPS is back. */
+    GPS_RESTORED,
+
+    /** The destination is reached. */
+    ARRIVED,
+}
+
 /** How the engine talks to the app. All methods have empty defaults, so implement only what you need. */
 interface NavListener {
     /** Speak [text]; [urgent] phrases should interrupt whatever is being said. */
     fun onSay(text: String, urgent: Boolean) {}
+
+    /** Something happened that deserves a vibration (called right before the matching [onSay]). */
+    fun onAlert(alert: NavAlert) {}
 
     /** A line for the trip log (short `key=value` style, useful for debugging and replay). */
     fun onLog(message: String) {}

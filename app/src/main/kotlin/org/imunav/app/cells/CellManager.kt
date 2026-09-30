@@ -349,21 +349,10 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
      * BUNDLED source on first run, and again only when an app update ships a different file
      * (detected by SHA-256 of the asset).
      */
-    private fun installBundledIfNeeded(force: Boolean = false) {
+    private suspend fun installBundledIfNeeded(force: Boolean = false) {
         // The Android build un-gzips *.gz assets and drops the extension, so accept either name.
-        val asset = BUNDLED_ASSETS.firstOrNull { name -> runCatching { context.assets.open(name).close() }.isSuccess } ?: return
-        val hash = runCatching {
-            context.assets.open(asset).use { input ->
-                val md = MessageDigest.getInstance("SHA-256")
-                val buf = ByteArray(1 shl 16)
-                while (true) {
-                    val n = input.read(buf)
-                    if (n < 0) break
-                    md.update(buf, 0, n)
-                }
-                md.digest().joinToString("") { "%02x".format(it) }
-            }
-        }.getOrNull() ?: return
+        // Finding and hashing the asset reads tens of MB: done on the IO dispatcher, not the main thread.
+        val (asset, hash) = withContext(Dispatchers.IO) { bundledAssetAndHash() } ?: return
         if (!force && prefs.getString("bundled_sha256", null) == hash) return
         runTask(str(R.string.task_bundled_progress, 0)) {
             val n = withContext(Dispatchers.IO) {
@@ -378,6 +367,24 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
             prefs.edit { putString("bundled_sha256", hash) }
             str(R.string.task_bundled_done, n)
         }
+    }
+
+    /** The bundled tower asset's name and SHA-256, or null if the APK has none (IO thread). */
+    private fun bundledAssetAndHash(): Pair<String, String>? {
+        val asset = BUNDLED_ASSETS.firstOrNull { name -> runCatching { context.assets.open(name).close() }.isSuccess } ?: return null
+        val hash = runCatching {
+            context.assets.open(asset).use { input ->
+                val md = MessageDigest.getInstance("SHA-256")
+                val buf = ByteArray(1 shl 16)
+                while (true) {
+                    val n = input.read(buf)
+                    if (n < 0) break
+                    md.update(buf, 0, n)
+                }
+                md.digest().joinToString("") { "%02x".format(it) }
+            }
+        }.getOrNull() ?: return null
+        return asset to hash
     }
 
     /**

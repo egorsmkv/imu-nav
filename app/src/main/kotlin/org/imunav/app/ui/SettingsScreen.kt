@@ -91,7 +91,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.pluralStringResource
@@ -106,6 +105,7 @@ import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -281,6 +281,10 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                     )
                     val voiceEnabled by app.voiceEnabled.collectAsStateWithLifecycle()
                     SwitchItem(stringResource(R.string.voice_title), stringResource(R.string.voice_summary), voiceEnabled) { app.setVoiceEnabled(it) }
+                    if (app.haptics.available) {
+                        val hapticsEnabled by app.haptics.enabled.collectAsStateWithLifecycle()
+                        SwitchItem(stringResource(R.string.haptics_title), stringResource(R.string.haptics_summary), hapticsEnabled) { app.haptics.setEnabled(it) }
+                    }
 
                     // ---------------- Battery
                     SectionHeader(stringResource(R.string.sec_power))
@@ -307,13 +311,15 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                                     ),
                                 )
                                 if (powerMode == PowerMode.AUTO) {
+                                    // Reading the battery is a system call: once per screen visit, not on every redraw.
+                                    val battery = remember { app.power.batteryPercent() }
                                     val active = when (profile) {
                                         PowerProfile.PERFORMANCE -> PowerMode.PERFORMANCE
                                         PowerProfile.SAVER -> PowerMode.SAVER
                                         else -> PowerMode.BALANCED
                                     }
                                     Text(
-                                        stringResource(R.string.power_auto_now, powerModeName(active), app.power.batteryPercent()?.let { "$it %" } ?: "—"),
+                                        stringResource(R.string.power_auto_now, powerModeName(active), battery?.let { "$it %" } ?: "—"),
                                         color = MaterialTheme.colorScheme.primary,
                                     )
                                 }

@@ -11,12 +11,19 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -25,7 +32,9 @@ import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.delay
 import org.imunav.app.AppGraph
 import org.imunav.app.AppLanguage
+import org.imunav.app.UiState
 import org.imunav.app.graph
+import org.imunav.app.trips.TripSummary
 import org.imunav.app.ui.theme.BlindDriverTheme
 
 /**
@@ -129,8 +138,10 @@ private fun AppRoot(app: AppGraph, hasLocation: Boolean, requestPermission: () -
             else -> Screen.MAP
         }
     }
-    when (screen) {
-        Screen.MAP -> MapScreen(
+    Box(Modifier.fillMaxSize()) {
+        // The map screen stays composed under every other screen. Rebuilding it cost ~0.5 s (a new
+        // MapView, style and tiles) each time the user came back; while covered it only stops drawing.
+        MapScreen(
             ui = ui,
             app = app,
             hasLocation = hasLocation,
@@ -138,24 +149,48 @@ private fun AppRoot(app: AppGraph, hasLocation: Boolean, requestPermission: () -
             onOpenSettings = { screen = Screen.SETTINGS },
             onOpenLog = { screen = Screen.LOG },
             onOpenHistory = { screen = Screen.HISTORY },
+            mapActive = screen == Screen.MAP,
         )
+        if (screen != Screen.MAP) {
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).blockTouchesBelow()) {
+                OtherScreen(app, ui, screen, tripId, history, onScreen = { screen = it }, onTrip = { tripId = it })
+            }
+        }
+    }
+}
 
-        Screen.HISTORY -> HistoryScreen(app, onBack = { screen = Screen.MAP }, onOpen = {
-            tripId = it.id
-            screen = Screen.TRIP
+/** Every screen except the map (drawn on top of it). */
+@Composable
+private fun OtherScreen(app: AppGraph, ui: UiState, screen: Screen, tripId: String?, history: List<TripSummary>, onScreen: (Screen) -> Unit, onTrip: (String) -> Unit) {
+    when (screen) {
+        Screen.MAP -> Unit
+
+        Screen.HISTORY -> HistoryScreen(app, onBack = { onScreen(Screen.MAP) }, onOpen = {
+            onTrip(it.id)
+            onScreen(Screen.TRIP)
         })
 
         Screen.TRIP -> {
             val trip = history.firstOrNull { it.id == tripId }
             if (trip == null) {
-                LaunchedEffect(Unit) { screen = Screen.HISTORY }
+                LaunchedEffect(Unit) { onScreen(Screen.HISTORY) }
             } else {
-                TripDetailScreen(app, trip, onBack = { screen = Screen.HISTORY })
+                TripDetailScreen(app, trip, onBack = { onScreen(Screen.HISTORY) })
             }
         }
 
-        Screen.SETTINGS -> SettingsScreen(ui, app, onBack = { screen = Screen.MAP }, onOpenLog = { screen = Screen.LOG })
+        Screen.SETTINGS -> SettingsScreen(ui, app, onBack = { onScreen(Screen.MAP) }, onOpenLog = { onScreen(Screen.LOG) })
 
-        Screen.LOG -> LogScreen(app, onBack = { screen = Screen.SETTINGS })
+        Screen.LOG -> LogScreen(app, onBack = { onScreen(Screen.SETTINGS) })
+    }
+}
+
+/**
+ * Stops touches from reaching what is drawn underneath (the map stays composed below other screens).
+ * Consumed in the last pass, so the screen's own buttons and lists still get them first.
+ */
+private fun Modifier.blockTouchesBelow(): Modifier = pointerInput(Unit) {
+    awaitPointerEventScope {
+        while (true) awaitPointerEvent(PointerEventPass.Final).changes.forEach { it.consume() }
     }
 }

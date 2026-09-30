@@ -24,6 +24,7 @@ import org.imunav.core.gnss.FixSource
 import org.imunav.core.gnss.PositioningHub
 import org.imunav.core.gnss.RawFix
 import org.imunav.core.imu.ImuSample
+import java.util.concurrent.Executors
 import kotlin.math.atan2
 import kotlin.math.sqrt
 
@@ -46,11 +47,18 @@ class SensorHub(
     private val locationManager = context.getSystemService(LocationManager::class.java)
     private val sensorManager = context.getSystemService(SensorManager::class.java)
     private val handler = Handler(Looper.getMainLooper())
+
+    /** Registering and unregistering listeners are calls into system services that can take
+     *  hundreds of ms; they run on this thread, one at a time. Callbacks still arrive on the main thread. */
+    private val control = Executors.newSingleThreadExecutor { Thread(it, "sensor-control") }
+
+    // State below is only touched on [control].
     private var running = false
 
     private val rotation = FloatArray(9)
     private var gyro: FloatArray? = null
-    private var linearAcc: FloatArray? = null
+
+    @Volatile private var linearAcc: FloatArray? = null
     private val gravity = FloatArray(3)
     private var gravityInit = false
 
@@ -207,7 +215,7 @@ class SensorHub(
      * Apply a power profile. While [navigating] the IMU runs at the profile's rate (turn and stop
      * detection); otherwise only orientation at a low rate (compass plausibility check, gyro bias).
      */
-    fun configure(p: PowerProfile, navigating: Boolean, walking: Boolean = false) {
+    fun configure(p: PowerProfile, navigating: Boolean, walking: Boolean = false) = control.execute {
         profile = p
         this.navigating = navigating
         this.walking = walking
@@ -280,8 +288,8 @@ class SensorHub(
 
     /** Start GPS, network location, satellite status and motion sensors. */
     @SuppressLint("MissingPermission")
-    fun start() {
-        if (running) return
+    fun start() = control.execute {
+        if (running) return@execute
         running = true
         injectAssistance("start")
         runCatching { locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0L, 0f, gpsListener, Looper.getMainLooper()) }
@@ -294,8 +302,8 @@ class SensorHub(
     }
 
     /** Stop everything [start] registered. */
-    fun stop() {
-        if (!running) return
+    fun stop() = control.execute {
+        if (!running) return@execute
         running = false
         locationManager.removeUpdates(gpsListener)
         locationManager.removeUpdates(netListener)
@@ -310,7 +318,7 @@ class SensorHub(
     }
 
     /** Ask the GNSS chip to refresh assistance data (ephemeris, time) — speeds up recovery after jamming. */
-    private fun injectAssistance(reason: String) {
+    private fun injectAssistance(reason: String) = control.execute {
         val xtra = runCatching { locationManager.sendExtraCommand(LocationManager.GPS_PROVIDER, "force_xtra_injection", null) }.getOrNull()
         val time = runCatching { locationManager.sendExtraCommand(LocationManager.GPS_PROVIDER, "force_time_injection", null) }.getOrNull()
         log("agps_inject reason=$reason xtra=$xtra time=$time")

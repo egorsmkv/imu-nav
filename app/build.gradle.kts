@@ -31,6 +31,8 @@ android {
         versionName = "0.6.0"
         buildConfigField("String", "MONOBANK_DONATION_URL", buildConfigString(configuredLink("monobankDonationUrl")))
         buildConfigField("String", "PRIVATBANK_DONATION_URL", buildConfigString(configuredLink("privatbankDonationUrl")))
+        // Main-thread diagnostics (StrictMode + MainThreadWatchdog); on in debug and benchmark builds only.
+        buildConfigField("boolean", "DIAGNOSTICS", "false")
     }
 
     // Release signing: create keystore.properties (see README) — it and the keystore are gitignored.
@@ -61,6 +63,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Installs next to the release app (own data), so both can be compared on one device.
+            applicationIdSuffix = ".debug"
+            buildConfigField("boolean", "DIAGNOSTICS", "true")
+        }
         release {
             // R8: strip unused library code and resources.
             isMinifyEnabled = true
@@ -68,6 +75,17 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             // Phones are ARM; x86 builds only serve emulators (debug builds keep them).
             ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
+        }
+        // `assemblePlayBenchmark`: the release build (R8, same speed as users get) with main-thread
+        // diagnostics on, signed with the debug key and installed next to the real app. Use it to
+        // measure responsiveness; debug builds are much slower and cannot load the offline routing pack
+        // (see AGENTS.md, "Known pitfalls").
+        create("benchmark") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".bench"
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += "release"
+            buildConfigField("boolean", "DIAGNOSTICS", "true")
         }
     }
 

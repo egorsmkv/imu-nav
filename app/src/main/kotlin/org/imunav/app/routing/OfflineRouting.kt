@@ -7,6 +7,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -282,7 +283,7 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
                 Log.e("OfflineRouting", "task error", e)
                 str(R.string.task_failed, e.javaClass.simpleName)
             }
-            File(root, "staging").takeIf { it.exists() }?.deleteRecursively()
+            withContext(NonCancellable + Dispatchers.IO) { File(root, "staging").takeIf { it.exists() }?.deleteRecursively() }
             _status.update { it.copy(busy = null, message = msg) }
         }
     }

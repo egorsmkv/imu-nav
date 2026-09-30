@@ -104,7 +104,10 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
     /** Recording and state files are written here, never on the main thread; one thread keeps event order. */
     private val io = Executors.newSingleThreadExecutor()
 
-    /** [route] encoded once per route change (it can be large), reused by every [persist]. */
+    /**
+     * [route] encoded once per route change (it can be large), reused by every [persist].
+     * Only touched on the [io] thread: encoding a long route takes long enough to freeze the UI.
+     */
     private var routeEncoded = ""
 
     @Volatile private var id: String? = null
@@ -124,10 +127,14 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
     private var lastTickMs = -1L
     private var lastPersistMs = 0L
 
-    private val _history = MutableStateFlow(loadHistory())
+    private val _history = MutableStateFlow<List<TripSummary>>(emptyList())
     val history: StateFlow<List<TripSummary>> = _history.asStateFlow()
 
     val active: Boolean get() = id != null
+
+    init {
+        io.execute { _history.value = loadHistory() }
+    }
 
     // ------------------------------------------------------------------ lifecycle
 
@@ -143,7 +150,7 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
         this.waypoints = waypoints
         this.startAccuracy = startAccuracyM
         this.route = route
-        routeEncoded = RouteCodec.encode(route)
+        encodeRoute(route)
         drivenM = 0.0
         movingS = 0.0
         blindS = 0.0
@@ -164,7 +171,7 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
     fun onRoute(route: Route) {
         if (!active) return
         this.route = route
-        routeEncoded = RouteCodec.encode(route)
+        encodeRoute(route)
         reroutes++
         record(TripEvent.RouteSet(SystemClock.elapsedRealtime(), route))
         persist(force = true)
@@ -221,8 +228,10 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
             log("trip_discarded $tripId")
             return
         }
-        index.appendText(summary.toJson().toString() + "\n")
-        _history.value = loadHistory()
+        io.execute {
+            index.appendText(summary.toJson().toString() + "\n")
+            _history.value = loadHistory()
+        }
         log("trip_end $tripId driven=${drivenM.toInt()}m blind=${blindS.toInt()}s")
     }
 
@@ -250,7 +259,8 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
         startAccuracy = o.optDouble("startAcc", 0.0)
         mode = TripSummary.modeOf(o)
         route = restoredRoute
-        routeEncoded = o.getString("route")
+        val encoded = o.getString("route")
+        io.execute { routeEncoded = encoded }
         drivenM = o.optDouble("driven")
         movingS = o.optDouble("moving")
         blindS = o.optDouble("blindS")
@@ -274,6 +284,9 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
         return true
     }
 
+    /** Encode [route] for [persist] on the I/O thread (queued before any persist that needs it). */
+    private fun encodeRoute(route: Route) = io.execute { routeEncoded = RouteCodec.encode(route) }
+
     /** Save the active trip to `active.json` (at most every 10 s unless [force]) so it can be restored after a kill. */
     private fun persist(force: Boolean) {
         val now = SystemClock.elapsedRealtime()
@@ -283,15 +296,17 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
         val r = route ?: return
         val d = destination ?: return
         val st = engine.state
+        // Small fields are copied now (on the main thread, where they change); the route string is
+        // added on the I/O thread, because building JSON with it takes long enough to be noticed.
         val o = JSONObject()
             .put("id", tripId).put("recording", recordingName).put("start", startWall).put("savedAt", System.currentTimeMillis())
             .put("destLat", d.lat).put("destLon", d.lon).put("via", JSONArray(waypoints.flatMap { listOf(it.lat, it.lon) }))
             .put("startAcc", startAccuracy).put("s", engine.progressS).put("unc", st.uncertaintyM).put("mode", mode.name)
             .put("driven", drivenM).put("moving", movingS).put("blindS", blindS).put("blindM", blindM)
-            .put("maxUnc", maxUnc).put("reroutes", reroutes).put("route", routeEncoded.ifEmpty { RouteCodec.encode(r) })
-        val text = o.toString()
+            .put("maxUnc", maxUnc).put("reroutes", reroutes)
         io.execute {
             if (id == null) return@execute // the trip ended meanwhile
+            val text = o.put("route", routeEncoded.ifEmpty { RouteCodec.encode(r) }).toString()
             val tmp = File(dir, "active.json.tmp")
             tmp.writeText(text)
             tmp.renameTo(activeFile)
@@ -322,8 +337,9 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
             .getOrDefault(emptyList())
             .sortedByDescending { it.startWallMs }
 
-    /** Replace the history index with [list] (after a delete or edit). */
-    private fun rewrite(list: List<TripSummary>) {
+    /** Replace the history index with [change] applied to it (after a delete or edit), on the I/O thread. */
+    private fun rewrite(change: (List<TripSummary>) -> List<TripSummary>) = io.execute {
+        val list = change(loadHistory())
         val tmp = File(dir, "index.jsonl.tmp")
         tmp.writeText(list.sortedBy { it.startWallMs }.joinToString("") { it.toJson().toString() + "\n" })
         tmp.renameTo(index)
@@ -332,13 +348,13 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
 
     /** Delete a trip and its recording. */
     fun delete(t: TripSummary) {
-        File(dir, t.recording).delete()
-        rewrite(_history.value.filter { it.id != t.id })
+        io.execute { File(dir, t.recording).delete() }
+        rewrite { list -> list.filter { it.id != t.id } }
     }
 
     /** Store the road length found by map matching ("Snap to roads"). */
     fun setMatchedLength(t: TripSummary, lengthM: Double) {
-        rewrite(_history.value.map { if (it.id == t.id) it.copy(matchedLengthM = lengthM) else it })
+        rewrite { list -> list.map { if (it.id == t.id) it.copy(matchedLengthM = lengthM) else it } }
     }
 
     fun totals(): HistoryTotals = _history.value.let { h ->

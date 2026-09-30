@@ -152,6 +152,8 @@
     <string name="navigation_method_hybrid_summary">Сочетает непрерывное счисление пути с поправками по вышкам и сети. Рекомендуется.</string>
     <string name="voice_title">Голосовые подсказки</string>
     <string name="voice_summary">Озвучивать повороты, состояние GPS и изменения маршрута во время навигации.</string>
+    <string name="haptics_title">Вибрация на поворотах и предупреждениях</string>
+    <string name="haptics_summary">Разные шаблоны вибрации для поворотов, схода с маршрута, потери и восстановления GPS и прибытия.</string>
     <string name="sec_cells">Вышки связи</string>
     <string name="cells_show_map">Показывать вышки на карте</string>
     <string name="cells_types">Типы сетей</string>

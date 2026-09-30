@@ -93,8 +93,11 @@ fun formatDistance(res: Resources, meters: Double): String = when {
     meters < 100 -> res.getString(R.string.unit_m, ((meters / 5).roundToInt() * 5).coerceAtLeast(0))
     meters < 1000 -> res.getString(R.string.unit_m, (meters / 10).roundToInt() * 10)
     meters < 10_000 -> res.getString(R.string.unit_km, meters / 1000)
-    else -> res.getString(R.string.unit_km, (meters / 1000).roundToInt().toDouble()).replace(Regex("[.,]0 "), " ")
+    else -> res.getString(R.string.unit_km, (meters / 1000).roundToInt().toDouble()).replace(TRAILING_ZERO, " ")
 }
+
+/** "14.0 km" → "14 km" (compiled once: regex compilation is expensive and this runs for every list row). */
+private val TRAILING_ZERO = Regex("[.,]0 ")
 
 /** "25 min" / "1 h 20 min". */
 fun formatDuration(res: Resources, seconds: Double): String {

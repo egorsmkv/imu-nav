@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.imunav.app.cells.CellManager
 import org.imunav.app.cells.CellStatus
+import org.imunav.app.haptics.Haptics
 import org.imunav.app.maps.OfflineMap
 import org.imunav.app.power.PowerMode
 import org.imunav.app.power.PowerPolicy
@@ -37,6 +38,7 @@ import org.imunav.core.gnss.TrustLevel
 import org.imunav.core.gnss.Verdict
 import org.imunav.core.nav.EnglishPhrases
 import org.imunav.core.nav.GuidanceState
+import org.imunav.core.nav.NavAlert
 import org.imunav.core.nav.NavListener
 import org.imunav.core.nav.NavigationEngine
 import org.imunav.core.nav.NavigationMethod
@@ -117,6 +119,9 @@ class AppGraph(private val context: Context) {
     private val voicePrefs = context.getSharedPreferences("voice", Context.MODE_PRIVATE)
     val voiceEnabled = MutableStateFlow(voicePrefs.getBoolean("enabled", true))
     private val voice = Voice(context, AppLanguage.locale(AppLanguage.get(context)), voiceEnabled.value)
+
+    /** Vibration patterns for turns and alerts during navigation. */
+    val haptics = Haptics(context)
     val language = MutableStateFlow(AppLanguage.get(context))
 
     /** Switch UI + voice language; the activity recreates itself to pick up new resources. */
@@ -213,6 +218,7 @@ class AppGraph(private val context: Context) {
     /** How the engine reaches the rest of the app: voice, log, and routing requests. */
     private val listener = object : NavListener {
         override fun onSay(text: String, urgent: Boolean) = voice.speak(text, urgent)
+        override fun onAlert(alert: NavAlert) = haptics.play(alert)
         override fun onLog(message: String) = tripLog.write(message)
         override fun onRerouteRequested(from: GeoPoint, destination: GeoPoint, via: List<GeoPoint>, auto: Boolean) {
             scope.launch {

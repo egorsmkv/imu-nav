@@ -13,11 +13,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.graphics.toColorInt
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import org.imunav.app.MapStartPrefs
 import org.imunav.app.cells.TowerLayer
 import org.imunav.app.maps.mapStyle
@@ -109,6 +109,8 @@ fun NavMap(
     followZoomDefault: Double = 16.0,
     /** Style of the installed offline map pack; null = online map. */
     offlineStyleJson: String? = null,
+    /** False while another screen covers the map: rendering pauses (no GPU/battery use) but nothing is rebuilt. */
+    active: Boolean = true,
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current.density
@@ -123,19 +125,38 @@ fun NavMap(
     val viewportChanged by rememberUpdatedState(onViewport)
     val userPan by rememberUpdatedState(onUserPan)
 
-    DisposableEffect(lifecycle) {
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_START -> mapView.onStart()
-                Lifecycle.Event.ON_RESUME -> mapView.onResume()
-                Lifecycle.Event.ON_PAUSE -> mapView.onPause()
-                Lifecycle.Event.ON_STOP -> mapView.onStop()
-                Lifecycle.Event.ON_DESTROY -> mapView.onDestroy()
-                else -> Unit
-            }
+    // The MapView runs (draws) only while the screen is started AND the map is visible. Both inputs
+    // are tracked here and one effect moves the MapView between created / started / resumed.
+    var screenState by remember { mutableStateOf(Lifecycle.State.INITIALIZED) }
+    var mapState by remember { mutableStateOf(MapViewState.CREATED) }
+    fun moveMapTo(target: MapViewState) {
+        while (mapState < target) {
+            if (mapState == MapViewState.CREATED) mapView.onStart() else mapView.onResume()
+            mapState = MapViewState.entries[mapState.ordinal + 1]
         }
+        while (mapState > target) {
+            if (mapState == MapViewState.RESUMED) mapView.onPause() else mapView.onStop()
+            mapState = MapViewState.entries[mapState.ordinal - 1]
+        }
+    }
+    DisposableEffect(lifecycle) {
+        val observer = LifecycleEventObserver { _, _ -> screenState = lifecycle.currentState }
         lifecycle.addObserver(observer)
-        onDispose { lifecycle.removeObserver(observer) }
+        onDispose {
+            lifecycle.removeObserver(observer)
+            // Without this every discarded map leaked its native map and GL surface.
+            moveMapTo(MapViewState.CREATED)
+            mapView.onDestroy()
+        }
+    }
+    LaunchedEffect(active, screenState) {
+        moveMapTo(
+            when {
+                !active || !screenState.isAtLeast(Lifecycle.State.STARTED) -> MapViewState.CREATED
+                screenState.isAtLeast(Lifecycle.State.RESUMED) -> MapViewState.RESUMED
+                else -> MapViewState.STARTED
+            },
+        )
     }
 
     LaunchedEffect(mapView) {
@@ -267,6 +288,9 @@ fun NavMap(
 
     AndroidView(factory = { mapView }, modifier = modifier)
 }
+
+/** MapView's own lifecycle steps, in order. */
+private enum class MapViewState { CREATED, STARTED, RESUMED }
 
 /** Create the map's own layers once (route, position, destination, towers), drawn above the base map. */
 private fun addLayers(s: Style) {

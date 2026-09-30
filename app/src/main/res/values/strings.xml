@@ -154,6 +154,8 @@
     <string name="navigation_method_hybrid_summary">Combines continuous dead reckoning with cell and network corrections. Recommended.</string>
     <string name="voice_title">Spoken directions</string>
     <string name="voice_summary">Speak turns, GPS status and route changes during navigation.</string>
+    <string name="haptics_title">Vibrate on turns and alerts</string>
+    <string name="haptics_summary">Different vibration patterns for upcoming turns, leaving the route, GPS lost or restored and arrival.</string>
     <string name="sec_cells">Cell towers</string>
     <string name="cells_show_map">Show towers on map</string>
     <string name="cells_types">Cell types</string>

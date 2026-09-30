@@ -8,6 +8,7 @@ import org.imunav.core.gnss.RawFix
 import org.imunav.core.imu.ImuSample
 import org.imunav.core.nav.EnglishPhrases
 import org.imunav.core.nav.GuidanceState
+import org.imunav.core.nav.NavAlert
 import org.imunav.core.nav.NavListener
 import org.imunav.core.nav.NavigationEngine
 import org.imunav.core.nav.NavigationMethod
@@ -43,7 +44,15 @@ class EngineSimulationTest {
 
     private fun truthPoint(d: Double): GeoPoint = if (d <= 800) proj.toGeo(0.0, d) else proj.toGeo(minOf(d - 800, 800.0), 800.0)
 
-    private class Result(val state: GuidanceState, val truthD: Double, val logs: List<String>, val spoken: List<String>, val reroutes: Int, val maxSBeforeTurn: Double)
+    private class Result(
+        val state: GuidanceState,
+        val truthD: Double,
+        val logs: List<String>,
+        val spoken: List<String>,
+        val reroutes: Int,
+        val maxSBeforeTurn: Double,
+        val alerts: List<NavAlert>,
+    )
 
     /**
      * @param speedWithGps true speed while GPS works
@@ -59,6 +68,7 @@ class EngineSimulationTest {
     ): Result {
         val logs = ArrayList<String>()
         val spoken = ArrayList<String>()
+        val alerts = ArrayList<NavAlert>()
         var reroutes = 0
         val listener = object : NavListener {
             override fun onLog(message: String) {
@@ -67,6 +77,10 @@ class EngineSimulationTest {
 
             override fun onSay(text: String, urgent: Boolean) {
                 spoken += text
+            }
+
+            override fun onAlert(alert: NavAlert) {
+                alerts += alert
             }
 
             override fun onRerouteRequested(from: GeoPoint, destination: GeoPoint, via: List<GeoPoint>, auto: Boolean) {
@@ -103,7 +117,7 @@ class EngineSimulationTest {
             engine.tick(t, hub.snapshot(t))
             if (d < turnStart) maxSBeforeTurn = maxOf(maxSBeforeTurn, engine.state.s)
         }
-        return Result(engine.state, d, logs, spoken, reroutes, maxSBeforeTurn)
+        return Result(engine.state, d, logs, spoken, reroutes, maxSBeforeTurn, alerts)
     }
 
     @Test
@@ -116,6 +130,9 @@ class EngineSimulationTest {
         assertEquals(PositionSource.DR, r.state.source)
         assertEquals("arrive", r.state.nextStep?.type)
         assertTrue(r.spoken.any { it.contains("GPS signal lost") }, "announced GPS loss: ${r.spoken}")
+        // Every vibration goes with a voice phrase; the turn is signalled "soon" before "now".
+        assertTrue(NavAlert.GPS_LOST in r.alerts, "vibrated on GPS loss: ${r.alerts}")
+        assertTrue(r.alerts.indexOf(NavAlert.TURN_SOON) in 0 until r.alerts.indexOf(NavAlert.TURN_NOW), "turn soon, then now: ${r.alerts}")
         // After the snap, along-track error only grows with the ~25 % speed misestimate.
         val err = abs(r.state.s - r.truthD)
         assertTrue(err < 200.0, "final error $err m")
@@ -143,6 +160,7 @@ class EngineSimulationTest {
         assertTrue(r.logs.any { it.startsWith("blind_deviation_missed_turn") }, "missed turn detected: ${r.logs}")
         assertTrue(r.spoken.any { it.contains("missed the turn") })
         assertTrue(r.reroutes >= 1, "auto reroute after the countdown")
+        assertTrue(NavAlert.OFF_ROUTE in r.alerts, "vibrated when the missed turn was detected: ${r.alerts}")
     }
 
     @Test
