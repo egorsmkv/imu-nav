@@ -22,7 +22,7 @@ object OpenCellIdDownloader {
     private const val GZIP_MAGIC = 0x1f8b
 
     /** Exports are big and the server is slow to start sending: allow 2 minutes of silence. */
-    private val http = Http.client.newBuilder().readTimeout(2, TimeUnit.MINUTES).build()
+    private val http get() = Http.client.newBuilder().readTimeout(2, TimeUnit.MINUTES).build()
 
     /**
      * Save the export for [mcc] to [target].

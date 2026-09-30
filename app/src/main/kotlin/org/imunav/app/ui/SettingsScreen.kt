@@ -255,10 +255,8 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                     )
                     val voiceEnabled by app.voiceEnabled.collectAsStateWithLifecycle()
                     SwitchItem(stringResource(R.string.voice_title), stringResource(R.string.voice_summary), voiceEnabled) { app.setVoiceEnabled(it) }
-                    if (app.haptics.available) {
-                        val hapticsEnabled by app.haptics.enabled.collectAsStateWithLifecycle()
-                        SwitchItem(stringResource(R.string.haptics_title), stringResource(R.string.haptics_summary), hapticsEnabled) { app.haptics.setEnabled(it) }
-                    }
+                    val hapticsEnabled by app.haptics.enabled.collectAsStateWithLifecycle()
+                    SwitchItem(stringResource(R.string.haptics_title), stringResource(R.string.haptics_summary), hapticsEnabled) { app.haptics.setEnabled(it) }
 
                     // ---------------- Car speed (OBD-II) and barometer
                     CarSensorsSection(app)
@@ -306,6 +304,14 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                     )
                     SwitchItem(stringResource(R.string.power_screen_on), stringResource(R.string.power_screen_on_summary), screenOn) { app.setKeepScreenOn(it) }
                     BatteryOptimizationItem(context)
+                }
+
+                SettingsGroup(
+                    title = stringResource(R.string.proxy_title),
+                    summary = stringResource(R.string.proxy_summary),
+                    icon = Icons.Filled.Settings,
+                ) {
+                    ProxySettingsSection(app.proxySettings)
                 }
 
                 SettingsGroup(

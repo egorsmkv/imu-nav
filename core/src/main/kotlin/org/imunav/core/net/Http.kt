@@ -1,10 +1,12 @@
 package org.imunav.core.net
 
+import okhttp3.Call
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import java.io.IOException
+import java.net.Proxy
 import java.util.concurrent.TimeUnit
 
 /**
@@ -22,14 +24,30 @@ object Http {
     const val USER_AGENT = "blind-driver-opensource/0.7"
 
     /** Default client: 20 s to connect, 60 s without data before a read fails. */
-    val client: OkHttpClient by lazy {
+    private val baseClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .connectTimeout(20, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
             .followRedirects(true)
             .addInterceptor(UserAgentInterceptor)
+            .addNetworkInterceptor(ProxyAuthorizationInterceptor)
             .build()
+    }
+
+    @Volatile private var configuredClient: Lazy<OkHttpClient>? = null
+
+    /** Current immutable client; long-lived consumers must read this when starting each new request. */
+    val client: OkHttpClient get() = configuredClient?.value ?: baseClient
+
+    /** MapLibre keeps this factory, so switching proxies also applies to new tile/style requests. */
+    val callFactory = Call.Factory { request -> client.newCall(request) }
+
+    /** Switch routes for future calls while retaining shared pools and allowing in-flight calls to finish. */
+    fun configureProxy(config: ProxyConfig) {
+        // Initial TLS/platform setup can be expensive: defer it to the first background request,
+        // not Application.onCreate or the Settings button's main-thread handler.
+        configuredClient = lazy { config.applyTo(baseClient.newBuilder()).build() }
     }
 
     /** Adds our User-Agent header to requests that do not set one themselves. */
@@ -38,6 +56,22 @@ object Http {
             val request = chain.request()
             if (request.header("User-Agent") != null) return chain.proceed(request)
             return chain.proceed(request.newBuilder().header("User-Agent", USER_AGENT).build())
+        }
+    }
+
+    /** Redirects may carry proxy headers forward: never send them inside TLS to an origin or on a direct/SOCKS route. */
+    private object ProxyAuthorizationInterceptor : Interceptor {
+        override fun intercept(chain: Interceptor.Chain): Response {
+            val request = chain.request()
+            val usesHttpProxy = chain.connection()?.route()?.proxy?.type() == Proxy.Type.HTTP
+            val safeToSend = usesHttpProxy && !request.url.isHttps
+            val outgoing = if (!safeToSend && request.header("Proxy-Authorization") != null) {
+                request.newBuilder().removeHeader("Proxy-Authorization").build()
+            } else {
+                request
+            }
+            // CONNECT authentication happens before network interceptors; TLS tunneling is unaffected.
+            return chain.proceed(outgoing)
         }
     }
 

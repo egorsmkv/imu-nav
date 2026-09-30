@@ -30,6 +30,19 @@ do not block **Continue with limited functionality**, and preparation continues 
 Reopen the checklist from **Settings → Set up IMU Nav**. Previously removed routing packs stay removed
 until explicitly reinstalled. IMU Nav is a research prototype, not a safety system.
 
+## Network proxy
+
+**Settings → Network proxy** supports the phone/system default (initial setting), explicit direct
+connections, an HTTP proxy with optional Basic username/password, or an unauthenticated SOCKS proxy.
+Enter a hostname/IP (not a URL) and port, then tap **Apply proxy settings**. Settings persist across
+restarts and take effect for new online map/style/tile requests, route/search requests, archive and
+tower downloads, and cell sync. Active downloads keep their existing connection/configuration.
+A custom proxy failure never silently falls back to a direct connection. This is not a VPN: Android
+location providers and other apps are unaffected. Offline features do not need a proxy.
+HTTP proxy credentials are stored in app-private preferences, not encrypted by the app, and never
+logged or included in exports. HTTP proxy authentication is not encrypted on the proxy connection;
+use only trusted proxies. SOCKS authentication is not supported.
+
 ## How it works
 
 The whole navigation state is one number, `s` — metres travelled along the route polyline.
@@ -337,6 +350,10 @@ Each group starts with a short explanation; the map group also distinguishes rou
 calculate routes) from map packs (which draw streets).
 The map opens at the phone's last GPS position (spoofed or out-of-area fixes are ignored) or, if set in
 **Settings → Everyday settings → Map start**, at a fixed place (typed coordinates, your position or the map centre).
+**Settings → Everyday settings → Navigation without GPS → Haptic feedback** disables both navigation
+vibrations and app tap feedback. The preference is saved, applies immediately and cancels active
+navigation vibrations; it remains visible even on devices without a vibrator. When enabled, tap
+feedback still follows Android's touch-feedback setting. Vibration service calls run off the UI thread.
 The interface and voice follow the phone's language (Ukrainian, English or Russian) unless changed in
 **Settings → Everyday settings → Language**, and the phone's light/dark theme. Spoken directions can be disabled under
 **Settings → Everyday settings → Navigation without GPS**. The phone vibrates as well, with a different

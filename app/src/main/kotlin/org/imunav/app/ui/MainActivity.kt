@@ -97,7 +97,9 @@ class MainActivity : ComponentActivity() {
         val app = graph
         setContent {
             BlindDriverTheme {
-                AppRoot(app, hasLocation, ::requestPermissions, ::setKeepScreenOn, ::refreshPermissions)
+                HapticFeedbackProvider(app.haptics) {
+                    AppRoot(app, hasLocation, ::requestPermissions, ::setKeepScreenOn, ::refreshPermissions)
+                }
             }
         }
     }

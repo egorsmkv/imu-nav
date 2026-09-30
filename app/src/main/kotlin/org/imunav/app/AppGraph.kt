@@ -16,6 +16,7 @@ import org.imunav.app.cells.CellManager
 import org.imunav.app.cells.CellStatus
 import org.imunav.app.haptics.Haptics
 import org.imunav.app.maps.OfflineMap
+import org.imunav.app.net.ProxySettings
 import org.imunav.app.obd.ObdLink
 import org.imunav.app.power.PowerMode
 import org.imunav.app.power.PowerPolicy
@@ -112,6 +113,9 @@ data class UiState(
  * (background work is done in coroutines and its results are posted back).
  */
 class AppGraph(private val context: Context) {
+    /** Initialize networking preferences before any manager constructs an HTTP request. */
+    val proxySettings = ProxySettings(context)
+
     /** Coroutine scope for the app's lifetime; runs on the main thread unless told otherwise. */
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val tripLog = TripLog(context)

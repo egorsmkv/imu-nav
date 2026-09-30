@@ -41,7 +41,7 @@ class OsrmRouter(private val baseUrl: String = "https://router.project-osrm.org"
         throw IOException("OSRM ${e.message}", e)
     }
 
-    private val http = Http.client.newBuilder().connectTimeout(15, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build()
+    private val http get() = Http.client.newBuilder().connectTimeout(15, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build()
 
     companion object {
         /** Turn an OSRM JSON answer into a [Route] (steps, geometry, speed limits). */

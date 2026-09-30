@@ -19,46 +19,53 @@ import java.util.concurrent.Executors
  * from "GPS lost" by feel, even with the sound off or in a loud car.
  *
  * Button taps use Compose's `LocalHapticFeedback` instead (it follows the phone's touch-feedback
- * setting); this class is only for alerts during navigation and can be switched off in Settings.
+ * setting). The same saved switch gates those taps and the navigation alerts managed here.
  */
 class Haptics(context: Context) {
     private val prefs = context.getSharedPreferences("haptics", Context.MODE_PRIVATE)
 
-    private val vibrator: Vibrator? =
+    private val vibratorDelegate = lazy {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             context.getSystemService(VibratorManager::class.java)?.defaultVibrator
         } else {
             context.getSystemService(Vibrator::class.java)
         }
+    }
+    private val vibrator: Vibrator? by vibratorDelegate
 
     /** Talking to the vibrator service is a system call; keep it off the main (UI) thread. */
     private val worker = Executors.newSingleThreadExecutor { Thread(it, "haptics") }
 
     private val _enabled = MutableStateFlow(prefs.getBoolean("enabled", true))
 
-    /** "Vibrate on turns and alerts" in Settings. */
+    /** App-wide haptic feedback preference, including UI taps. */
     val enabled: StateFlow<Boolean> = _enabled.asStateFlow()
 
-    val available: Boolean get() = vibrator?.hasVibrator() == true
-
+    /** Stop active navigation feedback on disable; queued alerts also recheck the current preference. */
     fun setEnabled(value: Boolean) {
         prefs.edit { putBoolean("enabled", value) }
         _enabled.value = value
+        if (!value) worker.execute { runCatching { if (vibratorDelegate.isInitialized()) vibrator?.cancel() } }
     }
 
     /** Vibrate the pattern for [alert] (does nothing when switched off or without a vibrator). */
     fun play(alert: NavAlert) {
         if (!_enabled.value) return
-        val v = vibrator ?: return
         val timings = patternFor(alert)
         worker.execute {
-            // -1 = play once, no repeat.
-            val effect = VibrationEffect.createWaveform(timings, -1)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                v.vibrate(effect, VibrationAttributes.createForUsage(VibrationAttributes.USAGE_NOTIFICATION))
-            } else {
-                @Suppress("DEPRECATION") // the replacement (VibrationAttributes) needs Android 13
-                v.vibrate(effect, NAVIGATION_AUDIO)
+            if (!_enabled.value) return@execute
+            // Vibration is optional: a missing/unavailable system service must not stop navigation.
+            runCatching {
+                val v = vibrator ?: return@runCatching
+                if (!v.hasVibrator()) return@runCatching
+                // -1 = play once, no repeat.
+                val effect = VibrationEffect.createWaveform(timings, -1)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    v.vibrate(effect, VibrationAttributes.createForUsage(VibrationAttributes.USAGE_NOTIFICATION))
+                } else {
+                    @Suppress("DEPRECATION") // the replacement (VibrationAttributes) needs Android 13
+                    v.vibrate(effect, NAVIGATION_AUDIO)
+                }
             }
         }
     }

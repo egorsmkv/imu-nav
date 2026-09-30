@@ -116,11 +116,11 @@ object CellMerge {
  * @param apiKey optional; sent as `Authorization: Bearer <key>`
  * @param deviceId random id per install; the server uses it to count each phone once and to rate-limit
  */
-class CellSyncClient(baseUrl: String, private val apiKey: String? = null, private val deviceId: String? = null, httpClient: OkHttpClient = Http.client) {
+class CellSyncClient(baseUrl: String, private val apiKey: String? = null, private val deviceId: String? = null, private val httpClient: OkHttpClient? = null) {
     private val base = baseUrl.trim().trimEnd('/')
 
     /** Downloads can be large: allow 2 minutes without data (the default client allows 60 s). */
-    private val http = httpClient.newBuilder().readTimeout(2, TimeUnit.MINUTES).build()
+    private val http get() = (httpClient ?: Http.client).newBuilder().readTimeout(2, TimeUnit.MINUTES).build()
 
     init {
         require(base.startsWith("http://") || base.startsWith("https://")) { "server URL must start with http:// or https://" }
