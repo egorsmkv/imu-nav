@@ -11,7 +11,6 @@ import android.hardware.SensorManager
 import android.location.GnssMeasurementsEvent
 import android.location.GnssStatus
 import android.location.Location
-import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Build
 import android.os.Handler
@@ -75,8 +74,8 @@ class SensorHub(
         if (missing.isEmpty()) null else "No ${missing.joinToString()}: gyro turn detection off, stop detection from accelerometer only"
     }
 
-    private val gpsListener = LocationListener { hub.onFix(it.toRawFix(FixSource.GPS)) }
-    private val netListener = LocationListener { hub.onFix(it.toRawFix(FixSource.NET)) }
+    private val gpsListener = FixLocationListener { hub.onFix(it.toRawFix(FixSource.GPS)) }
+    private val netListener = FixLocationListener { hub.onFix(it.toRawFix(FixSource.NET)) }
 
     private val gnssStatusCallback = object : GnssStatus.Callback() {
         override fun onSatelliteStatusChanged(status: GnssStatus) {

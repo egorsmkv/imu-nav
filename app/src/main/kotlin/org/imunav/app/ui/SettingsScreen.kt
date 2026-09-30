@@ -143,7 +143,7 @@ private const val TELEGRAM_GROUP_URL = "https://t.me/imu_nav"
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: () -> Unit) {
+fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: () -> Unit, onSetup: () -> Unit) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
     val c = ui.cells
@@ -208,6 +208,10 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                 }
 
                 SettingsIntro()
+                TextButton(onClick = {
+                    save()
+                    onSetup()
+                }) { Text(stringResource(R.string.setup_title)) }
 
                 SettingsGroup(
                     title = stringResource(R.string.settings_group_everyday),

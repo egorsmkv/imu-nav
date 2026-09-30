@@ -430,4 +430,39 @@
         <item quantity="one">Copied %1$d event</item>
         <item quantity="other">Copied %1$d events</item>
     </plurals>
+    <!-- First-run permission and offline-data checklist. -->
+    <string name="setup_title">Set up IMU Nav</string>
+    <string name="setup_intro">Allow access for navigation and prepare offline data. You can continue if you decline access. IMU Nav is a research prototype, not a safety system.</string>
+    <string name="setup_location">Precise location</string>
+    <string name="setup_location_hint">Needed for GPS measurements and nearby cell towers. Choose precise location in Android’s dialog.</string>
+    <string name="setup_notifications">Notifications</string>
+    <string name="setup_notifications_hint">Show navigation status while the app is in the background.</string>
+    <string name="setup_activity">Physical activity</string>
+    <string name="setup_activity_hint">Use the step counter for walking navigation.</string>
+    <string name="setup_bluetooth">Nearby devices</string>
+    <string name="setup_bluetooth_hint">Read vehicle speed from a paired Bluetooth OBD-II adapter. Granting access does not connect an adapter.</string>
+    <string name="setup_battery_hint">Allow uninterrupted navigation when the screen is off. Android asks you to confirm the battery exemption separately.</string>
+    <string name="setup_enable_permissions">Enable permissions</string>
+    <string name="setup_granted">Allowed</string>
+    <string name="setup_not_granted">Not allowed</string>
+    <string name="setup_open_settings">Open Android settings</string>
+    <string name="setup_approximate">Approximate location is enabled. Precise location is still needed for GPS and cell scanning.</string>
+    <string name="setup_data">Offline data</string>
+    <string name="setup_routing">Routing and address search</string>
+    <string name="setup_cells">Cell tower database</string>
+    <string name="setup_checking">Checking installed data…</string>
+    <string name="setup_preparing">Preparing bundled data…</string>
+    <string name="setup_ready">Ready</string>
+    <string name="setup_unavailable">No archive bundled in this build. Import or download data in Settings.</string>
+    <string name="setup_removed">The built-in pack was previously removed. You can reinstall it in Settings.</string>
+    <string name="setup_failed">Preparation failed</string>
+    <string name="setup_retry">Retry</string>
+    <string name="setup_continue">Continue</string>
+    <string name="setup_continue_limited">Continue with limited functionality</string>
+    <string name="setup_limited_hint">Missing permissions limit positioning, walking, OBD speed, notifications or background operation. Offline routing and cell positioning need their data. Preparation continues in the background.</string>
+    <string name="setup_manage_data">Manage offline data in Settings</string>
+    <string name="setup_system_unavailable">Android could not open the requested settings. You can enable access later in the system settings.</string>
+    <string name="setup_location_services">Phone location</string>
+    <string name="setup_location_services_hint">Location must be switched on in Android settings for GPS and cell scanning. Granting permission alone does not switch it on.</string>
+    <string name="setup_location_off">Location is switched off</string>
 </resources>

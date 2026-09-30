@@ -17,6 +17,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.imunav.app.R
 import org.imunav.app.search.AndroidSearchDb
+import org.imunav.app.setup.Preparation
 import org.imunav.core.cells.ResumableHttpInputStream
 import org.imunav.core.geo.GeoPoint
 import org.imunav.core.route.Route
@@ -32,6 +33,7 @@ import kotlin.coroutines.coroutineContext
 
 /** State of the offline routing pack, for the Settings screen. */
 data class OfflineRoutingStatus(
+    val preparation: Preparation = Preparation.CHECKING,
     /** The installed pack, if any. */
     val pack: PackInfo? = null,
     /** Pack shipped inside the APK (assets/routing), if any. */
@@ -70,17 +72,42 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
     val status: StateFlow<OfflineRoutingStatus> = _status.asStateFlow()
 
     /** Metadata of the pack bundled in the APK (assets/routing/pack.json next to pack.zip). */
-    private val bundledInfo: PackInfo? = runCatching {
-        context.assets.open(BUNDLED_ZIP).close() // the pack itself must be present, not just its description
-        context.assets.open(BUNDLED_INFO).use { PackInfo.parse(it.readBytes().decodeToString()) }
-    }.getOrNull()
+    private var bundledInfo: PackInfo? = null
 
     init {
-        _status.update { it.copy(bundled = bundledInfo) }
-        scope.launch {
+        scope.launch { prepareBundled() }
+    }
+
+    /** Discover assets and load existing data off the main thread before deciding to extract. */
+    private suspend fun prepareBundled() {
+        runCatching {
+            bundledInfo = withContext(Dispatchers.IO) {
+                if (context.assets.list("routing")?.contains("pack.zip") == true) {
+                    context.assets.open(BUNDLED_INFO).use { PackInfo.parse(it.readBytes().decodeToString()) }
+                        ?: throw IOException(str(R.string.routing_not_a_pack))
+                } else {
+                    null
+                }
+            }
+            _status.update { it.copy(bundled = bundledInfo) }
             withContext(Dispatchers.IO) { load() }
             installBundledIfNeeded()
+        }.onFailure { error ->
+            if (error is CancellationException) throw error
+            log("offline_routing_load_failed ${error.message}")
+            if (bundledInfo != null) {
+                installBundled()
+            } else {
+                _status.update { it.copy(preparation = Preparation.FAILED, message = str(R.string.task_failed, error.message.orEmpty())) }
+            }
         }
+    }
+
+    /** Retry discovery, loading or extraction without overlapping an existing routing task. */
+    fun retryBundled() {
+        if (task?.isActive == true || _status.value.preparation in setOf(Preparation.CHECKING, Preparation.PREPARING)) return
+        _status.update { it.copy(preparation = Preparation.CHECKING) }
+        scope.launch { prepareBundled() }
     }
 
     /**
@@ -88,18 +115,44 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
      * Skipped when a pack at least as new is installed, or the user removed this bundled pack.
      */
     private fun installBundledIfNeeded() {
-        val bundled = bundledInfo ?: return
+        val bundled = bundledInfo
+        if (bundled == null) {
+            _status.update {
+                it.copy(
+                    preparation = when {
+                        it.loaded -> Preparation.READY
+                        it.pack != null -> Preparation.FAILED
+                        else -> Preparation.UNAVAILABLE
+                    },
+                    message = if (it.pack != null && !it.loaded) str(R.string.routing_load_failed) else it.message,
+                )
+            }
+            return
+        }
         val installed = _status.value.pack
-        if (installed != null && installed.builtAt >= bundled.builtAt) return
-        if (prefs.getString("bundled_declined", null) == bundled.builtAt) return
+        if (installed != null && installed.builtAt > bundled.builtAt && !_status.value.loaded) {
+            // A load failure must not silently downgrade a user's newer imported pack.
+            _status.update { it.copy(preparation = Preparation.FAILED, message = str(R.string.routing_load_failed)) }
+            return
+        }
+        if (installed != null && installed.builtAt >= bundled.builtAt && _status.value.loaded) {
+            _status.update { it.copy(preparation = Preparation.READY) }
+            return
+        }
+        if (prefs.getString("bundled_declined", null) == bundled.builtAt) {
+            _status.update { it.copy(preparation = Preparation.REMOVED) }
+            return
+        }
         installBundled()
     }
 
     /** Unpack the pack shipped with the app (also offered in Settings after it was removed). */
     fun installBundled() {
         val bundled = bundledInfo ?: return
+        if (task?.isActive == true) return
         prefs.edit { remove("bundled_declined") }
-        runTask(str(R.string.routing_preparing_builtin, 0, (bundled.sizeBytes / 1_048_576).toInt())) {
+        _status.update { it.copy(preparation = Preparation.PREPARING) }
+        runTask(str(R.string.routing_preparing_builtin, 0, (bundled.sizeBytes / 1_048_576).toInt()), bundled = true) {
             withContext(Dispatchers.IO) {
                 context.assets.open(BUNDLED_ZIP).use { install(it, totalBytes = bundled.sizeBytes) }
             }
@@ -112,6 +165,7 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
     /** Open the installed pack (graph + search index); runs in the background. */
     @Synchronized
     private fun load() {
+        _status.update { it.copy(loaded = false, walking = false) }
         graph?.close()
         graph = null
         searchDb?.close()
@@ -202,6 +256,7 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
             current.deleteRecursively()
             load()
         }
+        _status.update { it.copy(preparation = Preparation.REMOVED) }
         str(R.string.routing_removed)
     }
 
@@ -263,12 +318,13 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
     }
 
     /** Run one install / download at a time; the returned text is shown when it finishes. */
-    private fun runTask(start: String, block: suspend () -> String) {
+    private fun runTask(start: String, bundled: Boolean = false, block: suspend () -> String) {
         if (task?.isActive == true) return
         task = scope.launch {
             _status.update { it.copy(busy = start, message = null) }
+            var succeeded = false
             val msg = try {
-                block()
+                block().also { succeeded = true }
             } catch (_: CancellationException) {
                 str(R.string.task_cancelled)
             } catch (_: InterruptedException) {
@@ -284,7 +340,17 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
                 str(R.string.task_failed, e.javaClass.simpleName)
             }
             withContext(NonCancellable + Dispatchers.IO) { File(root, "staging").takeIf { it.exists() }?.deleteRecursively() }
-            _status.update { it.copy(busy = null, message = msg) }
+            _status.update {
+                it.copy(
+                    busy = null,
+                    message = msg,
+                    preparation = if (bundled) {
+                        if (succeeded && it.loaded) Preparation.READY else Preparation.FAILED
+                    } else {
+                        if (it.loaded) Preparation.READY else it.preparation
+                    },
+                )
+            }
         }
     }
 }

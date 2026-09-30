@@ -19,12 +19,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -53,9 +56,25 @@ class MainActivity : ComponentActivity() {
     private var hasLocation by mutableStateOf(false)
 
     /** The system permission dialog; the lambda runs with the user's answers. */
-    private val permissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
-        hasLocation = result[Manifest.permission.ACCESS_FINE_LOCATION] == true
-        if (hasLocation) graph.startSensing()
+    private val permissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        refreshPermissions()
+    }
+
+    /** Read actual grants, including changes made outside the app in Android Settings. */
+    private fun refreshPermissions() {
+        val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val changed = granted != hasLocation
+        hasLocation = granted
+        if (granted) {
+            graph.startSensing()
+        } else if (changed && !graph.engine.state.active) {
+            graph.stopSensing()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refreshPermissions()
     }
 
     /** Show the system dialog for location (and, on Android 13+, notification) permission. */
@@ -75,11 +94,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         hasLocation = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (!hasLocation) requestPermissions()
         val app = graph
         setContent {
             BlindDriverTheme {
-                AppRoot(app, hasLocation, ::requestPermissions, ::setKeepScreenOn)
+                AppRoot(app, hasLocation, ::requestPermissions, ::setKeepScreenOn, ::refreshPermissions)
             }
         }
     }
@@ -110,11 +128,14 @@ class MainActivity : ComponentActivity() {
 
 /** Picks the screen to show and wires the back button. */
 @Composable
-private fun AppRoot(app: AppGraph, hasLocation: Boolean, requestPermission: () -> Unit, keepScreenOn: (Boolean) -> Unit) {
+private fun AppRoot(app: AppGraph, hasLocation: Boolean, requestPermission: () -> Unit, keepScreenOn: (Boolean) -> Unit, refreshPermissions: () -> Unit) {
     val ui by app.ui.collectAsStateWithLifecycle()
     // rememberSaveable: survives Activity re-creation (rotation, language switch).
     var screen by rememberSaveable { mutableStateOf(Screen.MAP) }
     var tripId by rememberSaveable { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    val setupPreferences = remember(context) { context.getSharedPreferences("setup", Context.MODE_PRIVATE) }
+    var showSetup by rememberSaveable { mutableStateOf(!setupPreferences.getBoolean("completed", false)) }
 
     // While no navigation runs, keep position and diagnostics fresh (the service drives it otherwise).
     // Only while the app is visible: a hidden composition must not keep waking the CPU.
@@ -131,7 +152,7 @@ private fun AppRoot(app: AppGraph, hasLocation: Boolean, requestPermission: () -
     val screenOnSetting by app.keepScreenOn.collectAsStateWithLifecycle()
     LaunchedEffect(ui.guidance.active, screenOnSetting) { keepScreenOn(ui.guidance.active && screenOnSetting) }
 
-    BackHandler(enabled = screen != Screen.MAP) {
+    BackHandler(enabled = screen != Screen.MAP && !showSetup) {
         screen = when (screen) {
             Screen.LOG -> Screen.SETTINGS
             Screen.TRIP -> Screen.HISTORY
@@ -149,11 +170,28 @@ private fun AppRoot(app: AppGraph, hasLocation: Boolean, requestPermission: () -
             onOpenSettings = { screen = Screen.SETTINGS },
             onOpenLog = { screen = Screen.LOG },
             onOpenHistory = { screen = Screen.HISTORY },
-            mapActive = screen == Screen.MAP,
+            mapActive = screen == Screen.MAP && !showSetup,
         )
         if (screen != Screen.MAP) {
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).blockTouchesBelow()) {
-                OtherScreen(app, ui, screen, tripId, history, onScreen = { screen = it }, onTrip = { tripId = it })
+                OtherScreen(app, ui, screen, tripId, history, onScreen = { screen = it }, onTrip = { tripId = it }, onSetup = { showSetup = true })
+            }
+        }
+        if (showSetup) {
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).blockTouchesBelow()) {
+                OnboardingScreen(
+                    app = app,
+                    onPermissionsChanged = refreshPermissions,
+                    onContinue = {
+                        setupPreferences.edit { putBoolean("completed", true) }
+                        showSetup = false
+                    },
+                    onSettings = {
+                        setupPreferences.edit { putBoolean("completed", true) }
+                        showSetup = false
+                        screen = Screen.SETTINGS
+                    },
+                )
             }
         }
     }
@@ -161,7 +199,16 @@ private fun AppRoot(app: AppGraph, hasLocation: Boolean, requestPermission: () -
 
 /** Every screen except the map (drawn on top of it). */
 @Composable
-private fun OtherScreen(app: AppGraph, ui: UiState, screen: Screen, tripId: String?, history: List<TripSummary>, onScreen: (Screen) -> Unit, onTrip: (String) -> Unit) {
+private fun OtherScreen(
+    app: AppGraph,
+    ui: UiState,
+    screen: Screen,
+    tripId: String?,
+    history: List<TripSummary>,
+    onScreen: (Screen) -> Unit,
+    onTrip: (String) -> Unit,
+    onSetup: () -> Unit,
+) {
     when (screen) {
         Screen.MAP -> Unit
 
@@ -179,7 +226,7 @@ private fun OtherScreen(app: AppGraph, ui: UiState, screen: Screen, tripId: Stri
             }
         }
 
-        Screen.SETTINGS -> SettingsScreen(ui, app, onBack = { onScreen(Screen.MAP) }, onOpenLog = { onScreen(Screen.LOG) })
+        Screen.SETTINGS -> SettingsScreen(ui, app, onBack = { onScreen(Screen.MAP) }, onOpenLog = { onScreen(Screen.LOG) }, onSetup = onSetup)
 
         Screen.LOG -> LogScreen(app, onBack = { onScreen(Screen.SETTINGS) })
     }

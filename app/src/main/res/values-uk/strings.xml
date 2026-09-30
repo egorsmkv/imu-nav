@@ -440,4 +440,39 @@
         <item quantity="many">Скопійовано %1$d подій</item>
         <item quantity="other">Скопійовано %1$d події</item>
     </plurals>
+    <!-- First-run permission and offline-data checklist. -->
+    <string name="setup_title">Налаштування IMU Nav</string>
+    <string name="setup_intro">Надайте доступ для навігації та підготуйте офлайн-дані. Ви можете продовжити, якщо відмовите в доступі. IMU Nav — дослідницький прототип, а не система безпеки.</string>
+    <string name="setup_location">Точне місцезнаходження</string>
+    <string name="setup_location_hint">Потрібне для вимірювань GPS і пошуку найближчих веж. Виберіть точне місцезнаходження в діалозі Android.</string>
+    <string name="setup_notifications">Сповіщення</string>
+    <string name="setup_notifications_hint">Показують стан навігації, коли застосунок працює у фоні.</string>
+    <string name="setup_activity">Фізична активність</string>
+    <string name="setup_activity_hint">Використання лічильника кроків для пішохідної навігації.</string>
+    <string name="setup_bluetooth">Пристрої поблизу</string>
+    <string name="setup_bluetooth_hint">Зчитування швидкості авто зі спареного Bluetooth-адаптера OBD-II. Надання доступу не підключає адаптер.</string>
+    <string name="setup_battery_hint">Дозвольте безперервну навігацію з вимкненим екраном. Android окремо запитає підтвердження вимкнення оптимізації батареї.</string>
+    <string name="setup_enable_permissions">Надати дозволи</string>
+    <string name="setup_granted">Дозволено</string>
+    <string name="setup_not_granted">Не дозволено</string>
+    <string name="setup_open_settings">Відкрити налаштування Android</string>
+    <string name="setup_approximate">Доступне приблизне місцезнаходження. Для GPS і сканування веж потрібне точне.</string>
+    <string name="setup_data">Офлайн-дані</string>
+    <string name="setup_routing">Маршрути та пошук адрес</string>
+    <string name="setup_cells">База даних стільникових веж</string>
+    <string name="setup_checking">Перевірка встановлених даних…</string>
+    <string name="setup_preparing">Підготовка вбудованих даних…</string>
+    <string name="setup_ready">Готово</string>
+    <string name="setup_unavailable">Ця збірка не містить архіву. Імпортуйте або завантажте дані в налаштуваннях.</string>
+    <string name="setup_removed">Вбудований пакет було видалено раніше. Його можна встановити знову в налаштуваннях.</string>
+    <string name="setup_failed">Не вдалося підготувати дані</string>
+    <string name="setup_retry">Повторити</string>
+    <string name="setup_continue">Продовжити</string>
+    <string name="setup_continue_limited">Продовжити з обмеженими можливостями</string>
+    <string name="setup_limited_hint">Без дозволів обмежено позиціювання, ходьбу, швидкість OBD, сповіщення або фонову роботу. Для офлайн-маршрутів і позиціювання за вежами потрібні дані. Підготовка триває у фоні.</string>
+    <string name="setup_manage_data">Офлайн-дані в налаштуваннях</string>
+    <string name="setup_system_unavailable">Android не зміг відкрити потрібні налаштування. Ви можете надати доступ пізніше в системних налаштуваннях.</string>
+    <string name="setup_location_services">Місцезнаходження на телефоні</string>
+    <string name="setup_location_services_hint">Для GPS і сканування веж увімкніть місцезнаходження в налаштуваннях Android. Надання дозволу не вмикає цей перемикач.</string>
+    <string name="setup_location_off">Місцезнаходження вимкнено</string>
 </resources>

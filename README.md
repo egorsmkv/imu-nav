@@ -5,6 +5,23 @@ implementation of the approach used by the BlindDriver app: instead of trusting 
 classifies every fix, and when GPS is unusable it dead-reckons **along the planned route** using
 the phone's IMU, network location and map knowledge.
 
+## First launch
+
+The setup checklist appears once on new and existing installations after the onboarding update.
+It offers precise location, notifications (Android 13+), physical activity (Android 10+), nearby
+devices for Bluetooth OBD-II (Android 12+), and a separate battery optimization exemption. Grants
+enable access; they do not turn on walking mode or connect an OBD adapter. The checklist also checks
+the phone's Location switch and opens system settings if it is off. Disabling Location is supported
+on Android 8–10 as well as newer phones; it does not stop the app or its inertial navigation. Declined permissions can
+be enabled later, including through Android Settings when the permission dialog is no longer offered.
+
+The checklist shows background preparation of bundled routing/address-search data and the cell tower
+database, with retries after failures. Play builds can include the routing archive; F-Droid builds
+require a routing pack imported or downloaded in Settings. Missing archives or denied permissions
+do not block **Continue with limited functionality**, and preparation continues in the background.
+Reopen the checklist from **Settings → Set up IMU Nav**. Previously removed routing packs stay removed
+until explicitly reinstalled. IMU Nav is a research prototype, not a safety system.
+
 ## How it works
 
 The whole navigation state is one number, `s` — metres travelled along the route polyline.

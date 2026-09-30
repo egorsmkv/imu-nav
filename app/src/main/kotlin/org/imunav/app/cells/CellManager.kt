@@ -8,6 +8,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -16,12 +17,14 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.imunav.app.R
+import org.imunav.app.setup.Preparation
 import org.imunav.core.cells.CellSyncClient
 import org.imunav.core.cells.CellTower
 import org.imunav.core.cells.Radio
 import org.imunav.core.cells.ResumableHttpInputStream
 import org.imunav.core.gnss.PositioningHub
 import java.io.File
+import java.io.IOException
 import java.io.InputStream
 import java.security.MessageDigest
 import java.text.DateFormat
@@ -44,6 +47,7 @@ data class TowerLayer(
 
 /** Offline cell positioning status for the UI. */
 data class CellStatus(
+    val preparation: Preparation = Preparation.CHECKING,
     /** Cells of enabled types the modem sees now. */
     val seen: Int = 0,
     /** How many of them are in the database (used for the position). */
@@ -114,8 +118,13 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
 
     init {
         scope.launch {
-            reloadCounts()
-            installBundledIfNeeded()
+            runCatching {
+                reloadCounts()
+                installBundledIfNeeded()
+            }.onFailure { error ->
+                if (error is CancellationException) throw error
+                _status.update { it.copy(preparation = Preparation.FAILED, message = str(R.string.task_failed, error.message.orEmpty())) }
+            }
             if (prefs.getBoolean("auto_sync", false) && System.currentTimeMillis() - prefs.getLong("last_sync_ms", 0) > AUTO_SYNC_INTERVAL_MS) sync(auto = true)
         }
     }
@@ -352,27 +361,61 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
     private suspend fun installBundledIfNeeded(force: Boolean = false) {
         // The Android build un-gzips *.gz assets and drops the extension, so accept either name.
         // Finding and hashing the asset reads tens of MB: done on the IO dispatcher, not the main thread.
-        val (asset, hash) = withContext(Dispatchers.IO) { bundledAssetAndHash() } ?: return
-        if (!force && prefs.getString("bundled_sha256", null) == hash) return
+        _status.update { it.copy(preparation = Preparation.CHECKING) }
+        val bundled = runCatching { withContext(Dispatchers.IO) { bundledAssetAndHash() } }
+            .getOrElse { error ->
+                if (error is CancellationException) throw error
+                _status.update { it.copy(preparation = Preparation.FAILED, message = str(R.string.task_failed, error.message.orEmpty())) }
+                return
+            }
+        if (bundled == null) {
+            _status.update { it.copy(preparation = Preparation.UNAVAILABLE) }
+            return
+        }
+        val (asset, hash) = bundled
+        if (!force && prefs.getString("bundled_sha256", null) == hash && (_status.value.counts[CellSource.BUNDLED] ?: 0) > 0) {
+            _status.update { it.copy(preparation = Preparation.READY) }
+            return
+        }
+        if (task?.isActive == true) {
+            _status.update { it.copy(preparation = Preparation.FAILED) }
+            return
+        }
+        _status.update { it.copy(preparation = Preparation.PREPARING) }
         runTask(str(R.string.task_bundled_progress, 0)) {
+            // Invalidate before clearing: a killed or failed import must never certify partial rows.
+            prefs.edit { remove("bundled_sha256") }
             val n = withContext(Dispatchers.IO) {
                 db.clear(CellSource.BUNDLED)
                 context.assets.open(asset).use { input ->
+                    val job = coroutineContext
                     db.importStream(CellSource.BUNDLED, input) { _, kept ->
                         progress(str(R.string.task_bundled_progress, kept))
-                        true
+                        job.isActive
                     }
                 }
             }
+            coroutineContext.ensureActive()
+            if (n == 0L) throw IOException(str(R.string.setup_failed))
             prefs.edit { putString("bundled_sha256", hash) }
+            _status.update { it.copy(preparation = Preparation.READY) }
             str(R.string.task_bundled_done, n)
         }
+        task?.join()
+        if (_status.value.preparation == Preparation.PREPARING) _status.update { it.copy(preparation = Preparation.FAILED) }
+    }
+
+    /** Retry a failed built-in import without overlapping another database task. */
+    fun retryBundled() {
+        if (task?.isActive == true || _status.value.preparation in setOf(Preparation.CHECKING, Preparation.PREPARING)) return
+        _status.update { it.copy(preparation = Preparation.CHECKING) }
+        scope.launch { installBundledIfNeeded() }
     }
 
     /** The bundled tower asset's name and SHA-256, or null if the APK has none (IO thread). */
     private fun bundledAssetAndHash(): Pair<String, String>? {
         val asset = BUNDLED_ASSETS.firstOrNull { name -> runCatching { context.assets.open(name).close() }.isSuccess } ?: return null
-        val hash = runCatching {
+        val hash = run {
             context.assets.open(asset).use { input ->
                 val md = MessageDigest.getInstance("SHA-256")
                 val buf = ByteArray(1 shl 16)
@@ -383,7 +426,7 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
                 }
                 md.digest().joinToString("") { "%02x".format(it) }
             }
-        }.getOrNull() ?: return null
+        }
         return asset to hash
     }
 

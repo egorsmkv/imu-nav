@@ -440,4 +440,39 @@
         <item quantity="many">Скопировано %1$d событий</item>
         <item quantity="other">Скопировано %1$d события</item>
     </plurals>
+    <!-- First-run permission and offline-data checklist. -->
+    <string name="setup_title">Настройка IMU Nav</string>
+    <string name="setup_intro">Предоставьте доступ для навигации и подготовьте офлайн-данные. Вы можете продолжить, если откажете в доступе. IMU Nav — исследовательский прототип, а не система безопасности.</string>
+    <string name="setup_location">Точное местоположение</string>
+    <string name="setup_location_hint">Нужно для измерений GPS и поиска ближайших вышек. Выберите точное местоположение в диалоге Android.</string>
+    <string name="setup_notifications">Уведомления</string>
+    <string name="setup_notifications_hint">Показывают состояние навигации, когда приложение работает в фоне.</string>
+    <string name="setup_activity">Физическая активность</string>
+    <string name="setup_activity_hint">Использование счётчика шагов для пешеходной навигации.</string>
+    <string name="setup_bluetooth">Устройства поблизости</string>
+    <string name="setup_bluetooth_hint">Чтение скорости автомобиля со сопряжённого Bluetooth-адаптера OBD-II. Предоставление доступа не подключает адаптер.</string>
+    <string name="setup_battery_hint">Разрешите непрерывную навигацию с выключенным экраном. Android отдельно запросит подтверждение отключения оптимизации батареи.</string>
+    <string name="setup_enable_permissions">Предоставить разрешения</string>
+    <string name="setup_granted">Разрешено</string>
+    <string name="setup_not_granted">Не разрешено</string>
+    <string name="setup_open_settings">Открыть настройки Android</string>
+    <string name="setup_approximate">Доступно приблизительное местоположение. Для GPS и сканирования вышек нужно точное.</string>
+    <string name="setup_data">Офлайн-данные</string>
+    <string name="setup_routing">Маршруты и поиск адресов</string>
+    <string name="setup_cells">База данных сотовых вышек</string>
+    <string name="setup_checking">Проверка установленных данных…</string>
+    <string name="setup_preparing">Подготовка встроенных данных…</string>
+    <string name="setup_ready">Готово</string>
+    <string name="setup_unavailable">Эта сборка не содержит архива. Импортируйте или загрузите данные в настройках.</string>
+    <string name="setup_removed">Встроенный пакет был удалён ранее. Его можно установить снова в настройках.</string>
+    <string name="setup_failed">Не удалось подготовить данные</string>
+    <string name="setup_retry">Повторить</string>
+    <string name="setup_continue">Продолжить</string>
+    <string name="setup_continue_limited">Продолжить с ограниченными возможностями</string>
+    <string name="setup_limited_hint">Без разрешений ограничены позиционирование, ходьба, скорость OBD, уведомления или фоновая работа. Для офлайн-маршрутов и позиционирования по вышкам нужны данные. Подготовка продолжается в фоне.</string>
+    <string name="setup_manage_data">Офлайн-данные в настройках</string>
+    <string name="setup_system_unavailable">Android не смог открыть нужные настройки. Вы можете предоставить доступ позже в системных настройках.</string>
+    <string name="setup_location_services">Местоположение на телефоне</string>
+    <string name="setup_location_services_hint">Для GPS и сканирования вышек включите местоположение в настройках Android. Предоставление разрешения не включает этот переключатель.</string>
+    <string name="setup_location_off">Местоположение выключено</string>
 </resources>

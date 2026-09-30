@@ -153,6 +153,7 @@ dependencies {
     implementation(libs.maplibre.android)
 
     coreLibraryDesugaring(libs.desugar.jdk.libs)
+    testImplementation(libs.junit)
 }
 
 /**
@@ -201,7 +202,8 @@ dependencies {
 // component (osmosis-osm-binary, LGPL 3.0) and its Protocol Buffers dependency.
 configurations.configureEach {
     if (name.endsWith("RuntimeClasspath")) {
-        attributes.attribute(graphHopperPatched, true)
+        // Local JVM tests need the app's original compiled classes, not APK artifact transforms.
+        if (!name.contains("UnitTest")) attributes.attribute(graphHopperPatched, true)
         exclude(group = "org.openstreetmap.osmosis", module = "osmosis-osm-binary")
         exclude(group = "com.google.protobuf", module = "protobuf-java")
     }
@@ -229,8 +231,9 @@ val verifyFdroidDependencies = tasks.register("verifyFdroidDependencies") {
     doLast {
         val runtime = configurations.getByName("fdroidReleaseRuntimeClasspath")
         val forbidden =
-            runtime.resolvedConfiguration.resolvedArtifacts
-                .map { artifact -> "${artifact.moduleVersion.id.group}:${artifact.name}" }
+            // Inspect dependency coordinates without selecting transformed artifact variants.
+            runtime.incoming.resolutionResult.allComponents
+                .mapNotNull { component -> component.moduleVersion?.let { "${it.group}:${it.name}" } }
                 .filter { coordinate -> forbiddenFdroidDependencyGroups.any { group -> coordinate.startsWith("$group:") } }
                 .sorted()
         check(forbidden.isEmpty()) { "F-Droid runtime contains forbidden dependencies: ${forbidden.joinToString()}" }
