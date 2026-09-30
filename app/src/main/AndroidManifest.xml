@@ -12,6 +12,11 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Vibration patterns for turns and alerts (normal permission, granted at install). -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- OBD-II car speed: talk to an already paired Bluetooth adapter (no scanning, no location from Bluetooth). -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
+    <uses-feature android:name="android.hardware.sensor.barometer" android:required="false" />
     <!-- Step counting for walking navigation without GPS. -->
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
     <uses-feature android:name="android.hardware.sensor.stepdetector" android:required="false" />

@@ -39,9 +39,11 @@ import kotlin.math.min
  * Per tick:
  *  1. network fixes are gated, projected to the route and used for speed and drift bounds;
  *  2. a usable GPS fix (GOOD, or SUSPECT but consistent) moves the marker directly;
- *  3. otherwise `s += speedMps·dt·motionFactor`, where speedMps fuses GPS / route prior / network speed;
+ *  3. otherwise `s += speedMps·dt·motionFactor`, where speedMps fuses GPS / route prior / network speed
+ *     (or is the car's own speed from an OBD-II adapter, when one is connected);
  *  4. landmark corrections snap `s`: turn-hold + gyro confirmation, gyro turn matching,
- *     compass heading, stop at traffic signal, network band / catch-up / pull-back;
+ *     compass heading, stop at traffic signal, barometer vs. route elevation (terrain matching),
+ *     network band / catch-up / pull-back;
  *  5. deviations (U-turn, missed turn, network off-route, GPS off-route) trigger reroutes.
  */
 class NavigationEngine(
@@ -101,7 +103,9 @@ class NavigationEngine(
 
     // Dead reckoning
     private var currentSpeed = 0.0
-    private var drDistance = 0.0
+
+    /** How far off dead reckoning may have drifted since the last anchor (GPS, cell or terrain fix), metres. */
+    private var drDriftM = 0.0
     private var lastCellProcessedMs = -1L
     private var cellAccuracyM = 0.0
 
@@ -114,6 +118,23 @@ class NavigationEngine(
     private val motionHistory = ArrayDeque<Pair<Long, Double>>()
     private var netOverridesStop = false
     private var wasStopped = false
+
+    // Car speed from an OBD-II adapter (see [onVehicleSpeed])
+    private var vehicleSpeedMps: Double? = null
+    private var vehicleSpeedAtMs = -1L
+
+    /** GPS speed ÷ OBD speed, learned while GPS is trusted (car speedometers read a little high or low). */
+    private var vehicleSpeedScale = 1.0
+    private var vehicleSpeedInUse = false
+
+    // Terrain matching (barometer vs. route elevation)
+
+    /** Height history and matching; also exposes the smoothed barometric height. */
+    val elevation = ElevationMatcher()
+
+    /** Distance travelled according to speed × time, never corrected (terrain matching needs raw odometry). */
+    private var odometerM = 0.0
+    private var lastTerrainTryMs = -TERRAIN_EVERY_MS
 
     // Network
     private val net = NetworkTracker()
@@ -170,6 +191,8 @@ class NavigationEngine(
         lastCellProcessedMs = -1L
         cellAccuracyM = 0.0
         gpsLostAnnounced = false
+        elevation.reset()
+        odometerM = 0.0
         installRoute(route, nowMs)
         log("nav_start len=${route.length.toInt()} mode=$mode")
     }
@@ -213,6 +236,19 @@ class NavigationEngine(
         destination = null
         state = GuidanceState()
     }
+
+    /**
+     * The car's own speed from an OBD-II adapter (km/h). While fresh, it replaces the speed guess in
+     * dead reckoning: it is exact to a few percent and does not care about jamming.
+     */
+    fun onVehicleSpeed(kmh: Double, elapsedMs: Long) {
+        if (kmh !in 0.0..MAX_VEHICLE_KMH) return
+        vehicleSpeedMps = kmh / 3.6
+        vehicleSpeedAtMs = elapsedMs
+    }
+
+    /** A barometer reading (hPa), for terrain matching. */
+    fun onPressure(hPa: Double, elapsedMs: Long) = elevation.onPressure(hPa, elapsedMs)
 
     /** One step from the phone's step detector (only used on foot). */
     fun onStep(elapsedMs: Long) = pedometer.onStep(elapsedMs)
@@ -299,6 +335,9 @@ class NavigationEngine(
                 }
             }
         }
+        odometerM += currentSpeed * dt
+        elevation.onTravel(odometerM)
+        if (!source.isGps && source != PositionSource.CELL && source != PositionSource.NONE) terrainMatch(car, nowMs)
         deviationTick(nowMs)
         publish(car, pos, nowMs)
     }
@@ -344,14 +383,18 @@ class NavigationEngine(
             smoother.anchor(proj.s, fix.elapsedMs, speed?.takeIf { it in 0.0..70.0 } ?: 0.0)
             car.moveTo(smoother.follow(car.s, nowMs, dt, snap = !source.isGps))
         }
-        drDistance = 0.0
+        drDriftM = 0.0
         catchUp = 0.0
         if (speed != null) {
             lastGpsSpeed = speed
             currentSpeed = speed
             if (good) {
                 when (mode) {
-                    TravelMode.CAR -> route.maxspeedAtSegment(proj.segment)?.let { speedProfile.learn(speed, it) }
+                    TravelMode.CAR -> {
+                        route.maxspeedAtSegment(proj.segment)?.let { speedProfile.learn(speed, it) }
+                        learnVehicleSpeedScale(speed, fix.elapsedMs)
+                    }
+
                     TravelMode.FOOT -> pedometer.learnStride(speed, nowMs)
                 }
             }
@@ -443,7 +486,11 @@ class NavigationEngine(
         } else {
             applyCatchUp(car, dt)
             val netFresh = networkFix?.let { nowMs - it.elapsedMs < 30_000 } == true
-            if (netFresh) PositionSource.DR_NET else PositionSource.DR
+            when {
+                vehicleSpeedInUse && mode == TravelMode.CAR -> PositionSource.DR_OBD
+                netFresh -> PositionSource.DR_NET
+                else -> PositionSource.DR
+            }
         }
     }
 
@@ -462,7 +509,7 @@ class NavigationEngine(
             car.moveTo(projection.s)
             lastCellProcessedMs = fix.elapsedMs
             cellAccuracyM = fix.accuracyM?.toDouble() ?: DEFAULT_CELL_ACCURACY_M
-            drDistance = 0.0
+            drDriftM = 0.0
             catchUp = 0.0
             log("cell_position s=${projection.s.toInt()} off=${projection.offsetM.toInt()} acc=${cellAccuracyM.toInt()}")
         }
@@ -472,6 +519,13 @@ class NavigationEngine(
 
     /** Car: fused speed (GPS / route prior / network) scaled by the IMU motion factor. Returns (speed, stopped). */
     private fun drivingMotion(car: RouteCursor, nowMs: Long, config: Tuning): Pair<Double, Boolean> {
+        val vehicle = freshVehicleSpeed(nowMs)
+        if ((vehicle != null) != vehicleSpeedInUse) {
+            vehicleSpeedInUse = vehicle != null
+            log("vehicle_speed active=$vehicleSpeedInUse scale=${"%.3f".format(Locale.US, vehicleSpeedScale)}")
+        }
+        // The car's own speed is a measurement, not a guess: no fusion, motion factor or speed plan.
+        if (vehicle != null) return vehicle to (vehicle < VEHICLE_STOPPED_MPS)
         val route = car.route
         val sinceGps = nowMs - if (lastGpsUseMs > 0) lastGpsUseMs else navStartMs
         val factor = motion.motionFactor(nowMs)
@@ -489,6 +543,25 @@ class NavigationEngine(
         if (config.speedPlan && hazards.isNotEmpty()) SpeedPlan.cap(hazards, car.s, netSpeed == null)?.let { speedMps = min(speedMps, it) }
         return speedMps to (motion.stopped && !override)
     }
+
+    /** OBD-II speed corrected by the learned scale, if a reading arrived in the last [VEHICLE_SPEED_MAX_AGE_MS]. */
+    private fun freshVehicleSpeed(nowMs: Long): Double? {
+        val speed = vehicleSpeedMps ?: return null
+        if (mode != TravelMode.CAR || nowMs - vehicleSpeedAtMs !in 0..VEHICLE_SPEED_MAX_AGE_MS) return null
+        return speed * vehicleSpeedScale
+    }
+
+    /** With trusted GPS: learn how the adapter's speed relates to the real one (tyre wear, speedometer offset). */
+    private fun learnVehicleSpeedScale(gpsSpeed: Double, fixMs: Long) {
+        val vehicle = vehicleSpeedMps ?: return
+        if (gpsSpeed < SCALE_LEARN_MIN_MPS || vehicle < SCALE_LEARN_MIN_MPS || abs(fixMs - vehicleSpeedAtMs) > 1000) return
+        val ratio = gpsSpeed / vehicle
+        if (ratio !in 0.8..1.2) return // acceleration between the two readings, or a bad fix
+        vehicleSpeedScale += (ratio - vehicleSpeedScale) * 0.05
+    }
+
+    /** Dead-reckoning drift per metre: ~8 % with estimated speed, ~2 % with the car's own speed. */
+    private fun driftPerMetre(): Double = if (vehicleSpeedInUse) VEHICLE_SPEED_DRIFT else ESTIMATED_SPEED_DRIFT
 
     /**
      * On foot: steps × stride from the step detector. Phones without one fall back to a normal
@@ -561,7 +634,7 @@ class NavigationEngine(
     private fun advance(car: RouteCursor, speedMps: Double, dt: Double, nowMs: Long) {
         val config = settings()
         val ds = speedMps * dt
-        drDistance += ds
+        drDriftM += ds * driftPerMetre()
         if (!config.turnHoldEnabled) {
             clearHold()
             car.advance(ds)
@@ -793,6 +866,33 @@ class NavigationEngine(
         catchUp = 0.0
     }
 
+    /**
+     * Terrain matching: every few seconds, slide the barometer's recent height trace along the route's
+     * elevation profile ([ElevationMatcher]). A clear fit moves the marker there; one that confirms the
+     * current position shrinks the uncertainty. Never jumps back before a confirmed turn or across a
+     * turn the gyro has not confirmed yet — turns are stronger evidence than hills.
+     */
+    private fun terrainMatch(car: RouteCursor, nowMs: Long) {
+        if (!settings().terrainMatch || !car.route.hasElevation || nowMs - lastTerrainTryMs < TERRAIN_EVERY_MS) return
+        lastTerrainTryMs = nowMs
+        val search = (state.uncertaintyM * 1.5).coerceIn(TERRAIN_MIN_SEARCH_M, TERRAIN_MAX_SEARCH_M)
+        val scales = if (vehicleSpeedInUse) ElevationMatcher.VEHICLE_SPEED_SCALES else ElevationMatcher.DEFAULT_SCALES
+        val match = elevation.match(car.route, car.s, search, scales) ?: return
+        var target = match.s
+        lastConfirmedTurnS(car)?.let { target = max(target, it) }
+        nextHoldableTurn(car, settings())?.let { (_, turnS, _) -> if (turnS > car.s) target = min(target, max(turnS - 5.0, car.s)) }
+        if (holdS > car.s) target = min(target, holdS)
+        val detail = "rms=${"%.1f".format(Locale.US, match.rmsM)} relief=${match.reliefM.toInt()} ratio=${"%.1f".format(Locale.US, match.rivalRatio)} scale=${match.scale}"
+        if (abs(target - car.s) >= TERRAIN_MIN_SHIFT_M) {
+            log("terrain_snap from_s=${car.s.toInt()} to_s=${target.toInt()} $detail")
+            car.moveTo(target)
+            catchUp = 0.0
+        } else {
+            log("terrain_confirm s=${car.s.toInt()} $detail")
+        }
+        drDriftM = min(drDriftM, TERRAIN_DRIFT_AFTER_M)
+    }
+
     // ------------------------------------------------------------------ network
 
     /** Project a new network/cell fix onto the route and let the [NetworkTracker] gate it. */
@@ -899,7 +999,7 @@ class NavigationEngine(
             if (latest.accM <= 100.0 && gap > 0) {
                 // How much to trust the network fix vs. our own estimate, like a Kalman filter:
                 // the longer we dead-reckoned (bigger sigmaDr), the more of the gap we close.
-                val sigmaDr = min(600.0, 25.0 + 0.08 * drDistance)
+                val sigmaDr = min(600.0, 25.0 + drDriftM)
                 val sigmaNet = latest.accM + 30.0
                 val gain = gap * sigmaDr * sigmaDr / (sigmaDr * sigmaDr + sigmaNet * sigmaNet)
                 if (gain > 1.0) catchUp = gain
@@ -990,11 +1090,11 @@ class NavigationEngine(
             source == PositionSource.CELL -> cellAccuracyM
 
             else -> {
-                // Drift grows ~8 % of distance dead-reckoned on top of the anchor's own error: 25 m after
-                // a GPS fix, or the start position's accuracy if GPS has not been usable yet this trip.
+                // Drift grows ~8 % of distance dead-reckoned (2 % with OBD-II speed) on top of the anchor's own
+                // error: 25 m after a GPS fix, or the start position's accuracy if GPS has not been usable yet.
                 val anchor = if (lastGpsUseMs > 0) 25.0 else max(25.0, startAccuracyM)
                 val cap = max(if (netFresh) 350.0 else 600.0, anchor)
-                max(30.0, min(cap, anchor + 0.08 * drDistance))
+                max(30.0, min(cap, anchor + drDriftM))
             }
         }
 
@@ -1148,5 +1248,26 @@ class NavigationEngine(
 
         /** Conservative fallback when a cell fix did not report an accuracy radius. */
         private const val DEFAULT_CELL_ACCURACY_M = 5_000.0
+
+        /** OBD-II speed older than this is not used (the adapter answers several times a second). */
+        private const val VEHICLE_SPEED_MAX_AGE_MS = 2_500L
+        private const val MAX_VEHICLE_KMH = 250.0
+
+        /** Below this OBD speed the car is standing. */
+        private const val VEHICLE_STOPPED_MPS = 0.5
+        private const val SCALE_LEARN_MIN_MPS = 5.0
+
+        /** Dead-reckoning drift as a fraction of the distance driven. */
+        private const val ESTIMATED_SPEED_DRIFT = 0.08
+        private const val VEHICLE_SPEED_DRIFT = 0.02
+
+        /** Terrain matching: how often to try, how far to search, what counts as a correction. */
+        private const val TERRAIN_EVERY_MS = 5_000L
+        private const val TERRAIN_MIN_SEARCH_M = 150.0
+        private const val TERRAIN_MAX_SEARCH_M = 1_000.0
+        private const val TERRAIN_MIN_SHIFT_M = 20.0
+
+        /** After a terrain fix the position is known to about this, metres (DEM resolution + fit). */
+        private const val TERRAIN_DRIFT_AFTER_M = 40.0
     }
 }

@@ -182,6 +182,16 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
         if (recorder != null) record(TripEvent.StepTaken(elapsedMs))
     }
 
+    /** Record the car's speed from the OBD-II adapter. */
+    fun onVehicleSpeed(kmh: Int, elapsedMs: Long) {
+        if (recorder != null) record(TripEvent.VehicleSpeed(elapsedMs, kmh.toFloat()))
+    }
+
+    /** Record a barometer reading. */
+    fun onPressure(hPa: Float, elapsedMs: Long) {
+        if (recorder != null) record(TripEvent.Pressure(elapsedMs, hPa))
+    }
+
     /** Record an IMU sample (only while a trip is being recorded). */
     fun onImu(sample: ImuSample) {
         if (recorder != null) record(TripEvent.Imu(sample))

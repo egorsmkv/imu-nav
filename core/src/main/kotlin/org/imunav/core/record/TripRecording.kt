@@ -62,12 +62,19 @@ sealed class TripEvent {
 
     /** The travel mode of the trip; written right after [Start] (missing in old recordings = car). */
     data class Mode(override val elapsedMs: Long, val mode: TravelMode) : TripEvent()
+
+    /** The car's own speed from an OBD-II adapter, km/h. */
+    data class VehicleSpeed(override val elapsedMs: Long, val kmh: Float) : TripEvent()
+
+    /** Air pressure from the phone's barometer, hPa. */
+    data class Pressure(override val elapsedMs: Long, val hPa: Float) : TripEvent()
 }
 
 /**
  * Line-oriented trip recording (`*.rec.gz`). One event per line, comma-separated, first field is
  * the type: F fix, I imu, S satellites, A agc, D start, M travel mode, R route, P step, X stop,
- * E engine estimate. Empty fields = null.
+ * E engine estimate, V vehicle (OBD-II) speed, B barometer. Empty fields = null. Readers skip
+ * types they do not know, so new event types keep old app versions able to read recordings.
  */
 object TripFormat {
     const val VERSION = 1
@@ -113,6 +120,10 @@ object TripFormat {
         is TripEvent.StepTaken -> "P,${e.elapsedMs}"
 
         is TripEvent.Mode -> "M,${e.elapsedMs},${e.mode.name}"
+
+        is TripEvent.VehicleSpeed -> "V,${e.elapsedMs},${n(e.kmh)}"
+
+        is TripEvent.Pressure -> "B,${e.elapsedMs},${n(e.hPa)}"
 
         is TripEvent.Estimate -> listOf("E", e.elapsedMs, n(e.lat), n(e.lon), String.format(Locale.US, "%.1f", e.s), e.uncertaintyM.toInt(), e.source).joinToString(",")
     }
@@ -168,6 +179,10 @@ object TripFormat {
                 "P" -> TripEvent.StepTaken(time)
 
                 "M" -> TripEvent.Mode(time, TravelMode.valueOf(fields[2]))
+
+                "V" -> TripEvent.VehicleSpeed(time, fields[2].toFloat())
+
+                "B" -> TripEvent.Pressure(time, fields[2].toFloat())
 
                 "E" -> TripEvent.Estimate(time, fields[2].toDouble(), fields[3].toDouble(), fields[4].toDouble(), fields[5].toDouble(), fields.getOrNull(6).orEmpty())
 
@@ -278,7 +293,9 @@ object RouteCodec {
         }
         val limits = r.maxspeedKmh.joinToString(":") { it?.toString().orEmpty() }
         val signals = r.signals.joinToString(";") { String.format(Locale.US, "%.6f:%.6f", it.lat, it.lon) }
-        return listOf(String.format(Locale.US, "%.1f", r.durationS), geom, steps, limits, signals, esc(r.summary)).joinToString("|")
+        // Heights in whole decimetres keep long routes compact; empty = no elevation data.
+        val heights = r.elevationM?.joinToString(":") { Math.round(it * 10).toString() }.orEmpty()
+        return listOf(String.format(Locale.US, "%.1f", r.durationS), geom, steps, limits, signals, esc(r.summary), heights).joinToString("|")
     }
 
     fun decode(s: String): Route {
@@ -296,6 +313,8 @@ object RouteCodec {
             val (a, b) = it.split(':')
             GeoPoint(a.toDouble(), b.toDouble())
         }
-        return Route(geometry, steps, p[0].toDouble(), limits, signals, unesc(p.getOrNull(5).orEmpty()))
+        val heights = p.getOrNull(6).orEmpty().takeIf { it.isNotEmpty() }?.split(':')?.map { it.toDouble() / 10.0 }?.toDoubleArray()
+            ?.takeIf { it.size == geometry.size }
+        return Route(geometry, steps, p[0].toDouble(), limits, signals, unesc(p.getOrNull(5).orEmpty()), elevationM = heights)
     }
 }

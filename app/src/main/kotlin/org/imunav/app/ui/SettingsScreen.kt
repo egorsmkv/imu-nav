@@ -81,6 +81,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -120,6 +121,7 @@ import org.imunav.app.R
 import org.imunav.app.UiState
 import org.imunav.app.cells.CellSource
 import org.imunav.app.maps.OfflineMapStatus
+import org.imunav.app.obd.ObdStatus
 import org.imunav.app.power.PowerMode
 import org.imunav.app.power.PowerProfile
 import org.imunav.core.cells.Radio
@@ -285,6 +287,9 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                         val hapticsEnabled by app.haptics.enabled.collectAsStateWithLifecycle()
                         SwitchItem(stringResource(R.string.haptics_title), stringResource(R.string.haptics_summary), hapticsEnabled) { app.haptics.setEnabled(it) }
                     }
+
+                    // ---------------- Car speed (OBD-II) and barometer
+                    CarSensorsSection(app)
 
                     // ---------------- Battery
                     SectionHeader(stringResource(R.string.sec_power))
@@ -883,6 +888,104 @@ private fun OfflineMapSection(app: AppGraph, state: OfflineMapStatus) {
         state.corridorText ?: stringResource(if (state.offlineInUse) R.string.corridor_summary_pack else R.string.corridor_summary),
         state.corridor,
     ) { app.offlineMap.setCorridorEnabled(it) }
+}
+
+/**
+ * Settings → Car speed and hills: the OBD-II adapter (pick a paired device, test the link) and
+ * barometric terrain matching (needs a barometer and a routing pack with road heights).
+ */
+@Composable
+private fun CarSensorsSection(app: AppGraph) {
+    val context = LocalContext.current
+    val obd = app.obd
+    val enabled by obd.enabled.collectAsStateWithLifecycle()
+    val device by obd.device.collectAsStateWithLifecycle()
+    val status by obd.status.collectAsStateWithLifecycle()
+    val routing by app.offlineRouting.status.collectAsStateWithLifecycle()
+    val tuning by app.tuning.collectAsStateWithLifecycle()
+    // Re-read the permission after the system dialog answers.
+    var permissionChecks by remember { mutableIntStateOf(0) }
+    val hasPermission = remember(permissionChecks) { obd.hasPermission() }
+    val devices = remember(permissionChecks, enabled) { obd.pairedDevices() }
+    val askPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        permissionChecks++
+        if (granted) obd.setEnabled(true)
+    }
+    // A test connection started here ends when Settings closes, unless a trip is using it.
+    var testing by remember { mutableStateOf(false) }
+    DisposableEffect(Unit) {
+        onDispose { if (testing && !app.engine.state.active) obd.stop() }
+    }
+
+    SectionHeader(stringResource(R.string.sec_car_sensors))
+    if (obd.available) {
+        SwitchItem(stringResource(R.string.obd_title), stringResource(R.string.obd_summary), enabled) { on ->
+            val permission = obd.permission
+            if (on && permission != null && !obd.hasPermission()) {
+                askPermission.launch(permission)
+            } else {
+                obd.setEnabled(on)
+            }
+        }
+        if (enabled && !hasPermission) {
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.obd_permission)) },
+                supportingContent = {
+                    OutlinedButton(onClick = { obd.permission?.let(askPermission::launch) }) { Text(stringResource(R.string.obd_allow)) }
+                },
+            )
+        } else if (enabled) {
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.obd_adapter)) },
+                supportingContent = {
+                    Column {
+                        if (devices.isEmpty()) {
+                            Text(stringResource(R.string.obd_no_devices))
+                        } else {
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                devices.forEach { d ->
+                                    FilterChip(selected = device?.address == d.address, onClick = { obd.setDevice(d) }, label = { Text(d.name) })
+                                }
+                            }
+                        }
+                        TextButton(onClick = { runCatching { context.startActivity(Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS)) } }) {
+                            Text(stringResource(R.string.obd_open_bluetooth))
+                        }
+                        Text(obdStatusText(status), color = if (status.state == ObdStatus.State.ERROR) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+                        if (device != null && !app.engine.state.active) {
+                            if (status.state == ObdStatus.State.OFF || status.state == ObdStatus.State.ERROR) {
+                                OutlinedButton(onClick = {
+                                    testing = true
+                                    obd.stop() // clear an old error, then try again
+                                    obd.start()
+                                }) { Text(stringResource(R.string.obd_test)) }
+                            } else if (testing) {
+                                TextButton(onClick = {
+                                    testing = false
+                                    obd.stop()
+                                }) { Text(stringResource(R.string.obd_disconnect)) }
+                            }
+                        }
+                    }
+                },
+            )
+        }
+    }
+
+    if (app.sensors.hasBarometer) {
+        val packText = stringResource(if (routing.pack?.elevation == true) R.string.terrain_pack_yes else R.string.terrain_pack_no)
+        SwitchItem(stringResource(R.string.terrain_title), stringResource(R.string.terrain_summary) + "\n" + packText, tuning.terrainMatch) { app.setTerrainMatch(it) }
+    } else {
+        ListItem(headlineContent = { Text(stringResource(R.string.terrain_title)) }, supportingContent = { Text(stringResource(R.string.terrain_no_barometer)) })
+    }
+}
+
+@Composable
+private fun obdStatusText(status: ObdStatus): String = when (status.state) {
+    ObdStatus.State.OFF -> stringResource(R.string.obd_status_off)
+    ObdStatus.State.CONNECTING -> stringResource(R.string.obd_status_connecting)
+    ObdStatus.State.CONNECTED -> status.speedKmh?.let { stringResource(R.string.obd_status_connected, it) } ?: stringResource(R.string.obd_status_connected_waiting)
+    ObdStatus.State.ERROR -> stringResource(R.string.obd_status_error, status.message.orEmpty())
 }
 
 /**

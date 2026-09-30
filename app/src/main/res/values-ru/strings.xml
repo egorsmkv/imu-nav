@@ -66,6 +66,7 @@
     <string name="src_gps_suspect">GPS (не проверен)</string>
     <string name="src_dr">Расчётная</string>
     <string name="src_dr_net">Расчётная + сеть</string>
+    <string name="src_dr_obd">Расчётная + скорость авто</string>
     <string name="src_stopped">Остановка</string>
     <string name="src_cells">Вышки связи</string>
 
@@ -154,6 +155,26 @@
     <string name="voice_summary">Озвучивать повороты, состояние GPS и изменения маршрута во время навигации.</string>
     <string name="haptics_title">Вибрация на поворотах и предупреждениях</string>
     <string name="haptics_summary">Разные шаблоны вибрации для поворотов, схода с маршрута, потери и восстановления GPS и прибытия.</string>
+    <string name="sec_car_sensors">Скорость авто и рельеф</string>
+    <string name="obd_title">Скорость авто с адаптера OBD-II</string>
+    <string name="obd_summary">Во время поездки считывать скорость с Bluetooth-адаптера ELM327 в диагностическом разъёме авто. Навигация без GPS становится в несколько раз точнее. Сначала сопрягите адаптер в настройках Bluetooth телефона.</string>
+    <string name="obd_permission">Разрешите доступ к сопряжённым устройствам Bluetooth, чтобы использовать адаптер.</string>
+    <string name="obd_allow">Разрешить доступ к Bluetooth</string>
+    <string name="obd_adapter">Адаптер</string>
+    <string name="obd_no_devices">Нет сопряжённых устройств. Сопрягите адаптер в настройках Bluetooth (PIN обычно 1234 или 0000).</string>
+    <string name="obd_open_bluetooth">Настройки Bluetooth</string>
+    <string name="obd_status_off">Подключается автоматически, когда вы начинаете поездку.</string>
+    <string name="obd_status_connecting">Подключение…</string>
+    <string name="obd_status_connected">Подключено · %1$d км/ч</string>
+    <string name="obd_status_connected_waiting">Подключено · ждём авто (зажигание включено?)</string>
+    <string name="obd_status_error">Не подключено: %1$s</string>
+    <string name="obd_test">Проверить соединение</string>
+    <string name="obd_disconnect">Отключить</string>
+    <string name="terrain_title">Барометр на холмах</string>
+    <string name="terrain_summary">Сравнивает изменения высоты, измеренные барометром телефона, с холмами на маршруте, чтобы уточнять положение без GPS.</string>
+    <string name="terrain_pack_yes">Установленный пакет маршрутизации содержит высоты дорог.</string>
+    <string name="terrain_pack_no">Нужен офлайн-пакет маршрутизации с высотами дорог; у онлайн-маршрутов их нет.</string>
+    <string name="terrain_no_barometer">В этом телефоне нет барометра.</string>
     <string name="sec_cells">Вышки связи</string>
     <string name="cells_show_map">Показывать вышки на карте</string>
     <string name="cells_types">Типы сетей</string>

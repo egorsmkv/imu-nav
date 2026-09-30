@@ -2,6 +2,7 @@ package org.imunav.routing
 
 import com.graphhopper.GHRequest
 import com.graphhopper.GraphHopper
+import com.graphhopper.reader.dem.ElevationProvider
 import com.graphhopper.util.shapes.GHPoint
 import org.imunav.core.geo.GeoPoint
 import org.imunav.core.route.TravelMode
@@ -12,6 +13,9 @@ import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -46,6 +50,49 @@ class OfflineGraphTest {
         way(4, listOf(1005L) + path.map { it.first } + listOf(2008L), "Parkpath", "footway", 5)
         sb.append("</osm>\n")
         file.writeText(sb.toString())
+    }
+
+    /** A fake terrain model: the land rises 10 m per 0.001° north and 2 m per 0.001° east. */
+    private val slope = object : ElevationProvider {
+        override fun getEle(lat: Double, lon: Double): Double = 100.0 + (lat - 50.450) * 10_000.0 + (lon - 30.500) * 2_000.0
+
+        override fun canInterpolate(): Boolean = false
+
+        override fun release() = Unit
+    }
+
+    @Test
+    fun packWithElevationGivesRoutesAHeightProfile() {
+        val tmp = createTempDirectory()
+        val osm = File(tmp, "test.osm").also { writeOsm(it) }
+        val dir = File(tmp, "graph3d")
+        val info = buildGraph(osm, dir, "hills", minNetworkSize = 0, withSearch = false, elevation = PackElevation(custom = slope))
+        assertTrue(info.elevation)
+        assertTrue(PackInfo.parse(File(dir, PackInfo.FILE).readText())!!.elevation)
+        OfflineGraph.load(dir).use { g ->
+            assertTrue(g.hasElevation)
+            val route = g.route(listOf(GeoPoint(50.4502, 30.5001), GeoPoint(50.4611, 30.5099)))
+            val heights = assertNotNull(route.elevationM)
+            assertEquals(route.geometry.size, heights.size)
+            // Road points sit on the model (±1 m: heights are stored with limited precision). The snapped
+            // start and end points get an approximate height from GraphHopper; only the first/last metres matter.
+            for (i in 1 until route.geometry.lastIndex) assertEquals(slope.getEle(route.geometry[i].lat, route.geometry[i].lon), heights[i], 1.0)
+            assertEquals(slope.getEle(route.geometry[0].lat, route.geometry[0].lon), heights[0], 30.0)
+            // Halfway up Northway (≈ 600 m in) the road is ~60 m higher than at the start.
+            assertEquals(160.0, assertNotNull(route.elevationAt(600.0)), 8.0)
+        }
+    }
+
+    @Test
+    fun packWithoutElevationStaysFlat() {
+        val tmp = createTempDirectory()
+        val osm = File(tmp, "test.osm").also { writeOsm(it) }
+        val dir = File(tmp, "graph2d")
+        assertFalse(buildGraph(osm, dir, "flat", minNetworkSize = 0, withSearch = false).elevation)
+        OfflineGraph.load(dir).use { g ->
+            assertFalse(g.hasElevation)
+            assertNull(g.route(listOf(GeoPoint(50.4502, 30.5001), GeoPoint(50.4611, 30.5099))).elevationM)
+        }
     }
 
     @Test

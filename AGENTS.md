@@ -77,6 +77,12 @@ Requirements: JDK 17+, Android SDK platform 36. `adb` lives at `~/Library/Androi
   and location registration (`SensorHub` control thread), cell scans, vibration (`Haptics`). Don't build
   large strings (route encoding, JSON with the route) on the main thread either — do it on the executor.
   Check with the benchmark build: nothing of ours may appear in `MainThreadWatchdog` reports.
+- **Car speed and terrain:** OBD-II speed enters via `NavigationEngine.onVehicleSpeed`, barometer via
+  `onPressure`; both are recorded (`TripEvent.VehicleSpeed` / `Pressure`, lines `V` / `B`) and replayed.
+  Terrain matching must stay conservative: a wrong snap is worse than none. Keep the relief / RMS /
+  rival-ratio gates in `ElevationMatcher` and the false-match tests in `TerrainAndVehicleSpeedTest` green.
+  Elevation packs: `PackInfo.elevation` decides `hopper.setElevation(true)` on the phone — builder and
+  loader must agree or GraphHopper refuses to load. `ObdLink` never writes to the car (read-only PIDs).
 - **Haptics:** engine events that deserve a vibration go through `NavListener.onAlert(NavAlert)`,
   called next to the matching voice phrase; patterns live in `haptics/Haptics.kt`. UI taps use Compose
   `LocalHapticFeedback`, not the vibrator.

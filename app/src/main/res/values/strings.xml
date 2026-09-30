@@ -67,6 +67,7 @@
     <string name="src_gps_suspect">GPS (unverified)</string>
     <string name="src_dr">Estimated</string>
     <string name="src_dr_net">Estimated + network</string>
+    <string name="src_dr_obd">Estimated + car speed</string>
     <string name="src_stopped">Stopped</string>
     <string name="src_cells">Cell towers</string>
 
@@ -156,6 +157,26 @@
     <string name="voice_summary">Speak turns, GPS status and route changes during navigation.</string>
     <string name="haptics_title">Vibrate on turns and alerts</string>
     <string name="haptics_summary">Different vibration patterns for upcoming turns, leaving the route, GPS lost or restored and arrival.</string>
+    <string name="sec_car_sensors">Car speed and hills</string>
+    <string name="obd_title">Car speed from OBD-II adapter</string>
+    <string name="obd_summary">While driving, read the speed from a Bluetooth ELM327 adapter in the car\'s diagnostic socket. Navigation without GPS becomes several times more accurate. Pair the adapter in the phone\'s Bluetooth settings first.</string>
+    <string name="obd_permission">Allow access to paired Bluetooth devices to use the adapter.</string>
+    <string name="obd_allow">Allow Bluetooth access</string>
+    <string name="obd_adapter">Adapter</string>
+    <string name="obd_no_devices">No paired devices. Pair the adapter in Bluetooth settings (the PIN is usually 1234 or 0000).</string>
+    <string name="obd_open_bluetooth">Bluetooth settings</string>
+    <string name="obd_status_off">Connects automatically when you start driving.</string>
+    <string name="obd_status_connecting">Connecting…</string>
+    <string name="obd_status_connected">Connected · %1$d km/h</string>
+    <string name="obd_status_connected_waiting">Connected · waiting for the car (ignition on?)</string>
+    <string name="obd_status_error">Not connected: %1$s</string>
+    <string name="obd_test">Test connection</string>
+    <string name="obd_disconnect">Disconnect</string>
+    <string name="terrain_title">Use the barometer on hills</string>
+    <string name="terrain_summary">Compares height changes measured by the phone\'s barometer with the route\'s hills to correct the position without GPS.</string>
+    <string name="terrain_pack_yes">The installed routing pack has road heights.</string>
+    <string name="terrain_pack_no">Needs an offline routing pack built with road heights; online routes have none.</string>
+    <string name="terrain_no_barometer">This phone has no barometer.</string>
     <string name="sec_cells">Cell towers</string>
     <string name="cells_show_map">Show towers on map</string>
     <string name="cells_types">Cell types</string>

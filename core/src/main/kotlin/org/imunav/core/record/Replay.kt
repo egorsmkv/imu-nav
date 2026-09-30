@@ -173,6 +173,10 @@ class TripReplayer(private val tuning: Tuning = Tuning.DEFAULT, private val area
 
                 is TripEvent.StepTaken -> engine.onStep(e.elapsedMs)
 
+                is TripEvent.VehicleSpeed -> engine.onVehicleSpeed(e.kmh.toDouble(), e.elapsedMs)
+
+                is TripEvent.Pressure -> engine.onPressure(e.hPa.toDouble(), e.elapsedMs)
+
                 is TripEvent.RouteSet -> onRoute(e)
 
                 is TripEvent.Stop -> engine.stop()

@@ -66,6 +66,8 @@ data class Tuning(
     val speedPlan: Boolean = true,
     /** When the car stops close to a traffic signal, snap the marker to it. */
     val signalSnap: Boolean = true,
+    /** Match the barometer's height changes against the route's elevation profile (packs with elevation). */
+    val terrainMatch: Boolean = true,
 
     // --- Leaving the route without GPS ("blind deviation")
     /** Offer a reroute when the sensors say we left the route. */

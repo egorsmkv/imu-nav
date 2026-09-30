@@ -16,6 +16,7 @@ import org.imunav.app.cells.CellManager
 import org.imunav.app.cells.CellStatus
 import org.imunav.app.haptics.Haptics
 import org.imunav.app.maps.OfflineMap
+import org.imunav.app.obd.ObdLink
 import org.imunav.app.power.PowerMode
 import org.imunav.app.power.PowerPolicy
 import org.imunav.app.power.PowerProfile
@@ -191,8 +192,15 @@ class AppGraph(private val context: Context) {
         tripLog.write("navigation_method $method")
     }
 
-    /** Engine thresholds (factory defaults; see [Tuning]). */
-    val tuning = MutableStateFlow(Tuning.DEFAULT)
+    /** Engine thresholds (factory defaults; see [Tuning]), plus the user's terrain-matching choice. */
+    val tuning = MutableStateFlow(Tuning.DEFAULT.copy(terrainMatch = modePrefs.getBoolean("terrain_match", true)))
+
+    /** Settings: compare the barometer with the route's hills (routing packs with elevation). */
+    fun setTerrainMatch(on: Boolean) {
+        modePrefs.edit { putBoolean("terrain_match", on) }
+        tuning.value = tuning.value.copy(terrainMatch = on)
+        tripLog.write("terrain_match $on")
+    }
 
     /** Fixes outside this area are treated as spoofed. Set to [ServiceArea.EVERYWHERE] to use the app elsewhere. */
     val serviceArea: ServiceArea = ServiceArea.UKRAINE_COARSE
@@ -262,7 +270,17 @@ class AppGraph(private val context: Context) {
             engine.onStep(elapsedMs)
             trips.onStep(elapsedMs)
         },
+        onPressure = { hPa, elapsedMs ->
+            engine.onPressure(hPa.toDouble(), elapsedMs)
+            trips.onPressure(hPa, elapsedMs)
+        },
     )
+
+    /** The car's own speed from a Bluetooth OBD-II adapter (Settings → Car speed), used while driving. */
+    val obd = ObdLink(context, tripLog::write) { kmh, elapsedMs ->
+        engine.onVehicleSpeed(kmh.toDouble(), elapsedMs)
+        trips.onVehicleSpeed(kmh, elapsedMs)
+    }
 
     // Kotlin convention: a private mutable flow (_ui) and a public read-only view (ui) of it.
     private val _ui = MutableStateFlow(UiState())
@@ -390,6 +408,7 @@ class AppGraph(private val context: Context) {
                     engine.start(route, dest, nowMs = SystemClock.elapsedRealtime(), startAccuracyM = startAccuracy, mode = mode)
                     trips.begin(route, dest, emptyList(), startAccuracy, mode)
                     offlineMap.saveCorridor(route, darkTheme())
+                    if (mode == TravelMode.CAR) obd.start()
                     applyPower()
                     _ui.value = _ui.value.copy(planning = false)
                     onStarted()
@@ -402,6 +421,7 @@ class AppGraph(private val context: Context) {
     fun stopNavigation() {
         trips.end(arrived = engine.state.arrived)
         engine.stop()
+        obd.stop()
         applyPower()
         tripLog.endTrip()
         cells.maybeAutoSync()
@@ -462,6 +482,7 @@ class AppGraph(private val context: Context) {
         // The process was killed mid-trip (or the system restarted the sticky service): resume navigation.
         if (trips.restore()) {
             tripLog.startTrip()
+            if (engine.mode == TravelMode.CAR) obd.start()
             runCatching { NavService.start(context) }.onFailure { tripLog.write("nav_service_restart_failed ${it.message}") }
         }
     }

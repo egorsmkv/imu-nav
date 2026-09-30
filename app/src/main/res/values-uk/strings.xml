@@ -66,6 +66,7 @@
     <string name="src_gps_suspect">GPS (неперевірений)</string>
     <string name="src_dr">Розрахункова</string>
     <string name="src_dr_net">Розрахункова + мережа</string>
+    <string name="src_dr_obd">Розрахункова + швидкість авто</string>
     <string name="src_stopped">Зупинка</string>
     <string name="src_cells">Вишки зв’язку</string>
 
@@ -154,6 +155,26 @@
     <string name="voice_summary">Озвучувати повороти, стан GPS і зміни маршруту під час навігації.</string>
     <string name="haptics_title">Вібрація на поворотах і попередженнях</string>
     <string name="haptics_summary">Різні шаблони вібрації для поворотів, сходу з маршруту, втрати й відновлення GPS та прибуття.</string>
+    <string name="sec_car_sensors">Швидкість авто і рельєф</string>
+    <string name="obd_title">Швидкість авто з адаптера OBD-II</string>
+    <string name="obd_summary">Під час поїздки зчитувати швидкість з Bluetooth-адаптера ELM327 у діагностичному роз\'ємі авто. Навігація без GPS стає в кілька разів точнішою. Спершу спаруйте адаптер у налаштуваннях Bluetooth телефона.</string>
+    <string name="obd_permission">Дозвольте доступ до спарених пристроїв Bluetooth, щоб використовувати адаптер.</string>
+    <string name="obd_allow">Дозволити доступ до Bluetooth</string>
+    <string name="obd_adapter">Адаптер</string>
+    <string name="obd_no_devices">Немає спарених пристроїв. Спаруйте адаптер у налаштуваннях Bluetooth (PIN зазвичай 1234 або 0000).</string>
+    <string name="obd_open_bluetooth">Налаштування Bluetooth</string>
+    <string name="obd_status_off">Підключається автоматично, коли ви починаєте поїздку.</string>
+    <string name="obd_status_connecting">Підключення…</string>
+    <string name="obd_status_connected">Підключено · %1$d км/год</string>
+    <string name="obd_status_connected_waiting">Підключено · чекаємо на авто (запалювання увімкнене?)</string>
+    <string name="obd_status_error">Не підключено: %1$s</string>
+    <string name="obd_test">Перевірити з\'єднання</string>
+    <string name="obd_disconnect">Відключити</string>
+    <string name="terrain_title">Барометр на пагорбах</string>
+    <string name="terrain_summary">Порівнює зміни висоти, виміряні барометром телефона, з пагорбами на маршруті, щоб уточнювати положення без GPS.</string>
+    <string name="terrain_pack_yes">Встановлений пакет маршрутизації містить висоти доріг.</string>
+    <string name="terrain_pack_no">Потрібен офлайн-пакет маршрутизації з висотами доріг; онлайн-маршрути їх не мають.</string>
+    <string name="terrain_no_barometer">У цьому телефоні немає барометра.</string>
     <string name="sec_cells">Вишки зв’язку</string>
     <string name="cells_show_map">Показувати вишки на карті</string>
     <string name="cells_types">Типи мереж</string>

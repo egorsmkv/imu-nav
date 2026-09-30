@@ -16,12 +16,15 @@ remaining along-track drift is repeatedly corrected by landmarks.
  GnssStatus + AGC ──┘  (spoof & jam)                            │
  rotation vector,  ─► heading, vertical yaw rate, gyro bias,    │
  gyro, lin. accel      MotionDetector (stop / resume)           │
+ OBD-II car speed ──► replaces the speed estimate (optional)    │
+ barometer ─────────► height trace for terrain matching         │
                                                                 ▼
                  NavigationEngine.tick() every 500 ms: route cursor s
                  GPS usable → project fix onto route (smoothed)
                  else       → selected fallback: dead reckoning, cell towers, or hybrid
                  hybrid corrections: turn-hold + gyro confirm, turn-signature matching,
-                 compass snap, stop-at-signal snap, network band / catch-up / pull-back
+                 compass snap, stop-at-signal snap, terrain (barometer ↔ route heights),
+                 network band / catch-up / pull-back
                  deviation: GPS off-route, U-turn, missed turn, network off-route
 ```
 
@@ -31,7 +34,9 @@ remaining along-track drift is repeatedly corrected by landmarks.
 | Jam detector | `TrustClassifier.kt` (`JamDetector`) | AGC hysteresis: enter < −12 dB, leave after 15 s > −8 dB. Re-injects A-GPS data on recovery. |
 | Motion detector | `core/.../imu/MotionDetector.kt` | Stop = quiet accelerometer (mean & σ) or quiet gyro for 1.5 s; resume after 0.7 s of vibration; speed ramps 0.15→1 over 8 s after a stop. Integrates vertical yaw rate for turns. |
 | Speed | `core/.../speed/Speed.kt` | Inverse-variance fusion of last GPS speed (σ grows with age), route prior (speed limit × learned driver ratio, or router's modelled speed), and **network speed** from a weighted linear regression of route-projected cell/Wi-Fi fixes. Speed caps near traffic signals / speed bumps. |
-| Engine | `core/.../nav/NavigationEngine.kt` | Main loop, turn hold, corrections, deviation offers, uncertainty (`25 + 0.08·distance`, capped 350/600 m), voice announcements. |
+| Engine | `core/.../nav/NavigationEngine.kt` | Main loop, turn hold, corrections, deviation offers, uncertainty (`25 + 0.08·distance`, or `0.02·distance` with OBD-II speed, capped 350/600 m), voice announcements. |
+| Car speed (OBD-II) | `core/.../obd/Elm327.kt`, `app/.../obd/ObdLink.kt` | Reads vehicle speed (PID `010D`) 5× per second from a paired Bluetooth ELM327 adapter. While fresh it replaces the speed guess; a GPS/OBD scale factor is learned while GPS is trusted. |
+| Terrain matching | `core/.../nav/ElevationMatcher.kt` | Keeps the last 1.5 km of (odometer, barometric height) and slides it along the route's elevation profile, trying odometer scales 0.75–1.35. Only a clear fit counts: ≥ 4 m relief, ≤ 2.5 m RMS misfit, and every other position ≥ 1.8× worse. It snaps the marker there (never across an unconfirmed turn) or confirms it, and shrinks the uncertainty. |
 | Network gate | `core/.../nav/NetworkTracker.kt` | Feasibility gate for network fixes (reachable at 150 km/h) with re-anchoring. |
 | Android glue | `app/` | `SensorHub` (LocationManager, GnssStatus, GnssMeasurements/AGC, sensors), `OsrmRouter`, foreground `NavService`, TTS, Compose + MapLibre UI. |
 
@@ -54,6 +59,15 @@ curl -LO https://download.geofabrik.de/europe/ukraine-latest.osm.pbf
 ./gradlew :routing:run --args="--osm ukraine-latest.osm.pbf --out graph-ukraine --name Ukraine"
 # → graph-ukraine/ and graph-ukraine.zip
 ```
+**Road heights (for terrain matching):** add `--elevation skadi` to store a height for every road
+point from a digital elevation model (AWS Terrain Tiles; `srtm`, `srtmgl1`, `cgiar` and `gmted` also work).
+Tiles are downloaded once into `--elevation-cache <dir>` (default `elevation-cache/`; about 150 tiles, several GB
+unpacked, for Ukraine). Bridges and tunnels get heights interpolated between their ends. `pack.json` then says
+`"elevation":true`; older packs and online routes simply have no height profile, and terrain matching stays off.
+```bash
+./gradlew :routing:run --args="--osm ukraine-latest.osm.pbf --out graph-ukraine --name Ukraine --elevation skadi --elevation-cache ~/dem-cache"
+```
+
 **Bundling a pack in a Play APK:** copy the zip and its metadata into the Play-only assets before building —
 ```bash
 mkdir -p app/src/play/assets/routing
@@ -248,6 +262,21 @@ keyPassword=...
 Keep a backup of the keystore: Android only installs updates signed with the same key.
 Without `keystore.properties`, `assemblePlayRelease` produces an unsigned APK. The
 `assembleFdroidRelease` task is always unsigned so F-Droid can apply its repository signing key.
+
+### Car speed and hills
+Two optional inputs make dead reckoning much more accurate (**Settings → Everyday settings → Car speed and hills**):
+
+- **OBD-II adapter.** A cheap Bluetooth ELM327 dongle in the car's diagnostic socket (under the dashboard,
+  every petrol car since ~2001 and diesel since ~2004). Pair it in the phone's Bluetooth settings, switch
+  on *Car speed from OBD-II adapter*, pick it and tap *Test connection* (ignition on). The app then connects
+  when a car trip starts, reads the speed 5× a second and reconnects by itself; the status pill shows
+  *Estimated + car speed*. Only the standard speed request is sent: nothing is written to the car. Classic
+  Bluetooth adapters work; BLE-only ones do not. Android 12+ asks for the *Nearby devices* permission.
+- **Barometer + road heights.** Phones with a barometer measure height changes to well under a metre.
+  With a routing pack built with `--elevation`, the engine compares them with the route's hills and
+  corrects the position every few seconds on hilly roads (flat roads give no correction by design).
+
+Both are recorded in trip recordings (`V` and `B` lines), so the replay tool reproduces them.
 
 ### Walking without GPS
 On foot the engine replaces the car speed model with the phone's **step detector**: speed = steps

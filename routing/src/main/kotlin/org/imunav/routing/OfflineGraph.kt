@@ -59,6 +59,9 @@ object GraphSpec {
     const val FOOT_DISTANCE_INFLUENCE = 70.0
     const val HEADING_PENALTY_S = 300.0
 
+    /** Packs with elevation: extra height samples on edges longer than this, metres. */
+    const val ELEVATION_SAMPLING_M = 60
+
     /**
      * The routing model of a profile.
      *  - car: drive at the average speed of each road, never where cars may not go;
@@ -161,6 +164,9 @@ data class MatchedTrack(val geometry: List<GeoPoint>, val lengthM: Double, val r
 /** A loaded offline routing pack (a GraphHopper graph folder built by [buildGraph]). */
 class OfflineGraph private constructor(private val hopper: GraphHopper, val dir: File, val profiles: List<String>) : AutoCloseable {
 
+    /** The pack stores road heights; its routes carry an elevation profile. */
+    val hasElevation: Boolean get() = hopper.hasElevation()
+
     /** Can this pack route [mode]? (Car-only packs cannot route on foot.) */
     fun supports(mode: TravelMode): Boolean = mode.profile in profiles
 
@@ -215,11 +221,14 @@ class OfflineGraph private constructor(private val hopper: GraphHopper, val dir:
         /** Load a pack from [dir]; memory-maps the graph so large regions do not need a large heap. */
         fun load(dir: File, memoryMapped: Boolean = true): OfflineGraph {
             // Which profiles the pack was built with decides the settings it must be loaded with.
-            val profiles = File(dir, PackInfo.FILE).takeIf { it.exists() }?.let { PackInfo.parse(it.readText())?.profiles } ?: GraphSpec.ALL_PROFILES
+            val info = File(dir, PackInfo.FILE).takeIf { it.exists() }?.let { PackInfo.parse(it.readText()) }
+            val profiles = info?.profiles ?: GraphSpec.ALL_PROFILES
             val hopper = PhoneGraphHopper()
             val cfg = GraphSpec.config(dir.absolutePath, profiles)
                 .putObject("graph.dataaccess.default_type", if (memoryMapped) "MMAP_RO" else "RAM_STORE")
             hopper.init(cfg)
+            // A 3-D graph must be opened as 3-D (GraphHopper checks the stored dimension); no DEM is needed to read it.
+            hopper.setElevation(info?.elevation == true)
             hopper.setAllowWrites(false)
             if (!hopper.load()) {
                 runCatching { hopper.close() }
@@ -232,6 +241,7 @@ class OfflineGraph private constructor(private val hopper: GraphHopper, val dir:
         internal fun toRoute(path: ResponsePath): Route {
             val pts = path.points
             val geometry = (0 until pts.size()).map { GeoPoint(pts.getLat(it), pts.getLon(it)) }
+            val heights = if (pts.is3D) DoubleArray(pts.size()) { pts.getEle(it) }.takeIf { h -> h.all { it.isFinite() } } else null
             val steps = ArrayList<Step>()
             var index = 0
             val instructions = path.instructions
@@ -265,6 +275,7 @@ class OfflineGraph private constructor(private val hopper: GraphHopper, val dir:
                 durationS = path.time / 1000.0,
                 maxspeedKmh = if (maxspeed.any { it != null }) maxspeed.toList() else emptyList(),
                 summary = "offline",
+                elevationM = heights,
             )
         }
 

@@ -37,6 +37,7 @@ data class Hazard(val s: Double, val kind: HazardKind)
  * all it needs to know, because the car cannot leave the road sideways.
  *
  * [maxspeedKmh] and [segmentSpeedMps] have one entry per segment (`geometry.size - 1`) or are empty.
+ * [elevationM] has one entry per point, or is null when the router gave no heights.
  */
 class Route(
     val geometry: List<GeoPoint>,
@@ -47,7 +48,19 @@ class Route(
     val summary: String = "",
     /** Optional per-segment modelled travel speed from the router (m/s), used when no limit is known. */
     val segmentSpeedMps: List<Double?> = emptyList(),
+    /**
+     * Height above sea level of every [geometry] point, metres (offline packs built with elevation).
+     * The engine compares it with the barometer to find where along the route the car is.
+     */
+    val elevationM: DoubleArray? = null,
 ) {
+    init {
+        require(elevationM == null || elevationM.size == geometry.size) { "elevationM needs one value per geometry point" }
+    }
+
+    /** Does this route know its height profile? */
+    val hasElevation: Boolean get() = elevationM != null && geometry.size >= 2
+
     /** `cumulative[i]` = `s` of point `i`, i.e. the road distance from the start to that point. */
     val cumulative: DoubleArray = DoubleArray(geometry.size).also { cum ->
         for (i in 1 until geometry.size) cum[i] = cum[i - 1] + Geo.distance(geometry[i - 1], geometry[i])
@@ -89,6 +102,16 @@ class Route(
         val fraction = if (segmentLength >= 1e-3) ((s - cumulative[segment]) / segmentLength).coerceIn(0.0, 1.0) else 0.0
         val point = GeoPoint(start.lat + (end.lat - start.lat) * fraction, start.lon + (end.lon - start.lon) * fraction)
         return RoutePoint(point, Geo.bearing(start, end), segment)
+    }
+
+    /** Height of the road at position [s] (linear between points), or null without elevation data. */
+    fun elevationAt(s: Double): Double? {
+        val heights = elevationM ?: return null
+        if (geometry.size < 2) return heights.firstOrNull()
+        val segment = segmentAt(s)
+        val segmentLength = cumulative[segment + 1] - cumulative[segment]
+        val fraction = if (segmentLength >= 1e-3) ((s - cumulative[segment]) / segmentLength).coerceIn(0.0, 1.0) else 0.0
+        return heights[segment] + (heights[segment + 1] - heights[segment]) * fraction
     }
 
     /** Road direction (compass bearing) at position [s]. */

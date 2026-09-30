@@ -116,6 +116,7 @@ fun sourceLabel(res: Resources, source: PositionSource): String = res.getString(
         PositionSource.GPS_SUSPECT -> R.string.src_gps_suspect
         PositionSource.DR -> R.string.src_dr
         PositionSource.DR_NET -> R.string.src_dr_net
+        PositionSource.DR_OBD -> R.string.src_dr_obd
         PositionSource.DR_STOPPED -> R.string.src_stopped
         PositionSource.CELL -> R.string.src_cells
     },

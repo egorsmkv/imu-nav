@@ -33,6 +33,7 @@ import kotlin.math.sqrt
  *  - GPS / network / fused fixes → [PositioningHub.onFix]
  *  - GnssStatus (satellites, C/N0) and GnssMeasurements (AGC) → receiver health
  *  - rotation vector + gyro + linear acceleration → heading, vertical yaw rate, [ImuSample]
+ *  - barometer (while navigating) → air pressure for terrain matching
  *
  * All callbacks are delivered on the main looper.
  */
@@ -43,6 +44,8 @@ class SensorHub(
     private val log: (String) -> Unit,
     /** Called once per detected step (walking trips only), with elapsedRealtime ms. */
     private val onStep: (Long) -> Unit = {},
+    /** Air pressure in hPa with elapsedRealtime ms (navigating, phones with a barometer). */
+    private val onPressure: (Float, Long) -> Unit = { _, _ -> },
 ) {
     private val locationManager = context.getSystemService(LocationManager::class.java)
     private val sensorManager = context.getSystemService(SensorManager::class.java)
@@ -132,6 +135,32 @@ class SensorHub(
         override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
 
         override fun onSensorChanged(e: SensorEvent) = onStep(SystemClock.elapsedRealtime())
+    }
+
+    /** The barometer: pressure changes give height changes to compare with the route's hills. */
+    private val pressureListener = object : SensorEventListener {
+        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+
+        override fun onSensorChanged(e: SensorEvent) = onPressure(e.values[0], SystemClock.elapsedRealtime())
+    }
+
+    /** Does this phone have a barometer? (Mid-range and better phones usually do.) */
+    val hasBarometer: Boolean get() = sensorManager.getDefaultSensor(Sensor.TYPE_PRESSURE) != null
+
+    private var pressureRegistered = false
+
+    private fun applyPressureConfig() {
+        val want = running && navigating && hasBarometer
+        if (want == pressureRegistered) return
+        if (want) {
+            sensorManager.getDefaultSensor(Sensor.TYPE_PRESSURE)?.let {
+                sensorManager.registerListener(pressureListener, it, PRESSURE_PERIOD_US, handler)
+            }
+        } else {
+            sensorManager.unregisterListener(pressureListener)
+        }
+        pressureRegistered = want
+        log("barometer ${if (want) "on" else "off"}")
     }
 
     /** Does this phone have a step detector? (Most do; some budget phones do not.) */
@@ -281,6 +310,7 @@ class SensorHub(
             imuConfig = imu
         }
         applyStepConfig()
+        applyPressureConfig()
         val summary = "power ${p.name} nav=$navigating imu_hz=${1_000_000 / imu.first} net_ms=${p.networkMinMs} agc=$measurements"
         if (summary != lastSummary) log(summary)
         lastSummary = summary
@@ -311,7 +341,9 @@ class SensorHub(
         if (measurements) locationManager.unregisterGnssMeasurementsCallback(gnssMeasurementsCallback)
         sensorManager.unregisterListener(sensorListener)
         sensorManager.unregisterListener(stepListener)
+        sensorManager.unregisterListener(pressureListener)
         stepsRegistered = false
+        pressureRegistered = false
         netMinMs = -1L
         measurements = false
         imuConfig = null
@@ -350,5 +382,8 @@ class SensorHub(
 
         /** 5 Hz: enough for heading and gyro-bias learning when no route is being followed. */
         const val IDLE_IMU_PERIOD_US = 200_000
+
+        /** 5 Hz barometer: heights are smoothed over ~2 s anyway. */
+        const val PRESSURE_PERIOD_US = 200_000
     }
 }

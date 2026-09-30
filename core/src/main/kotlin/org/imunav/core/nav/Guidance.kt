@@ -35,6 +35,9 @@ enum class PositionSource(val label: String) {
     /** Dead reckoning with fresh network/cell fixes keeping it in check. */
     DR_NET("DR+NET"),
 
+    /** Dead reckoning with the car's own speed from an OBD-II adapter. */
+    DR_OBD("DR+OBD"),
+
     /** Dead reckoning, and the sensors say the car is standing still. */
     DR_STOPPED("DR⏸"),
 
