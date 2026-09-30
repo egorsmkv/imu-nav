@@ -20,8 +20,9 @@ class BlindDriverApp : Application() {
             enableStrictMode()
             MainThreadWatchdog.start()
         }
-        HttpRequestUtil.setOkHttpClient(Http.callFactory)
         MapLibre.getInstance(this)
+        // HttpRequestImpl initializes its User-Agent from MapLibre's context when this setter is called.
+        HttpRequestUtil.setOkHttpClient(Http.callFactory)
         graph = AppGraph(this)
     }
 }

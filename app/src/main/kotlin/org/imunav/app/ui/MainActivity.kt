@@ -23,7 +23,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
@@ -236,10 +235,11 @@ private fun OtherScreen(
 
 /**
  * Stops touches from reaching what is drawn underneath (the map stays composed below other screens).
- * Consumed in the last pass, so the screen's own buttons and lists still get them first.
+ * A pointer-input target makes this overlay win hit testing over its map sibling. Do not consume
+ * events: even consumption in the final pass cancels the child scroll detector before a drag starts.
  */
 private fun Modifier.blockTouchesBelow(): Modifier = pointerInput(Unit) {
     awaitPointerEventScope {
-        while (true) awaitPointerEvent(PointerEventPass.Final).changes.forEach { it.consume() }
+        while (true) awaitPointerEvent()
     }
 }
