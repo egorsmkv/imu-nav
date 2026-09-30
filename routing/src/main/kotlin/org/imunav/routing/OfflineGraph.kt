@@ -226,7 +226,11 @@ class OfflineGraph private constructor(private val hopper: GraphHopper, val dir:
             val hopper = PhoneGraphHopper()
             val cfg = GraphSpec.config(dir.absolutePath, profiles)
                 .putObject("graph.dataaccess.default_type", if (memoryMapped) "MMAP_RO" else "RAM_STORE")
-            hopper.init(cfg)
+            // init() copies every custom model through Jackson, which needs Class.getRecordComponents
+            // (Android 14+) for GraphHopper's record classes. Our models are plain objects already, so
+            // initialise without them and hand the same profiles over directly.
+            hopper.init(cfg.setProfiles(emptyList()))
+            hopper.setProfiles(profiles.map { GraphSpec.profile(it) })
             // A 3-D graph must be opened as 3-D (GraphHopper checks the stored dimension); no DEM is needed to read it.
             hopper.setElevation(info?.elevation == true)
             hopper.setAllowWrites(false)

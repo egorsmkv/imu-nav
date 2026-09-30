@@ -216,7 +216,8 @@ object TripFormat {
             runCatching { stream.close() }
         }
         val out = ArrayList<TripEvent>()
-        BufferedReader(bytes.toString(Charsets.UTF_8).reader()).lineSequence().forEach { line -> decode(line)?.let { out += it } }
+        // String(bytes, charset), not ByteArrayOutputStream.toString(Charset): the latter needs Android 13.
+        BufferedReader(String(bytes.toByteArray(), Charsets.UTF_8).reader()).lineSequence().forEach { line -> decode(line)?.let { out += it } }
         return out
     }
 

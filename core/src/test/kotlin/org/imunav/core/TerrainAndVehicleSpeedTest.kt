@@ -158,7 +158,8 @@ class TerrainAndVehicleSpeedTest {
         val decoded = RouteCodec.decode(RouteCodec.encode(original))
         val heights = assertNotNull(decoded.elevationM)
         assertEquals(original.geometry.size, heights.size)
-        assertTrue(original.elevationM!!.indices.all { abs(original.elevationM!![it] - heights[it]) <= 0.05 })
+        val originalHeights = assertNotNull(original.elevationM)
+        assertTrue(originalHeights.indices.all { abs(originalHeights[it] - heights[it]) <= 0.05 })
         assertEquals(heightAt(510.0), assertNotNull(decoded.elevationAt(510.0)), 0.6)
         // Routes without heights (online routing, old recordings) stay without.
         assertNull(RouteCodec.decode(RouteCodec.encode(route(withElevation = false))).elevationM)

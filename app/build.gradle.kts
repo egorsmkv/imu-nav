@@ -1,4 +1,7 @@
 import java.util.Properties
+import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
+import java.util.zip.ZipOutputStream
 
 plugins {
     alias(libs.plugins.android.application)
@@ -92,6 +95,8 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // GraphHopper is a Java 17 library; desugaring rewrites its newer JDK calls for old Android versions.
+        isCoreLibraryDesugaringEnabled = true
     }
 
     buildFeatures {
@@ -146,6 +151,49 @@ dependencies {
     implementation(libs.compose.material.icons.extended)
 
     implementation(libs.maplibre.android)
+
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
+}
+
+/**
+ * Removes GraphHopper classes that `:routing` replaces with Android-compatible copies
+ * (`routing/src/main/java/com/graphhopper/storage/`, see the README there) from the GraphHopper jar,
+ * so the app contains only the patched versions. Other jars pass through unchanged.
+ */
+abstract class StripPatchedGraphHopperClasses : TransformAction<TransformParameters.None> {
+    @get:InputArtifact
+    abstract val inputArtifact: Provider<FileSystemLocation>
+
+    override fun transform(outputs: TransformOutputs) {
+        val input = inputArtifact.get().asFile
+        if (!input.name.startsWith("graphhopper-core-")) {
+            outputs.file(input)
+            return
+        }
+        val patched = listOf("com/graphhopper/storage/MMapDataAccess", "com/graphhopper/storage/RAMDataAccess")
+        val output = outputs.file("patched-${input.name}")
+        ZipFile(input).use { zip ->
+            ZipOutputStream(output.outputStream().buffered()).use { out ->
+                for (entry in zip.entries()) {
+                    // The class itself and its inner classes (Name$Inner.class).
+                    if (patched.any { entry.name == "$it.class" || entry.name.startsWith("$it$") }) continue
+                    out.putNextEntry(ZipEntry(entry.name))
+                    zip.getInputStream(entry).use { it.copyTo(out) }
+                    out.closeEntry()
+                }
+            }
+        }
+    }
+}
+
+val graphHopperPatched: Attribute<Boolean> = Attribute.of("org.imunav.graphhopper-patched", Boolean::class.javaObjectType)
+dependencies {
+    attributesSchema { attribute(graphHopperPatched) }
+    artifactTypes.getByName("jar") { attributes.attribute(graphHopperPatched, false) }
+    registerTransform(StripPatchedGraphHopperClasses::class) {
+        from.attribute(graphHopperPatched, false).attribute(ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE, "jar")
+        to.attribute(graphHopperPatched, true).attribute(ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE, "jar")
+    }
 }
 
 // GraphHopper brings its OSM import stack, which only the desktop pack builder (`:routing:run`)
@@ -153,6 +201,7 @@ dependencies {
 // component (osmosis-osm-binary, LGPL 3.0) and its Protocol Buffers dependency.
 configurations.configureEach {
     if (name.endsWith("RuntimeClasspath")) {
+        attributes.attribute(graphHopperPatched, true)
         exclude(group = "org.openstreetmap.osmosis", module = "osmosis-osm-binary")
         exclude(group = "com.google.protobuf", module = "protobuf-java")
     }
