@@ -50,7 +50,7 @@ Constraining the car to the route removes cross-track error and heading drift en
 remaining along-track drift is repeatedly corrected by landmarks.
 
 ```
- GPS / NET / FUSED ─► TrustClassifier ─► GOOD / SUSPECT / BAD ─┐
+ GPS / NET / FUSED ─► TrustClassifier ─► GOOD / SUSPECT / BAD ──┐
  GnssStatus + AGC ──┘  (spoof & jam)                            │
  rotation vector,  ─► heading, vertical yaw rate, gyro bias,    │
  gyro, lin. accel      MotionDetector (stop / resume)           │
