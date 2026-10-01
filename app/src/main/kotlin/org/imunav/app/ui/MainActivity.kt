@@ -11,10 +11,10 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -174,12 +174,12 @@ private fun AppRoot(app: AppGraph, hasLocation: Boolean, requestPermission: () -
             mapActive = screen == Screen.MAP && !showSetup,
         )
         if (screen != Screen.MAP) {
-            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).blockTouchesBelow()) {
+            Surface(Modifier.fillMaxSize().blockTouchesBelow(), color = MaterialTheme.colorScheme.background) {
                 OtherScreen(app, ui, screen, tripId, history, onScreen = { screen = it }, onTrip = { tripId = it }, onSetup = { showSetup = true })
             }
         }
         if (showSetup) {
-            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).blockTouchesBelow()) {
+            Surface(Modifier.fillMaxSize().blockTouchesBelow(), color = MaterialTheme.colorScheme.background) {
                 OnboardingScreen(
                     app = app,
                     onPermissionsChanged = refreshPermissions,
