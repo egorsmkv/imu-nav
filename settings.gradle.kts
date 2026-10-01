@@ -18,6 +18,5 @@ rootProject.name = "blind-driver-opensource"
 
 include(":core")
 include(":app")
-include(":server")
 include(":routing")
 include(":replay")

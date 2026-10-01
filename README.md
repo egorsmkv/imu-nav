@@ -205,10 +205,13 @@ and download everyone's merged data. Protocol (gzip CSV in OpenCellID columns):
 
 - `POST /v1/cells` — upload; `Authorization: Bearer <key>` if the server has an API key
 - `GET /v1/cells.csv.gz?mcc=255&since=<epoch seconds>` — incremental download
+- `GET /v1/towers` plus `PUT` / `DELETE /v1/towers/{radio}/{mcc}/{mnc}/{area}/{cid}` — JSON management API
+- `GET /v1/events` — WebSocket stream of tower upserts and deletions for realtime management tools
 - `GET /health`
 
-The reference server in `server/` has no dependencies beyond the JDK. It is built to resist
-**poisoning** (a phone or a script uploading fake tower positions):
+The Rust reference server in `server/` persists per-device contributions and materialized consensus
+in SQLite (WAL mode), so state survives restarts and reads continue during uploads. It is built to
+resist **poisoning** (a phone or a script uploading fake tower positions):
 
 - Every upload carries an `X-Device-Id`; contributions are stored per device (at most 50 samples each).
 - A tower's position is a **one-device-one-vote weighted median**, so one device cannot outvote others
@@ -219,17 +222,17 @@ The reference server in `server/` has no dependencies beyond the JDK. It is buil
 - Rate limits per device and per IP, and a cap on new device ids per IP per day.
 
 ```bash
-./gradlew :server:installDist
-server/build/install/server/bin/server --port 8080 --data cells.csv.gz [--api-key KEY] \
-    [--min-devices 2] [--max-samples 50] [--area ukraine|any] \
-    [--tls-keystore server.p12 --tls-password PASS]
+cargo build --release --manifest-path server/Cargo.toml
+server/target/release/imu-nav-cell-server --port 8080 --data cells.sqlite3 [--api-key KEY] \
+    [--min-devices 2] [--max-samples 50] [--area ukraine|any] [--trust-proxy]
 # optionally seed it once from an export, e.g. OpenCellID/Mozilla filtered to Ukraine:
-server/build/install/server/bin/server --data cells.csv.gz --import 255.csv.gz --mcc 255
+server/target/release/imu-nav-cell-server --data cells.sqlite3 --import 255.csv.gz --mcc 255
 ```
 
-With `--tls-keystore` (PKCS12) the server speaks HTTPS itself; otherwise put it behind a TLS proxy
-for use outside your own network. The app warns when an API key would travel over plain `http://`.
-Data files from servers before 0.6.0 (no per-device column) are not compatible — re-seed them.
+Put it behind a TLS reverse proxy for use outside your own network. The app warns when an API key
+would travel over plain `http://`. The old Kotlin server's internal contribution gzip is not a
+SQLite migration source; re-import the original seed export when moving to this server. See
+[`server/README.md`](server/README.md) for the complete HTTP, management, and WebSocket API.
 In the app: **Cells → Sharing server**, enter the URL (and key), then *Sync now* or enable automatic sync (every 6 h and after trips).
 
 All thresholds live in `core/.../Tuning.kt` (defaults = factory preset) and `TrustConfig`.
@@ -249,11 +252,12 @@ Android SDK 36, the Android NDK and Rust 1.85+ (edition 2024) with the `aarch64-
 is outside the Android SDK. Android builds compile and package the Rust estimator automatically.
 
 ```bash
-./gradlew test                # engine, routing/search, server and replay tests
+./gradlew test                # Kotlin engine, routing/search and replay tests
 ./gradlew :app:assemblePlayDebug    # normal development build
 ./gradlew :app:assembleFdroidRelease # unsigned F-Droid release build
 ./gradlew :app:assemblePlayBenchmark # release speed + freeze diagnostics, installs as org.imunav.app.bench
 cargo test --manifest-path native/Cargo.toml # native estimator and covariance tests
+cargo test --manifest-path server/Cargo.toml # persistent HTTP/WebSocket cell server tests
 ```
 
 **Responsiveness.** Debug and benchmark builds enable StrictMode and a main-thread watchdog
@@ -421,7 +425,7 @@ The APK contains no copyleft code. GraphHopper's `.osm.pbf` reader needs `osmosi
 `app/build.gradle.kts` excludes both from the app (verified: only `com.graphhopper.reader.osm.pbf.*`
 uses them).
 
-**Desktop tools only** (`:routing` pack builder, `:server`, `:replay`; not in the APK): the same
+**Desktop tools only** (`:routing` pack builder, Rust `server/`, `:replay`; not in the APK): the same
 GraphHopper stack plus
 
 | Library | Version | Used for | Licence |
@@ -429,8 +433,10 @@ GraphHopper stack plus
 | osmosis-osm-binary | 0.48.3 | reading `.osm.pbf` extracts | LGPL 3.0 (used unmodified, as a separate jar) |
 | Protocol Buffers (Java) | 3.12.2 | `.osm.pbf` decoding | BSD 3-Clause |
 | SQLite JDBC | 3.53.4.0 | writing the search index | Apache 2.0 |
+| Axum + Tokio | 0.8 / 1.x | cell server HTTP/WebSocket runtime | MIT |
+| Rusqlite + SQLite | 0.37 / bundled | persistent cell server database | MIT / public domain |
 
-The sharing server uses only the JDK's built-in HTTP server.
+The sharing server also uses Serde, CSV, Flate2, Clap and Tracing (MIT or MIT/Apache 2.0).
 
 **Build and development tools** (not distributed)
 

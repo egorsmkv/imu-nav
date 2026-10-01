@@ -58,3 +58,28 @@ val rustClippy = tasks.register<Exec>("rustClippy") {
 tasks.named("check") {
     dependsOn(rustFmtCheck, rustTest, rustClippy)
 }
+
+val serverRustFmtCheck = tasks.register<Exec>("serverRustFmtCheck") {
+    group = "verification"
+    description = "Checks formatting of the Rust cell-sharing server"
+    commandLine("cargo", "fmt", "--manifest-path", "server/Cargo.toml", "--all", "--check")
+    inputs.files(fileTree("server") { exclude("target/**") })
+}
+
+val serverRustTest = tasks.register<Exec>("serverRustTest") {
+    group = "verification"
+    description = "Runs the persistent cell-sharing server tests"
+    commandLine("cargo", "test", "--manifest-path", "server/Cargo.toml")
+    inputs.files(fileTree("server") { exclude("target/**") })
+}
+
+val serverRustClippy = tasks.register<Exec>("serverRustClippy") {
+    group = "verification"
+    description = "Runs pedantic static analysis for the Rust cell-sharing server"
+    commandLine("cargo", "clippy", "--manifest-path", "server/Cargo.toml", "--all-targets", "--", "-W", "clippy::pedantic", "-D", "warnings")
+    inputs.files(fileTree("server") { exclude("target/**") })
+}
+
+tasks.named("check") {
+    dependsOn(serverRustFmtCheck, serverRustTest, serverRustClippy)
+}
