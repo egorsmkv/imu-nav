@@ -26,6 +26,9 @@ class MotionDetector(private val tuning: () -> Tuning) {
     private var resumedAtMs = -1L
     private var lastSampleMs = 0L
 
+    /** Expiry of the latest IMU evidence; repeated navigation ticks must not refresh it. */
+    val validUntilMs: Long get() = lastSampleMs + SAMPLE_MAX_AGE_MS
+
     /** Yaw integration for [integratedYaw] only counts samples after this time. */
     var turnResetMs = -1L
 
@@ -133,7 +136,7 @@ class MotionDetector(private val tuning: () -> Tuning) {
      * null = no fresh IMU data, 0 = stopped, ramp after a resume, otherwise 1.
      */
     fun motionFactor(nowMs: Long): Double? {
-        if (lastSampleMs <= 0 || nowMs - lastSampleMs >= 2000) return null
+        if (lastSampleMs <= 0 || nowMs < lastSampleMs || nowMs >= validUntilMs) return null
         if (stopped) return 0.0
         if (resumedAtMs > 0) {
             val t = tuning()
@@ -167,5 +170,9 @@ class MotionDetector(private val tuning: () -> Tuning) {
     fun resetHoldAccumulator() {
         holdYawDeg = 0.0
         holdStartedMs = -1L
+    }
+
+    private companion object {
+        const val SAMPLE_MAX_AGE_MS = 2000L
     }
 }

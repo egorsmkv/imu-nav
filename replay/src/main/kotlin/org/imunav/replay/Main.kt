@@ -21,6 +21,7 @@ usage: replay <trip.rec.gz|dir> [options]
   --ukraine                apply the app's Ukraine service area to the GPS trust check
   --compare-native         compare Kotlin and native at reference GPS timestamps; use -PnativeReplay
                            to build the host JNI library. Hidden GPS is excluded from all navigation inputs.
+  --no-native-motion       disable native stop/resume hints for an A/B comparison (with --compare-native)
   --out DIR                write summary.txt, errors-*.csv and compare-*.geojson per run
 """
 
@@ -50,7 +51,9 @@ fun main(args: Array<String>) {
             val tag = f.name.substringBefore('.') + (hide?.let { "-hide${it.toInt()}s" } ?: "-asrec")
             summary.appendLine("-- ${hide?.let { "GPS hidden after ${it.toInt()} s" } ?: "as recorded"}")
             if ("compare-native" in opts) {
-                val comparison = NativeComparison(tuning, area).replay(events, hide)
+                val motionEnabled = "no-native-motion" !in opts
+                val comparison = NativeComparison(tuning, area, nativeMotionEnabled = motionEnabled).replay(events, hide)
+                summary.appendLine("native motion hints: $motionEnabled")
                 summary.append(comparison.summary())
                 outDir?.let { File(it, "native-errors-$tag.csv").writeText(comparison.csv()) }
                 continue

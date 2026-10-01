@@ -264,6 +264,23 @@ class NavigationEngine(
     /** Feed every IMU sample (tens per second) to the stop / turn detectors. */
     fun onImu(sample: ImuSample, yawBiasDegS: Double = 0.0) = motion.add(sample, yawBiasDegS)
 
+    /**
+     * Shares recorded motion evidence with the native comparison estimator. Network movement
+     * requires a recent non-duplicate fix and a positive speed lower bound, so cached tower
+     * locations cannot keep vetoing a real stop. No engine position correction is exported.
+     */
+    fun motionEvidence(nowMs: Long): MotionEvidence? {
+        if (mode != TravelMode.CAR) return null
+        val car = cursor ?: return null
+        val factor = motion.motionFactor(nowMs) ?: return null
+        val networkFresh = net.history.lastOrNull()?.let { nowMs - it.elapsedMs in 0..MOTION_NETWORK_MAX_AGE_MS } == true
+        val network = if (networkFresh) net.speedEstimate(nowMs) else null
+        val networkMoving = network != null && network.speedMps - MOTION_NETWORK_SIGMAS * network.sigmaMps > MOTION_NETWORK_MIN_SPEED_MPS
+        val ageMs = nowMs - if (lastGpsUseMs > 0) lastGpsUseMs else navStartMs
+        val cruise = speedFusion.fuse(lastGpsSpeed, ageMs, RouteSpeedPrior.at(car.route, car.s, speedProfile), network)
+        return MotionEvidence(factor, cruise, motion.validUntilMs, networkMoving)
+    }
+
     /** User accepted the "you left the route" countdown early. */
     fun confirmDeviation(nowMs: Long) {
         if (!deviation.pending) return
@@ -1240,6 +1257,9 @@ class NavigationEngine(
     }
 
     companion object {
+        private const val MOTION_NETWORK_MAX_AGE_MS = 10_000L
+        private const val MOTION_NETWORK_SIGMAS = 3.0
+        private const val MOTION_NETWORK_MIN_SPEED_MPS = 1.0
         const val TICK_MS = 500L
 
         /** Driving: announce maneuvers this far ahead (the last one is "now"). */

@@ -173,6 +173,11 @@ samples, satellite/AGC status, routes and the engine's own estimates (gzip text,
   route projections can be ambiguous on repeated sections. This stricter comparison has different
   sampling/hidden-GPS semantics from the legacy replay, so their error figures are not interchangeable.
   Rust 1.99+ is required; `:replay:test` also builds the host library and runs synthetic JNI comparisons.
+  Native car dead reckoning now uses the shared IMU stop/resume detector when fresh GPS/OBD speed
+  and confident cell movement do not contradict it. Add `--no-native-motion` to disable these hints
+  for an A/B comparison. Hints expire with the IMU samples; they are speed-model assumptions, not
+  position anchors. Quiet highway travel without independent movement evidence remains ambiguous.
+  The native estimator still does not control the displayed navigation position.
 
 ### Cell tower database
 Tower locations come from four sources, each in its own table and looked up in this order:

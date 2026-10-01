@@ -2,6 +2,7 @@ package org.imunav.app.nativecore
 
 import org.imunav.core.gnss.JudgedFix
 import org.imunav.core.gnss.TrustLevel
+import org.imunav.core.nav.MotionEvidence
 import org.imunav.core.route.TravelMode
 import java.io.Closeable
 import kotlin.math.sqrt
@@ -20,7 +21,7 @@ class NativeNavigationEstimator private constructor(private var handle: Long) : 
         val positionSigmaM: Double get() = sqrt(positionVarianceM2)
     }
 
-    fun tick(nowMs: Long, gps: JudgedFix?): State {
+    fun tick(nowMs: Long, gps: JudgedFix?, motion: MotionEvidence? = null): State {
         val fix = gps?.fix
         val doubles = doubleArrayOf(
             fix?.lat ?: Double.NaN,
@@ -28,11 +29,16 @@ class NativeNavigationEstimator private constructor(private var handle: Long) : 
             fix?.accuracyM?.toDouble() ?: Double.NaN,
             fix?.speedMps?.toDouble() ?: Double.NaN,
             fix?.speedAccuracyMps?.toDouble() ?: Double.NaN,
+            motion?.factor ?: Double.NaN,
+            motion?.cruiseSpeedMps ?: Double.NaN,
         )
         val longs = longArrayOf(
             if (fix == null) 0 else 1,
             fix?.elapsedMs ?: 0,
             if (gps?.verdict?.level == TrustLevel.SUSPECT) TRUST_SUSPECT else TRUST_GOOD,
+            if (motion == null) 0 else 1,
+            motion?.validUntilMs ?: 0,
+            if (motion?.networkMoving == true) 1 else 0,
         )
         val values = nativeTick(requireHandle(), nowMs, doubles, longs) ?: error("native navigation estimator tick failed")
         check(values.size == STATE_SIZE) { "native navigation estimator returned ${values.size} values" }

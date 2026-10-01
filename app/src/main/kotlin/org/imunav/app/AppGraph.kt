@@ -509,7 +509,7 @@ class AppGraph(private val context: Context) {
         val now = SystemClock.elapsedRealtime()
         val positioning = hub.snapshot(now)
         engine.tick(now, positioning)
-        nativeEstimator.tick(now, engine.state, positioning, ignoreGps = engine.simulateGpsLoss)
+        nativeEstimator.tick(now, engine.state, positioning, ignoreGps = engine.simulateGpsLoss, motion = engine.motionEvidence(now))
         trips.onTick(now)
         tickCount++
         // Battery level / charger / battery saver change slowly: re-check AUTO once a minute.

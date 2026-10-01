@@ -258,6 +258,20 @@ impl RouteFilter {
         self.estimate.systematic_drift_m = 0.0;
     }
 
+    /// Changes model speed without treating an IMU stop/ramp as a position measurement.
+    /// Accumulated position uncertainty and systematic drift are preserved.
+    ///
+    /// # Errors
+    /// Returns [`FilterError`] for non-finite speed or invalid speed uncertainty.
+    pub fn set_speed_prior(&mut self, speed_mps: f64, sigma_mps: f64) -> Result<(), FilterError> {
+        validate_finite(speed_mps)?;
+        validate_sigma(sigma_mps)?;
+        self.estimate.speed_mps = speed_mps;
+        self.estimate.covariance.speed = (sigma_mps * sigma_mps).max(MIN_VARIANCE);
+        self.estimate.covariance.position_speed = 0.0;
+        Ok(())
+    }
+
     // The short A/AP names below are the standard Joseph covariance-update notation. Keeping the
     // matrix indices visible makes the hand-unrolled 2x2 calculation auditable.
     #[allow(clippy::similar_names)]

@@ -5,6 +5,10 @@ use crate::{Estimate, FilterError, RouteFilter, milliseconds_to_seconds};
 use std::collections::VecDeque;
 use std::sync::Arc;
 
+mod motion;
+use motion::MotionControl;
+pub use motion::MotionObservation;
+
 const MIN_POSITION_SIGMA_M: f64 = 3.0;
 const MIN_SPEED_SIGMA_MPS: f64 = 0.2;
 const DEFAULT_GPS_POSITION_SIGMA_M: f64 = 20.0;
@@ -98,6 +102,8 @@ struct FilterState {
     last_vehicle_speed_ms: i64,
     vehicle_speed_scale: f64,
     stable_vehicle_speed: Option<StableVehicleSpeed>,
+    last_gps_speed_ms: i64,
+    motion_control: Option<MotionControl>,
 }
 
 /// A continuous plateau of accepted raw OBD readings. Calibration during acceleration would
@@ -147,6 +153,7 @@ impl StableVehicleSpeed {
 struct HistoryFrame {
     state: FilterState,
     vehicle_speed_mps: Option<f64>,
+    motion: Option<MotionObservation>,
 }
 
 impl NavigationEstimator {
@@ -173,6 +180,8 @@ impl NavigationEstimator {
             last_vehicle_speed_ms: -1,
             vehicle_speed_scale: 1.0,
             stable_vehicle_speed: None,
+            last_gps_speed_ms: -1,
+            motion_control: None,
         };
         Ok(Self {
             state: state.clone(),
@@ -183,6 +192,7 @@ impl NavigationEstimator {
             history: VecDeque::from([HistoryFrame {
                 state,
                 vehicle_speed_mps: None,
+                motion: None,
             }]),
         })
     }
@@ -232,8 +242,22 @@ impl NavigationEstimator {
         now_ms: i64,
         gps: Option<GpsObservation>,
     ) -> Result<TickOutcome, FilterError> {
+        self.tick_with_motion(now_ms, gps, None)
+    }
+
+    /// Advances with a fresh IMU-derived motion hint. Hints are model changes, not position
+    /// anchors, and are replayed with later events when delayed GNSS arrives.
+    ///
+    /// # Errors
+    /// Returns [`FilterError`] for invalid measurements or filter updates, without mutation.
+    pub fn tick_with_motion(
+        &mut self,
+        now_ms: i64,
+        gps: Option<GpsObservation>,
+        motion: Option<MotionObservation>,
+    ) -> Result<TickOutcome, FilterError> {
         let mut pending = self.clone();
-        let outcome = pending.tick_inner(now_ms, gps)?;
+        let outcome = pending.tick_inner(now_ms, gps, motion)?;
         *self = pending;
         Ok(outcome)
     }
@@ -243,6 +267,7 @@ impl NavigationEstimator {
         &mut self,
         now_ms: i64,
         gps: Option<GpsObservation>,
+        motion: Option<MotionObservation>,
     ) -> Result<TickOutcome, FilterError> {
         let mut projection = None;
         let mut position_accepted = false;
@@ -288,8 +313,10 @@ impl NavigationEstimator {
                     self.predict_to(frame.state.elapsed_ms)?;
                     if let Some(speed) = frame.vehicle_speed_mps {
                         self.apply_vehicle_speed(speed)?;
+                    } else {
+                        self.apply_motion(frame.motion)?;
                     }
-                    self.remember(frame.vehicle_speed_mps);
+                    self.remember_motion(frame.vehicle_speed_mps, frame.motion);
                 }
             } else {
                 // A rejected observation must not change process-noise partitioning or cause
@@ -299,7 +326,8 @@ impl NavigationEstimator {
             }
         }
         self.predict_to(now_ms)?;
-        self.remember(None);
+        self.apply_motion(motion)?;
+        self.remember_motion(None, motion);
         Ok(TickOutcome {
             estimate: self.estimate(),
             projection,
@@ -353,11 +381,10 @@ impl NavigationEstimator {
                 .unwrap_or(DEFAULT_GPS_SPEED_SIGMA_MPS)
                 .max(MIN_SPEED_SIGMA_MPS)
                 * multiplier;
-            speed_accepted = self
-                .state
-                .filter
-                .update_speed(speed_mps, speed_sigma, SPEED_NIS_GATE)?
-                .accepted;
+            speed_accepted = self.update_measured_speed(speed_mps, speed_sigma)?;
+            if speed_accepted && observation.trust == ObservationTrust::Good {
+                self.state.last_gps_speed_ms = observation.elapsed_ms;
+            }
         }
         if position_accepted && speed_accepted && observation.trust == ObservationTrust::Good {
             self.learn_vehicle_speed_scale(observation, projected.offset_m);
@@ -401,15 +428,10 @@ impl NavigationEstimator {
 
     /// A rejected speed must not start or extend the lower OBD drift allowance.
     fn apply_vehicle_speed(&mut self, speed_mps: f64) -> Result<bool, FilterError> {
-        let accepted = self
-            .state
-            .filter
-            .update_speed(
-                speed_mps * self.state.vehicle_speed_scale,
-                OBD_SPEED_SIGMA_MPS,
-                SPEED_NIS_GATE,
-            )?
-            .accepted;
+        let accepted = self.update_measured_speed(
+            speed_mps * self.state.vehicle_speed_scale,
+            OBD_SPEED_SIGMA_MPS,
+        )?;
         if accepted {
             self.state.last_vehicle_speed_ms = self.state.elapsed_ms;
             self.state.stable_vehicle_speed = Some(self.state.stable_vehicle_speed.map_or_else(
@@ -429,6 +451,13 @@ impl NavigationEstimator {
             TravelMode::Foot => WALK_ACCELERATION_SIGMA_MPS2,
         };
         while self.state.elapsed_ms < elapsed_ms {
+            if self
+                .state
+                .motion_control
+                .is_some_and(|control| control.valid_until_ms <= self.state.elapsed_ms)
+            {
+                self.release_motion()?;
+            }
             let expiry_ms = self
                 .state
                 .last_vehicle_speed_ms
@@ -437,6 +466,9 @@ impl NavigationEstimator {
                 self.state.last_vehicle_speed_ms >= 0 && self.state.elapsed_ms < expiry_ms;
             let mut end_ms =
                 elapsed_ms.min(self.state.elapsed_ms.saturating_add(MAX_PREDICTION_MS));
+            if let Some(control) = self.state.motion_control {
+                end_ms = end_ms.min(control.valid_until_ms);
+            }
             if obd_fresh {
                 end_ms = end_ms.min(expiry_ms);
             }
@@ -456,9 +488,19 @@ impl NavigationEstimator {
 
     /// Keeps bounded replay work and one checkpoint preceding the time window when available.
     fn remember(&mut self, vehicle_speed_mps: Option<f64>) {
+        self.remember_motion(vehicle_speed_mps, None);
+    }
+
+    /// Retains model hints as events, not just their resulting speed, for delayed-GNSS replay.
+    fn remember_motion(
+        &mut self,
+        vehicle_speed_mps: Option<f64>,
+        motion: Option<MotionObservation>,
+    ) {
         self.history.push_back(HistoryFrame {
             state: self.state.clone(),
             vehicle_speed_mps,
+            motion,
         });
         let cutoff_ms = self.state.elapsed_ms.saturating_sub(GPS_HISTORY_MS);
         while self.history.len() > MAX_HISTORY_FRAMES

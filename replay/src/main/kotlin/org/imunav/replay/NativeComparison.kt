@@ -75,7 +75,7 @@ data class ComparisonResult(val samples: List<ComparisonSample>) {
  * A separate hub judges reference GPS. After the cutoff, GPS never reaches the navigation hub,
  * including its gyro-bias learner. Scoring uses fresh reference timestamps, without extrapolation.
  */
-class NativeComparison(private val tuning: Tuning = Tuning.DEFAULT, private val area: ServiceArea = ServiceArea.EVERYWHERE) {
+class NativeComparison(private val tuning: Tuning = Tuning.DEFAULT, private val area: ServiceArea = ServiceArea.EVERYWHERE, private val nativeMotionEnabled: Boolean = true) {
     /** Groups equal-time inputs before ticking and never uses a later GPS position to score a tick. */
     fun replay(events: List<TripEvent>, hideGpsAfterS: Double? = null): ComparisonResult {
         require(hideGpsAfterS == null || (hideGpsAfterS.isFinite() && hideGpsAfterS >= 0.0))
@@ -199,7 +199,8 @@ class NativeComparison(private val tuning: Tuning = Tuning.DEFAULT, private val 
             engine.simulateGpsLoss = hidden
             val snapshot = hub.snapshot(timeMs)
             engine.tick(timeMs, snapshot)
-            val estimate = estimator.tick(timeMs, snapshot.lastUsableGps.takeUnless { hidden })
+            val motion = if (nativeMotionEnabled) engine.motionEvidence(timeMs) else null
+            val estimate = estimator.tick(timeMs, snapshot.lastUsableGps.takeUnless { hidden }, motion)
             val truth = reference.lastGood?.takeIf { it.elapsedMs == timeMs } ?: return
             val route = engine.route ?: return
             // Global projection avoids favouring either estimator's route position when scoring.

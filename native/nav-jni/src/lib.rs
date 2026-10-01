@@ -5,7 +5,7 @@
 //! cleanly instead of dereferencing freed memory.
 
 use imu_nav_core::estimator::{
-    GpsObservation, InitialEstimate, NavigationEstimator, ObservationTrust,
+    GpsObservation, InitialEstimate, MotionObservation, NavigationEstimator, ObservationTrust,
     TravelMode as EstimatorTravelMode,
 };
 use imu_nav_core::network::{GateResult as NetworkGateResult, NetworkSample, NetworkTracker};
@@ -1087,13 +1087,26 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNavigationEstimator_
     longs: JLongArray,
 ) -> jdoubleArray {
     catch_unwind(AssertUnwindSafe(|| {
-        if env.get_array_length(&doubles).ok()? != 5 || env.get_array_length(&longs).ok()? != 3 {
+        let double_count = env.get_array_length(&doubles).ok()?;
+        let long_count = env.get_array_length(&longs).ok()?;
+        let has_motion_fields = double_count == 7 && long_count == 6;
+        if !has_motion_fields && (double_count != 5 || long_count != 3) {
             return None;
         }
-        let mut values = [0.0; 5];
-        let mut flags = [0_i64; 3];
-        env.get_double_array_region(&doubles, 0, &mut values).ok()?;
-        env.get_long_array_region(&longs, 0, &mut flags).ok()?;
+        let mut values = [0.0; 7];
+        let mut flags = [0_i64; 6];
+        env.get_double_array_region(
+            &doubles,
+            0,
+            &mut values[..if has_motion_fields { 7 } else { 5 }],
+        )
+        .ok()?;
+        env.get_long_array_region(
+            &longs,
+            0,
+            &mut flags[..if has_motion_fields { 6 } else { 3 }],
+        )
+        .ok()?;
         let gps = if flags[0] == 0 {
             None
         } else {
@@ -1113,10 +1126,26 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNavigationEstimator_
                 },
             })
         };
-        let estimate = with_estimator(handle, |estimator| estimator.tick(now_ms, gps))
-            .ok()?
-            .ok()?
-            .estimate;
+        let motion = if has_motion_fields && flags[3] == 1 {
+            Some(MotionObservation {
+                factor: values[5],
+                cruise_speed_mps: values[6],
+                valid_until_ms: flags[4],
+                network_moving: match flags[5] {
+                    0 => false,
+                    1 => true,
+                    _ => return None,
+                },
+            })
+        } else {
+            None
+        };
+        let estimate = with_estimator(handle, |estimator| {
+            estimator.tick_with_motion(now_ms, gps, motion)
+        })
+        .ok()?
+        .ok()?
+        .estimate;
         let result = estimate_values(estimate)?;
         new_double_array(&env, &result)
     }))

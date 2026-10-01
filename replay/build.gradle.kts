@@ -19,6 +19,7 @@ kotlin {
         kotlin.srcDir(rootProject.file("app/src/main/kotlin"))
         kotlin.include(
             "org/imunav/replay/**",
+            "org/imunav/app/nativecore/NativeEstimatorBridge.kt",
             "org/imunav/app/nativecore/NativeNavigationEstimator.kt",
             "org/imunav/app/nativecore/NativeRouteGeometry.kt",
             "org/imunav/app/nativecore/NativeRouteFilter.kt",

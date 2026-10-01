@@ -2,7 +2,7 @@
 
 use super::*;
 
-fn estimator(position_sigma_m: f64) -> NavigationEstimator {
+pub(super) fn estimator(position_sigma_m: f64) -> NavigationEstimator {
     let route = Arc::new(
         RouteGeometry::new(vec![
             GeoPoint {
@@ -31,7 +31,7 @@ fn estimator(position_sigma_m: f64) -> NavigationEstimator {
     .unwrap()
 }
 
-fn gps(elapsed_ms: i64, latitude_deg: f64) -> GpsObservation {
+pub(super) fn gps(elapsed_ms: i64, latitude_deg: f64) -> GpsObservation {
     GpsObservation {
         point: GeoPoint {
             latitude_deg,

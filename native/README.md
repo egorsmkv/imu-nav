@@ -43,7 +43,7 @@ The main public types are `RouteFilter`, `Estimate`, `Covariance2`, `UpdateOutco
 
 - selects car or walking process noise;
 - advances the filter to measurement timestamps and elapsed-realtime ticks;
-- applies delayed GNSS fixes at their observation time, replaying later predictions and OBD
+- applies delayed GNSS fixes at their observation time, replaying later predictions, motion hints and OBD
   readings from a bounded history (up to five seconds / 128 checkpoints); future, duplicate,
   out-of-order and expired GNSS fixes are ignored;
 - projects trusted or suspect GNSS observations onto the route;
@@ -51,6 +51,7 @@ The main public types are `RouteFilter`, `Estimate`, `Covariance2`, `UpdateOutco
   from the estimate at measurement time, independently of the innovation gates;
 - derives measurement uncertainty from GNSS accuracy and trust level;
 - incorporates GNSS speed and fresh OBD-II vehicle speed;
+- uses shared IMU stop/resume hints for car dead reckoning, with measured-speed and network-motion vetoes;
 - learns a per-trip OBD speed scale from precise, accepted GOOD GNSS while raw OBD has remained
   stable for at least three seconds; subsequent OBD updates use the learned scale;
 - uses lower drift growth only after an accepted OBD speed update and until its 2.5-second
@@ -71,6 +72,20 @@ Only ratios in 0.8–1.2 qualify, blended by 5% per accepted GNSS observation. S
 missing accuracy fields cannot calibrate the scale. Scale and plateau history are checkpointed
 with the filter so delayed GNSS and OBD replay produce the same calibration as chronological input.
 The existing systematic-drift allowance remains; learning a scale does not eliminate uncertainty.
+
+Stop/resume hints reuse the Kotlin detector's hold time, resume confirmation and acceleration ramp.
+They are derived from recorded IMU/network inputs, not an independent velocity measurement. Fresh
+accepted GOOD GNSS or OBD speed takes precedence; recent non-duplicate network positions veto a stop
+when estimated speed minus three standard deviations exceeds 1 m/s. Walking ignores these hints.
+Applying a hint changes the speed prior without reducing position uncertainty or resetting drift.
+The pre-stop cruising speed is retained for resuming. Hints expire two seconds after the last actual
+IMU sample, including across long tick gaps; missing or vetoed hints restore an uncertain cruising
+prior instead of leaving the car permanently stopped. Delayed GNSS replays the recorded hints.
+
+Quiet highway motion cannot reliably be distinguished from standing still by vibration alone.
+Likewise, prolonged phone handling can look like movement. If IMU disappears during a real stop,
+the cruising fallback can drift forward. These are unresolved model limitations, not guarantees
+of stop detection; the estimator remains comparison-only in this research prototype.
 
 It returns a `TickOutcome` containing the estimate, optional route projection, and whether the
 position and speed measurements passed their innovation gates.
@@ -204,3 +219,9 @@ Synthetic regression drives cover unbiased OBD, a 5% high OBD scale, and noisy 5
 braking/stopping/restarting during a five-minute outage after two minutes of GNSS calibration.
 On the ideal 5%-high case, adding scale learning reduced native blind p95 from 223 m to about 1 m.
 This isolates scale drift under controlled inputs; it is not a claim of real-world metre accuracy.
+
+No-OBD JNI regressions also cover braking, a long stop and restart during a two-minute GPS outage,
+brief phone movement, missing IMU and smooth travel with cell-derived movement evidence. On this
+synthetic stop/start drive, motion hints reduce native blind p95 from 630 m to 45 m; this is not a
+real-drive accuracy claim. To compare recordings with hints disabled, add `--no-native-motion`
+to the same `--compare-native` command and use a separate output directory.
