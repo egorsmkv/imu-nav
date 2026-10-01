@@ -346,7 +346,8 @@ permission (asked when choosing *Walk*); without it or without a step sensor, a 
 assumed while the phone is moving. Walk recordings contain the steps, so the replay tool works for them too.
 
 Usage: search for the **From** and **To** addresses in the route panel, or long-press the map to
-choose a destination, then tap **Start**. The current trusted position is used when **From** is not
+choose a destination. The proposed route is drawn on the map as soon as its start and destination
+are known; review it, then tap **Start**. The current trusted position is used when **From** is not
 changed. If GPS is untrusted and there is no cell fix, search for the starting address or pan the
 crosshair onto your position and tap **Start here** first. Tap the status pill for
 positioning diagnostics (satellites, spoofing reasons, cells, *Simulate GPS loss*, trip log); the gear

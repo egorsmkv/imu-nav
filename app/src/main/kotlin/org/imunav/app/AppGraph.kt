@@ -6,6 +6,7 @@ import android.os.SystemClock
 import androidx.core.content.edit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -52,6 +53,7 @@ import org.imunav.core.nav.NavigationEngine
 import org.imunav.core.nav.NavigationMethod
 import org.imunav.core.nav.RussianPhrases
 import org.imunav.core.nav.UkrainianPhrases
+import org.imunav.core.route.Route
 import org.imunav.core.route.TravelMode
 import org.imunav.core.speed.SpeedProfile
 import org.imunav.core.speed.SpeedProfileStore
@@ -88,6 +90,8 @@ data class UiState(
     val gpsRejectReasons: List<String> = emptyList(),
     /** A route is being computed. */
     val planning: Boolean = false,
+    /** Route shown before navigation starts, so the user can review the proposed way. */
+    val previewRoute: Route? = null,
     /** A message to show once in a snackbar (then cleared with [AppGraph.clearError]). */
     val error: String? = null,
     /** Debug switch: pretend GPS is jammed. */
@@ -189,6 +193,7 @@ class AppGraph(private val context: Context) {
         modePrefs.edit { putString("mode", mode.name) }
         travelMode.value = mode
         tripLog.write("travel_mode $mode")
+        planRoutePreview()
     }
 
     /** Fallback used when GPS is unavailable; hybrid preserves the original app behaviour. */
@@ -306,6 +311,11 @@ class AppGraph(private val context: Context) {
     // Kotlin convention: a private mutable flow (_ui) and a public read-only view (ui) of it.
     private val _ui = MutableStateFlow(UiState())
 
+    /** The latest preview calculation; replacing it prevents an old result winning a race. */
+    private var previewJob: Job? = null
+    private var previewGeneration = 0L
+    private var previewRequest: RoutePreviewRequest? = null
+
     /** What the UI shows; collect it with `collectAsStateWithLifecycle()`. */
     val ui: StateFlow<UiState> = _ui.asStateFlow()
 
@@ -386,6 +396,7 @@ class AppGraph(private val context: Context) {
     fun setManualStart(p: GeoPoint?, label: String? = null) {
         tripLog.write("manual_start ${p?.let { "%.5f %.5f".format(Locale.US, it.lat, it.lon) }}")
         _ui.value = _ui.value.copy(manualStart = p, manualStartLabel = label.takeIf { p != null }, error = null)
+        planRoutePreview()
     }
 
     /** The error message was shown; forget it. */
@@ -396,6 +407,35 @@ class AppGraph(private val context: Context) {
     /** Destination picked on the map or in search; [label] is shown for a search result. */
     fun setDestination(p: GeoPoint?, label: String? = null) {
         _ui.value = _ui.value.copy(destination = p, destinationLabel = label.takeIf { p != null }, error = null)
+        planRoutePreview()
+    }
+
+    /** Calculate the route as soon as both endpoints are known, without starting navigation. */
+    private fun planRoutePreview() {
+        if (engine.state.active) return
+        val destination = _ui.value.destination
+        val from = _ui.value.manualStart ?: currentPosition()
+        previewJob?.cancel()
+        previewGeneration++
+        if (destination == null || from == null) {
+            previewRequest = null
+            _ui.value = _ui.value.copy(previewRoute = null, planning = false)
+            return
+        }
+
+        val request = RoutePreviewRequest(from, destination, travelMode.value)
+        val generation = previewGeneration
+        previewRequest = request
+        _ui.value = _ui.value.copy(previewRoute = null, planning = true, error = null)
+        previewJob = scope.launch {
+            runCatching { router.route(request.from, request.destination, mode = request.mode) }
+                .onSuccess { route ->
+                    if (generation == previewGeneration) _ui.value = _ui.value.copy(previewRoute = route, planning = false)
+                }
+                .onFailure { error ->
+                    if (generation == previewGeneration) _ui.value = _ui.value.copy(previewRoute = null, planning = false, error = error.message)
+                }
+        }
     }
 
     /**
@@ -422,8 +462,9 @@ class AppGraph(private val context: Context) {
         _ui.value = _ui.value.copy(planning = true, error = null)
         scope.launch {
             val mode = travelMode.value
+            val request = RoutePreviewRequest(from, dest, mode)
             runCatching {
-                val route = router.route(from, dest, mode = mode)
+                val route = _ui.value.previewRoute.takeIf { previewRequest == request } ?: router.route(from, dest, mode = mode)
                 route to withContext(Dispatchers.Default) { NativeRouteGeometry.create(route) }
             }.onSuccess { (route, nativeRoute) ->
                 tripLog.startTrip()
@@ -435,7 +476,9 @@ class AppGraph(private val context: Context) {
                 offlineMap.saveCorridor(route, darkTheme())
                 if (mode == TravelMode.CAR) obd.start()
                 applyPower()
-                _ui.value = _ui.value.copy(planning = false)
+                previewJob?.cancel()
+                previewRequest = null
+                _ui.value = _ui.value.copy(planning = false, previewRoute = null)
                 onStarted()
             }.onFailure { _ui.value = _ui.value.copy(planning = false, error = it.message) }
         }
@@ -481,6 +524,7 @@ class AppGraph(private val context: Context) {
 
     /** Rebuild [ui] from the current state of all components. */
     fun refresh() {
+        val hadTrustedPosition = _ui.value.hasTrustedPosition
         cells.refresh()
         hub.lastGood?.let { mapStart.rememberTrusted(it.point) }
         if (!uiVisible) {
@@ -504,6 +548,9 @@ class AppGraph(private val context: Context) {
             locationEnabled = sensors.locationEnabled,
             log = tripLog.recent.takeLast(30),
         )
+        if (!hadTrustedPosition && _ui.value.hasTrustedPosition && _ui.value.destination != null && _ui.value.manualStart == null && _ui.value.previewRoute == null) {
+            planRoutePreview()
+        }
     }
 
     init {
@@ -537,6 +584,9 @@ class AppGraph(private val context: Context) {
 }
 
 private const val MANUAL_START_ACCURACY_M = 100.0
+
+/** Inputs that make a preview reusable when the user starts navigation. */
+private data class RoutePreviewRequest(val from: GeoPoint, val destination: GeoPoint, val mode: TravelMode)
 
 /** Keeps the learned driving-speed profile in SharedPreferences. */
 private class PrefsSpeedProfileStore(context: Context) : SpeedProfileStore {

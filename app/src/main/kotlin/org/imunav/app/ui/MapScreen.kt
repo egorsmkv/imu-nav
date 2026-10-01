@@ -212,7 +212,7 @@ fun MapScreen(
             NavMap(
                 controller = controller,
                 dark = dark,
-                route = nav.route,
+                route = nav.route ?: ui.previewRoute,
                 position = ui.currentPosition,
                 accuracyM = accuracy,
                 bearingDeg = nav.bearingDeg,
