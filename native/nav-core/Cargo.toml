@@ -1,0 +1,9 @@
+[package]
+name = "imu-nav-core"
+version = "0.1.0"
+description = "Deterministic route-constrained estimation for IMU Nav"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]

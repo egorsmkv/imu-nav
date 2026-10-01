@@ -1,0 +1,14 @@
+[package]
+name = "imu-nav-jni"
+version = "0.1.0"
+description = "JNI bridge from Android to the IMU Nav Rust core"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+imu-nav-core = { path = "../nav-core" }
+jni = { version = "0.21", default-features = false }

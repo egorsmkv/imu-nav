@@ -116,6 +116,8 @@ android {
         }
     }
 
+    sourceSets.getByName("main").jniLibs.directories.add("build/generated/rustJniLibs")
+
     // The in-app language switcher needs every language in every install (App Bundles would split them).
     bundle {
         language {
@@ -132,6 +134,23 @@ android {
         htmlReport = true
         textReport = true
     }
+}
+
+val buildRustAndroid = tasks.register<Exec>("buildRustAndroid") {
+    group = "build"
+    description = "Builds the Rust navigation core for the Android ABIs"
+    workingDir(rootProject.projectDir)
+    commandLine(rootProject.file("scripts/build-rust-android.sh"), layout.buildDirectory.dir("generated/rustJniLibs").get().asFile)
+    inputs.files(rootProject.fileTree("native") { exclude("target/**") })
+    inputs.file(rootProject.file("scripts/build-rust-android.sh"))
+    outputs.dir(layout.buildDirectory.dir("generated/rustJniLibs"))
+}
+
+// AGP reads generated JNI directories in JniLibFolders before packaging them in NativeLibs.
+tasks.matching {
+    it.name.startsWith("merge") && (it.name.endsWith("JniLibFolders") || it.name.endsWith("NativeLibs"))
+}.configureEach {
+    dependsOn(buildRustAndroid)
 }
 
 dependencies {

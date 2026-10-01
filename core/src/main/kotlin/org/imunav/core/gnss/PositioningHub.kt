@@ -30,9 +30,15 @@ data class PositioningSnapshot(
  *
  * Android code only feeds it (see `SensorHub`); the navigation engine reads a [snapshot].
  */
-class PositioningHub(trustConfig: TrustConfig = TrustConfig(), area: ServiceArea = ServiceArea.EVERYWHERE, private val wallClock: () -> Long = System::currentTimeMillis) {
-    private val classifier = TrustClassifier(trustConfig, area)
-    private val jamDetector = JamDetector()
+class PositioningHub(
+    trustConfig: TrustConfig = TrustConfig(),
+    area: ServiceArea = ServiceArea.EVERYWHERE,
+    private val wallClock: () -> Long = System::currentTimeMillis,
+    trustEvaluator: TrustEvaluator? = null,
+    jammingDetector: JammingDetector? = null,
+) {
+    private val classifier = trustEvaluator ?: TrustClassifier(trustConfig, area)
+    private val jamDetector = jammingDetector ?: JamDetector()
     val gyroBias = GyroBiasEstimator()
 
     var gnss = GnssSnapshot()

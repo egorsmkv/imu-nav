@@ -2,11 +2,27 @@ package org.imunav.core.nav
 
 import org.imunav.core.speed.MAX_SPEED_MPS
 import org.imunav.core.speed.NetSpeedEstimator
+import org.imunav.core.speed.SpeedEstimate
 import kotlin.math.abs
 import kotlin.math.max
 
 /** A network fix projected onto the route. */
 data class NetSample(val elapsedMs: Long, val s: Double, val accM: Double, val offsetM: Double)
+
+/** Network-position math boundary; Android uses Rust while JVM replay uses [NetworkTracker]. */
+interface NetworkPositionTracker {
+    val recent: List<NetSample>
+    val history: List<NetSample>
+
+    fun reset()
+    fun clearSamples()
+    fun gate(elapsedMs: Long, s: Double, acc: Double): NetworkTracker.GateResult
+    fun record(sample: NetSample, lat: Double, lon: Double)
+    fun pruneHistory(nowMs: Long)
+    fun lastTwoConsistent(): Boolean
+    fun speedEstimate(nowMs: Long): SpeedEstimate?
+    fun strictSpeedEstimate(nowMs: Long): SpeedEstimate?
+}
 
 /**
  * Keeps route-projected network fixes honest.
@@ -16,7 +32,7 @@ data class NetSample(val elapsedMs: Long, val s: Double, val accM: Double, val o
  * mutually consistent candidates span ≥ 12 s and do not move backwards faster than 6 m/s, the
  * anchor was wrong and the tracker re-anchors on them.
  */
-class NetworkTracker {
+class NetworkTracker : NetworkPositionTracker {
     /** A trusted reference point: route position [s] at time [tS] (seconds), accurate to [acc] metres. */
     private class Anchor(val tS: Double, val s: Double, val acc: Double)
 
@@ -35,17 +51,17 @@ class NetworkTracker {
     private val candidates = ArrayList<Anchor>()
 
     /** Latest accepted samples (max 4), used for band correction and turn release. */
-    val recent = ArrayList<NetSample>()
+    override val recent = ArrayList<NetSample>()
 
     /** Accepted samples of the last 30 s, used by the "marker ran ahead" check. */
-    val history = ArrayList<NetSample>()
+    override val history = ArrayList<NetSample>()
 
     val speed = NetSpeedEstimator()
 
     private var lastLat = Double.NaN
     private var lastLon = Double.NaN
 
-    fun reset() {
+    override fun reset() {
         anchor = null
         candidates.clear()
         recent.clear()
@@ -56,14 +72,14 @@ class NetworkTracker {
     }
 
     /** Drop collected samples but keep the gate anchor (after a re-anchor). */
-    fun clearSamples() {
+    override fun clearSamples() {
         recent.clear()
         history.clear()
         speed.clear()
     }
 
     /** Decide whether a network fix at route position [s] (accuracy [acc] m) can be believed. */
-    fun gate(elapsedMs: Long, s: Double, acc: Double): GateResult {
+    override fun gate(elapsedMs: Long, s: Double, acc: Double): GateResult {
         val timeS = elapsedMs / 1000.0
         val current = anchor
         val fix = Anchor(timeS, s, acc)
@@ -113,7 +129,7 @@ class NetworkTracker {
     }
 
     /** Record an accepted sample. Duplicate coordinates (cached fixes) do not feed speed. */
-    fun record(sample: NetSample, lat: Double, lon: Double) {
+    override fun record(sample: NetSample, lat: Double, lon: Double) {
         recent += sample
         while (recent.size > 4) recent.removeAt(0)
         val duplicate = lat == lastLat && lon == lastLon
@@ -124,18 +140,22 @@ class NetworkTracker {
         history += sample
     }
 
-    fun pruneHistory(nowMs: Long) {
+    override fun pruneHistory(nowMs: Long) {
         history.removeAll { nowMs - it.elapsedMs > 30_000 }
     }
 
     /** True if the last two accepted samples are physically consistent with each other. */
-    fun lastTwoConsistent(): Boolean {
+    override fun lastTwoConsistent(): Boolean {
         if (recent.size < 2) return false
         val older = recent[recent.size - 2]
         val newer = recent[recent.size - 1]
         val dtS = (newer.elapsedMs - older.elapsedMs) / 1000.0
         return dtS > 0 && abs(newer.s - older.s) <= dtS * MAX_SPEED_MPS + older.accM + newer.accM
     }
+
+    override fun speedEstimate(nowMs: Long) = speed.estimate(nowMs)
+
+    override fun strictSpeedEstimate(nowMs: Long) = speed.strictEstimate(nowMs)
 
     private companion object {
         const val COARSE_ACCURACY_M = 300.0

@@ -174,6 +174,17 @@ class Route(
     }
 }
 
+/** Route-projection boundary; Android uses Rust while JVM replay uses this implementation. */
+fun interface RouteProjector {
+    fun project(route: Route, point: GeoPoint, aroundS: Double, behindM: Double, aheadM: Double, globalIfFartherM: Double): Projection
+
+    companion object {
+        val KOTLIN = RouteProjector { route, point, aroundS, behindM, aheadM, globalIfFartherM ->
+            route.project(point, aroundS, behindM, aheadM, globalIfFartherM)
+        }
+    }
+}
+
 /** A point on the route with the road's direction there. */
 data class RoutePoint(val point: GeoPoint, val bearingDeg: Double, val segment: Int)
 
