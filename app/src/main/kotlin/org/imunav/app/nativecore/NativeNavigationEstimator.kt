@@ -100,6 +100,7 @@ class NativeNavigationEstimator private constructor(private var handle: Long) : 
             System.loadLibrary("imu_nav_jni")
         }
 
+        /** Cell-speed learning is opt-in for replay: long windows can lag real speed changes. */
         fun create(
             route: NativeRouteGeometry,
             positionM: Double,
@@ -109,6 +110,7 @@ class NativeNavigationEstimator private constructor(private var handle: Long) : 
             systematicDriftM: Double,
             mode: TravelMode,
             nowMs: Long,
+            networkSpeedEnabled: Boolean = false,
         ): NativeNavigationEstimator {
             val initial = doubleArrayOf(positionM, speedMps, positionSigmaM, speedSigmaMps, systematicDriftM)
             val modeCode = when (mode) {
@@ -117,7 +119,11 @@ class NativeNavigationEstimator private constructor(private var handle: Long) : 
             }
             val handle = nativeCreate(route.handle.also { check(it != 0L) { "native route geometry is closed" } }, initial, modeCode, nowMs)
             check(handle != 0L) { "could not create native navigation estimator" }
-            return NativeNavigationEstimator(handle)
+            val estimator = NativeNavigationEstimator(handle)
+            val configured = nativeSetNetworkSpeedEnabled(handle, if (networkSpeedEnabled) 1 else 0)
+            if (configured != RESULT_OK) estimator.close()
+            estimator.checkResult(configured)
+            return estimator
         }
 
         private const val MODE_CAR = 0
@@ -126,6 +132,8 @@ class NativeNavigationEstimator private constructor(private var handle: Long) : 
         @JvmStatic private external fun nativeCreate(routeHandle: Long, initialValues: DoubleArray, mode: Int, nowMs: Long): Long
 
         @JvmStatic private external fun nativeDestroy(handle: Long): Int
+
+        @JvmStatic private external fun nativeSetNetworkSpeedEnabled(handle: Long, enabled: Int): Int
 
         @JvmStatic private external fun nativeOnVehicleSpeed(handle: Long, speedKmh: Double, elapsedMs: Long): Int
 

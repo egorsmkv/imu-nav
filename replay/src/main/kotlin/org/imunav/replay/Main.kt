@@ -22,7 +22,8 @@ usage: replay <trip.rec.gz|dir> [options]
   --compare-native         compare Kotlin and native at reference GPS timestamps; use -PnativeReplay
                            to build the host JNI library. Hidden GPS is excluded from all navigation inputs.
   --no-native-motion       disable native stop/resume hints for an A/B comparison (with --compare-native)
-  --no-native-network      disable native coarse-position corrections for an A/B comparison
+  --no-native-network      disable native cell/network position and speed corrections
+  --native-network-speed   opt into experimental cell-derived speed (off by default; can lag speed changes)
   --no-native-turns        disable native turn-landmark corrections for an A/B comparison
   --out DIR                write summary.txt, errors-*.csv and compare-*.geojson per run
 """
@@ -56,15 +57,18 @@ fun main(args: Array<String>) {
                 val motionEnabled = "no-native-motion" !in opts
                 val networkEnabled = "no-native-network" !in opts
                 val turnsEnabled = "no-native-turns" !in opts
+                val networkSpeedEnabled = networkEnabled && "native-network-speed" in opts
                 val comparison = NativeComparison(
                     tuning,
                     area,
                     nativeMotionEnabled = motionEnabled,
                     nativeNetworkEnabled = networkEnabled,
                     nativeTurnsEnabled = turnsEnabled,
+                    nativeNetworkSpeedEnabled = networkSpeedEnabled,
                 ).replay(events, hide)
                 summary.appendLine("native motion hints: $motionEnabled")
                 summary.appendLine("native coarse-position corrections: $networkEnabled")
+                summary.appendLine("native cell-derived speed: $networkSpeedEnabled")
                 summary.appendLine("native turn-landmark corrections: $turnsEnabled")
                 summary.append(comparison.summary())
                 outDir?.let { File(it, "native-errors-$tag.csv").writeText(comparison.csv()) }

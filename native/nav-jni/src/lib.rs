@@ -1029,6 +1029,26 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNavigationEstimator_
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_org_imunav_app_nativecore_NativeNavigationEstimator_nativeSetNetworkSpeedEnabled(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    enabled: jint,
+) -> jint {
+    guarded_code(|| {
+        if !(0..=1).contains(&enabled) {
+            return ERROR_INTERNAL;
+        }
+        match with_estimator(handle, |estimator| {
+            estimator.set_network_speed_enabled(enabled == 1);
+        }) {
+            Ok(()) => OK,
+            Err(code) => code,
+        }
+    })
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_imunav_app_nativecore_NativeNavigationEstimator_nativeOnVehicleSpeed(
     _env: JNIEnv,
     _class: JClass,

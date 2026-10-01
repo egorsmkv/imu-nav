@@ -24,7 +24,7 @@ class NetworkComparisonTest {
     fun noisyCellsBoundBlindPositionDrift() {
         val events = drive(Scenario.NOISY)
         val baseline = NativeComparison(nativeNetworkEnabled = false).replay(events, 60.0)
-        val corrected = NativeComparison().replay(events, 60.0)
+        val corrected = NativeComparison(nativeNetworkSpeedEnabled = false).replay(events, 60.0)
         assertTrue(corrected.nativeBlind.count >= 230)
         assertTrue(baseline.nativeBlind.p95M > 400.0, baseline.summary())
         assertTrue(corrected.nativeBlind.p95M < 80.0, corrected.summary())
@@ -57,7 +57,7 @@ class NetworkComparisonTest {
         for (source in FixSource.entries) {
             for (mock in listOf(false, true)) {
                 NativeRouteGeometry.create(route).use { geometry ->
-                    NativeNavigationEstimator.create(geometry, 0.0, 10.0, 200.0, 2.0, 0.0, TravelMode.CAR, START_MS).use { estimator ->
+                    NativeNavigationEstimator.create(geometry, 0.0, 10.0, 200.0, 2.0, 0.0, TravelMode.CAR, START_MS, networkSpeedEnabled = false).use { estimator ->
                         var finalPosition = 0.0
                         for (offsetMs in listOf(1000L, 6000L, 11_000L)) {
                             val point = projection.toGeo(0.0, 200.0 + offsetMs / 100.0)

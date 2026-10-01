@@ -285,6 +285,53 @@ impl RouteFilter {
         Ok(true)
     }
 
+    /// Weak speed evidence from a disjoint batch of coarse positions. Never moves position,
+    /// clears drift, or shrinks speed uncertainty below the batch's conservative error floor.
+    ///
+    /// # Errors
+    /// Returns [`FilterError`] for invalid inputs or covariance.
+    pub fn update_coarse_speed(
+        &mut self,
+        speed_mps: f64,
+        sigma_mps: f64,
+        nis_gate: f64,
+        max_change_mps: f64,
+    ) -> Result<bool, FilterError> {
+        validate_finite(speed_mps)?;
+        validate_sigma(sigma_mps)?;
+        validate_non_negative(max_change_mps)?;
+        if !nis_gate.is_finite() || nis_gate <= 0.0 {
+            return Err(FilterError::InvalidGate);
+        }
+        let old = self.estimate;
+        let measurement_variance = sigma_mps * sigma_mps;
+        let innovation = speed_mps - old.speed_mps;
+        let variance = old.covariance.speed + measurement_variance;
+        if !variance.is_finite() || variance <= 0.0 {
+            return Err(FilterError::InvalidCovariance);
+        }
+        if innovation * innovation / variance > nis_gate {
+            return Ok(false);
+        }
+        let gain = (old.covariance.speed / variance)
+            .min(0.5)
+            .min(max_change_mps / innovation.abs().max(MIN_VARIANCE));
+        let covariance = Covariance2 {
+            position: old.covariance.position,
+            position_speed: 0.0,
+            speed: ((1.0 - gain).powi(2) * old.covariance.speed
+                + gain * gain * measurement_variance)
+                .max(measurement_variance),
+        }
+        .floored();
+        if !covariance.is_valid() {
+            return Err(FilterError::InvalidCovariance);
+        }
+        self.estimate.speed_mps += gain * innovation;
+        self.estimate.covariance = covariance;
+        Ok(true)
+    }
+
     /// Install a trusted landmark or explicit route correction while retaining speed uncertainty.
     ///
     /// # Errors
@@ -317,6 +364,19 @@ impl RouteFilter {
         self.estimate.speed_mps = speed_mps;
         self.estimate.covariance.speed = (sigma_mps * sigma_mps).max(MIN_VARIANCE);
         self.estimate.covariance.position_speed = 0.0;
+        Ok(())
+    }
+
+    /// Retract a learned model without claiming a more precise speed. Unlike a fresh motion prior,
+    /// recovery must retain the old variance even when it exceeds the fallback's uncertainty floor.
+    pub(crate) fn restore_speed_prior(
+        &mut self,
+        speed_mps: f64,
+        minimum_sigma_mps: f64,
+    ) -> Result<(), FilterError> {
+        let previous_variance = self.estimate.covariance.speed;
+        self.set_speed_prior(speed_mps, minimum_sigma_mps)?;
+        self.estimate.covariance.speed = self.estimate.covariance.speed.max(previous_variance);
         Ok(())
     }
 

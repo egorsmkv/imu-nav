@@ -65,6 +65,7 @@ impl NavigationEstimator {
         if accepted {
             self.state.filter = candidate;
             self.state.motion_control = None;
+            self.state.network_evidence.clear_speed();
         }
         Ok(accepted)
     }

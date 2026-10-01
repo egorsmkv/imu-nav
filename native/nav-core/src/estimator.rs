@@ -97,6 +97,7 @@ pub struct NavigationEstimator {
     mode: TravelMode,
     last_gps_ms: i64,
     last_vehicle_input_ms: i64,
+    network_speed_enabled: bool,
     history: VecDeque<HistoryFrame>,
 }
 
@@ -203,6 +204,7 @@ impl NavigationEstimator {
             mode,
             last_gps_ms: -1,
             last_vehicle_input_ms: -1,
+            network_speed_enabled: false,
             history: VecDeque::from([HistoryFrame {
                 state,
                 vehicle_speed_mps: None,
@@ -216,6 +218,18 @@ impl NavigationEstimator {
     #[must_use]
     pub fn estimate(&self) -> Estimate {
         self.state.filter.estimate()
+    }
+
+    /// Enables the off-by-default cell-speed experiment for an A/B run. Changing policy discards
+    /// old replay history and partial speed batches; configure before feeding observations.
+    pub fn set_network_speed_enabled(&mut self, enabled: bool) {
+        if self.network_speed_enabled == enabled {
+            return;
+        }
+        self.network_speed_enabled = enabled;
+        self.state.network_evidence.clear_speed();
+        self.history.clear();
+        self.remember(None);
     }
 
     /// Incorporates a vehicle-reported speed at its timestamp when operating in car mode.
@@ -383,7 +397,7 @@ impl NavigationEstimator {
                     if let Some(speed) = frame.vehicle_speed_mps {
                         self.apply_vehicle_speed(speed)?;
                     } else {
-                        self.apply_network(frame.network)?;
+                        self.apply_network(frame.network, frame.motion)?;
                         self.apply_motion(frame.motion)?;
                         self.apply_turn(frame.turn)?;
                     }
@@ -402,7 +416,7 @@ impl NavigationEstimator {
             }
         }
         self.predict_to(now_ms)?;
-        self.apply_network(network)?;
+        self.apply_network(network, motion)?;
         self.apply_motion(motion)?;
         self.apply_turn(turn)?;
         self.remember_observations(None, motion, network, turn);
@@ -450,6 +464,7 @@ impl NavigationEstimator {
             .update_position(projected.position_m, position_sigma, POSITION_NIS_GATE)?
             .accepted;
         if position_accepted && observation.trust == ObservationTrust::Good {
+            self.state.network_evidence.clear_speed();
             self.state.filter.reset_systematic_drift();
             self.state.last_gps_position_ms = observation.elapsed_ms;
         }

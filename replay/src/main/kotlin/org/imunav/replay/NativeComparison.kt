@@ -81,6 +81,7 @@ class NativeComparison(
     private val nativeMotionEnabled: Boolean = true,
     private val nativeNetworkEnabled: Boolean = true,
     private val nativeTurnsEnabled: Boolean = true,
+    private val nativeNetworkSpeedEnabled: Boolean = false,
 ) {
     /** Groups equal-time inputs before ticking and never uses a later GPS position to score a tick. */
     fun replay(events: List<TripEvent>, hideGpsAfterS: Double? = null): ComparisonResult {
@@ -189,7 +190,10 @@ class NativeComparison(
                     engine.start(event.route, pending.destination, pending.waypoints, event.elapsedMs, pending.startAccuracyM, mode)
                     engine.simulateGpsLoss = false
                     val speed = hub.lastGood?.speedMps?.toDouble()?.takeUnless { blind(event.elapsedMs) } ?: 0.0
-                    native = NativeNavigationEstimator.create(geometry, 0.0, speed, pending.startAccuracyM, 6.0, 0.0, mode, event.elapsedMs)
+                    native = NativeNavigationEstimator.create(
+                        geometry, 0.0, speed, pending.startAccuracyM, 6.0, 0.0, mode, event.elapsedMs,
+                        networkSpeedEnabled = nativeNetworkSpeedEnabled,
+                    )
                 } else {
                     engine.setRoute(event.route, event.elapsedMs)
                     native?.replaceRoute(geometry, engine.progressS, engine.state.uncertaintyM)

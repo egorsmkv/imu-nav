@@ -1,7 +1,11 @@
 //! Conservative coarse-position evidence. Repeated tower estimates are correlated, not anchors.
 
-use super::{FilterError, GeoPoint, NavigationEstimator, TravelMode};
+use super::{
+    FilterError, GeoPoint, MotionObservation, NavigationEstimator, OBD_MAX_AGE_MS, TravelMode,
+};
 use crate::milliseconds_to_seconds;
+mod speed;
+use speed::{NetworkUse, SpeedBatch};
 
 const MAX_AGE_MS: i64 = 2_500;
 const MIN_INTERVAL_MS: i64 = 5_000;
@@ -15,6 +19,10 @@ const MAX_BACKWARD_MPS: f64 = 6.0;
 const MAX_JUMP_M: f64 = 500.0;
 const MAX_CORRECTION_M: f64 = 50.0;
 const POSITION_GATE: f64 = 9.0;
+const SPEED_GATE: f64 = 9.0;
+const MAX_SPEED_CORRECTION_MPS: f64 = 2.0;
+const SPEED_SIGMA_PER_SECOND: f64 = 0.5;
+const RECOVERY_SPEED_SIGMA_MPS: f64 = 6.0;
 const CACHE_SIZE: usize = 8;
 
 /// Only non-mock CELL/NET fixes may enter here; the JNI wrapper excludes GPS and fused fixes.
@@ -44,6 +52,7 @@ pub(super) struct NetworkEvidence {
     seen: [Option<GeoPoint>; CACHE_SIZE],
     next_seen: usize,
     candidate: Option<Candidate>,
+    speed: SpeedBatch,
 }
 
 impl NetworkEvidence {
@@ -55,6 +64,7 @@ impl NetworkEvidence {
             seen: [None; CACHE_SIZE],
             next_seen: 0,
             candidate: None,
+            speed: SpeedBatch::new(),
         }
     }
 
@@ -62,6 +72,11 @@ impl NetworkEvidence {
     pub(super) fn reroute(&mut self, now_ms: i64) {
         self.valid_after_ms = now_ms;
         self.candidate = None;
+        self.speed.clear();
+    }
+
+    pub(super) fn clear_speed(&mut self) {
+        self.speed.clear();
     }
 }
 
@@ -71,7 +86,14 @@ impl NavigationEstimator {
     pub(super) fn apply_network(
         &mut self,
         observation: Option<NetworkObservation>,
+        motion: Option<MotionObservation>,
     ) -> Result<bool, FilterError> {
+        // A stop between cell scans also invalidates the unfinished cruising window.
+        if self.state.motion_control.is_some()
+            || motion.is_some_and(|hint| hint.factor < 1.0 || !hint.factor.is_finite())
+        {
+            self.state.network_evidence.speed.clear();
+        }
         let Some(observation) = observation else {
             return Ok(false);
         };
@@ -115,10 +137,12 @@ impl NavigationEstimator {
             .map_err(|_| FilterError::NonFinite)?
         else {
             evidence.candidate = None;
+            evidence.speed.clear();
             return Ok(false);
         };
         if projected.offset_m > accuracy_m {
             evidence.candidate = None;
+            evidence.speed.clear();
             return Ok(false);
         }
         let mut candidate = Candidate {
@@ -144,19 +168,75 @@ impl NavigationEstimator {
             }
         }
         evidence.candidate = Some(candidate);
+        if candidate.count == 1 {
+            evidence.speed.clear();
+        }
+        self.apply_network_estimates(candidate, age_ms, motion)
+    }
+
+    /// Allocate each fix to only one channel. Model-speed changes never masquerade as OBD/GPS.
+    fn apply_network_estimates(
+        &mut self,
+        candidate: Candidate,
+        age_ms: i64,
+        motion: Option<MotionObservation>,
+    ) -> Result<bool, FilterError> {
+        let now_ms = self.state.elapsed_ms;
         let fresh_gps = self.state.last_gps_position_ms >= 0
             && now_ms.saturating_sub(self.state.last_gps_position_ms) <= MAX_AGE_MS;
-        if candidate.count < MIN_FIXES
-            || candidate.last_ms - candidate.first_ms < MIN_SPAN_MS
-            || fresh_gps
-            || (projected.position_m - self.estimate().position_m).abs() > MAX_JUMP_M
-        {
+        if fresh_gps || candidate.residual_m.abs() > MAX_JUMP_M {
+            self.state.network_evidence.speed.clear();
+            return Ok(false);
+        }
+        let measured_speed = (self.state.last_gps_speed_ms >= 0
+            && now_ms - self.state.last_gps_speed_ms <= MAX_AGE_MS)
+            || (self.state.last_vehicle_speed_ms >= 0
+                && now_ms - self.state.last_vehicle_speed_ms < OBD_MAX_AGE_MS);
+        let motion_blocked = self.state.motion_control.is_some()
+            || motion.is_some_and(|hint| hint.factor < 1.0 || !hint.factor.is_finite());
+        if self.network_speed_enabled && !measured_speed && !motion_blocked {
+            let previous_speed = self.estimate().speed_mps;
+            match self
+                .state
+                .network_evidence
+                .speed
+                .select(candidate, previous_speed)
+            {
+                NetworkUse::Reserved => return Ok(false),
+                NetworkUse::Speed(estimate) => {
+                    // The mean describes a time window, not instantaneous speed during a manoeuvre.
+                    let sigma = estimate.sigma_mps
+                        + SPEED_SIGMA_PER_SECOND * milliseconds_to_seconds(age_ms);
+                    let accepted = self.state.filter.update_coarse_speed(
+                        estimate.speed_mps,
+                        sigma,
+                        SPEED_GATE,
+                        MAX_SPEED_CORRECTION_MPS,
+                    )?;
+                    if accepted {
+                        self.state.network_evidence.speed.accepted(previous_speed);
+                    }
+                    return Ok(accepted);
+                }
+                NetworkUse::RestorePrior(speed_mps) => {
+                    // Retract cell learning without reducing uncertainty or claiming a new sensor.
+                    self.state
+                        .filter
+                        .restore_speed_prior(speed_mps, RECOVERY_SPEED_SIGMA_MPS)?;
+                    return Ok(false);
+                }
+                NetworkUse::Position => (),
+            }
+        } else {
+            self.state.network_evidence.speed.clear();
+        }
+        if candidate.count < MIN_FIXES || candidate.last_ms - candidate.first_ms < MIN_SPAN_MS {
             return Ok(false);
         }
         // Do not extrapolate using the same DR speed we are trying to correct. Inflate instead.
-        let sigma_m = 2.0 * accuracy_m + MAX_SPEED_MPS * milliseconds_to_seconds(age_ms);
+        let sigma_m = 2.0 * candidate.accuracy_m + MAX_SPEED_MPS * milliseconds_to_seconds(age_ms);
         self.state.filter.update_coarse_position(
-            projected.position_m,
+            candidate.position_m,
             sigma_m,
             POSITION_GATE,
             MAX_CORRECTION_M,

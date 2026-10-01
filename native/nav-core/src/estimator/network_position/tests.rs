@@ -1,8 +1,14 @@
 //! Coarse fixes must earn corrections without becoming precise anchors or speed sensors.
-use super::super::regression_tests::{estimator, gps};
+use super::super::regression_tests::{estimator as base_estimator, gps};
 use super::*;
 use crate::route::RouteGeometry;
 use std::sync::Arc;
+
+fn estimator(sigma: f64) -> NavigationEstimator {
+    let mut navigation = base_estimator(sigma);
+    navigation.set_network_speed_enabled(false);
+    navigation
+}
 
 fn fix(time: i64, position_m: f64) -> NetworkObservation {
     NetworkObservation {

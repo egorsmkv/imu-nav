@@ -129,6 +129,43 @@ These gates cannot eliminate persistent, plausible cell bias. They deliberately 
 coverage, ambiguous routes and recovery beyond 500 m rather than forcing a large position jump.
 Reported uncertainty remains a model, not a navigation safety guarantee.
 
+### `estimator/network_position/speed.rs`: opt-in cell-derived speed
+
+`--native-network-speed` enables this **off-by-default** replay experiment. The app comparison path
+and default replay retain position-only corrections. The same eligible coarse input is used, with no
+new recording format or polling. `--no-native-network` takes precedence and disables both correction
+channels (shared Kotlin cell-derived motion vetoes remain separate).
+
+- Eligible fixes alternate between speed and position. Four speed-reserved fixes spanning 30–60 s
+  form a batch; batches never overlap. A speed-reserved fix never also updates position, even if the
+  batch is incomplete or rejected. Position corrections consequently arrive less often.
+- Weighted regression uses the raw projected positions, not corrected filter positions. Speed sigma
+  is floored at 2 m/s and must be at most 4 m/s. The three-sigma lower bound must exceed 1 m/s, and
+  speed must be at most 150 km/h. Adjacent segment speeds must agree within twice sigma (at least
+  2 m/s), rejecting mixed stop/start or tower-jump windows. Input age adds 0.5 m/s per second to sigma.
+- Speed updates pass an innovation gate of 9, have gain at most 0.5, and change speed by at most
+  2 m/s. They leave position and systematic drift untouched, clear position-speed covariance and
+  retain the speed-variance floor. They do not refresh GPS/OBD freshness or the OBD drift allowance.
+- Fresh accepted GPS/OBD and stop/resume hints take priority. Accepted measured speed, accepted GOOD
+  GPS position, intervening stop/ramp hints, rerouting, inconsistent fixes and gaps discard unfinished
+  windows. Batch contents and allocation are checkpointed for delayed-GPS replay.
+- Accepted cell learning saves the pre-learning speed prior. Two consecutive speed-reserved intervals
+  can retract that learning before a full batch finishes: both interval speeds must disagree with the
+  current speed in the same direction by more than `max(3 m/s, hypot(accuracy1, accuracy2) / dt)`, and
+  both must be closer to the saved prior. The prior must exceed 1 m/s; a startup zero cannot invent a
+  stop. This is a model-invalidation heuristic, not a confidence test or a new speed measurement.
+  A single tower step, alternating errors, or a worse prior cannot trigger it.
+- Recovery restores that prior, retains at least the previous speed variance and a 6 m/s sigma,
+  and leaves position and accumulated drift unchanged. The triggering fix is speed-only; subsequent
+  fixes get position-only corrections for 30 seconds. A fresh, disjoint batch is then required before
+  learning resumes. Saved priors, departure confirmation and recovery timing are also checkpointed.
+
+Disjoint fixes prevent direct sample reuse, not correlation between tower errors. Persistent coherent
+tower drift can still look like speed. Recovery only helps when a saved prior better explains the
+contradictory movement; smaller changes, changes away from that prior, and inaccurate cells still lag.
+It is not an instantaneous speed sensor. Peak errors can exceed position-only correction, so the
+experiment remains off by default pending broader real-drive validation.
+
 ### `estimator/turn.rs`: isolated turn matching
 
 The shared pure-Kotlin `TurnDetector` uses recorded IMU samples and the existing gyro-bias estimate,
@@ -302,8 +339,19 @@ remains; this regression demonstrates recovery, not a solution to quiet-highway 
 The coarse-position JNI regression hides GPS at 60 seconds while actual speed rises from 15 to
 17 m/s, then supplies 40 m-accuracy cell fixes with alternating ±20 m along-route error every five
 seconds. At 300 seconds, blind native p95 is 481 m without corrections versus 43 m with them.
-This is a synthetic regression, not measured road accuracy. `--no-native-network` disables only
-these position corrections for A/B replay; cell-derived motion vetoes remain controlled separately.
+This is a synthetic regression, not measured road accuracy. `--no-native-network` disables native
+coarse corrections for A/B replay; cell-derived motion vetoes remain controlled separately.
+
+The optional speed experiment has a separate 600-second synthetic drive: GPS is hidden at 60 s,
+actual speed rises from 15 to 17 m/s, and 40 m-accuracy noisy cells stop at 220 s. Blind native p95
+is 771 m with position-only corrections versus 51 m with speed learning. With continuous cells at
+that speed, p95 is 41 m versus 51 m (RMS improves from 36 m to 21 m). With later abrupt changes to
+20 and then 12 m/s, the first speed-learning policy worsened p95 from 92 m to 267 m. Early prior
+recovery reduces that to 90 m (RMS 53 m versus position-only 56 m), but maximum error is still higher:
+127 m versus 100 m. Moving the slowdown through eight five-second batch phases gives p95 90–100 m
+and maximum errors 125–153 m. These are synthetic regression results, not real-drive accuracy claims.
+Run the same recording once without and once with
+`--native-network-speed` using separate output directories; the default remains position-only.
 
 Turn JNI regressions hide GPS at 60 seconds, lower actual speed from 10 to 8 m/s without OBD/cells,
 and complete a left or right turn at 80 seconds. Over the 40-second blind interval, native p95 falls
