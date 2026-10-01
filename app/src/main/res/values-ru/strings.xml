@@ -145,6 +145,11 @@
     <string name="settings_collapse_section">Свернуть раздел</string>
     <string name="sec_navigation_method">Навигация без GPS</string>
     <string name="navigation_method_title">Резервный метод</string>
+    <string name="navigation_estimator_title">Алгоритм навигации</string>
+    <string name="navigation_estimator_kotlin">Kotlin (по умолчанию)</string>
+    <string name="navigation_estimator_native">Native Kalman (экспериментальный)</string>
+    <string name="navigation_estimator_summary">Выберите перед началом поездки. Native Kalman определяет положение, скорость и подсказки для авто по GPS, OBD, движению и осторожным поправкам от вышек и поворотов. Он заменяет резервный метод и привязку к рельефу. Пешком всегда используется Kotlin. Улучшение точности не гарантировано; это исследовательский прототип, а не система безопасности.</string>
+    <string name="navigation_estimator_locked">Остановите навигацию, чтобы изменить алгоритм.</string>
     <string name="navigation_method_dr">Счисление пути</string>
     <string name="navigation_method_cells">Вышки связи</string>
     <string name="navigation_method_hybrid">Гибридный</string>

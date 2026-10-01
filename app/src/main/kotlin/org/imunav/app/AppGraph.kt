@@ -50,6 +50,7 @@ import org.imunav.core.nav.GuidanceState
 import org.imunav.core.nav.NavAlert
 import org.imunav.core.nav.NavListener
 import org.imunav.core.nav.NavigationEngine
+import org.imunav.core.nav.NavigationEstimator
 import org.imunav.core.nav.NavigationMethod
 import org.imunav.core.nav.RussianPhrases
 import org.imunav.core.nav.UkrainianPhrases
@@ -207,6 +208,19 @@ class AppGraph(private val context: Context) {
         tripLog.write("navigation_method $method")
     }
 
+    private val _navigationEstimator = MutableStateFlow(
+        NavigationEstimator.entries.firstOrNull { it.name == modePrefs.getString("navigation_estimator", null) } ?: NavigationEstimator.KOTLIN,
+    )
+    val navigationEstimator: StateFlow<NavigationEstimator> = _navigationEstimator.asStateFlow()
+
+    /** Change only between trips so state and covariance cannot jump mid-navigation. */
+    fun setNavigationEstimator(estimator: NavigationEstimator) {
+        if (engine.state.active || _ui.value.planning) return
+        modePrefs.edit { putString("navigation_estimator", estimator.name) }
+        _navigationEstimator.value = estimator
+        tripLog.write("navigation_estimator $estimator")
+    }
+
     /** Engine thresholds (factory defaults; see [Tuning]), plus the user's terrain-matching choice. */
     val tuning = MutableStateFlow(Tuning.DEFAULT.copy(terrainMatch = modePrefs.getBoolean("terrain_match", true)))
 
@@ -253,9 +267,10 @@ class AppGraph(private val context: Context) {
                     val route = router.route(from, destination, via, engine.mode)
                     route to withContext(Dispatchers.Default) { NativeRouteGeometry.create(route) }
                 }.onSuccess { (route, nativeRoute) ->
+                    val uncertainty = engine.state.uncertaintyM
                     nativeRouteProjector.install(route, nativeRoute)
                     engine.setRoute(route, SystemClock.elapsedRealtime())
-                    nativeEstimator.replaceRoute(nativeRoute, engine.progressS, engine.state.uncertaintyM)
+                    nativeEstimator.replaceRoute(nativeRoute, engine.progressS, uncertainty)
                     trips.onRoute(route)
                     offlineMap.saveCorridor(route, darkTheme())
                 }.onFailure {
@@ -277,6 +292,7 @@ class AppGraph(private val context: Context) {
         networkTracker = nativeNetworkTracker,
         routeProjector = nativeRouteProjector,
         speedFusion = NativeSpeedFusion,
+        nativeEstimator = nativeEstimator,
     )
 
     /** Trip recording (for replay), history, and restoring a trip after the app was killed. */
@@ -470,8 +486,10 @@ class AppGraph(private val context: Context) {
                 tripLog.startTrip()
                 tripLog.write("start_accuracy=${startAccuracy.toInt()}")
                 nativeRouteProjector.install(route, nativeRoute)
-                nativeEstimator.start(nativeRoute, 0.0, hub.lastGood?.speedMps?.toDouble() ?: 0.0, startAccuracy, mode, SystemClock.elapsedRealtime())
-                engine.start(route, dest, nowMs = SystemClock.elapsedRealtime(), startAccuracyM = startAccuracy, mode = mode)
+                val now = SystemClock.elapsedRealtime()
+                val initialSpeed = hub.lastGood?.takeIf { _ui.value.manualStart == null && now - it.elapsedMs in 0..START_SPEED_MAX_AGE_MS }?.speedMps?.toDouble() ?: 0.0
+                nativeEstimator.start(nativeRoute, 0.0, initialSpeed, startAccuracy, mode, now)
+                engine.start(route, dest, nowMs = now, startAccuracyM = startAccuracy, mode = mode, estimator = navigationEstimator.value)
                 trips.begin(route, dest, emptyList(), startAccuracy, mode)
                 offlineMap.saveCorridor(route, darkTheme())
                 if (mode == TravelMode.CAR) obd.start()
@@ -509,7 +527,9 @@ class AppGraph(private val context: Context) {
         val now = SystemClock.elapsedRealtime()
         val positioning = hub.snapshot(now)
         engine.tick(now, positioning)
-        nativeEstimator.tick(now, engine.state, positioning, ignoreGps = engine.simulateGpsLoss, motion = engine.motionEvidence(now), turn = engine.turnEvidence(now))
+        if (engine.estimator == NavigationEstimator.KOTLIN) {
+            nativeEstimator.tick(now, engine.state, positioning, ignoreGps = engine.simulateGpsLoss, motion = engine.motionEvidence(now), turn = engine.turnEvidence(now))
+        }
         trips.onTick(now)
         tickCount++
         // Battery level / charger / battery saver change slowly: re-check AUTO once a minute.
@@ -574,7 +594,10 @@ class AppGraph(private val context: Context) {
                             } else {
                                 nativeRoute.close()
                             }
-                        }.onFailure { tripLog.write("native_estimator_restore_failed ${it.message}") }
+                        }.onFailure {
+                            tripLog.write("native_estimator_restore_failed ${it.message}")
+                            if (engine.estimator == NavigationEstimator.NATIVE_KALMAN) _ui.value = _ui.value.copy(error = it.message)
+                        }
                 }
             }
             if (engine.mode == TravelMode.CAR) obd.start()
@@ -584,6 +607,7 @@ class AppGraph(private val context: Context) {
 }
 
 private const val MANUAL_START_ACCURACY_M = 100.0
+private const val START_SPEED_MAX_AGE_MS = 2_500L
 
 /** Inputs that make a preview reusable when the user starts navigation. */
 private data class RoutePreviewRequest(val from: GeoPoint, val destination: GeoPoint, val mode: TravelMode)

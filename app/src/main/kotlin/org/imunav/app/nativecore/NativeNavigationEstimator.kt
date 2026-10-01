@@ -20,6 +20,7 @@ class NativeNavigationEstimator private constructor(private var handle: Long) : 
         val speedVarianceMps2: Double,
         val systematicDriftM: Double,
         val safetyRadiusM: Double,
+        val gpsPositionAccepted: Boolean,
     ) {
         val positionSigmaM: Double get() = sqrt(positionVarianceM2)
     }
@@ -43,7 +44,7 @@ class NativeNavigationEstimator private constructor(private var handle: Long) : 
         )
         val values = nativeTick(requireHandle(), nowMs, doubles, encodeFlags(gps, motion, coarse, turn)) ?: error("native navigation estimator tick failed")
         check(values.size == STATE_SIZE) { "native navigation estimator returned ${values.size} values" }
-        return State(values[0], values[1], values[2], values[3], values[4], values[5], values[6])
+        return State(values[0], values[1], values[2], values[3], values[4], values[5], values[6], values[7] == 1.0)
     }
 
     /** Keep optional-input presence and monotonic timestamps in the integer JNI wire array. */
@@ -94,7 +95,7 @@ class NativeNavigationEstimator private constructor(private var handle: Long) : 
         private const val RESULT_REJECTED = 1
         private const val TRUST_GOOD = 0L
         private const val TRUST_SUSPECT = 1L
-        private const val STATE_SIZE = 7
+        private const val STATE_SIZE = 8
 
         init {
             System.loadLibrary("imu_nav_jni")

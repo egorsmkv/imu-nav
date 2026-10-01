@@ -1179,13 +1179,13 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNavigationEstimator_
         } else {
             None
         };
-        let estimate = with_estimator(handle, |estimator| {
+        let outcome = with_estimator(handle, |estimator| {
             estimator.tick_with_turn(now_ms, gps, motion, network, turn)
         })
         .ok()?
-        .ok()?
-        .estimate;
-        let result = estimate_values(estimate)?;
+        .ok()?;
+        let mut result = estimate_values(outcome.estimate)?.to_vec();
+        result.push(if outcome.position_accepted { 1.0 } else { 0.0 });
         new_double_array(&env, &result)
     }))
     .ok()

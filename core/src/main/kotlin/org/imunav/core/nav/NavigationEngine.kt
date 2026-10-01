@@ -19,7 +19,6 @@ import org.imunav.core.route.Projection
 import org.imunav.core.route.Route
 import org.imunav.core.route.RouteCursor
 import org.imunav.core.route.RouteProjector
-import org.imunav.core.route.Step
 import org.imunav.core.route.TravelMode
 import org.imunav.core.speed.MAX_SPEED_MPS
 import org.imunav.core.speed.RouteSpeedPrior
@@ -30,7 +29,6 @@ import org.imunav.core.speed.SpeedPlan
 import org.imunav.core.speed.SpeedProfile
 import java.util.Locale
 import kotlin.math.abs
-import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
 
@@ -65,6 +63,7 @@ class NavigationEngine(
     private val routeProjector: RouteProjector = RouteProjector.KOTLIN,
     /** Inverse-variance speed fusion; Android injects the native implementation. */
     private val speedFusion: SpeedFusionProvider = SpeedFusion,
+    private val nativeEstimator: RouteEstimateProvider? = null,
 ) {
     val motion = MotionDetector(tuning).also { it.log = ::log }
     private val comparisonTurns = TurnDetector()
@@ -74,6 +73,10 @@ class NavigationEngine(
 
     /** Car or on foot; set by [start]. */
     var mode: TravelMode = TravelMode.CAR
+        private set
+
+    /** Latched at trip start: changing the preference cannot change the active state owner. */
+    var estimator: NavigationEstimator = NavigationEstimator.KOTLIN
         private set
 
     /** The thresholds in effect: the user's [Tuning], adapted for walking in [TravelMode.FOOT]. */
@@ -175,9 +178,7 @@ class NavigationEngine(
     private var deviationFrom: GeoPoint? = null
 
     // Announcements
-    private val announced = HashSet<Int>()
-    private var gpsLostAnnounced = false
-    private var arrivedAnnounced = false
+    private val announcer = GuidanceAnnouncer(listener, ::say)
 
     val route: Route? get() = cursor?.route
 
@@ -187,8 +188,17 @@ class NavigationEngine(
      * @param startAccuracyM accuracy of the position the route was planned from (e.g. a coarse cell
      *   fix). Until the first usable GPS fix, reported uncertainty never drops below it.
      */
-    fun start(route: Route, destination: GeoPoint, waypoints: List<GeoPoint> = emptyList(), nowMs: Long, startAccuracyM: Double = 0.0, mode: TravelMode = TravelMode.CAR) {
+    fun start(
+        route: Route,
+        destination: GeoPoint,
+        waypoints: List<GeoPoint> = emptyList(),
+        nowMs: Long,
+        startAccuracyM: Double = 0.0,
+        mode: TravelMode = TravelMode.CAR,
+        estimator: NavigationEstimator = NavigationEstimator.KOTLIN,
+    ) {
         this.mode = mode
+        this.estimator = if (mode == TravelMode.CAR) estimator else NavigationEstimator.KOTLIN
         pedometer.reset()
         this.startAccuracyM = startAccuracyM.coerceAtLeast(0.0)
         this.destination = destination
@@ -201,7 +211,7 @@ class NavigationEngine(
         activeNavigationMethod = navigationMethod()
         lastCellProcessedMs = -1L
         cellAccuracyM = 0.0
-        gpsLostAnnounced = false
+        announcer.resetTrip()
         elevation.reset()
         odometerM = 0.0
         installRoute(route, nowMs)
@@ -215,6 +225,7 @@ class NavigationEngine(
     fun resumeAt(s: Double) {
         val car = cursor ?: return
         car.moveTo(s)
+        state = state.copy(s = car.s, position = car.route.pointAt(car.s).point, uncertaintyM = startAccuracyM)
         // Turns already behind the saved position were driven.
         car.route.steps.indices.filter { car.route.stepS(it) < s - 1.0 }.forEach { consumedSteps += it }
         log("nav_resume s=${s.toInt()}")
@@ -321,7 +332,7 @@ class NavigationEngine(
         waypointS = waypoints.map { it to routeProjector.project(route, it, 0.0, 0.0, route.length, 0.0).s }
         consumedSteps.clear()
         usedSignals.clear()
-        announced.clear()
+        announcer.resetRoute()
         net.reset()
         lastCellProcessedMs = -1L
         motionHistory.clear()
@@ -331,7 +342,6 @@ class NavigationEngine(
         missedTurnStep = -1
         catchUp = 0.0
         rerouting = false
-        arrivedAnnounced = false
         offRouteDeclared = false
         offRouteSinceMs = -1L
         offRouteFastSinceMs = -1L
@@ -349,6 +359,11 @@ class NavigationEngine(
         val dt = if (lastTickMs < 0) 0.0 else ((nowMs - lastTickMs) / 1000.0).coerceIn(0.0, 5.0)
         lastTickMs = nowMs
         recovery.update(pos.jammed, pos.gpsState == GpsState.LOST || simulateGpsLoss, nowMs)
+
+        if (estimator == NavigationEstimator.NATIVE_KALMAN) {
+            tickNative(car, pos, nowMs, dt)
+            return
+        }
 
         updateNavigationMethod()
         if (activeNavigationMethod == NavigationMethod.HYBRID) {
@@ -375,6 +390,57 @@ class NavigationEngine(
         if (!source.isGps && source != PositionSource.CELL && source != PositionSource.NONE) terrainMatch(car, nowMs)
         deviationTick(nowMs)
         publish(car, pos, nowMs)
+    }
+
+    /** Native owns position, speed and uncertainty; Kotlin retains guidance and deviation checks only. */
+    private fun tickNative(car: RouteCursor, pos: PositioningSnapshot, nowMs: Long, dt: Double) {
+        processNetwork(car, pos.lastNet, nowMs)
+        val input = if (simulateGpsLoss || pos.lastUsableGps?.verdict?.level == TrustLevel.BAD) pos.copy(lastUsableGps = null) else pos
+        val estimate = nativeEstimator?.estimate(nowMs, input, motionEvidence(nowMs), turnEvidence(nowMs))?.takeIf { it.valid }
+        if (estimate == null) {
+            // Hold during asynchronous restore. Never silently switch algorithms or invent movement.
+            currentSpeed = 0.0
+            source = PositionSource.NONE
+            publish(car, pos, nowMs, max(startAccuracyM, state.uncertaintyM) + MAX_SPEED_MPS * dt, announceGuidance = false)
+            return
+        }
+        car.moveTo(estimate.positionM)
+        currentSpeed = estimate.speedMps
+        updateNativeGps(car, input.lastUsableGps, estimate.gpsPositionAccepted, nowMs)
+        if (simulateGpsLoss || lastGpsUseMs == 0L || nowMs - lastGpsUseMs >= 3000) {
+            source = when {
+                currentSpeed < VEHICLE_STOPPED_MPS -> PositionSource.DR_STOPPED
+                freshVehicleSpeed(nowMs) != null -> PositionSource.DR_OBD
+                else -> PositionSource.DR
+            }
+        }
+        odometerM += currentSpeed * dt
+        elevation.onTravel(odometerM)
+        deviationTick(nowMs)
+        publish(car, pos, nowMs, estimate.safetyRadiusM)
+    }
+
+    /** Keep raw GOOD-GPS off-route detection even when the route-constrained filter rejects its projection. */
+    private fun updateNativeGps(car: RouteCursor, gps: JudgedFix?, accepted: Boolean, nowMs: Long) {
+        val fix = gps?.fix ?: return
+        if (nowMs - fix.elapsedMs !in 0..NATIVE_GPS_MAX_AGE_MS) return
+        if (fix.elapsedMs <= lastGpsProcessedMs) return
+        lastGpsProcessedMs = fix.elapsedMs
+        val good = gps.verdict.level == TrustLevel.GOOD
+        recovery.onFix(good)
+        val projection = routeProjector.project(car.route, fix.point, car.s, 250.0, 2500.0, 120.0)
+        if (good) {
+            trustedPoint = fix.point
+            val courseDiff = fix.bearingDeg?.takeIf { (fix.speedMps ?: 0f) >= 15.0 / 3.6 }?.let {
+                Geo.absAngleDiff(it.toDouble(), car.route.bearingAt(min(projection.s + 25.0, car.route.length)))
+            }
+            checkOffRoute(car, projection, courseDiff, fix, nowMs)
+        }
+        if (!accepted) return
+        lastGpsUseMs = fix.elapsedMs
+        lastGpsSpeed = fix.speedMps?.toDouble()?.takeIf { it in 0.0..MAX_SPEED_MPS }
+        if (deviation.pending) deviation.clear(nowMs, 90_000)
+        source = if (good) PositionSource.GPS else PositionSource.GPS_SUSPECT
     }
 
     /** Reset method-specific history when the user changes the fallback while navigating. */
@@ -808,37 +874,6 @@ class NavigationEngine(
         offerDeviation(nowMs, "blind_deviation gyro=${yaw.toInt()} delay_s=${config.blindDeviationDelayS}", phrases.blindUturn(config.blindDeviationDelayS))
     }
 
-    /** Largest same-direction heading change ≥ 70% of [yaw] within any 400 m of road around the marker. */
-    private fun routeCurveMatching(car: RouteCursor, yaw: Double): Double? {
-        val route = car.route
-        val from = max(car.s - 400.0, 0.0)
-        val to = min(car.s + 300.0, route.length)
-        if (to - from < 20.0) return null
-        // Total heading change of the road from `from` to every 10 m step after it.
-        val headingChange = ArrayList<Double>()
-        var previousBearing = route.bearingAt(from)
-        var total = 0.0
-        headingChange += 0.0
-        var probeS = from + 10.0
-        while (probeS <= to) {
-            val bearing = route.bearingAt(probeS)
-            total += Geo.angleDiff(previousBearing, bearing)
-            headingChange += total
-            previousBearing = bearing
-            probeS += 10.0
-        }
-        // Heading change over every stretch of up to 40 × 10 m = 400 m.
-        val needed = abs(yaw) * 0.7
-        var best: Double? = null
-        for (i in headingChange.indices) {
-            for (j in i + 1..min(headingChange.size - 1, i + 40)) {
-                val change = headingChange[j] - headingChange[i]
-                if (change * yaw > 0 && abs(change) >= needed && (best == null || abs(change) > abs(best))) best = change
-            }
-        }
-        return best
-    }
-
     /** If the compass consistently disagrees with the road, jump to the nearest stretch that fits it. */
     private fun compassSnap(car: RouteCursor, headingDeg: Float?, speedMps: Double, nowMs: Long) {
         if (headingDeg == null || speedMps < 3.0 || nowMs - lastCompassSnapMs < 30_000) {
@@ -1107,52 +1142,18 @@ class NavigationEngine(
     // ------------------------------------------------------------------ output
 
     /** Build the new [GuidanceState] for the UI (position, next maneuver, uncertainty…) and speak. */
-    private fun publish(car: RouteCursor, pos: PositioningSnapshot, nowMs: Long) {
+    private fun publish(car: RouteCursor, pos: PositioningSnapshot, nowMs: Long, nativeUncertaintyM: Double? = null, announceGuidance: Boolean = true) {
         val config = settings()
-        val route = car.route
-        val s = car.s
-        val point = route.pointAt(s)
-        val next = route.steps.indices.firstOrNull { route.steps[it].type != "depart" && route.stepS(it) > s + 8.0 } ?: -1
-        val nextStep = route.steps.getOrNull(next)
-        val distToNext = if (next >= 0) route.stepS(next) - s else 0.0
-        val remaining = route.length - s
-        val arrived = remaining < config.arriveM
+        val progress = state.withRouteProgress(car, config.arriveM, announceGuidance)
         val blindS = ((nowMs - if (lastGpsUseMs > 0) lastGpsUseMs else navStartMs) / 1000).toInt()
         val netFresh = activeNavigationMethod == NavigationMethod.HYBRID && pos.lastNet?.let { nowMs - it.elapsedMs < 30_000 } == true
-        val uncertainty = when {
-            source.isGps -> 15.0
+        val uncertainty = nativeUncertaintyM ?: kotlinUncertainty(source, cellAccuracyM, lastGpsUseMs > 0, startAccuracyM, netFresh, drDriftM)
 
-            source == PositionSource.CELL -> cellAccuracyM
-
-            else -> {
-                // Drift grows ~8 % of distance dead-reckoned (2 % with OBD-II speed) on top of the anchor's own
-                // error: 25 m after a GPS fix, or the start position's accuracy if GPS has not been usable yet.
-                val anchor = if (lastGpsUseMs > 0) 25.0 else max(25.0, startAccuracyM)
-                val cap = max(if (netFresh) 350.0 else 600.0, anchor)
-                max(30.0, min(cap, anchor + drDriftM))
-            }
-        }
-
-        announce(next, nextStep, distToNext, arrived, blindS)
-
-        state = state.copy(
-            active = true,
-            route = route,
-            s = s,
-            position = point.point,
-            bearingDeg = point.bearingDeg.toFloat(),
-            nextStep = nextStep,
-            nextStepIndex = next,
-            distToNextM = distToNext,
-            thenStep = if (next >= 0) route.steps.getOrNull(next + 1) else null,
-            remainingM = remaining,
-            remainingS = if (route.length > 0) route.durationS * remaining / route.length else 0.0,
+        val nextState = progress.copy(
             speedKmh = (currentSpeed * 3.6).toFloat(),
             travelMode = mode,
-            speedLimitKmh = route.maxspeedAtSegment(point.segment),
             offRoute = offRouteDeclared,
             offRouteM = offRouteM,
-            arrived = arrived,
             source = source,
             rerouting = rerouting,
             destination = destination,
@@ -1162,46 +1163,12 @@ class NavigationEngine(
             blindDeviation = deviation.pending,
             blindDeviationSecLeft = if (deviation.pending) max(0L, (deviation.pendingUntilMs - nowMs) / 1000).toInt() else 0,
         )
+        if (announceGuidance) announcer.announce(nextState, phrases, currentSpeed, lastGpsUseMs > 0)
+        state = nextState
     }
 
     private fun publishFlags() {
         state = state.copy(rerouting = rerouting, blindDeviation = deviation.pending)
-    }
-
-    /** Voice output: arrival, GPS lost/restored, and maneuvers at 1000 / 400 / 150 / 40 m. */
-    private fun announce(next: Int, step: Step?, dist: Double, arrived: Boolean, blindS: Int) {
-        if (arrived) {
-            if (!arrivedAnnounced) {
-                arrivedAnnounced = true
-                listener.onAlert(NavAlert.ARRIVED)
-                say(phrases.arrived(), urgent = false)
-            }
-            return
-        }
-        if (source.isGps && gpsLostAnnounced) {
-            gpsLostAnnounced = false
-            listener.onAlert(NavAlert.GPS_RESTORED)
-            say(phrases.gpsRestored(), urgent = false)
-        } else if (!source.isGps && source != PositionSource.NONE && lastGpsUseMs > 0 && !gpsLostAnnounced && blindS >= 5) {
-            gpsLostAnnounced = true
-            listener.onAlert(NavAlert.GPS_LOST)
-            say(phrases.gpsLost(), urgent = false)
-        }
-        if (step == null || next < 0) return
-        val announceAt = if (mode == TravelMode.FOOT) WALK_ANNOUNCE_AT_M else ANNOUNCE_AT_M
-        val level = announceAt.indexOfLast { dist <= it }
-        if (level < 0) return
-        // Each (step, distance level) is announced once; key = step × 10 + level.
-        val key = next * 10 + level
-        if (key in announced) return
-        for (skipped in 0..level) announced += next * 10 + skipped
-        // "In 1 km…" is pointless in slow city traffic (below 50 km/h).
-        if (mode == TravelMode.CAR && level == 0 && currentSpeed < 14.0) return
-        when (level) {
-            announceAt.lastIndex -> listener.onAlert(NavAlert.TURN_NOW)
-            announceAt.lastIndex - 1 -> listener.onAlert(NavAlert.TURN_SOON)
-        }
-        say(phrases.maneuver(step, if (level == announceAt.lastIndex) null else dist), urgent = level >= 2)
     }
 
     private fun say(text: String, urgent: Boolean) {
@@ -1211,72 +1178,12 @@ class NavigationEngine(
 
     private fun log(message: String) = listener.onLog(message)
 
-    // ------------------------------------------------------------------ helpers
-
-    /**
-     * Moves the marker smoothly towards a GPS anchor extrapolated with GPS speed: never backwards by
-     * less than 25 m, and forward with a 0.4 s time constant.
-     */
-    private class MarkerSmoother {
-        var valid = false
-        private var anchorS = 0.0
-        private var anchorMs = 0L
-        private var speed = 0.0
-
-        fun anchor(s: Double, elapsedMs: Long, speedMps: Double) {
-            anchorS = s
-            anchorMs = elapsedMs
-            speed = speedMps
-            valid = true
-        }
-
-        fun follow(current: Double, nowMs: Long, dt: Double, snap: Boolean): Double {
-            if (!valid) return current
-            val predicted = anchorS + speed * ((nowMs - anchorMs) / 1000.0).coerceIn(0.0, 1.6)
-            val diff = predicted - current
-            if (snap || abs(diff) > 25.0) return predicted
-            if (diff > 0) return current + (1.0 - exp(-max(dt, 0.0) / 0.4)) * diff
-            return current
-        }
-    }
-
-    /**
-     * After jamming ends or GPS comes back from LOST, SUSPECT fixes are accepted with a wider jump
-     * limit (600 m) for up to 5 minutes or 10 consecutive GOOD fixes.
-     */
-    private class JamRecovery {
-        private var untilMs = 0L
-        private var wasJammed = false
-        private var wasLost = false
-        private var goodInRow = 0
-
-        fun update(jammed: Boolean, lost: Boolean, nowMs: Long) {
-            if ((wasJammed && !jammed) || (wasLost && !lost)) {
-                untilMs = nowMs + 300_000
-                goodInRow = 0
-            }
-            wasJammed = jammed
-            wasLost = lost
-        }
-
-        fun onFix(good: Boolean) {
-            goodInRow = if (good) goodInRow + 1 else 0
-        }
-
-        fun active(nowMs: Long): Boolean = nowMs < untilMs && goodInRow < 10
-    }
-
     companion object {
+        private const val NATIVE_GPS_MAX_AGE_MS = 5_000L
         private const val MOTION_NETWORK_MAX_AGE_MS = 10_000L
         private const val MOTION_NETWORK_SIGMAS = 3.0
         private const val MOTION_NETWORK_MIN_SPEED_MPS = 1.0
         const val TICK_MS = 500L
-
-        /** Driving: announce maneuvers this far ahead (the last one is "now"). */
-        private val ANNOUNCE_AT_M = listOf(1000.0, 400.0, 150.0, 40.0)
-
-        /** Walking: shorter distances. */
-        private val WALK_ANNOUNCE_AT_M = listOf(150.0, 50.0, 15.0)
 
         /** Typical walking pace, used on phones without a step detector. */
         private const val WALKING_SPEED_MPS = 1.3

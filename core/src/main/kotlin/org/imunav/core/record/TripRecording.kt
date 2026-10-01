@@ -4,6 +4,7 @@ import org.imunav.core.geo.GeoPoint
 import org.imunav.core.gnss.FixSource
 import org.imunav.core.gnss.RawFix
 import org.imunav.core.imu.ImuSample
+import org.imunav.core.nav.NavigationEstimator
 import org.imunav.core.route.Route
 import org.imunav.core.route.Step
 import org.imunav.core.route.TravelMode
@@ -63,6 +64,9 @@ sealed class TripEvent {
     /** The travel mode of the trip; written right after [Start] (missing in old recordings = car). */
     data class Mode(override val elapsedMs: Long, val mode: TravelMode) : TripEvent()
 
+    /** Actual position owner, not the preference (walking remains Kotlin). Missing in old trips = Kotlin. */
+    data class Estimator(override val elapsedMs: Long, val estimator: NavigationEstimator) : TripEvent()
+
     /** The car's own speed from an OBD-II adapter, km/h. */
     data class VehicleSpeed(override val elapsedMs: Long, val kmh: Float) : TripEvent()
 
@@ -73,7 +77,7 @@ sealed class TripEvent {
 /**
  * Line-oriented trip recording (`*.rec.gz`). One event per line, comma-separated, first field is
  * the type: F fix, I imu, S satellites, A agc, D start, M travel mode, R route, P step, X stop,
- * E engine estimate, V vehicle (OBD-II) speed, B barometer. Empty fields = null. Readers skip
+ * E engine estimate, V vehicle (OBD-II) speed, B barometer, K estimator selection. Empty fields = null. Readers skip
  * types they do not know, so new event types keep old app versions able to read recordings.
  */
 object TripFormat {
@@ -120,6 +124,8 @@ object TripFormat {
         is TripEvent.StepTaken -> "P,${e.elapsedMs}"
 
         is TripEvent.Mode -> "M,${e.elapsedMs},${e.mode.name}"
+
+        is TripEvent.Estimator -> "K,${e.elapsedMs},${e.estimator.name}"
 
         is TripEvent.VehicleSpeed -> "V,${e.elapsedMs},${n(e.kmh)}"
 
@@ -179,6 +185,8 @@ object TripFormat {
                 "P" -> TripEvent.StepTaken(time)
 
                 "M" -> TripEvent.Mode(time, TravelMode.valueOf(fields[2]))
+
+                "K" -> TripEvent.Estimator(time, NavigationEstimator.valueOf(fields[2]))
 
                 "V" -> TripEvent.VehicleSpeed(time, fields[2].toFloat())
 

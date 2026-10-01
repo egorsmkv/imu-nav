@@ -180,7 +180,19 @@ samples, satellite/AGC status, routes and the engine's own estimates (gzip text,
   After a false stop, returning GOOD GPS or OBD speed can also be checked against the saved cruising
   speed, so valid highway-speed readings are not locked out by the near-zero stop model. Both models
   retain innovation gates; recovering speed does not erase accumulated position error.
-  The native estimator still does not control the displayed navigation position.
+  **Settings → Everyday settings → Navigation without GPS → Navigation estimator** now offers
+  **Kotlin (default)** and **Native Kalman (experimental)**. Select before starting navigation;
+  changes are locked during a trip. Native mode owns car position, speed, uncertainty and the
+  state used by guidance, while walking always uses Kotlin. It replaces the Kotlin fallback method
+  and its terrain/compass/signal snaps; shared guidance and GPS/network deviation checks remain.
+  This is a route-constrained linear Kalman filter, not a full inertial EKF. Better real-drive accuracy
+  is not yet established; the app remains a research prototype, not a safety system.
+  The choice is persisted with the active trip and recorded as a `K` event. During asynchronous
+  native restoration, navigation holds position and suppresses guidance until the estimator is ready.
+  Legacy Kotlin-only replay rejects native-selected trips instead of silently testing the wrong
+  algorithm; use the paired `--compare-native` command above to evaluate their raw inputs (this is
+  an A/B experiment, not exact reproduction of live guidance). Cell-speed learning remains off.
+  With Kotlin selected, the native estimator still runs only as a shadow comparison.
   It also applies small cell/network position corrections after three distinct, consistent fixes
   spanning at least ten seconds. Cached fixes, ambiguous route matches, stale or very coarse fixes,
   and large discrepancies are excluded. Corrections preserve a coarse uncertainty floor and do not

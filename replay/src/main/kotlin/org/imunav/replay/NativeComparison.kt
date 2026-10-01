@@ -136,6 +136,9 @@ class NativeComparison(
 
                 is TripEvent.Mode -> mode = event.mode
 
+                // This is an explicit paired experiment, regardless of which estimator drove the recorded trip.
+                is TripEvent.Estimator -> Unit
+
                 is TripEvent.RouteSet -> installRoute(event)
 
                 is TripEvent.Stop -> {

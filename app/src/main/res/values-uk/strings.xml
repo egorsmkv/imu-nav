@@ -145,6 +145,11 @@
     <string name="settings_collapse_section">Згорнути розділ</string>
     <string name="sec_navigation_method">Навігація без GPS</string>
     <string name="navigation_method_title">Резервний метод</string>
+    <string name="navigation_estimator_title">Алгоритм навігації</string>
+    <string name="navigation_estimator_kotlin">Kotlin (типовий)</string>
+    <string name="navigation_estimator_native">Native Kalman (експериментальний)</string>
+    <string name="navigation_estimator_summary">Оберіть перед початком поїздки. Native Kalman визначає положення, швидкість і підказки для авто за GPS, OBD, рухом та обережними поправками від веж і поворотів. Він замінює резервний метод і прив’язку до рельєфу. Пішки завжди використовується Kotlin. Покращення точності не гарантовано; це дослідницький прототип, а не система безпеки.</string>
+    <string name="navigation_estimator_locked">Зупиніть навігацію, щоб змінити алгоритм.</string>
     <string name="navigation_method_dr">Числення шляху</string>
     <string name="navigation_method_cells">Вишки зв’язку</string>
     <string name="navigation_method_hybrid">Гібридний</string>

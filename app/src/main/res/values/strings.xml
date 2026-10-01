@@ -147,6 +147,11 @@
     <string name="settings_collapse_section">Collapse section</string>
     <string name="sec_navigation_method">Navigation without GPS</string>
     <string name="navigation_method_title">Fallback method</string>
+    <string name="navigation_estimator_title">Navigation estimator</string>
+    <string name="navigation_estimator_kotlin">Kotlin (default)</string>
+    <string name="navigation_estimator_native">Native Kalman (experimental)</string>
+    <string name="navigation_estimator_summary">Choose before starting a trip. Native Kalman drives car position, speed and guidance using GPS, OBD, motion and conservative cell/turn corrections. It replaces the fallback method and terrain snaps. Walking always uses Kotlin. Accuracy improvement is not guaranteed; this is a research prototype, not a safety system.</string>
+    <string name="navigation_estimator_locked">Stop navigation to change the estimator.</string>
     <string name="navigation_method_dr">Dead reckoning</string>
     <string name="navigation_method_cells">Cell towers</string>
     <string name="navigation_method_hybrid">Hybrid</string>

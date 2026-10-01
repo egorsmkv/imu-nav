@@ -124,7 +124,9 @@ import org.imunav.app.power.PowerMode
 import org.imunav.app.power.PowerProfile
 import org.imunav.core.cells.Radio
 import org.imunav.core.geo.GeoPoint
+import org.imunav.core.nav.NavigationEstimator
 import org.imunav.core.nav.NavigationMethod
+import org.imunav.core.route.TravelMode
 import org.imunav.core.search.PhotonServer
 import java.io.File
 import java.text.NumberFormat
@@ -227,6 +229,28 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
 
                     // ---------------- Navigation without GPS
                     SectionHeader(stringResource(R.string.sec_navigation_method))
+                    val navigationEstimator by app.navigationEstimator.collectAsStateWithLifecycle()
+                    val travelMode by app.travelMode.collectAsStateWithLifecycle()
+                    val selectedEstimator = if (ui.guidance.active) app.engine.estimator else navigationEstimator
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.navigation_estimator_title)) },
+                        supportingContent = {
+                            Column {
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    NavigationEstimator.entries.forEach { estimator ->
+                                        FilterChip(
+                                            selected = selectedEstimator == estimator,
+                                            enabled = !ui.guidance.active && !ui.planning,
+                                            onClick = { app.setNavigationEstimator(estimator) },
+                                            label = { Text(navigationEstimatorName(estimator)) },
+                                        )
+                                    }
+                                }
+                                Text(stringResource(R.string.navigation_estimator_summary))
+                                if (ui.guidance.active) Text(stringResource(R.string.navigation_estimator_locked))
+                            }
+                        },
+                    )
                     val navigationMethod by app.navigationMethod.collectAsStateWithLifecycle()
                     ListItem(
                         headlineContent = { Text(stringResource(R.string.navigation_method_title)) },
@@ -236,6 +260,7 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                                     NavigationMethod.entries.forEach { method ->
                                         FilterChip(
                                             selected = navigationMethod == method,
+                                            enabled = selectedEstimator == NavigationEstimator.KOTLIN || (!ui.guidance.active && travelMode == TravelMode.FOOT),
                                             onClick = { app.setNavigationMethod(method) },
                                             label = { Text(navigationMethodName(method)) },
                                         )
@@ -719,6 +744,15 @@ private fun DonationLink(title: String, url: String, openUrl: (String) -> Unit) 
         )
     }
 }
+
+/** Localised name of the position estimator selected for the next trip. */
+@Composable
+private fun navigationEstimatorName(estimator: NavigationEstimator): String = stringResource(
+    when (estimator) {
+        NavigationEstimator.KOTLIN -> R.string.navigation_estimator_kotlin
+        NavigationEstimator.NATIVE_KALMAN -> R.string.navigation_estimator_native
+    },
+)
 
 /** Localised name of a navigation fallback method. */
 @Composable

@@ -4,20 +4,33 @@ import org.imunav.core.gnss.PositioningSnapshot
 import org.imunav.core.imu.TurnEvidence
 import org.imunav.core.nav.GuidanceState
 import org.imunav.core.nav.MotionEvidence
+import org.imunav.core.nav.RouteEstimate
+import org.imunav.core.nav.RouteEstimateProvider
 import org.imunav.core.route.TravelMode
 import java.util.Locale
 
 /**
- * Runs the Rust estimator beside the established engine while recordings establish its tuning.
- *
- * The native estimate is deliberately observational during this migration stage: it receives only
- * measurements that already passed the trust classifier, and logs its disagreement with the live
- * engine. Once replay coverage is sufficient, this bridge becomes the engine's state owner without
- * changing the JNI contract or covariance implementation.
+ * Owns the Rust estimator used either in shadow mode or as the live car-navigation state owner.
+ * Route geometry is prepared off the main thread by AppGraph before starting this bridge.
  */
-class NativeEstimatorBridge(private val log: (String) -> Unit) {
+class NativeEstimatorBridge(private val log: (String) -> Unit) : RouteEstimateProvider {
     private var estimator: NativeNavigationEstimator? = null
     private var lastLogMs = -LOG_EVERY_MS
+
+    /** Live engine path: no second shadow tick, and only accepted GPS positions count as restored GPS. */
+    override fun estimate(nowMs: Long, positioning: PositioningSnapshot, motion: MotionEvidence?, turn: TurnEvidence?): RouteEstimate? {
+        val current = estimator ?: return null
+        val state = try {
+            current.tick(nowMs, positioning.lastUsableGps, motion, positioning.lastNet, turn)
+        } catch (failure: IllegalStateException) {
+            if (nowMs - lastLogMs >= LOG_EVERY_MS) {
+                lastLogMs = nowMs
+                log("native_estimator_unavailable reason=${failure.message}")
+            }
+            return null
+        }
+        return RouteEstimate(state.positionM, state.speedMps, state.safetyRadiusM, state.gpsPositionAccepted)
+    }
 
     fun start(route: NativeRouteGeometry, positionM: Double, speedMps: Double, positionSigmaM: Double, mode: TravelMode, nowMs: Long) {
         close()

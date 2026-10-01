@@ -10,6 +10,7 @@ import org.imunav.core.gnss.RawFix
 import org.imunav.core.gnss.TrustLevel
 import org.imunav.core.nav.NavListener
 import org.imunav.core.nav.NavigationEngine
+import org.imunav.core.nav.NavigationEstimator
 import org.imunav.core.nav.PositionSource
 import org.imunav.core.route.TravelMode
 import org.imunav.core.speed.SpeedProfile
@@ -91,6 +92,9 @@ data class ReplayResult(
  */
 class TripReplayer(private val tuning: Tuning = Tuning.DEFAULT, private val area: ServiceArea = ServiceArea.EVERYWHERE) {
     fun replay(events: List<TripEvent>, hideGpsAfterS: Double? = null): ReplayResult {
+        require(events.filterIsInstance<TripEvent.Estimator>().none { it.estimator == NavigationEstimator.NATIVE_KALMAN }) {
+            "This trip used Native Kalman. Use -PnativeReplay and --compare-native to evaluate its raw inputs; legacy replay only runs Kotlin."
+        }
         val sorted = events.sortedBy { it.elapsedMs }
         val session = Session(sorted.firstOrNull()?.elapsedMs ?: 0L, hideGpsAfterS)
         var nextTick = Long.MIN_VALUE
@@ -170,6 +174,10 @@ class TripReplayer(private val tuning: Tuning = Tuning.DEFAULT, private val area
                 }
 
                 is TripEvent.Mode -> pendingMode = e.mode
+
+                is TripEvent.Estimator -> Unit
+
+                // Kotlin validated before starting the replay.
 
                 is TripEvent.StepTaken -> engine.onStep(e.elapsedMs)
 

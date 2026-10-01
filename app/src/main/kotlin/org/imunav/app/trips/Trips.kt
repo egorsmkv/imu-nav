@@ -13,6 +13,7 @@ import org.imunav.core.gnss.PositioningHub
 import org.imunav.core.gnss.TrustLevel
 import org.imunav.core.imu.ImuSample
 import org.imunav.core.nav.NavigationEngine
+import org.imunav.core.nav.NavigationEstimator
 import org.imunav.core.record.RouteCodec
 import org.imunav.core.record.TripEvent
 import org.imunav.core.record.TripFormat
@@ -162,6 +163,7 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
         val now = SystemClock.elapsedRealtime()
         record(TripEvent.Start(now, destination, waypoints, startAccuracyM))
         record(TripEvent.Mode(now, mode))
+        record(TripEvent.Estimator(now, engine.estimator))
         record(TripEvent.RouteSet(now, route))
         persist(force = true)
         log("trip_begin $recordingName")
@@ -281,13 +283,15 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
         // Unknown how far the car moved while the app was dead: widen the uncertainty with the gap.
         val uncertainty = (o.optDouble("unc", 100.0) + gapS * RESTORE_DRIFT_M_PER_S).coerceAtMost(3000.0)
         val now = SystemClock.elapsedRealtime()
-        engine.start(restoredRoute, restoredDestination, waypoints, now, startAccuracyM = uncertainty, mode = mode)
+        val estimator = NavigationEstimator.entries.firstOrNull { it.name == o.optString("estimator") } ?: NavigationEstimator.KOTLIN
+        engine.start(restoredRoute, restoredDestination, waypoints, now, startAccuracyM = uncertainty, mode = mode, estimator = estimator)
         engine.resumeAt(o.optDouble("s"))
         // The killed process left the gzip stream unterminated: salvage it before appending.
         runCatching { TripFormat.repair(File(dir, recordingName)) }.onFailure { log("trip_repair_failed ${it.message}") }
         openRecorder(append = true)
         record(TripEvent.Start(now, restoredDestination, waypoints, uncertainty))
         record(TripEvent.Mode(now, mode))
+        record(TripEvent.Estimator(now, engine.estimator))
         record(TripEvent.RouteSet(now, restoredRoute))
         log("trip_restored $id gap=${gapS.toInt()}s s=${o.optDouble("s").toInt()} unc=${uncertainty.toInt()}")
         persist(force = true)
@@ -312,6 +316,7 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
             .put("id", tripId).put("recording", recordingName).put("start", startWall).put("savedAt", System.currentTimeMillis())
             .put("destLat", d.lat).put("destLon", d.lon).put("via", JSONArray(waypoints.flatMap { listOf(it.lat, it.lon) }))
             .put("startAcc", startAccuracy).put("s", engine.progressS).put("unc", st.uncertaintyM).put("mode", mode.name)
+            .put("estimator", engine.estimator.name)
             .put("driven", drivenM).put("moving", movingS).put("blindS", blindS).put("blindM", blindM)
             .put("maxUnc", maxUnc).put("reroutes", reroutes)
         io.execute {
