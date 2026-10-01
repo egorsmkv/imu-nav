@@ -19,9 +19,9 @@ Choose the UI and voice language directly in onboarding: phone default, Ukrainia
 The selection is saved and the checklist stays open when the language changes.
 The **Telegram group** link opens <https://t.me/imu_nav> from onboarding as well as Settings.
 
-The checklist shows background preparation of bundled routing/address-search data, with retries after
-failures. The built-in cell tower database is **optional**: it is not unpacked until you tap **Install
-built-in towers**. Skip it to learn towers from trusted GPS and use your own sharing server; the checklist
+The bundled routing/address-search archive is **optional**: it is not unpacked until you tap **Install
+built-in routing pack**, and the work then continues in the background. The built-in cell tower database
+is optional too and is not unpacked until you tap **Install built-in towers**. Skip it to learn towers from trusted GPS and use your own sharing server; the checklist
 links to **Settings → Cell towers → Sharing server**. Skipping towers does not block setup completion.
 Existing tower data is preserved, and database resets only reinstall the archive after explicit opt-in.
 Play builds can include the routing archive; F-Droid builds

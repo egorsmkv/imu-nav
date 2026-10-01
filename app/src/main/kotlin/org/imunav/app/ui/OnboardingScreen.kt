@@ -10,6 +10,7 @@ import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -22,6 +23,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -205,8 +207,25 @@ fun OnboardingScreen(app: AppGraph, onPermissionsChanged: () -> Unit, onContinue
                 }
             }
             Text(stringResource(R.string.setup_data), style = MaterialTheme.typography.titleLarge)
-            PreparationCard(R.string.setup_routing, routing.preparation, routing.busy, routing.message, routing.busy == null) { app.offlineRouting.retryBundled() }
-            PreparationCard(R.string.setup_cells, cells.preparation, cells.busy, cells.message, cells.busy == null) { app.cells.retryBundled() }
+            PreparationCard(
+                title = R.string.setup_routing,
+                explanation = stringResource(R.string.setup_routing_hint),
+                preparation = routing.preparation,
+                progress = routing.busy,
+                message = routing.message,
+                canRetry = routing.busy == null,
+                optionalAction = routing.bundled?.let { stringResource(R.string.routing_install_builtin, it.name) },
+                retry = app.offlineRouting::retryBundled,
+            )
+            PreparationCard(
+                title = R.string.setup_cells,
+                preparation = cells.preparation,
+                progress = cells.busy,
+                message = cells.message,
+                canRetry = cells.busy == null,
+                optionalAction = stringResource(R.string.setup_cells_install),
+                retry = app.cells::retryBundled,
+            )
             Text(stringResource(R.string.setup_cells_hint), style = MaterialTheme.typography.bodyMedium)
             TextButton(onClick = onSettings) { Text(stringResource(R.string.setup_cells_server)) }
             if (systemUnavailable) Text(stringResource(R.string.setup_system_unavailable), color = MaterialTheme.colorScheme.error)
@@ -222,11 +241,18 @@ fun OnboardingScreen(app: AppGraph, onPermissionsChanged: () -> Unit, onContinue
 /** Shared readable card layout leaves enough space for translations and large font sizes. */
 @Composable
 private fun SetupCard(title: String, explanation: String, status: String, actions: @Composable () -> Unit) {
-    Card(Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
-            if (explanation.isNotEmpty()) Text(explanation)
-            Text(status, style = MaterialTheme.typography.labelLarge)
+            if (explanation.isNotEmpty()) Text(explanation, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(status, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             actions()
         }
     }
@@ -234,7 +260,16 @@ private fun SetupCard(title: String, explanation: String, status: String, action
 
 /** Progress and retries use the managers' explicit lifecycle, never their last result text. */
 @Composable
-private fun PreparationCard(title: Int, preparation: Preparation, progress: String?, message: String?, canRetry: Boolean, retry: () -> Unit) {
+private fun PreparationCard(
+    title: Int,
+    preparation: Preparation,
+    progress: String?,
+    message: String?,
+    canRetry: Boolean,
+    explanation: String = "",
+    optionalAction: String? = null,
+    retry: () -> Unit,
+) {
     val status = when (preparation) {
         Preparation.CHECKING -> R.string.setup_checking
         Preparation.PREPARING -> R.string.setup_preparing
@@ -244,7 +279,7 @@ private fun PreparationCard(title: Int, preparation: Preparation, progress: Stri
         Preparation.REMOVED -> R.string.setup_removed
         Preparation.FAILED -> R.string.setup_failed
     }
-    SetupCard(stringResource(title), "", stringResource(status)) {
+    SetupCard(stringResource(title), explanation, stringResource(status)) {
         if (preparation == Preparation.CHECKING || preparation == Preparation.PREPARING) {
             LinearProgressIndicator(Modifier.fillMaxWidth())
             progress?.let { Text(it) }
@@ -253,8 +288,8 @@ private fun PreparationCard(title: Int, preparation: Preparation, progress: Stri
             message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             OutlinedButton(onClick = retry, enabled = canRetry) { Text(stringResource(R.string.setup_retry)) }
         }
-        if (preparation == Preparation.OPTIONAL) {
-            OutlinedButton(onClick = retry, enabled = canRetry) { Text(stringResource(R.string.setup_cells_install)) }
+        if (preparation == Preparation.OPTIONAL && optionalAction != null) {
+            OutlinedButton(onClick = retry, enabled = canRetry) { Text(optionalAction) }
         }
     }
 }

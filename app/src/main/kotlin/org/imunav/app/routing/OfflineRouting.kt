@@ -18,6 +18,7 @@ import kotlinx.coroutines.withContext
 import org.imunav.app.R
 import org.imunav.app.search.AndroidSearchDb
 import org.imunav.app.setup.Preparation
+import org.imunav.app.setup.bundledRoutingPreparation
 import org.imunav.core.cells.ResumableHttpInputStream
 import org.imunav.core.geo.GeoPoint
 import org.imunav.core.route.Route
@@ -95,24 +96,23 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
         }.onFailure { error ->
             if (error is CancellationException) throw error
             log("offline_routing_load_failed ${error.message}")
-            if (bundledInfo != null) {
-                installBundled()
-            } else {
-                _status.update { it.copy(preparation = Preparation.FAILED, message = str(R.string.task_failed, error.message.orEmpty())) }
-            }
+            // A failed load must remain visible. Expanding a large bundled archive is only allowed
+            // after the user explicitly chooses it from onboarding or Settings.
+            _status.update { it.copy(preparation = Preparation.FAILED, message = str(R.string.task_failed, error.message.orEmpty())) }
         }
     }
 
-    /** Retry discovery, loading or extraction without overlapping an existing routing task. */
+    /** Opt in to the bundled pack, or retry its discovery and install, without overlapping a task. */
     fun retryBundled() {
         if (task?.isActive == true || _status.value.preparation in setOf(Preparation.CHECKING, Preparation.PREPARING)) return
+        prefs.edit { putBoolean("bundled_enabled", true) }
         _status.update { it.copy(preparation = Preparation.CHECKING) }
         scope.launch { prepareBundled() }
     }
 
     /**
-     * First start (or an app update shipping a newer pack): unpack the bundled pack into app storage.
-     * Skipped when a pack at least as new is installed, or the user removed this bundled pack.
+     * After explicit opt-in, unpack the bundled pack into app storage and keep it current.
+     * Skipped when a pack at least as new is installed, or the user has not opted in.
      */
     private fun installBundledIfNeeded() {
         val bundled = bundledInfo
@@ -139,8 +139,13 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
             _status.update { it.copy(preparation = Preparation.READY) }
             return
         }
-        if (prefs.getString("bundled_declined", null) == bundled.builtAt) {
-            _status.update { it.copy(preparation = Preparation.REMOVED) }
+        val preparation = bundledRoutingPreparation(
+            enabled = prefs.getBoolean("bundled_enabled", false),
+            loaded = _status.value.loaded,
+            removed = prefs.getString("bundled_declined", null) == bundled.builtAt,
+        )
+        if (preparation != Preparation.CHECKING) {
+            _status.update { it.copy(preparation = preparation) }
             return
         }
         installBundled()
@@ -150,7 +155,10 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
     fun installBundled() {
         val bundled = bundledInfo ?: return
         if (task?.isActive == true) return
-        prefs.edit { remove("bundled_declined") }
+        prefs.edit {
+            putBoolean("bundled_enabled", true)
+            remove("bundled_declined")
+        }
         _status.update { it.copy(preparation = Preparation.PREPARING) }
         runTask(str(R.string.routing_preparing_builtin, 0, (bundled.sizeBytes / 1_048_576).toInt()), bundled = true) {
             withContext(Dispatchers.IO) {
@@ -245,7 +253,10 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
     /** Delete the installed pack (and do not re-install the built-in one automatically). */
     fun remove() = runTask(str(R.string.routing_removing)) {
         // Do not silently reinstall the bundled pack the user just removed.
-        bundledInfo?.let { prefs.edit { putString("bundled_declined", it.builtAt) } }
+        prefs.edit {
+            putBoolean("bundled_enabled", false)
+            bundledInfo?.let { putString("bundled_declined", it.builtAt) }
+        }
         withContext(Dispatchers.IO) {
             synchronized(this@OfflineRouting) {
                 graph?.close()

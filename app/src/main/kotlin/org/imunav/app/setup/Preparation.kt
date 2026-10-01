@@ -9,3 +9,11 @@ internal fun bundledCellPreparation(enabled: Boolean, installed: Boolean): Prepa
     installed -> Preparation.READY
     else -> Preparation.OPTIONAL
 }
+
+/** Require a deliberate first install while retaining a previous opt-in for interrupted work and updates. */
+internal fun bundledRoutingPreparation(enabled: Boolean, loaded: Boolean, removed: Boolean): Preparation = when {
+    removed -> Preparation.REMOVED
+    enabled -> Preparation.CHECKING
+    loaded -> Preparation.READY
+    else -> Preparation.OPTIONAL
+}

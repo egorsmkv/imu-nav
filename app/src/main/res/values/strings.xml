@@ -474,6 +474,7 @@
     <string name="setup_approximate">Approximate location is enabled. Precise location is still needed for GPS and cell scanning.</string>
     <string name="setup_data">Offline data</string>
     <string name="setup_routing">Routing and address search</string>
+    <string name="setup_routing_hint">The built-in archive is unpacked only when you choose Install. It may take a while, but you can leave this screen while it continues in the background.</string>
     <string name="setup_cells">Cell tower database (optional)</string>
     <string name="setup_optional">Not installed — optional</string>
     <string name="setup_cells_install">Install built-in towers</string>

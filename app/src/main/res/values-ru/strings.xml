@@ -484,6 +484,7 @@
     <string name="setup_approximate">Доступно приблизительное местоположение. Для GPS и сканирования вышек нужно точное.</string>
     <string name="setup_data">Офлайн-данные</string>
     <string name="setup_routing">Маршруты и поиск адресов</string>
+    <string name="setup_routing_hint">Встроенный архив распаковывается только после нажатия «Установить». Это может занять некоторое время, но можно покинуть этот экран — работа продолжится в фоне.</string>
     <string name="setup_cells">База сотовых вышек (необязательно)</string>
     <string name="setup_optional">Не установлено — необязательно</string>
     <string name="setup_cells_install">Установить встроенные вышки</string>
