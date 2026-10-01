@@ -34,6 +34,12 @@ pub struct RouteGeometry {
 }
 
 impl RouteGeometry {
+    /// Builds cumulative route geometry from at least two valid geographic points.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RouteError::TooShort`] for fewer than two points and
+    /// [`RouteError::InvalidCoordinate`] for an invalid coordinate.
     pub fn new(points: Vec<GeoPoint>) -> Result<Self, RouteError> {
         if points.len() < 2 {
             return Err(RouteError::TooShort);
@@ -58,10 +64,17 @@ impl RouteGeometry {
         })
     }
 
+    #[must_use]
     pub fn length_m(&self) -> f64 {
         *self.cumulative_m.last().unwrap_or(&0.0)
     }
 
+    /// Projects a point onto a local route window, with an optional global fallback.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RouteError::InvalidSearch`] when a coordinate, search distance, or threshold is
+    /// invalid.
     pub fn project(
         &self,
         point: GeoPoint,
@@ -96,6 +109,7 @@ impl RouteGeometry {
         Ok(local)
     }
 
+    #[must_use]
     pub fn segment_at(&self, position_m: f64) -> usize {
         if position_m <= 0.0 {
             return 0;
@@ -106,7 +120,7 @@ impl RouteGeometry {
         let mut low = 0;
         let mut high = self.points.len() - 1;
         while low < high - 1 {
-            let middle = (low + high) / 2;
+            let middle = usize::midpoint(low, high);
             if self.cumulative_m[middle] <= position_m {
                 low = middle;
             } else {

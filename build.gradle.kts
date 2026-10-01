@@ -50,8 +50,8 @@ val rustTest = tasks.register<Exec>("rustTest") {
 
 val rustClippy = tasks.register<Exec>("rustClippy") {
     group = "verification"
-    description = "Runs strict Rust static analysis"
-    commandLine("cargo", "clippy", "--manifest-path", "native/Cargo.toml", "--all-targets", "--", "-D", "warnings")
+    description = "Runs pedantic Rust static analysis"
+    commandLine("cargo", "clippy", "--manifest-path", "native/Cargo.toml", "--all-targets", "--", "-W", "clippy::pedantic", "-D", "warnings")
     inputs.files(fileTree("native") { exclude("target/**") })
 }
 

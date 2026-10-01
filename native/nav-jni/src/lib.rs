@@ -10,17 +10,17 @@ use imu_nav_core::estimator::{
 };
 use imu_nav_core::network::{GateResult as NetworkGateResult, NetworkSample, NetworkTracker};
 use imu_nav_core::route::{GeoPoint, RouteGeometry};
-use imu_nav_core::speed::{fuse_speed, SpeedEstimate};
+use imu_nav_core::speed::{SpeedEstimate, fuse_speed};
 use imu_nav_core::trust::{
     JamDetector, LocationFix, Reason, ReceiverHealth, TrustClassifier, TrustConfig, TrustInput,
     TrustLevel,
 };
 use imu_nav_core::{FilterError, RouteFilter};
+use jni::JNIEnv;
 use jni::objects::{JClass, JDoubleArray, JIntArray, JLongArray};
 use jni::sys::{jdouble, jdoubleArray, jint, jintArray, jlong};
-use jni::JNIEnv;
 use std::collections::HashMap;
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -128,14 +128,23 @@ fn guarded_code(action: impl FnOnce() -> jint) -> jint {
 }
 
 fn optional(value: f64) -> Option<f64> {
-    if value.is_nan() {
-        None
-    } else {
-        Some(value)
-    }
+    if value.is_nan() { None } else { Some(value) }
 }
 
-#[no_mangle]
+#[must_use]
+fn usize_as_f64(value: usize) -> Option<f64> {
+    u32::try_from(value).ok().map(f64::from)
+}
+
+// The Kotlin API historically represents recorded elapsed-realtime values in a DoubleArray.
+// Android monotonic timestamps remain well inside f64's exact-integer range in practice.
+#[allow(clippy::cast_precision_loss)]
+#[must_use]
+fn elapsed_milliseconds_as_f64(value: i64) -> f64 {
+    value as f64
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_imunav_app_nativecore_NativeSpeedFusion_nativeFuse(
     _env: JNIEnv,
     _class: JClass,
@@ -198,7 +207,7 @@ fn trust_level_code(level: TrustLevel) -> jint {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteFilter_nativeCreate(
     _env: JNIEnv,
     _class: JClass,
@@ -235,7 +244,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteFilter_nativeCr
     .unwrap_or(0)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteFilter_nativeDestroy(
     _env: JNIEnv,
     _class: JClass,
@@ -253,7 +262,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteFilter_nativeDe
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteFilter_nativePredict(
     _env: JNIEnv,
     _class: JClass,
@@ -273,7 +282,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteFilter_nativePr
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteFilter_nativeUpdatePosition(
     _env: JNIEnv,
     _class: JClass,
@@ -299,7 +308,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteFilter_nativeUp
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteFilter_nativeUpdateSpeed(
     _env: JNIEnv,
     _class: JClass,
@@ -325,7 +334,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteFilter_nativeUp
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteFilter_nativeAnchorPosition(
     _env: JNIEnv,
     _class: JClass,
@@ -342,21 +351,21 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteFilter_nativeAn
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteFilter_nativeResetSystematicDrift(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
 ) -> jint {
     guarded_code(
-        || match with_filter(handle, |filter| filter.reset_systematic_drift()) {
+        || match with_filter(handle, RouteFilter::reset_systematic_drift) {
             Ok(()) => OK,
             Err(code) => code,
         },
     )
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteGeometry_nativeCreate(
     env: JNIEnv,
     _class: JClass,
@@ -369,7 +378,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteGeometry_native
         if length < 4 || length % 2 != 0 {
             return None;
         }
-        let mut values = vec![0.0; length as usize];
+        let mut values = vec![0.0; usize::try_from(length).ok()?];
         if env
             .get_double_array_region(&coordinates, 0, &mut values)
             .is_err()
@@ -396,7 +405,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteGeometry_native
     .unwrap_or(0)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteGeometry_nativeDestroy(
     _env: JNIEnv,
     _class: JClass,
@@ -414,7 +423,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteGeometry_native
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteGeometry_nativeProject(
     env: JNIEnv,
     _class: JClass,
@@ -446,11 +455,13 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteGeometry_native
         let values = [
             projection.position_m,
             projection.offset_m,
-            projection.segment as f64,
+            usize_as_f64(projection.segment)?,
             projection.point.latitude_deg,
             projection.point.longitude_deg,
         ];
-        let output: JDoubleArray = env.new_double_array(values.len() as i32).ok()?;
+        let output: JDoubleArray = env
+            .new_double_array(i32::try_from(values.len()).ok()?)
+            .ok()?;
         env.set_double_array_region(&output, 0, &values).ok()?;
         Some(output.into_raw())
     }))
@@ -459,7 +470,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteGeometry_native
     .unwrap_or(ptr::null_mut())
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteFilter_nativeInstallRoute(
     _env: JNIEnv,
     _class: JClass,
@@ -483,7 +494,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteFilter_nativeIn
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteFilter_nativeProject(
     env: JNIEnv,
     _class: JClass,
@@ -517,11 +528,13 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteFilter_nativePr
         let values = [
             projection.position_m,
             projection.offset_m,
-            projection.segment as f64,
+            usize_as_f64(projection.segment)?,
             projection.point.latitude_deg,
             projection.point.longitude_deg,
         ];
-        let output: JDoubleArray = env.new_double_array(values.len() as i32).ok()?;
+        let output: JDoubleArray = env
+            .new_double_array(i32::try_from(values.len()).ok()?)
+            .ok()?;
         env.set_double_array_region(&output, 0, &values).ok()?;
         Some(output.into_raw())
     }))
@@ -530,7 +543,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteFilter_nativePr
     .unwrap_or(ptr::null_mut())
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteFilter_nativeGetState(
     env: JNIEnv,
     _class: JClass,
@@ -548,7 +561,9 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteFilter_nativeGe
             estimate.systematic_drift_m,
             safety_radius,
         ];
-        let output: JDoubleArray = env.new_double_array(values.len() as i32).ok()?;
+        let output: JDoubleArray = env
+            .new_double_array(i32::try_from(values.len()).ok()?)
+            .ok()?;
         env.set_double_array_region(&output, 0, &values).ok()?;
         Some(output.into_raw())
     }))
@@ -557,7 +572,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteFilter_nativeGe
     .unwrap_or(ptr::null_mut())
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_imunav_app_nativecore_NativeTrustEvaluator_nativeCreate(
     _env: JNIEnv,
     _class: JClass,
@@ -581,7 +596,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeTrustEvaluator_nativ
     .unwrap_or(0)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_imunav_app_nativecore_NativeTrustEvaluator_nativeDestroy(
     _env: JNIEnv,
     _class: JClass,
@@ -599,7 +614,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeTrustEvaluator_nativ
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_imunav_app_nativecore_NativeTrustEvaluator_nativeReset(
     _env: JNIEnv,
     _class: JClass,
@@ -619,7 +634,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeTrustEvaluator_nativ
 }
 
 /// Returns bit 0 as the current jam state and bit 1 when the state changed.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_imunav_app_nativecore_NativeTrustEvaluator_nativeUpdateAgc(
     _env: JNIEnv,
     _class: JClass,
@@ -641,7 +656,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeTrustEvaluator_nativ
 
 /// Evaluate arrays documented by `NativeTrustEvaluator`. The first returned integer is the trust
 /// level (0 GOOD, 1 SUSPECT, 2 BAD); remaining integers are stable reason codes.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_imunav_app_nativecore_NativeTrustEvaluator_nativeEvaluate(
     env: JNIEnv,
     _class: JClass,
@@ -711,7 +726,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeTrustEvaluator_nativ
         let mut result = Vec::with_capacity(verdict.reasons.len() + 1);
         result.push(trust_level_code(verdict.level));
         result.extend(verdict.reasons.into_iter().map(reason_code));
-        let output: JIntArray = env.new_int_array(result.len() as i32).ok()?;
+        let output: JIntArray = env.new_int_array(i32::try_from(result.len()).ok()?).ok()?;
         env.set_int_array_region(&output, 0, &result).ok()?;
         Some(output.into_raw())
     }))
@@ -720,7 +735,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeTrustEvaluator_nativ
     .unwrap_or(ptr::null_mut())
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_imunav_app_nativecore_NativeNetworkTracker_nativeCreate(
     _env: JNIEnv,
     _class: JClass,
@@ -741,7 +756,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNetworkTracker_nativ
     .unwrap_or(0)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_imunav_app_nativecore_NativeNetworkTracker_nativeDestroy(
     _env: JNIEnv,
     _class: JClass,
@@ -759,7 +774,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNetworkTracker_nativ
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_imunav_app_nativecore_NativeNetworkTracker_nativeReset(
     _env: JNIEnv,
     _class: JClass,
@@ -773,7 +788,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNetworkTracker_nativ
     )
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_imunav_app_nativecore_NativeNetworkTracker_nativeClearSamples(
     _env: JNIEnv,
     _class: JClass,
@@ -787,7 +802,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNetworkTracker_nativ
     )
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_imunav_app_nativecore_NativeNetworkTracker_nativeGate(
     _env: JNIEnv,
     _class: JClass,
@@ -808,7 +823,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNetworkTracker_nativ
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_imunav_app_nativecore_NativeNetworkTracker_nativeRecord(
     env: JNIEnv,
     _class: JClass,
@@ -842,7 +857,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNetworkTracker_nativ
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_imunav_app_nativecore_NativeNetworkTracker_nativePruneHistory(
     _env: JNIEnv,
     _class: JClass,
@@ -857,7 +872,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNetworkTracker_nativ
     )
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_imunav_app_nativecore_NativeNetworkTracker_nativeLastTwoConsistent(
     _env: JNIEnv,
     _class: JClass,
@@ -872,7 +887,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNetworkTracker_nativ
     )
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_imunav_app_nativecore_NativeNetworkTracker_nativeEstimate(
     env: JNIEnv,
     _class: JClass,
@@ -893,10 +908,12 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNetworkTracker_nativ
         let values = [
             estimate.speed_mps,
             estimate.sigma_mps,
-            estimate.samples as f64,
+            usize_as_f64(estimate.samples)?,
             estimate.span_s,
         ];
-        let output: JDoubleArray = env.new_double_array(values.len() as i32).ok()?;
+        let output: JDoubleArray = env
+            .new_double_array(i32::try_from(values.len()).ok()?)
+            .ok()?;
         env.set_double_array_region(&output, 0, &values).ok()?;
         Some(output.into_raw())
     }))
@@ -905,7 +922,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNetworkTracker_nativ
     .unwrap_or(ptr::null_mut())
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_imunav_app_nativecore_NativeNetworkTracker_nativeSamples(
     env: JNIEnv,
     _class: JClass,
@@ -925,14 +942,16 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNetworkTracker_nativ
             .iter()
             .flat_map(|sample| {
                 [
-                    sample.elapsed_ms as f64,
+                    elapsed_milliseconds_as_f64(sample.elapsed_ms),
                     sample.position_m,
                     sample.accuracy_m,
                     sample.offset_m,
                 ]
             })
             .collect();
-        let output: JDoubleArray = env.new_double_array(values.len() as i32).ok()?;
+        let output: JDoubleArray = env
+            .new_double_array(i32::try_from(values.len()).ok()?)
+            .ok()?;
         env.set_double_array_region(&output, 0, &values).ok()?;
         Some(output.into_raw())
     }))
@@ -941,7 +960,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNetworkTracker_nativ
     .unwrap_or(ptr::null_mut())
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_imunav_app_nativecore_NativeNavigationEstimator_nativeCreate(
     env: JNIEnv,
     _class: JClass,
@@ -991,7 +1010,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNavigationEstimator_
     .unwrap_or(0)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_imunav_app_nativecore_NativeNavigationEstimator_nativeDestroy(
     _env: JNIEnv,
     _class: JClass,
@@ -1009,7 +1028,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNavigationEstimator_
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_imunav_app_nativecore_NativeNavigationEstimator_nativeOnVehicleSpeed(
     _env: JNIEnv,
     _class: JClass,
@@ -1029,7 +1048,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNavigationEstimator_
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_imunav_app_nativecore_NativeNavigationEstimator_nativeReplaceRoute(
     _env: JNIEnv,
     _class: JClass,
@@ -1058,7 +1077,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNavigationEstimator_
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_imunav_app_nativecore_NativeNavigationEstimator_nativeTick(
     env: JNIEnv,
     _class: JClass,
@@ -1108,7 +1127,9 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNavigationEstimator_
             estimate.systematic_drift_m,
             safety_radius_m,
         ];
-        let output: JDoubleArray = env.new_double_array(result.len() as i32).ok()?;
+        let output: JDoubleArray = env
+            .new_double_array(i32::try_from(result.len()).ok()?)
+            .ok()?;
         env.set_double_array_region(&output, 0, &result).ok()?;
         Some(output.into_raw())
     }))

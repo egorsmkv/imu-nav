@@ -1,5 +1,7 @@
 //! Speed fusion and network-fix regression used while satellite positioning is unavailable.
 
+use crate::milliseconds_to_seconds;
+
 const MAX_SPEED_MPS: f64 = 150.0 / 3.6;
 const ROUTE_PRIOR_SIGMA_MPS: f64 = 6.0;
 const GPS_SIGMA_MPS: f64 = 1.5;
@@ -18,6 +20,7 @@ pub struct SpeedEstimate {
 }
 
 /// Inverse-variance fusion of fresh GNSS speed, a route prior and network regression.
+#[must_use]
 pub fn fuse_speed(
     last_gps_speed_mps: Option<f64>,
     gps_age_ms: i64,
@@ -38,7 +41,7 @@ pub fn fuse_speed(
     if let Some(speed) = last_gps_speed_mps {
         add(
             speed,
-            GPS_SIGMA_MPS + gps_age_ms.max(0) as f64 / 1000.0 * GPS_SIGMA_PER_SECOND,
+            GPS_SIGMA_MPS + milliseconds_to_seconds(gps_age_ms.max(0)) * GPS_SIGMA_PER_SECOND,
         );
     }
     if let Some(speed) = route_prior_mps {
@@ -79,7 +82,7 @@ struct Line {
 impl Line {
     fn position_at(self, elapsed_ms: i64) -> f64 {
         self.intercept_m
-            + self.slope_mps * elapsed_ms.saturating_sub(self.origin_ms) as f64 / 1000.0
+            + self.slope_mps * milliseconds_to_seconds(elapsed_ms.saturating_sub(self.origin_ms))
     }
 }
 
@@ -115,12 +118,14 @@ impl NetworkSpeedEstimator {
         }
     }
 
+    #[must_use]
     pub fn estimate(&self, now_ms: i64) -> Option<SpeedEstimate> {
         self.estimate_window(now_ms, 30_000, 15.0)
             .or_else(|| self.estimate_window(now_ms, 40_000, 20.0))
             .or_else(|| self.strict_estimate(now_ms))
     }
 
+    #[must_use]
     pub fn strict_estimate(&self, now_ms: i64) -> Option<SpeedEstimate> {
         self.estimate_window(now_ms, 90_000, 30.0)
     }
@@ -153,11 +158,12 @@ impl NetworkSpeedEstimator {
             line = fit(&inliers)?;
             samples = inliers;
         }
-        let span_s = samples
-            .last()?
-            .elapsed_ms
-            .saturating_sub(samples.first()?.elapsed_ms) as f64
-            / 1000.0;
+        let span_s = milliseconds_to_seconds(
+            samples
+                .last()?
+                .elapsed_ms
+                .saturating_sub(samples.first()?.elapsed_ms),
+        );
         if span_s < minimum_span_s {
             return None;
         }
@@ -187,7 +193,8 @@ fn fit(samples: &[Sample]) -> Option<Line> {
         .iter()
         .map(|sample| 1.0 / weight_accuracy(*sample).powi(2))
         .sum();
-    let seconds = |sample: Sample| sample.elapsed_ms.saturating_sub(origin_ms) as f64 / 1000.0;
+    let seconds =
+        |sample: Sample| milliseconds_to_seconds(sample.elapsed_ms.saturating_sub(origin_ms));
     let mean_time = samples
         .iter()
         .map(|sample| seconds(*sample) / weight_accuracy(*sample).powi(2))
@@ -242,36 +249,36 @@ mod tests {
         assert!(fused.speed_mps > 10.0 && fused.speed_mps < 13.0);
         assert!(fused.sigma_mps < 1.0);
         assert_eq!(fused.samples, 3);
-        assert_eq!(fused.span_s, 30.0);
-        assert_eq!(
-            fuse_speed(Some(100.0), 0, None, None).unwrap().speed_mps,
-            MAX_SPEED_MPS
+        assert!((fused.span_s - 30.0).abs() < f64::EPSILON);
+        assert!(
+            (fuse_speed(Some(100.0), 0, None, None).unwrap().speed_mps - MAX_SPEED_MPS).abs()
+                < f64::EPSILON
         );
     }
 
     #[test]
     fn weighted_regression_recovers_speed_and_drops_outlier() {
         let mut estimator = NetworkSpeedEstimator::default();
-        for index in 0..8 {
-            let elapsed_ms = index * 5_000;
+        for index in 0_i32..8 {
+            let elapsed_ms = i64::from(index) * 5_000;
             let position_m = if index == 3 {
                 700.0
             } else {
-                index as f64 * 50.0
+                f64::from(index) * 50.0
             };
             estimator.add(position_m, 30.0, elapsed_ms);
         }
         let estimate = estimator.estimate(35_000).unwrap();
         assert!((estimate.speed_mps - 10.0).abs() < 0.1);
         assert_eq!(estimate.samples, 6);
-        assert_eq!(estimate.span_s, 30.0);
+        assert!((estimate.span_s - 30.0).abs() < f64::EPSILON);
     }
 
     #[test]
     fn regression_rejects_short_or_imprecise_windows() {
         let mut estimator = NetworkSpeedEstimator::default();
-        for index in 0..4 {
-            estimator.add(index as f64 * 10.0, 500.0, index * 1_000);
+        for index in 0_i32..4 {
+            estimator.add(f64::from(index) * 10.0, 500.0, i64::from(index) * 1_000);
         }
         assert_eq!(estimator.estimate(3_000), None);
     }

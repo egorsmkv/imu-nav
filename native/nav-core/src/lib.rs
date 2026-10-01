@@ -29,6 +29,10 @@ pub struct Covariance2 {
 
 impl Covariance2 {
     /// Diagonal covariance from position and speed standard deviations.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FilterError`] when either standard deviation is negative or non-finite.
     pub fn diagonal(position_sigma_m: f64, speed_sigma_mps: f64) -> Result<Self, FilterError> {
         validate_sigma(position_sigma_m)?;
         validate_sigma(speed_sigma_mps)?;
@@ -74,16 +78,22 @@ pub struct Estimate {
 }
 
 impl Estimate {
+    #[must_use]
     pub fn position_sigma_m(self) -> f64 {
         self.covariance.position.sqrt()
     }
 
+    #[must_use]
     pub fn speed_sigma_mps(self) -> f64 {
         self.covariance.speed.sqrt()
     }
 
     /// Conservative user-facing radius. `sigma_multiplier` is normally 2.0 for an approximate
     /// 95% random-error interval before adding the non-Gaussian systematic allowance.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FilterError::InvalidSigma`] for a negative or non-finite multiplier.
     pub fn safety_radius_m(self, sigma_multiplier: f64) -> Result<f64, FilterError> {
         if !sigma_multiplier.is_finite() || sigma_multiplier < 0.0 {
             return Err(FilterError::InvalidSigma);
@@ -118,6 +128,12 @@ pub struct RouteFilter {
 }
 
 impl RouteFilter {
+    /// Creates a filter from an initial route position, speed and their uncertainties.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FilterError`] when a value is non-finite, an uncertainty is negative, or the
+    /// initial systematic drift is negative.
     pub fn new(
         position_m: f64,
         speed_mps: f64,
@@ -139,6 +155,7 @@ impl RouteFilter {
         })
     }
 
+    #[must_use]
     pub fn estimate(&self) -> Estimate {
         self.estimate
     }
@@ -148,6 +165,10 @@ impl RouteFilter {
     /// `acceleration_sigma_mps2` determines random process covariance. The separate
     /// `systematic_drift_per_m` grows a conservative allowance linearly with travelled distance,
     /// modelling lasting speed bias that ordinary white-noise covariance would underestimate.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FilterError`] for invalid timing, noise, drift, or resulting covariance values.
     pub fn predict(
         &mut self,
         dt_s: f64,
@@ -189,6 +210,10 @@ impl RouteFilter {
     }
 
     /// Update from a route-projected position measurement.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FilterError`] for invalid measurements, uncertainty, gate, or covariance values.
     pub fn update_position(
         &mut self,
         position_m: f64,
@@ -199,6 +224,10 @@ impl RouteFilter {
     }
 
     /// Update from a speed measurement such as trusted GNSS Doppler speed or scaled OBD speed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FilterError`] for invalid measurements, uncertainty, gate, or covariance values.
     pub fn update_speed(
         &mut self,
         speed_mps: f64,
@@ -209,6 +238,10 @@ impl RouteFilter {
     }
 
     /// Install a trusted landmark or explicit route correction while retaining speed uncertainty.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FilterError`] when the position is non-finite or the uncertainty is invalid.
     pub fn anchor_position(&mut self, position_m: f64, sigma_m: f64) -> Result<(), FilterError> {
         validate_finite(position_m)?;
         validate_sigma(sigma_m)?;
@@ -225,6 +258,9 @@ impl RouteFilter {
         self.estimate.systematic_drift_m = 0.0;
     }
 
+    // The short A/AP names below are the standard Joseph covariance-update notation. Keeping the
+    // matrix indices visible makes the hand-unrolled 2x2 calculation auditable.
+    #[allow(clippy::similar_names)]
     fn update_scalar(
         &mut self,
         measurement: f64,
@@ -308,6 +344,14 @@ fn validate_finite(value: f64) -> Result<(), FilterError> {
     }
 }
 
+/// Converts a signed monotonic-clock delta to seconds. Android elapsed-realtime values remain far
+/// below the integer range where conversion to `f64` loses millisecond-scale precision.
+#[allow(clippy::cast_precision_loss)]
+#[must_use]
+pub(crate) fn milliseconds_to_seconds(milliseconds: i64) -> f64 {
+    milliseconds as f64 / 1000.0
+}
+
 fn validate_non_negative(value: f64) -> Result<(), FilterError> {
     validate_finite(value)?;
     if value < 0.0 {
@@ -333,7 +377,7 @@ mod tests {
         filter.predict(0.5, 1.0, 0.08).unwrap();
         let estimate = filter.estimate();
         assert!((estimate.position_m - 12.0).abs() < 1.0e-12);
-        assert!((estimate.covariance.position - 10.015625).abs() < 1.0e-12);
+        assert!((estimate.covariance.position - 10.015_625).abs() < 1.0e-12);
         assert!((estimate.covariance.position_speed - 2.0625).abs() < 1.0e-12);
         assert!((estimate.covariance.speed - 4.25).abs() < 1.0e-12);
         assert!((estimate.systematic_drift_m - 5.16).abs() < 1.0e-12);
@@ -378,11 +422,11 @@ mod tests {
         let speed_variance = filter.estimate().covariance.speed;
         filter.anchor_position(21.0, 4.0).unwrap();
         let estimate = filter.estimate();
-        assert_eq!(estimate.position_m, 21.0);
-        assert_eq!(estimate.covariance.position, 16.0);
-        assert_eq!(estimate.covariance.position_speed, 0.0);
-        assert_eq!(estimate.covariance.speed, speed_variance);
-        assert_eq!(estimate.systematic_drift_m, 0.0);
+        assert!((estimate.position_m - 21.0).abs() < f64::EPSILON);
+        assert!((estimate.covariance.position - 16.0).abs() < f64::EPSILON);
+        assert!(estimate.covariance.position_speed.abs() < f64::EPSILON);
+        assert!((estimate.covariance.speed - speed_variance).abs() < f64::EPSILON);
+        assert!(estimate.systematic_drift_m.abs() < f64::EPSILON);
     }
 
     #[test]
@@ -393,9 +437,9 @@ mod tests {
         assert!(before.systematic_drift_m > 0.0);
         filter.reset_systematic_drift();
         let after = filter.estimate();
-        assert_eq!(after.systematic_drift_m, 0.0);
-        assert_eq!(after.position_m, before.position_m);
-        assert_eq!(after.speed_mps, before.speed_mps);
+        assert!(after.systematic_drift_m.abs() < f64::EPSILON);
+        assert!((after.position_m - before.position_m).abs() < f64::EPSILON);
+        assert!((after.speed_mps - before.speed_mps).abs() < f64::EPSILON);
         assert_eq!(after.covariance, before.covariance);
     }
 
@@ -420,8 +464,8 @@ mod tests {
         for index in 1..=100_000 {
             filter.predict(0.5, 1.5, 0.02).unwrap();
             if index % 2 == 0 {
-                let truth = 15.0 * index as f64 * 0.5;
-                let noise = ((index % 11) as f64 - 5.0) * 0.4;
+                let truth = 15.0 * f64::from(index) * 0.5;
+                let noise = (f64::from(index % 11) - 5.0) * 0.4;
                 filter.update_position(truth + noise, 8.0, 25.0).unwrap();
             }
             if index % 5 == 0 {

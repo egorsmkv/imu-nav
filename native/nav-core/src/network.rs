@@ -1,5 +1,6 @@
 //! Physical gate for route-projected network and cell positioning.
 
+use crate::milliseconds_to_seconds;
 use crate::speed::{NetworkSpeedEstimator, SpeedEstimate};
 
 const MAX_SPEED_MPS: f64 = 150.0 / 3.6;
@@ -56,7 +57,7 @@ impl NetworkTracker {
             return GateResult::Rejected;
         }
         let fix = Anchor {
-            time_s: elapsed_ms as f64 / 1000.0,
+            time_s: milliseconds_to_seconds(elapsed_ms),
             position_m,
             accuracy_m,
         };
@@ -80,8 +81,10 @@ impl NetworkTracker {
             .is_some_and(|candidate| reachable(*candidate, fix))
         {
             self.candidates.push(fix);
-            let span_s =
-                self.candidates.last().unwrap().time_s - self.candidates.first().unwrap().time_s;
+            let span_s = match (self.candidates.first(), self.candidates.last()) {
+                (Some(first), Some(last)) => last.time_s - first.time_s,
+                _ => return GateResult::Rejected,
+            };
             if self.candidates.len() >= 2
                 && span_s >= REANCHOR_MIN_SPAN_S
                 && slope(&self.candidates) >= MAX_BACKWARDS_MPS
@@ -134,28 +137,33 @@ impl NetworkTracker {
             .retain(|sample| now_ms.saturating_sub(sample.elapsed_ms) <= 30_000);
     }
 
+    #[must_use]
     pub fn last_two_consistent(&self) -> bool {
         let Some([older, newer]) = self.recent.last_chunk::<2>() else {
             return false;
         };
-        let duration_s = newer.elapsed_ms.saturating_sub(older.elapsed_ms) as f64 / 1000.0;
+        let duration_s = milliseconds_to_seconds(newer.elapsed_ms.saturating_sub(older.elapsed_ms));
         duration_s > 0.0
             && (newer.position_m - older.position_m).abs()
                 <= duration_s * MAX_SPEED_MPS + older.accuracy_m + newer.accuracy_m
     }
 
+    #[must_use]
     pub fn recent(&self) -> &[NetworkSample] {
         &self.recent
     }
 
+    #[must_use]
     pub fn history(&self) -> &[NetworkSample] {
         &self.history
     }
 
+    #[must_use]
     pub fn speed_estimate(&self, now_ms: i64) -> Option<SpeedEstimate> {
         self.speed.estimate(now_ms)
     }
 
+    #[must_use]
     pub fn strict_speed_estimate(&self, now_ms: i64) -> Option<SpeedEstimate> {
         self.speed.strict_estimate(now_ms)
     }
@@ -167,7 +175,10 @@ fn reachable(from: Anchor, to: Anchor) -> bool {
 }
 
 fn slope(points: &[Anchor]) -> f64 {
-    let count = points.len() as f64;
+    let Ok(count) = u32::try_from(points.len()) else {
+        return 0.0;
+    };
+    let count = f64::from(count);
     let mean_time = points.iter().map(|point| point.time_s).sum::<f64>() / count;
     let mean_position = points.iter().map(|point| point.position_m).sum::<f64>() / count;
     let time_variance = points
@@ -208,15 +219,15 @@ mod tests {
     #[test]
     fn records_recent_history_and_ignores_duplicate_for_speed() {
         let mut tracker = NetworkTracker::default();
-        for index in 0..6 {
+        for index in 0_i32..6 {
             tracker.record(
                 NetworkSample {
-                    elapsed_ms: index * 10_000,
-                    position_m: index as f64 * 100.0,
+                    elapsed_ms: i64::from(index) * 10_000,
+                    position_m: f64::from(index) * 100.0,
                     accuracy_m: 30.0,
                     offset_m: 5.0,
                 },
-                50.0 + index as f64 / 1000.0,
+                50.0 + f64::from(index) / 1000.0,
                 30.0,
             );
         }

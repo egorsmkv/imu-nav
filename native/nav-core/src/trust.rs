@@ -6,6 +6,8 @@
 
 use std::f64::consts::PI;
 
+use crate::milliseconds_to_seconds;
+
 const EARTH_RADIUS_M: f64 = 6_371_000.0;
 
 /// AGC-based jamming state with hysteresis, independent from individual fix verdicts.
@@ -31,6 +33,7 @@ impl Default for JamDetector {
 }
 
 impl JamDetector {
+    #[must_use]
     pub fn jammed(&self) -> bool {
         self.jammed
     }
@@ -216,6 +219,7 @@ pub struct TrustClassifier {
 }
 
 impl TrustClassifier {
+    #[must_use]
     pub fn new(config: TrustConfig) -> Self {
         Self {
             config,
@@ -226,6 +230,7 @@ impl TrustClassifier {
         }
     }
 
+    #[must_use]
     pub fn last_good(&self) -> Option<LocationFix> {
         self.last_good
     }
@@ -242,12 +247,12 @@ impl TrustClassifier {
         let previous = self.previous_raw.replace(fix);
         let mut hard = Vec::new();
         let mut soft = Vec::new();
-        self.check_fix(input, &mut hard);
+        self.check_fix(&input, &mut hard);
         self.check_last_good(fix, &mut hard, &mut soft);
         self.check_sequence(fix, previous, &mut hard, &mut soft);
         self.check_network(fix, input.network_fix, &mut soft);
-        self.check_jamming(input, &mut hard, &mut soft);
-        self.check_receiver(input, &mut hard, &mut soft);
+        self.check_jamming(&input, &mut hard, &mut soft);
+        self.check_receiver(&input, &mut hard, &mut soft);
         self.check_heading(fix, input.compass_deg, &mut soft);
 
         let verdict = if !hard.is_empty() {
@@ -273,7 +278,7 @@ impl TrustClassifier {
         verdict
     }
 
-    fn check_fix(&self, input: TrustInput, hard: &mut Vec<Reason>) {
+    fn check_fix(&self, input: &TrustInput, hard: &mut Vec<Reason>) {
         let fix = input.fix;
         let invalid_optional = [
             fix.altitude_m,
@@ -332,7 +337,8 @@ impl TrustClassifier {
         {
             hard.push(Reason::Accuracy);
         }
-        if fix.wall_time_ms.abs_diff(input.wall_now_ms) > self.config.max_clock_skew_ms as u64 {
+        let maximum_clock_skew_ms = u64::try_from(self.config.max_clock_skew_ms).unwrap_or(0);
+        if fix.wall_time_ms.abs_diff(input.wall_now_ms) > maximum_clock_skew_ms {
             hard.push(Reason::ClockSkew);
         }
     }
@@ -351,7 +357,7 @@ impl TrustClassifier {
         if fix.elapsed_ms <= last.elapsed_ms {
             return;
         }
-        let dt_s = (fix.elapsed_ms - last.elapsed_ms) as f64 / 1000.0;
+        let dt_s = milliseconds_to_seconds(fix.elapsed_ms - last.elapsed_ms);
         let distance = distance_m(last, fix);
         let reachable = self.config.max_plausible_speed_mps * dt_s
             + fix.horizontal_accuracy_m.unwrap_or(0.0)
@@ -387,8 +393,8 @@ impl TrustClassifier {
         if fix.elapsed_ms <= previous.elapsed_ms || fix.wall_time_ms <= previous.wall_time_ms {
             hard.push(Reason::DuplicateTime);
         }
-        let frozen = fix.latitude_deg == previous.latitude_deg
-            && fix.longitude_deg == previous.longitude_deg
+        let frozen = exactly_equal(fix.latitude_deg, previous.latitude_deg)
+            && exactly_equal(fix.longitude_deg, previous.longitude_deg)
             && fix
                 .speed_mps
                 .is_some_and(|speed| speed > self.config.frozen_min_speed_mps);
@@ -434,7 +440,12 @@ impl TrustClassifier {
         }
     }
 
-    fn check_jamming(&mut self, input: TrustInput, hard: &mut Vec<Reason>, soft: &mut Vec<Reason>) {
+    fn check_jamming(
+        &mut self,
+        input: &TrustInput,
+        hard: &mut Vec<Reason>,
+        soft: &mut Vec<Reason>,
+    ) {
         let fresh = receiver_fresh(input.fix, input.receiver);
         if fresh
             && input
@@ -490,14 +501,14 @@ impl TrustClassifier {
         };
         network_accuracy <= self.config.strong_jam_network_max_accuracy_m
             && fix.elapsed_ms.abs_diff(network.elapsed_ms)
-                <= self.config.strong_jam_network_max_age_ms as u64
+                <= u64::try_from(self.config.strong_jam_network_max_age_ms).unwrap_or(0)
             && distance_m(fix, network)
                 <= self.config.strong_jam_network_m
                     + fix.horizontal_accuracy_m.unwrap_or(10.0)
                     + network_accuracy
     }
 
-    fn check_receiver(&self, input: TrustInput, hard: &mut Vec<Reason>, soft: &mut Vec<Reason>) {
+    fn check_receiver(&self, input: &TrustInput, hard: &mut Vec<Reason>, soft: &mut Vec<Reason>) {
         let receiver = input.receiver;
         if !receiver_fresh(input.fix, receiver) {
             return;
@@ -554,6 +565,14 @@ fn distance_m(first: LocationFix, second: LocationFix) -> f64 {
 
 fn angle_difference_deg(first: f64, second: f64) -> f64 {
     ((first - second + 540.0).rem_euclid(360.0) - 180.0).abs()
+}
+
+// Frozen-fix detection deliberately tests exact receiver output. An approximate comparison would
+// incorrectly classify legitimate slow movement, while ordinary equality preserves `-0.0 == 0.0`.
+#[allow(clippy::float_cmp)]
+#[must_use]
+fn exactly_equal(first: f64, second: f64) -> bool {
+    first == second
 }
 
 #[cfg(test)]
@@ -643,10 +662,12 @@ mod tests {
         );
         let mut teleported = fix(2_000);
         teleported.latitude_deg += 0.1;
-        assert!(classifier
-            .evaluate(input(teleported))
-            .reasons
-            .contains(&Reason::Jump));
+        assert!(
+            classifier
+                .evaluate(input(teleported))
+                .reasons
+                .contains(&Reason::Jump)
+        );
 
         classifier.reset();
         let candidate = fix(3_000);

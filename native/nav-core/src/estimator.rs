@@ -1,7 +1,7 @@
 //! Stateful route estimator used by the Android JNI boundary.
 
 use crate::route::{GeoPoint, Projection, RouteGeometry};
-use crate::{Estimate, FilterError, RouteFilter};
+use crate::{Estimate, FilterError, RouteFilter, milliseconds_to_seconds};
 use std::sync::Arc;
 
 const MIN_POSITION_SIGMA_M: f64 = 3.0;
@@ -73,6 +73,11 @@ pub struct NavigationEstimator {
 }
 
 impl NavigationEstimator {
+    /// Creates an estimator bound to a route and travel mode.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FilterError`] when the initial estimate contains invalid values.
     pub fn new(
         route: Arc<RouteGeometry>,
         initial: InitialEstimate,
@@ -95,10 +100,16 @@ impl NavigationEstimator {
         })
     }
 
+    #[must_use]
     pub fn estimate(&self) -> Estimate {
         self.filter.estimate()
     }
 
+    /// Incorporates a vehicle-reported speed when operating in car mode.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FilterError`] if the accepted measurement produces an invalid filter update.
     pub fn on_vehicle_speed(
         &mut self,
         speed_kmh: f64,
@@ -117,13 +128,19 @@ impl NavigationEstimator {
         Ok(outcome.accepted)
     }
 
+    /// Advances the estimator and optionally incorporates a trusted GNSS observation.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FilterError`] when prediction, projection, or measurement update inputs are
+    /// invalid.
     pub fn tick(
         &mut self,
         now_ms: i64,
         gps: Option<GpsObservation>,
     ) -> Result<TickOutcome, FilterError> {
         let duration_s =
-            ((now_ms.saturating_sub(self.last_tick_ms)) as f64 / 1000.0).clamp(0.0, MAX_DT_S);
+            milliseconds_to_seconds(now_ms.saturating_sub(self.last_tick_ms)).clamp(0.0, MAX_DT_S);
         self.last_tick_ms = now_ms;
         let obd_age_ms = now_ms.saturating_sub(self.last_vehicle_speed_ms);
         let obd_fresh =
@@ -194,6 +211,11 @@ impl NavigationEstimator {
         })
     }
 
+    /// Replaces the active route and anchors the filter at the corresponding route position.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FilterError`] when the anchor position or uncertainty is invalid.
     pub fn replace_route(
         &mut self,
         route: Arc<RouteGeometry>,
@@ -250,7 +272,7 @@ mod tests {
         let anchored = estimator.tick(1_000, Some(gps)).unwrap();
         assert!(anchored.position_accepted);
         assert!(anchored.speed_accepted);
-        assert_eq!(anchored.estimate.systematic_drift_m, 0.0);
+        assert!(anchored.estimate.systematic_drift_m.abs() < f64::EPSILON);
         let blind = estimator.tick(6_000, None).unwrap();
         assert!(blind.estimate.position_m > anchored.estimate.position_m + 45.0);
         assert!(blind.estimate.systematic_drift_m > 3.5);
