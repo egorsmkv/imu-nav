@@ -136,8 +136,10 @@ and default replay retain position-only corrections. The same eligible coarse in
 new recording format or polling. `--no-native-network` takes precedence and disables both correction
 channels (shared Kotlin cell-derived motion vetoes remain separate).
 
-- Eligible fixes alternate between speed and position. Four speed-reserved fixes spanning 30–60 s
-  form a batch; batches never overlap. A speed-reserved fix never also updates position, even if the
+- Eligible fixes alternate between speed and position. At least four speed-reserved fixes spanning
+  30–60 s form a batch; batches never overlap. A coherent slow-moving batch may extend to seven
+  fixes (still at most 60 s) to meet the existing positive lower-bound gate without lowering it.
+  All samples in that batch must participate in the fit. A speed-reserved fix never also updates position, even if the
   batch is incomplete or rejected. Position corrections consequently arrive less often.
 - Weighted regression uses the raw projected positions, not corrected filter positions. Speed sigma
   is floored at 2 m/s and must be at most 4 m/s. The three-sigma lower bound must exceed 1 m/s, and
@@ -159,10 +161,23 @@ channels (shared Kotlin cell-derived motion vetoes remain separate).
   and leaves position and accumulated drift unchanged. The triggering fix is speed-only; subsequent
   fixes get position-only corrections for 30 seconds. A fresh, disjoint batch is then required before
   learning resumes. Saved priors, departure confirmation and recovery timing are also checkpointed.
+- Independently, two same-direction departures from the **last accepted regression speed** mark a
+  manoeuvre even when the saved prior is worse. The threshold is the same coarse interval-error
+  scale described above. Comparing against the fitted trend, rather than the lagging model speed,
+  prevents stable new motion from repeatedly triggering recovery. Short differences alone never
+  update speed. A complete coherent fit must still pass all moving/precision/innovation gates.
+- While relearning, a coherent fit gets a speed-uncertainty floor of 6 m/s before fusion and a larger
+  correction cap of 4 m/s; the gain remains capped at 0.5. After fusion the usual measurement-variance
+  floor remains. Relearning ends once model speed is within the fitted sigma. An invalid/mixed window
+  is discarded and subsequent fixes go to position for 15 seconds before a fresh speed batch starts.
+  Accepted GPS/OBD, stop/ramp evidence and existing sequence resets clear this mode; delayed-GPS replay
+  checkpoints both the trend reference and mode. Position and accumulated drift are never reset.
 
 Disjoint fixes prevent direct sample reuse, not correlation between tower errors. Persistent coherent
-tower drift can still look like speed. Recovery only helps when a saved prior better explains the
-contradictory movement; smaller changes, changes away from that prior, and inaccurate cells still lag.
+tower drift can still look like speed. Saved-prior recovery only helps when that prior better explains
+the contradictory movement. Relearning helps some other changes, but small changes and inaccurate or
+sparse cells still lag. The 500 m discrepancy gate deliberately prevents forced reacquisition once
+the model has diverged too far, so poor evidence can leave large errors unrecovered.
 It is not an instantaneous speed sensor. Peak errors can exceed position-only correction, so the
 experiment remains off by default pending broader real-drive validation.
 
@@ -352,6 +367,28 @@ recovery reduces that to 90 m (RMS 53 m versus position-only 56 m), but maximum 
 and maximum errors 125–153 m. These are synthetic regression results, not real-drive accuracy claims.
 Run the same recording once without and once with
 `--native-network-speed` using separate output directories; the default remains position-only.
+
+Additional 600-second synthetic manoeuvre regressions hide GPS at 60 s, change motion at 250 s and
+use 40 m-accuracy cells with deterministic noise. The acceleration case rises from 17 to 25 m/s over
+10 s, away from the saved 15 m/s prior; gradual braking falls from 17 to 9 m/s over 80 s. Traffic adds
+recorded-style IMU stops/restarts; irregular cells alternate 5/10/5/15 s intervals. Separate error cases
+hold speed constant while cell bias ramps to 120 m or one tower fix jumps by 150 m.
+
+| Scenario | Prior speed experiment p95 / max (m) | Updated experiment p95 / max (m) | Position-only p95 / max (m) |
+|---|---|---|---|
+| Acceleration away from saved prior | 213 / 242 | 172 / 213 | 221 / 235 |
+| Gradual braking | 199 / 230 | 172 / 202 | 113 / 115 |
+| Repeated stops/restarts | 110 / 168 | 110 / 168 | 82 / 118 |
+| Acceleration with irregular cells | 1880 / 2042 | 1394 / 1502 | 2827 / 3101 |
+| Changing cell bias | 140 / 146 | 140 / 146 | 89 / 91 |
+| Isolated tower jump | 50 / 63 | 50 / 63 | 43 / 62 |
+
+For acceleration, position error settles below 100 m at 125 s after the change versus 165 s before;
+gradual braking now settles at 255 s. Recovery requires at least 30 s below that threshold through
+the recording's end; a temporary crossing does not count. The irregular and changing-bias cases do
+not recover by this definition. These tests expose remaining failures, not acceptable navigation
+error bounds or real-drive guarantees. The original cell-dropout p95 remains 51 m. The experiment
+still loses to position-only correction on several scenarios and remains **off by default**.
 
 Turn JNI regressions hide GPS at 60 seconds, lower actual speed from 10 to 8 m/s without OBD/cells,
 and complete a left or right turn at 80 seconds. Over the 40-second blind interval, native p95 falls

@@ -190,6 +190,9 @@ samples, satellite/AGC status, routes and the engine's own estimates (gzip text,
   When consecutive cell intervals contradict the learned speed and favour its earlier moving-speed
   prior, it retracts that learning and temporarily restores full-rate position corrections. This reduces
   abrupt-change lag, but peak error and small speed changes remain limitations requiring real-drive tests.
+  Changes away from the saved prior can also trigger cautious relearning from a coherent new window;
+  mixed windows are discarded in favour of position corrections. Sparse cell updates and slowly changing
+  tower bias still cause large errors in synthetic tests, so this is not a general accuracy improvement.
   It is **off by default**, including the app comparison path; neither experiment controls live navigation.
   Completed IMU rotations can also give a bounded correction at an isolated, distinctive route
   turn. The native matcher rejects ambiguous matches and limits each correction to 30 m, retaining

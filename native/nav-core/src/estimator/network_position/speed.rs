@@ -4,6 +4,7 @@ use crate::milliseconds_to_seconds;
 use crate::speed::{NetworkSpeedEstimator, SpeedEstimate};
 
 const BATCH_SIZE: usize = 4;
+const MAX_BATCH_SIZE: usize = 7;
 const MIN_SPAN_S: f64 = 30.0;
 const MAX_SPAN_S: f64 = 60.0;
 const MIN_SIGMA_MPS: f64 = 2.0;
@@ -12,6 +13,7 @@ const MIN_MOVING_MPS: f64 = 1.0;
 const MAX_SPEED_MPS: f64 = 150.0 / 3.6;
 const MIN_CHANGE_MPS: f64 = 3.0;
 const RECOVERY_MS: i64 = 30_000;
+const MANEUVER_POSITION_MS: i64 = 15_000;
 
 pub(super) enum NetworkUse {
     Position,
@@ -26,28 +28,37 @@ mod tests;
 #[cfg(test)]
 mod recovery_tests;
 
+#[cfg(test)]
+mod maneuver_tests;
+
 /// Fixed storage is cheap to checkpoint; consecutive batches share no samples.
 #[derive(Clone, Debug)]
 pub(super) struct SpeedBatch {
-    samples: [Option<Candidate>; BATCH_SIZE],
+    samples: [Option<Candidate>; MAX_BATCH_SIZE],
     count: usize,
     reserve_next: bool,
     prior_speed_mps: Option<f64>,
     previous_reserved: Option<Candidate>,
     previous_departure: f64,
     recovery_until_ms: i64,
+    reference_speed_mps: Option<f64>,
+    previous_change_departure: f64,
+    relearning: bool,
 }
 
 impl SpeedBatch {
     pub(super) fn new() -> Self {
         Self {
-            samples: [None; BATCH_SIZE],
+            samples: [None; MAX_BATCH_SIZE],
             count: 0,
             reserve_next: true,
             prior_speed_mps: None,
             previous_reserved: None,
             previous_departure: 0.0,
             recovery_until_ms: -1,
+            reference_speed_mps: None,
+            previous_change_departure: 0.0,
+            relearning: false,
         }
     }
 
@@ -65,7 +76,7 @@ impl SpeedBatch {
         if !reserved {
             return NetworkUse::Position;
         }
-        if let Some(prior) = self.invalidated_prior(candidate, current_speed_mps) {
+        if let Some(prior) = self.observe_change(candidate, current_speed_mps) {
             self.clear();
             self.recovery_until_ms = candidate.last_ms.saturating_add(RECOVERY_MS);
             return NetworkUse::RestorePrior(prior);
@@ -76,31 +87,70 @@ impl SpeedBatch {
             return NetworkUse::Reserved;
         }
         let estimate = self.fit();
-        self.samples = [None; BATCH_SIZE];
+        // A slow but coherent moving window can need more distance to separate speed from noise.
+        if estimate.is_some_and(|fit| fit.speed_mps - 3.0 * fit.sigma_mps <= MIN_MOVING_MPS)
+            && self.count < MAX_BATCH_SIZE
+            && estimate.is_some_and(|fit| {
+                fit.span_s < MAX_SPAN_S && fit.speed_mps > MIN_MOVING_MPS + 3.0 * MIN_SIGMA_MPS
+            })
+        {
+            return NetworkUse::Reserved;
+        }
+        let estimate = estimate.filter(|fit| fit.speed_mps - 3.0 * fit.sigma_mps > MIN_MOVING_MPS);
+        self.samples = [None; MAX_BATCH_SIZE];
         self.count = 0;
+        if estimate.is_none() && self.relearning {
+            // A mixed manoeuvre window is not a speed measurement. Give subsequent fixes to
+            // position while the window clears, then collect a completely new speed batch.
+            self.recovery_until_ms = candidate.last_ms.saturating_add(MANEUVER_POSITION_MS);
+            self.reserve_next = true;
+            self.previous_reserved = None;
+            self.previous_change_departure = 0.0;
+        }
         estimate.map_or(NetworkUse::Reserved, NetworkUse::Speed)
     }
 
     /// Remember the pre-learning model, not the most recent cell correction. A rejected fit cannot
     /// install a fallback. New accepted fits start a fresh two-interval consistency check.
-    pub(super) fn accepted(&mut self, previous_speed_mps: f64) {
+    pub(super) fn accepted(
+        &mut self,
+        previous_speed_mps: f64,
+        estimate: SpeedEstimate,
+        updated_speed_mps: f64,
+    ) {
         self.prior_speed_mps.get_or_insert(previous_speed_mps);
         self.previous_departure = 0.0;
+        self.previous_change_departure = 0.0;
+        self.reference_speed_mps = Some(estimate.speed_mps);
+        self.relearning =
+            self.relearning && (estimate.speed_mps - updated_speed_mps).abs() > estimate.sigma_mps;
     }
 
-    /// Two reserved intervals must disagree beyond their coarse error scale in the same direction,
-    /// and both must favour the saved prior. This retracts a model assumption; it does not turn a
-    /// short difference into a fresh speed measurement. One tower step cannot trigger recovery.
-    fn invalidated_prior(&mut self, candidate: Candidate, current_speed_mps: f64) -> Option<f64> {
+    pub(super) fn relearning(&self) -> bool {
+        self.relearning
+    }
+
+    /// Consecutive departures from the last fitted trend mark a manoeuvre even if the old prior is
+    /// worse. A useful prior can still be restored immediately; otherwise only a coherent full fit
+    /// may change speed. Comparing against the fitted trend avoids repeatedly flagging model lag.
+    fn observe_change(&mut self, candidate: Candidate, current_speed_mps: f64) -> Option<f64> {
         let previous = self.previous_reserved.replace(candidate)?;
+        let dt = milliseconds_to_seconds(candidate.last_ms - previous.last_ms);
+        let slope = (candidate.position_m - previous.position_m) / dt;
+        let threshold = (candidate.accuracy_m.hypot(previous.accuracy_m) / dt).max(MIN_CHANGE_MPS);
+        if let Some(reference) = self.reference_speed_mps {
+            let change = slope - reference;
+            let departs = change.abs() > threshold;
+            if departs && change * self.previous_change_departure > 0.0 {
+                self.relearning = true;
+            }
+            self.previous_change_departure = if departs { change } else { 0.0 };
+        }
         let prior = self.prior_speed_mps?;
         // A startup/standing prior must not manufacture a stop from coarse moving fixes.
         if prior <= MIN_MOVING_MPS {
             return None;
         }
-        let dt = milliseconds_to_seconds(candidate.last_ms - previous.last_ms);
-        let slope = (candidate.position_m - previous.position_m) / dt;
-        let threshold = (candidate.accuracy_m.hypot(previous.accuracy_m) / dt).max(MIN_CHANGE_MPS);
         let departure = slope - current_speed_mps;
         let favours_prior = departure.abs() > threshold && (slope - prior).abs() < departure.abs();
         let confirmed = favours_prior && departure * self.previous_departure > 0.0;
@@ -123,13 +173,12 @@ impl SpeedBatch {
             }
             previous = Some(*sample);
         }
-        let mut estimate = regression.estimate(previous?.last_ms)?;
+        let mut estimate = regression.strict_estimate(previous?.last_ms)?;
         estimate.sigma_mps = estimate.sigma_mps.max(MIN_SIGMA_MPS);
-        if estimate.samples != BATCH_SIZE
+        if estimate.samples != self.count
             || !(MIN_SPAN_S..=MAX_SPAN_S).contains(&estimate.span_s)
             || estimate.sigma_mps > MAX_SIGMA_MPS
             || estimate.speed_mps > MAX_SPEED_MPS
-            || estimate.speed_mps - 3.0 * estimate.sigma_mps <= MIN_MOVING_MPS
             || maximum_slope - minimum_slope > (2.0 * estimate.sigma_mps).max(2.0)
         {
             return None;

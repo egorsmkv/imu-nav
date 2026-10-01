@@ -4,6 +4,15 @@ use crate::estimator::regression_tests::{estimator, gps};
 use crate::estimator::{NavigationEstimator, NetworkObservation};
 use crate::route::GeoPoint;
 
+fn fit(speed_mps: f64) -> SpeedEstimate {
+    SpeedEstimate {
+        speed_mps,
+        sigma_mps: 2.0,
+        samples: 4,
+        span_s: 30.0,
+    }
+}
+
 fn sample(time: i64, position_m: f64) -> Candidate {
     Candidate {
         first_ms: 0,
@@ -35,8 +44,8 @@ fn select_reserved(
 #[test]
 fn two_consistent_departures_restore_only_an_accepted_prior() {
     let mut batch = SpeedBatch::new();
-    batch.accepted(15.0);
-    batch.accepted(18.0); // Later learning must not replace the original prior.
+    batch.accepted(15.0, fit(20.0), 20.0);
+    batch.accepted(18.0, fit(20.0), 20.0); // Later learning must not replace the original prior.
     assert!(matches!(
         select_reserved(&mut batch, 0, 0.0, 20.0),
         NetworkUse::Reserved
@@ -75,7 +84,7 @@ fn isolated_steps_noise_and_a_worse_prior_do_not_restore_speed() {
     ] {
         let mut batch = SpeedBatch::new();
         if let Some(speed) = prior {
-            batch.accepted(speed);
+            batch.accepted(speed, fit(model), model);
         }
         for (index, position) in positions.into_iter().enumerate() {
             let outcome = select_reserved(
@@ -88,7 +97,7 @@ fn isolated_steps_noise_and_a_worse_prior_do_not_restore_speed() {
         }
     }
     let mut batch = SpeedBatch::new();
-    batch.accepted(15.0);
+    batch.accepted(15.0, fit(20.0), 20.0);
     for index in 0..7 {
         let mut observation = sample(
             index * 5_000,
@@ -106,13 +115,13 @@ fn isolated_steps_noise_and_a_worse_prior_do_not_restore_speed() {
 fn an_accepted_fit_or_evidence_reset_breaks_departure_confirmation() {
     for clear in [false, true] {
         let mut batch = SpeedBatch::new();
-        batch.accepted(15.0);
+        batch.accepted(15.0, fit(20.0), 20.0);
         select_reserved(&mut batch, 0, 0.0, 20.0);
         select_reserved(&mut batch, 10_000, 120.0, 20.0);
         if clear {
             batch.clear();
         } else {
-            batch.accepted(20.0);
+            batch.accepted(20.0, fit(20.0), 20.0);
         }
         assert!(!matches!(
             batch.select(sample(20_000, 240.0), 20.0),

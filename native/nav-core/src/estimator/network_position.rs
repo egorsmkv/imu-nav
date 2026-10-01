@@ -21,6 +21,7 @@ const MAX_CORRECTION_M: f64 = 50.0;
 const POSITION_GATE: f64 = 9.0;
 const SPEED_GATE: f64 = 9.0;
 const MAX_SPEED_CORRECTION_MPS: f64 = 2.0;
+const MANEUVER_SPEED_CORRECTION_MPS: f64 = 4.0;
 const SPEED_SIGMA_PER_SECOND: f64 = 0.5;
 const RECOVERY_SPEED_SIGMA_MPS: f64 = 6.0;
 const CACHE_SIZE: usize = 8;
@@ -207,14 +208,26 @@ impl NavigationEstimator {
                     // The mean describes a time window, not instantaneous speed during a manoeuvre.
                     let sigma = estimate.sigma_mps
                         + SPEED_SIGMA_PER_SECOND * milliseconds_to_seconds(age_ms);
+                    let correction_limit = if self.state.network_evidence.speed.relearning() {
+                        self.state
+                            .filter
+                            .restore_speed_prior(previous_speed, RECOVERY_SPEED_SIGMA_MPS)?;
+                        MANEUVER_SPEED_CORRECTION_MPS
+                    } else {
+                        MAX_SPEED_CORRECTION_MPS
+                    };
                     let accepted = self.state.filter.update_coarse_speed(
                         estimate.speed_mps,
                         sigma,
                         SPEED_GATE,
-                        MAX_SPEED_CORRECTION_MPS,
+                        correction_limit,
                     )?;
                     if accepted {
-                        self.state.network_evidence.speed.accepted(previous_speed);
+                        self.state.network_evidence.speed.accepted(
+                            previous_speed,
+                            estimate,
+                            self.state.filter.estimate().speed_mps,
+                        );
                     }
                     return Ok(accepted);
                 }
