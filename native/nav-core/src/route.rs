@@ -1,6 +1,8 @@
 //! Route-polyline geometry used by the native estimator.
 
 use std::f64::consts::PI;
+mod turns;
+pub use turns::RouteTurn;
 
 const EARTH_DIAMETER_M: f64 = 12_742_000.0;
 const METRES_PER_DEGREE_LATITUDE: f64 = 110_540.0;
@@ -31,6 +33,7 @@ pub enum RouteError {
 pub struct RouteGeometry {
     points: Vec<GeoPoint>,
     cumulative_m: Vec<f64>,
+    turns: Vec<RouteTurn>,
 }
 
 impl RouteGeometry {
@@ -58,15 +61,24 @@ impl RouteGeometry {
             let next = cumulative_m[index - 1] + distance_m(points[index - 1], points[index]);
             cumulative_m.push(next);
         }
-        Ok(Self {
+        let mut route = Self {
             points,
             cumulative_m,
-        })
+            turns: Vec::new(),
+        };
+        route.turns = route.build_turns();
+        Ok(route)
     }
 
     #[must_use]
     pub fn length_m(&self) -> f64 {
         *self.cumulative_m.last().unwrap_or(&0.0)
+    }
+
+    /// Distinct sharp turns indexed once with the immutable geometry, off the Android main thread.
+    #[must_use]
+    pub fn turns(&self) -> &[RouteTurn] {
+        &self.turns
     }
 
     /// Projects a point onto a local route window, with an optional global fallback.

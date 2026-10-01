@@ -6,7 +6,7 @@
 
 use imu_nav_core::estimator::{
     GpsObservation, InitialEstimate, MotionObservation, NavigationEstimator, NetworkObservation,
-    ObservationTrust, TravelMode as EstimatorTravelMode,
+    ObservationTrust, TravelMode as EstimatorTravelMode, TurnObservation,
 };
 use imu_nav_core::network::{GateResult as NetworkGateResult, NetworkSample, NetworkTracker};
 use imu_nav_core::route::{GeoPoint, RouteGeometry};
@@ -1089,37 +1089,22 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNavigationEstimator_
     catch_unwind(AssertUnwindSafe(|| {
         let double_count = env.get_array_length(&doubles).ok()?;
         let long_count = env.get_array_length(&longs).ok()?;
-        let has_network_fields = double_count == 10 && long_count == 8;
-        let has_motion_fields = has_network_fields || (double_count == 7 && long_count == 6);
-        if !has_motion_fields && (double_count != 5 || long_count != 3) {
-            return None;
-        }
-        let mut values = [0.0; 10];
-        let mut flags = [0_i64; 8];
-        env.get_double_array_region(
-            &doubles,
-            0,
-            &mut values[..if has_network_fields {
-                10
-            } else if has_motion_fields {
-                7
-            } else {
-                5
-            }],
-        )
-        .ok()?;
-        env.get_long_array_region(
-            &longs,
-            0,
-            &mut flags[..if has_network_fields {
-                8
-            } else if has_motion_fields {
-                6
-            } else {
-                3
-            }],
-        )
-        .ok()?;
+        let (double_len, long_len) = match (double_count, long_count) {
+            (11, 11) => (11, 11),
+            (10, 8) => (10, 8),
+            (7, 6) => (7, 6),
+            (5, 3) => (5, 3),
+            _ => return None,
+        };
+        let has_turn_fields = double_len == 11;
+        let has_network_fields = double_len >= 10;
+        let has_motion_fields = double_len >= 7;
+        let mut values = [0.0; 11];
+        let mut flags = [0_i64; 11];
+        env.get_double_array_region(&doubles, 0, &mut values[..double_len])
+            .ok()?;
+        env.get_long_array_region(&longs, 0, &mut flags[..long_len])
+            .ok()?;
         let gps = if flags[0] == 0 {
             None
         } else {
@@ -1165,8 +1150,17 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNavigationEstimator_
         } else {
             None
         };
+        let turn = if has_turn_fields && flags[8] == 1 {
+            Some(TurnObservation {
+                start_ms: flags[9],
+                end_ms: flags[10],
+                angle_deg: values[10],
+            })
+        } else {
+            None
+        };
         let estimate = with_estimator(handle, |estimator| {
-            estimator.tick_with_observations(now_ms, gps, motion, network)
+            estimator.tick_with_turn(now_ms, gps, motion, network, turn)
         })
         .ok()?
         .ok()?

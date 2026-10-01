@@ -185,6 +185,10 @@ samples, satellite/AGC status, routes and the engine's own estimates (gzip text,
   spanning at least ten seconds. Cached fixes, ambiguous route matches, stale or very coarse fixes,
   and large discrepancies are excluded. Corrections preserve a coarse uncertainty floor and do not
   reset drift or change speed. Add `--no-native-network` to isolate their effect in paired replay.
+  Completed IMU rotations can also give a bounded correction at an isolated, distinctive route
+  turn. The native matcher rejects ambiguous matches and limits each correction to 30 m, retaining
+  uncertainty and drift. `--no-native-turns` disables this independently for A/B replay. Smooth
+  phone rotation while driving can still mimic a turn; this remains experimental, comparison-only.
 
 ### Cell tower database
 Tower locations come from four sources, each in its own table and looked up in this order:

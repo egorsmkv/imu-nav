@@ -80,6 +80,7 @@ class NativeComparison(
     private val area: ServiceArea = ServiceArea.EVERYWHERE,
     private val nativeMotionEnabled: Boolean = true,
     private val nativeNetworkEnabled: Boolean = true,
+    private val nativeTurnsEnabled: Boolean = true,
 ) {
     /** Groups equal-time inputs before ticking and never uses a later GPS position to score a tick. */
     fun replay(events: List<TripEvent>, hideGpsAfterS: Double? = null): ComparisonResult {
@@ -206,7 +207,8 @@ class NativeComparison(
             engine.tick(timeMs, snapshot)
             val motion = if (nativeMotionEnabled) engine.motionEvidence(timeMs) else null
             val network = snapshot.lastNet.takeIf { nativeNetworkEnabled }
-            val estimate = estimator.tick(timeMs, snapshot.lastUsableGps.takeUnless { hidden }, motion, network)
+            val turn = if (nativeTurnsEnabled) engine.turnEvidence(timeMs) else null
+            val estimate = estimator.tick(timeMs, snapshot.lastUsableGps.takeUnless { hidden }, motion, network, turn)
             val truth = reference.lastGood?.takeIf { it.elapsedMs == timeMs } ?: return
             val route = engine.route ?: return
             // Global projection avoids favouring either estimator's route position when scoring.

@@ -4,6 +4,7 @@ import org.imunav.core.gnss.FixSource
 import org.imunav.core.gnss.JudgedFix
 import org.imunav.core.gnss.RawFix
 import org.imunav.core.gnss.TrustLevel
+import org.imunav.core.imu.TurnEvidence
 import org.imunav.core.nav.MotionEvidence
 import org.imunav.core.route.TravelMode
 import java.io.Closeable
@@ -23,7 +24,7 @@ class NativeNavigationEstimator private constructor(private var handle: Long) : 
         val positionSigmaM: Double get() = sqrt(positionVarianceM2)
     }
 
-    fun tick(nowMs: Long, gps: JudgedFix?, motion: MotionEvidence? = null, network: RawFix? = null): State {
+    fun tick(nowMs: Long, gps: JudgedFix?, motion: MotionEvidence? = null, network: RawFix? = null, turn: TurnEvidence? = null): State {
         val fix = gps?.fix
         // Fused/GPS locations must never bypass trust classification through the coarse input.
         val coarse = network?.takeIf { !it.isMock && (it.source == FixSource.CELL || it.source == FixSource.NET) }
@@ -38,8 +39,17 @@ class NativeNavigationEstimator private constructor(private var handle: Long) : 
             coarse?.lat ?: Double.NaN,
             coarse?.lon ?: Double.NaN,
             coarse?.accuracyM?.toDouble() ?: Double.NaN,
+            turn?.angleDeg ?: Double.NaN,
         )
-        val longs = longArrayOf(
+        val values = nativeTick(requireHandle(), nowMs, doubles, encodeFlags(gps, motion, coarse, turn)) ?: error("native navigation estimator tick failed")
+        check(values.size == STATE_SIZE) { "native navigation estimator returned ${values.size} values" }
+        return State(values[0], values[1], values[2], values[3], values[4], values[5], values[6])
+    }
+
+    /** Keep optional-input presence and monotonic timestamps in the integer JNI wire array. */
+    private fun encodeFlags(gps: JudgedFix?, motion: MotionEvidence?, coarse: RawFix?, turn: TurnEvidence?): LongArray {
+        val fix = gps?.fix
+        return longArrayOf(
             if (fix == null) 0 else 1,
             fix?.elapsedMs ?: 0,
             if (gps?.verdict?.level == TrustLevel.SUSPECT) TRUST_SUSPECT else TRUST_GOOD,
@@ -48,10 +58,10 @@ class NativeNavigationEstimator private constructor(private var handle: Long) : 
             if (motion?.networkMoving == true) 1 else 0,
             if (coarse == null) 0 else 1,
             coarse?.elapsedMs ?: 0,
+            if (turn == null) 0 else 1,
+            turn?.startMs ?: 0,
+            turn?.endMs ?: 0,
         )
-        val values = nativeTick(requireHandle(), nowMs, doubles, longs) ?: error("native navigation estimator tick failed")
-        check(values.size == STATE_SIZE) { "native navigation estimator returned ${values.size} values" }
-        return State(values[0], values[1], values[2], values[3], values[4], values[5], values[6])
     }
 
     fun onVehicleSpeed(kmh: Double, elapsedMs: Long): Boolean = accepted(nativeOnVehicleSpeed(requireHandle(), kmh, elapsedMs))

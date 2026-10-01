@@ -11,6 +11,9 @@ pub use motion::MotionObservation;
 mod network_position;
 use network_position::NetworkEvidence;
 pub use network_position::NetworkObservation;
+mod turn;
+pub use turn::TurnObservation;
+use turn::TurnState;
 
 const MIN_POSITION_SIGMA_M: f64 = 3.0;
 const MIN_SPEED_SIGMA_MPS: f64 = 0.2;
@@ -109,6 +112,7 @@ struct FilterState {
     last_gps_position_ms: i64,
     motion_control: Option<MotionControl>,
     network_evidence: NetworkEvidence,
+    turn_state: TurnState,
 }
 
 /// A continuous plateau of accepted raw OBD readings. Calibration during acceleration would
@@ -160,6 +164,7 @@ struct HistoryFrame {
     vehicle_speed_mps: Option<f64>,
     motion: Option<MotionObservation>,
     network: Option<NetworkObservation>,
+    turn: Option<TurnObservation>,
 }
 
 impl NavigationEstimator {
@@ -190,6 +195,7 @@ impl NavigationEstimator {
             last_gps_position_ms: -1,
             motion_control: None,
             network_evidence: NetworkEvidence::new(now_ms),
+            turn_state: TurnState::new(now_ms),
         };
         Ok(Self {
             state: state.clone(),
@@ -202,6 +208,7 @@ impl NavigationEstimator {
                 vehicle_speed_mps: None,
                 motion: None,
                 network: None,
+                turn: None,
             }]),
         })
     }
@@ -279,8 +286,23 @@ impl NavigationEstimator {
         motion: Option<MotionObservation>,
         network: Option<NetworkObservation>,
     ) -> Result<TickOutcome, FilterError> {
+        self.tick_with_turn(now_ms, gps, motion, network, None)
+    }
+
+    /// Includes a completed IMU rotation for conservative landmark matching.
+    ///
+    /// # Errors
+    /// Returns [`FilterError`] for invalid filter updates, without changing the estimator.
+    pub fn tick_with_turn(
+        &mut self,
+        now_ms: i64,
+        gps: Option<GpsObservation>,
+        motion: Option<MotionObservation>,
+        network: Option<NetworkObservation>,
+        turn: Option<TurnObservation>,
+    ) -> Result<TickOutcome, FilterError> {
         let mut pending = self.clone();
-        let outcome = pending.tick_inner(now_ms, gps, motion, network)?;
+        let outcome = pending.tick_inner(now_ms, gps, motion, network, turn)?;
         *self = pending;
         Ok(outcome)
     }
@@ -292,6 +314,7 @@ impl NavigationEstimator {
         gps: Option<GpsObservation>,
         motion: Option<MotionObservation>,
         network: Option<NetworkObservation>,
+        turn: Option<TurnObservation>,
     ) -> Result<TickOutcome, FilterError> {
         let mut projection = None;
         let mut position_accepted = false;
@@ -313,6 +336,7 @@ impl NavigationEstimator {
                         || (observation.elapsed_ms == frame.state.elapsed_ms
                             && frame.vehicle_speed_mps.is_none()
                             && frame.motion.is_none()
+                            && frame.turn.is_none()
                             && frame.network.is_none())
                 })
         }) {
@@ -361,11 +385,13 @@ impl NavigationEstimator {
                     } else {
                         self.apply_network(frame.network)?;
                         self.apply_motion(frame.motion)?;
+                        self.apply_turn(frame.turn)?;
                     }
                     self.remember_observations(
                         frame.vehicle_speed_mps,
                         frame.motion,
                         frame.network,
+                        frame.turn,
                     );
                 }
             } else {
@@ -378,7 +404,8 @@ impl NavigationEstimator {
         self.predict_to(now_ms)?;
         self.apply_network(network)?;
         self.apply_motion(motion)?;
-        self.remember_observations(None, motion, network);
+        self.apply_turn(turn)?;
+        self.remember_observations(None, motion, network, turn);
         Ok(TickOutcome {
             estimate: self.estimate(),
             projection,
@@ -545,7 +572,7 @@ impl NavigationEstimator {
 
     /// Keeps bounded replay work and one checkpoint preceding the time window when available.
     fn remember(&mut self, vehicle_speed_mps: Option<f64>) {
-        self.remember_observations(vehicle_speed_mps, None, None);
+        self.remember_observations(vehicle_speed_mps, None, None, None);
     }
 
     /// Retains model hints as events, not just their resulting speed, for delayed-GNSS replay.
@@ -554,12 +581,14 @@ impl NavigationEstimator {
         vehicle_speed_mps: Option<f64>,
         motion: Option<MotionObservation>,
         network: Option<NetworkObservation>,
+        turn: Option<TurnObservation>,
     ) {
         self.history.push_back(HistoryFrame {
             state: self.state.clone(),
             vehicle_speed_mps,
             motion,
             network,
+            turn,
         });
         let cutoff_ms = self.state.elapsed_ms.saturating_sub(GPS_HISTORY_MS);
         while self.history.len() > MAX_HISTORY_FRAMES
@@ -588,6 +617,7 @@ impl NavigationEstimator {
             .anchor_position(position_m, position_sigma_m.max(MIN_POSITION_SIGMA_M))?;
         self.route = route;
         self.state.network_evidence.reroute(self.state.elapsed_ms);
+        self.state.turn_state = TurnState::new(self.state.elapsed_ms);
         self.history.clear();
         self.remember(None);
         Ok(())

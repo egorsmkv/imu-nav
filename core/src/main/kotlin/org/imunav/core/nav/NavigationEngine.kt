@@ -11,6 +11,8 @@ import org.imunav.core.gnss.TrustLevel
 import org.imunav.core.imu.ImuSample
 import org.imunav.core.imu.MotionDetector
 import org.imunav.core.imu.Pedometer
+import org.imunav.core.imu.TurnDetector
+import org.imunav.core.imu.TurnEvidence
 import org.imunav.core.route.Hazard
 import org.imunav.core.route.HazardKind
 import org.imunav.core.route.Projection
@@ -65,6 +67,7 @@ class NavigationEngine(
     private val speedFusion: SpeedFusionProvider = SpeedFusion,
 ) {
     val motion = MotionDetector(tuning).also { it.log = ::log }
+    private val comparisonTurns = TurnDetector()
 
     /** Walking speed from the step detector (used in [TravelMode.FOOT]). */
     val pedometer = Pedometer()
@@ -262,7 +265,13 @@ class NavigationEngine(
     fun onStep(elapsedMs: Long) = pedometer.onStep(elapsedMs)
 
     /** Feed every IMU sample (tens per second) to the stop / turn detectors. */
-    fun onImu(sample: ImuSample, yawBiasDegS: Double = 0.0) = motion.add(sample, yawBiasDegS)
+    fun onImu(sample: ImuSample, yawBiasDegS: Double = 0.0) {
+        motion.add(sample, yawBiasDegS)
+        comparisonTurns.add(sample, yawBiasDegS)
+    }
+
+    /** Exports recorded rotation evidence, never the live engine's turn snaps or route position. */
+    fun turnEvidence(nowMs: Long): TurnEvidence? = if (cursor != null && mode == TravelMode.CAR) comparisonTurns.evidence(nowMs) else null
 
     /**
      * Shares recorded motion evidence with the native comparison estimator. Network movement
@@ -305,6 +314,7 @@ class NavigationEngine(
 
     /** Start following [route] from its beginning and reset all per-route state. */
     private fun installRoute(route: Route, nowMs: Long) {
+        comparisonTurns.reset()
         val car = RouteCursor(route)
         cursor = car
         hazards = route.hazards(trafficCalming)

@@ -23,6 +23,7 @@ usage: replay <trip.rec.gz|dir> [options]
                            to build the host JNI library. Hidden GPS is excluded from all navigation inputs.
   --no-native-motion       disable native stop/resume hints for an A/B comparison (with --compare-native)
   --no-native-network      disable native coarse-position corrections for an A/B comparison
+  --no-native-turns        disable native turn-landmark corrections for an A/B comparison
   --out DIR                write summary.txt, errors-*.csv and compare-*.geojson per run
 """
 
@@ -54,9 +55,17 @@ fun main(args: Array<String>) {
             if ("compare-native" in opts) {
                 val motionEnabled = "no-native-motion" !in opts
                 val networkEnabled = "no-native-network" !in opts
-                val comparison = NativeComparison(tuning, area, nativeMotionEnabled = motionEnabled, nativeNetworkEnabled = networkEnabled).replay(events, hide)
+                val turnsEnabled = "no-native-turns" !in opts
+                val comparison = NativeComparison(
+                    tuning,
+                    area,
+                    nativeMotionEnabled = motionEnabled,
+                    nativeNetworkEnabled = networkEnabled,
+                    nativeTurnsEnabled = turnsEnabled,
+                ).replay(events, hide)
                 summary.appendLine("native motion hints: $motionEnabled")
                 summary.appendLine("native coarse-position corrections: $networkEnabled")
+                summary.appendLine("native turn-landmark corrections: $turnsEnabled")
                 summary.append(comparison.summary())
                 outDir?.let { File(it, "native-errors-$tag.csv").writeText(comparison.csv()) }
                 continue

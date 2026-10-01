@@ -53,6 +53,7 @@ The main public types are `RouteFilter`, `Estimate`, `Covariance2`, `UpdateOutco
 - incorporates GNSS speed and fresh OBD-II vehicle speed;
 - uses shared IMU stop/resume hints for car dead reckoning, with measured-speed and network-motion vetoes;
 - gently corrects car position from confirmed coarse CELL/NET fixes without treating them as precise anchors;
+- applies one-shot, bounded position corrections from completed IMU rotations matching isolated route turns;
 - learns a per-trip OBD speed scale from precise, accepted GOOD GNSS while raw OBD has remained
   stable for at least three seconds; subsequent OBD updates use the learned scale;
 - uses lower drift growth only after an accepted OBD speed update and until its 2.5-second
@@ -121,12 +122,40 @@ uses this input; no new recording fields or sensor polling are needed.
   deviation; speed is unchanged and accumulated systematic drift is retained. Position-speed
   correlation is cleared so later speed updates cannot reuse a coarse correction as precise evidence.
 - Evidence and raw correction inputs are checkpointed for delayed-GNSS replay. At equal timestamps,
-  OBD precedes GNSS calibration, then GNSS precedes coarse positions and motion hints. Rerouting
+  OBD precedes GNSS calibration, then GNSS precedes coarse positions, motion hints and turn evidence. Rerouting
   discards route-specific confirmation while retaining duplicate protection.
 
 These gates cannot eliminate persistent, plausible cell bias. They deliberately decline very coarse
 coverage, ambiguous routes and recovery beyond 500 m rather than forcing a large position jump.
 Reported uncertainty remains a model, not a navigation safety guarantee.
+
+### `estimator/turn.rs`: isolated turn matching
+
+The shared pure-Kotlin `TurnDetector` uses recorded IMU samples and the existing gyro-bias estimate,
+independently of the live engine's turn matching and snaps. It requires one second of low yaw before
+rotation and 700 ms after it, a 1.5–8 second turn of 45–125 degrees, and at least 90% directional
+consistency. Missing/non-finite inputs, gaps over 200 ms, yaw over 55 deg/s, excessive non-yaw rotation,
+and acceleration above 6 m/s² invalidate evidence. Completed evidence expires two seconds after the
+turn ends; repeated navigation ticks cannot refresh it. Trip and route changes reset this detector.
+
+Rust indexes compact corners with straight approaches when immutable geometry is created. Broad
+curves, U-turns and complex corner clusters are excluded. Car-only matching requires one candidate
+within a 60–180 m prediction window and 15 degrees of the measured signed angle, with no other indexed
+turn within 80 m. Fresh GOOD GPS, a stop/resume speed prior, speed outside 2–18 m/s, position sigma
+above 300 m, or turn uncertainty above 100 m veto the correction. Events are consumed once; matching
+has a 15-second cooldown and cannot immediately reuse the same landmark, even after that cooldown.
+
+The turn midpoint is approximate: current speed advances its route position to the current tick.
+Uncertainty includes a 30 m floor, half the modelled turn travel and speed uncertainty over that age.
+The existing coarse-position update limits correction to 25% of the innovation and 30 m, keeps a
+measurement-sized uncertainty floor, and changes neither speed nor accumulated systematic drift.
+Turn evidence and deduplication state participate in delayed-GNSS replay, including equal timestamps;
+reroutes reject rotations begun on the old route.
+
+A slow, smooth phone yaw while driving can still resemble a vehicle turn. Likewise, a wrong road
+branch with a similar angle can match planned geometry: this is not independent intersection or
+off-route recognition. These unresolved ambiguities are why corrections remain weak and the native
+estimator remains comparison-only in this research prototype.
 
 ### `route.rs`: route geometry
 
@@ -275,3 +304,10 @@ The coarse-position JNI regression hides GPS at 60 seconds while actual speed ri
 seconds. At 300 seconds, blind native p95 is 481 m without corrections versus 43 m with them.
 This is a synthetic regression, not measured road accuracy. `--no-native-network` disables only
 these position corrections for A/B replay; cell-derived motion vetoes remain controlled separately.
+
+Turn JNI regressions hide GPS at 60 seconds, lower actual speed from 10 to 8 m/s without OBD/cells,
+and complete a left or right turn at 80 seconds. Over the 40-second blind interval, native p95 falls
+from 75 m with turns disabled to 65 m with the bounded correction (maximum error 79 m to 69 m).
+This synthetic gain is deliberately modest: one landmark does not fix an ongoing speed-model error.
+Phone swings, tilt-heavy movement, opposite yaw, missed turns and fresh-GPS cases must not introduce
+corrections. Use `--no-native-turns` with `--compare-native` for the corresponding recording A/B run.
