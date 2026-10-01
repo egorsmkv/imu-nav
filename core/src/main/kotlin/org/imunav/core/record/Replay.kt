@@ -175,7 +175,7 @@ class TripReplayer(private val tuning: Tuning = Tuning.DEFAULT, private val area
 
                 is TripEvent.Mode -> pendingMode = e.mode
 
-                is TripEvent.Estimator -> Unit
+                is TripEvent.Estimator, is TripEvent.Inertial -> Unit
 
                 // Kotlin validated before starting the replay.
 

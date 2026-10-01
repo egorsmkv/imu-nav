@@ -3,6 +3,7 @@ package org.imunav.core.gnss
 import org.imunav.core.geo.Geo
 import org.imunav.core.geo.ServiceArea
 import org.imunav.core.imu.GyroBiasEstimator
+import org.imunav.core.imu.eskf.InertialSample
 import org.imunav.core.record.TripEvent
 import java.util.Locale
 
@@ -69,7 +70,17 @@ class PositioningHub(
 
     /** Receives every raw input (fixes, satellite status, AGC) — used to record trips for replay. */
     var recorder: ((TripEvent) -> Unit)? = null
+
+    /** Optional shadow-only observers; neither can replace a trust decision or navigation position. */
+    var inertialObserver: ((InertialSample) -> Unit)? = null
+    var judgedFixObserver: ((JudgedFix) -> Unit)? = null
     private var jamEndedAtMs = -1L
+
+    /** Record raw sensor timing before forwarding it to the experimental inertial estimator. */
+    fun onInertial(sample: InertialSample, arrivalMs: Long) {
+        recorder?.invoke(TripEvent.Inertial(arrivalMs, sample))
+        inertialObserver?.invoke(sample)
+    }
 
     /**
      * A new location fix from any provider. Only GPS fixes are judged; for them the verdict is
@@ -113,6 +124,7 @@ class PositioningHub(
             lastGood = fix
         }
         updateGpsState(fix.elapsedMs)
+        judgedFixObserver?.invoke(judged)
         return verdict
     }
 

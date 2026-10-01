@@ -4,6 +4,9 @@ import org.imunav.core.geo.GeoPoint
 import org.imunav.core.gnss.FixSource
 import org.imunav.core.gnss.RawFix
 import org.imunav.core.imu.ImuSample
+import org.imunav.core.imu.eskf.InertialKind
+import org.imunav.core.imu.eskf.InertialSample
+import org.imunav.core.imu.eskf.Vector3
 import org.imunav.core.nav.NavigationEstimator
 import org.imunav.core.route.Route
 import org.imunav.core.route.Step
@@ -34,6 +37,9 @@ sealed class TripEvent {
     class Imu(val sample: ImuSample) : TripEvent() {
         override val elapsedMs get() = sample.elapsedMs
     }
+
+    /** Experimental raw sensor input. Arrival time orders replay; the sample retains measurement ns. */
+    data class Inertial(override val elapsedMs: Long, val sample: InertialSample) : TripEvent()
 
     data class Gnss(
         override val elapsedMs: Long,
@@ -77,7 +83,7 @@ sealed class TripEvent {
 /**
  * Line-oriented trip recording (`*.rec.gz`). One event per line, comma-separated, first field is
  * the type: F fix, I imu, S satellites, A agc, D start, M travel mode, R route, P step, X stop,
- * E engine estimate, V vehicle (OBD-II) speed, B barometer, K estimator selection. Empty fields = null. Readers skip
+ * E engine estimate, V vehicle (OBD-II) speed, B barometer, K estimator selection, U raw inertial sensor. Empty fields = null. Readers skip
  * types they do not know, so new event types keep old app versions able to read recordings.
  */
 object TripFormat {
@@ -92,6 +98,11 @@ object TripFormat {
 
     /** One event → one line (see the format description above). */
     fun encode(e: TripEvent): String = when (e) {
+        // Do not round raw IMU values with n(): bias estimation needs their original precision.
+        is TripEvent.Inertial -> e.sample.let {
+            listOf("U", e.elapsedMs, it.timestampNs, it.kind.name, it.vector.x, it.vector.y, it.vector.z, it.scalar).joinToString(",")
+        }
+
         is TripEvent.Fix -> e.fix.let { f ->
             listOf(
                 "F", f.elapsedMs, f.source.name, f.timeMs, n(f.lat), n(f.lon), n(f.altitudeM), n(f.speedMps), n(f.bearingDeg), n(f.accuracyM),
@@ -145,6 +156,16 @@ object TripFormat {
         val time = fields.getOrNull(1)?.toLongOrNull() ?: return null
         return runCatching {
             when (fields[0]) {
+                "U" -> TripEvent.Inertial(
+                    time,
+                    InertialSample(
+                        fields[2].toLong(),
+                        InertialKind.valueOf(fields[3]),
+                        Vector3(fields[4].toDouble(), fields[5].toDouble(), fields[6].toDouble()),
+                        fields[7].toDouble(),
+                    ),
+                )
+
                 "F" -> TripEvent.Fix(
                     RawFix(
                         FixSource.valueOf(

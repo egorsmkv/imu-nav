@@ -200,7 +200,51 @@ samples, satellite/AGC status, routes and the engine's own estimates (gzip text,
   algorithm; use the paired `--compare-native` command above to evaluate their raw inputs (this is
   an A/B experiment, not exact reproduction of live guidance). Cell-speed learning remains off.
   With Kotlin selected, the native estimator still runs only as a shadow comparison.
-  It also applies small cell/network position corrections after three distinct, consistent fixes
+  A separate **Inertial ESKF shadow (experimental)** switch in the same settings section is off by
+  default and locked during navigation/planning. It runs alongside either position owner, **only for
+  mounted-phone driving**; it never changes the marker, route, speed display or guidance. Walking is
+  deliberately excluded. The implementation is platform-independent Kotlin in `core/.../imu/eskf/`,
+  not a replacement for the Rust route Kalman filter. It estimates 3-D position, velocity, quaternion
+  attitude, accelerometer bias and gyro bias with a 15-dimensional error covariance. Prediction uses
+  gravity-inclusive body acceleration and body angular rate, with Joseph measurement updates and
+  right-multiplicative attitude-error injection/reset
+  ([mathematical conventions](https://arxiv.org/abs/1711.02508)).
+
+  The experiment requires fresh GOOD GPS (including speed), rotation vector, accelerometer and gyro
+  to initialize; a manual start cannot initialize it. The Android rotation vector supplies the initial
+  attitude only, corrected from magnetic to true north using declination anchored once per capture
+  session to fresh GOOD GPS. Further orientation observations are not fused as independent measurements.
+  Raw sensors use each power profile's existing rate; extra accelerometer capture increases battery
+  and recording size. The new `U` event preserves sensor nanoseconds, callback arrival milliseconds,
+  full quaternion and unrounded sensor values through `PositioningHub`. Existing `I` recordings cannot
+  reconstruct these inputs. `eskf_shadow` log lines report status, accepted GPS, rejected inputs,
+  resets and diagnostic sigma. Process restoration starts a fresh shadow requiring a new GPS anchor.
+
+  Inputs are reordered within 250 ms; later GPS is rejected rather than applied at the wrong time.
+  Missing/stale sensors or gaps over 250 ms invalidate the state and require reinitialization. The
+  first version uses fixed local ENU gravity, approximate flat-earth coordinates and provisional
+  noise densities. It has no Earth-rate/lever-arm/scale model, vehicle-frame constraints, OBD updates,
+  terrain/route snaps or false-stationary zero-velocity updates. Course accuracy is not yet recorded,
+  so horizontal GPS velocity uses a conservative noise floor. Phone movement, magnetic disturbances,
+  long outages and unobservable biases can still cause severe drift. Sigma is **not a safety radius**.
+  Synthetic tests validate mechanics, not improved real-drive accuracy: this remains a research
+  prototype, not a safety system.
+
+  For a new raw-sensor recording, run:
+
+  ```bash
+  ./gradlew -PnativeReplay :replay:run --args="trip.rec.gz --compare-eskf --hide-gps-after 30,60,120 --out eskf-report"
+  ```
+
+  This reports **horizontal** errors for Kotlin, native route Kalman and ESKF on identical available
+  reference timestamps, plus missing pairs, rejected inputs and resets. The ESKF branch preserves
+  arrival order and the live reorder window; hidden GPS cannot initialize it or train its biases.
+  Scoring may align a preceding inertial estimate by at most 100 ms (the saver sensor period) of its own velocity; no future
+  estimate is used. Startup/dropout/final-window gaps are reported, not scored as zero error.
+  Reference GPS is not survey ground truth, and the baselines remain an A/B replay rather than exact
+  live guidance reproduction. `--compare-eskf` cannot be combined with native-only comparison flags.
+
+  The native route estimator also applies small cell/network position corrections after three distinct, consistent fixes
   spanning at least ten seconds. Cached fixes, ambiguous route matches, stale or very coarse fixes,
   and large discrepancies are excluded. Corrections preserve a coarse uncertainty floor and do not
   reset drift or change speed. Add `--no-native-network` to isolate their effect in paired replay.
@@ -292,7 +336,8 @@ SQLite migration source; re-import the original seed export when moving to this 
 [`server/README.md`](server/README.md) for the complete HTTP, management, and WebSocket API.
 In the app: **Cells → Sharing server**, enter the URL (and key), then *Sync now* or enable automatic sync (every 6 h and after trips).
 
-All thresholds live in `core/.../Tuning.kt` (defaults = factory preset) and `TrustConfig`.
+Main navigation thresholds live in `core/.../Tuning.kt` (defaults = factory preset) and `TrustConfig`.
+The separate inertial experiment keeps its provisional noise densities in `InertialTuning`.
 
 ### Turn hold — the key trick
 When the dead-reckoned marker reaches the next real turn (≥ 35°) it is parked 5 m before it.

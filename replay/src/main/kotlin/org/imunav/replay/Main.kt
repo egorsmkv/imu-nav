@@ -21,6 +21,8 @@ usage: replay <trip.rec.gz|dir> [options]
   --ukraine                apply the app's Ukraine service area to the GPS trust check
   --compare-native         compare Kotlin and native at reference GPS timestamps; use -PnativeReplay
                            to build the host JNI library. Hidden GPS is excluded from all navigation inputs.
+  --compare-eskf           compare Kotlin/native/experimental inertial ESKF; requires new raw U recordings
+                           and -PnativeReplay. Mounted-car only; reports missing initialization/coverage.
   --no-native-motion       disable native stop/resume hints for an A/B comparison (with --compare-native)
   --no-native-network      disable native cell/network position and speed corrections
   --native-network-speed   opt into experimental cell-derived speed (off by default; can lag speed changes)
@@ -40,10 +42,11 @@ fun main(args: Array<String>) {
         flag.removePrefix("--") to args.getOrNull(i + 1)?.takeIf { !it.startsWith("--") }
     }
     val tuning = applyOverrides(Tuning.DEFAULT, opts["set"])
+    validateComparisonOptions(opts)
     val area = if ("ukraine" in opts) ServiceArea.UKRAINE_COARSE else ServiceArea.EVERYWHERE
     val hides: List<Double?> = opts["hide-gps-after"]?.split(',')?.map { it.trim().toDouble() } ?: listOf(null)
     val outDir = opts["out"]?.let { File(it).apply { mkdirs() } }
-    val files = if (input.isDirectory) input.listFiles().orEmpty().filter { it.name.endsWith(".rec.gz") || it.name.endsWith(".rec") }.sorted() else listOf(input)
+    val files = recordingFiles(input)
     if (files.isEmpty()) error("no recordings in $input")
 
     val summary = StringBuilder()
@@ -53,6 +56,12 @@ fun main(args: Array<String>) {
         for (hide in hides) {
             val tag = f.name.substringBefore('.') + (hide?.let { "-hide${it.toInt()}s" } ?: "-asrec")
             summary.appendLine("-- ${hide?.let { "GPS hidden after ${it.toInt()} s" } ?: "as recorded"}")
+            if ("compare-eskf" in opts) {
+                val comparison = InertialComparison(tuning, area).replay(events, hide)
+                summary.append(comparison.summary())
+                outDir?.let { File(it, "eskf-errors-$tag.csv").writeText(comparison.csv()) }
+                continue
+            }
             if ("compare-native" in opts) {
                 val motionEnabled = "no-native-motion" !in opts
                 val networkEnabled = "no-native-network" !in opts
@@ -86,6 +95,17 @@ fun main(args: Array<String>) {
     outDir?.let {
         File(it, "summary.txt").writeText(summary.toString())
         println("report written to ${it.absolutePath}")
+    }
+}
+
+/** Keep directory expansion separate from the replay-mode dispatch. */
+private fun recordingFiles(input: File): List<File> =
+    if (input.isDirectory) input.listFiles().orEmpty().filter { it.name.endsWith(".rec.gz") || it.name.endsWith(".rec") }.sorted() else listOf(input)
+
+/** Reject ambiguous A/B configurations rather than silently ignoring native experiment switches. */
+private fun validateComparisonOptions(options: Map<String, String?>) {
+    require("compare-eskf" !in options || options.keys.none { it == "compare-native" || it.startsWith("no-native-") || it == "native-network-speed" }) {
+        "--compare-eskf uses default native comparison settings; do not combine it with native-only comparison flags"
     }
 }
 

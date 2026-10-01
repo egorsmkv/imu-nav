@@ -249,6 +249,18 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                             }
                         },
                     )
+                    val inertialExperiment by app.inertialExperiment.collectAsStateWithLifecycle()
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.inertial_experiment_title)) },
+                        supportingContent = { Text(stringResource(R.string.inertial_experiment_summary)) },
+                        trailingContent = {
+                            Switch(
+                                checked = inertialExperiment,
+                                onCheckedChange = app::setInertialExperiment,
+                                enabled = !ui.guidance.active && !ui.planning,
+                            )
+                        },
+                    )
                     val navigationMethod by app.navigationMethod.collectAsStateWithLifecycle()
                     ListItem(
                         headlineContent = { Text(stringResource(R.string.navigation_method_title)) },

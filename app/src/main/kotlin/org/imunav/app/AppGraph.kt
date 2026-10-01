@@ -45,6 +45,7 @@ import org.imunav.core.gnss.GpsState
 import org.imunav.core.gnss.PositioningHub
 import org.imunav.core.gnss.TrustLevel
 import org.imunav.core.gnss.Verdict
+import org.imunav.core.imu.eskf.InertialShadow
 import org.imunav.core.nav.EnglishPhrases
 import org.imunav.core.nav.GuidanceState
 import org.imunav.core.nav.NavAlert
@@ -212,6 +213,16 @@ class AppGraph(private val context: Context) {
         NavigationEstimator.entries.firstOrNull { it.name == modePrefs.getString("navigation_estimator", null) } ?: NavigationEstimator.KOTLIN,
     )
     val navigationEstimator: StateFlow<NavigationEstimator> = _navigationEstimator.asStateFlow()
+    private val _inertialExperiment = MutableStateFlow(modePrefs.getBoolean("inertial_experiment", false))
+    val inertialExperiment: StateFlow<Boolean> = _inertialExperiment.asStateFlow()
+    private var inertialShadow: InertialShadow? = null
+
+    /** Raw inertial shadow is opt-in, car-only, and cannot take ownership of live guidance. */
+    fun setInertialExperiment(enabled: Boolean) {
+        if (engine.state.active || _ui.value.planning) return
+        modePrefs.edit { putBoolean("inertial_experiment", enabled) }
+        _inertialExperiment.value = enabled
+    }
 
     /** Change only between trips so state and covariance cannot jump mid-navigation. */
     fun setNavigationEstimator(estimator: NavigationEstimator) {
@@ -356,6 +367,8 @@ class AppGraph(private val context: Context) {
     private var tickCount = 0L
 
     init {
+        hub.inertialObserver = { inertialShadow?.onSensor(it) }
+        hub.judgedFixObserver = { if (!engine.simulateGpsLoss) inertialShadow?.onGps(it) }
         cells.scanner.intervalMs = {
             val p = _powerProfile.value
             when {
@@ -384,7 +397,14 @@ class AppGraph(private val context: Context) {
     fun applyPower() {
         val p = power.resolve()
         _powerProfile.value = p
-        sensors.configure(p, navigating = engine.state.active, walking = engine.state.active && engine.mode == TravelMode.FOOT)
+        val inertial = engine.state.active && engine.mode == TravelMode.CAR && _inertialExperiment.value
+        if (inertial && inertialShadow == null) {
+            inertialShadow = InertialShadow()
+            tripLog.write("eskf_shadow status=waiting_for_inputs")
+        } else if (!inertial) {
+            inertialShadow = null
+        }
+        sensors.configure(p, navigating = engine.state.active, walking = engine.state.active && engine.mode == TravelMode.FOOT, inertial = inertial)
     }
 
     /** Start GPS, sensors and cell scans (when the app is visible or navigating). */
@@ -532,6 +552,7 @@ class AppGraph(private val context: Context) {
         }
         trips.onTick(now)
         tickCount++
+        if (tickCount % 10 == 0L) logInertialShadow(now)
         // Battery level / charger / battery saver change slowly: re-check AUTO once a minute.
         if (tickCount % 120 == 0L) applyPower()
         val p = _powerProfile.value
@@ -540,6 +561,17 @@ class AppGraph(private val context: Context) {
         } else if (tickCount % 10 == 0L) {
             refresh() // keep learning and the notification data fresh
         }
+    }
+
+    /** Low-rate diagnostics only: the experiment never changes the map marker, route or prompts. */
+    private fun logInertialShadow(nowMs: Long) {
+        val shadow = inertialShadow ?: return
+        val estimate = shadow.estimate(nowMs * 1_000_000L)
+        val status = if (estimate == null) "waiting_or_stale" else "tracking"
+        tripLog.write(
+            "eskf_shadow status=$status gps=${shadow.acceptedGps} rejected=${shadow.rejectedInputs} resets=${shadow.resets}" +
+                (estimate?.let { " time_ns=${it.state.timestampNs} lat=${it.point.lat} lon=${it.point.lon} sigma_m=${it.horizontalSigmaM}" } ?: ""),
+        )
     }
 
     /** Rebuild [ui] from the current state of all components. */

@@ -63,6 +63,9 @@ class SensorHub(
     @Volatile private var linearAcc: FloatArray? = null
     private val gravity = FloatArray(3)
     private var gravityInit = false
+    private val inertialCapture = InertialCapture(hub)
+
+    @Volatile private var rawAccelFallback = true
 
     /** Human-readable description of missing sensors, null if the phone has everything. */
     val sensorWarning: String? = run {
@@ -171,11 +174,12 @@ class SensorHub(
         override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
 
         override fun onSensorChanged(e: SensorEvent) {
+            inertialCapture.onSensor(e)
             when (e.sensor.type) {
                 Sensor.TYPE_GYROSCOPE -> gyro = e.values.clone()
                 Sensor.TYPE_LINEAR_ACCELERATION -> linearAcc = e.values.clone()
                 Sensor.TYPE_ROTATION_VECTOR -> onRotation(e.values)
-                Sensor.TYPE_ACCELEROMETER -> onRawAccel(e.values)
+                Sensor.TYPE_ACCELEROMETER -> if (rawAccelFallback) onRawAccel(e.values)
             }
         }
     }
@@ -234,7 +238,8 @@ class SensorHub(
     /** What is currently registered; [configure] only touches what changed. */
     private var profile: PowerProfile = PowerProfile.BALANCED
     private var navigating = false
-    private var imuConfig: Pair<Int, Boolean>? = null
+    private var imuConfig: Triple<Int, Boolean, Boolean>? = null
+    private var inertialEnabled = false
     private var netMinMs = -1L
     private var measurements = false
     private var lastSummary = ""
@@ -243,11 +248,15 @@ class SensorHub(
      * Apply a power profile. While [navigating] the IMU runs at the profile's rate (turn and stop
      * detection); otherwise only orientation at a low rate (compass plausibility check, gyro bias).
      */
-    fun configure(p: PowerProfile, navigating: Boolean, walking: Boolean = false) = control.execute {
-        profile = p
-        this.navigating = navigating
-        this.walking = walking
-        if (running) applyConfig()
+    fun configure(p: PowerProfile, navigating: Boolean, walking: Boolean = false, inertial: Boolean = false) {
+        inertialCapture.enabled = inertial && navigating && !walking
+        control.execute {
+            profile = p
+            this.navigating = navigating
+            this.walking = walking
+            inertialEnabled = inertial && navigating && !walking
+            if (running) applyConfig()
+        }
     }
 
     /** Walking trip in progress: listen to the step detector. */
@@ -292,10 +301,11 @@ class SensorHub(
             }
             measurements = wantMeasurements
         }
-        val imu = (if (navigating) p.imuPeriodUs else IDLE_IMU_PERIOD_US) to navigating
+        val imu = Triple(if (navigating) p.imuPeriodUs else IDLE_IMU_PERIOD_US, navigating, inertialEnabled)
         if (imuConfig != imu) {
             sensorManager.unregisterListener(sensorListener)
             val hasRotation = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR) != null
+            rawAccelFallback = !hasRotation
             val types = when {
                 hasRotation && navigating -> listOf(Sensor.TYPE_ROTATION_VECTOR, Sensor.TYPE_GYROSCOPE, Sensor.TYPE_LINEAR_ACCELERATION)
                 hasRotation -> listOf(Sensor.TYPE_ROTATION_VECTOR, Sensor.TYPE_GYROSCOPE)
@@ -303,7 +313,8 @@ class SensorHub(
                 else -> emptyList() // accelerometer-only phones: nothing useful without a route
             }
             if (!navigating) linearAcc = null
-            for (type in types) {
+            val allTypes = if (inertialEnabled) (types + Sensor.TYPE_ACCELEROMETER + Sensor.TYPE_GYROSCOPE).distinct() else types
+            for (type in allTypes) {
                 sensorManager.getDefaultSensor(type)?.let { sensorManager.registerListener(sensorListener, it, imu.first, handler) }
             }
             imuConfig = imu

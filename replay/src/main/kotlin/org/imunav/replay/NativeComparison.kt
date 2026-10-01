@@ -3,6 +3,7 @@ package org.imunav.replay
 import org.imunav.app.nativecore.NativeNavigationEstimator
 import org.imunav.app.nativecore.NativeRouteGeometry
 import org.imunav.core.Tuning
+import org.imunav.core.geo.GeoPoint
 import org.imunav.core.geo.ServiceArea
 import org.imunav.core.gnss.FixSource
 import org.imunav.core.gnss.PositioningHub
@@ -25,6 +26,9 @@ data class ComparisonSample(
     val nativeS: Double,
     val nativeSigmaM: Double,
     val nativeSafetyM: Double,
+    val truthPoint: GeoPoint,
+    val kotlinPoint: GeoPoint,
+    val nativePoint: GeoPoint,
 ) {
     val kotlinErrorM: Double get() = abs(kotlinS - truthS)
     val nativeErrorM: Double get() = abs(nativeS - truthS)
@@ -137,7 +141,7 @@ class NativeComparison(
                 is TripEvent.Mode -> mode = event.mode
 
                 // This is an explicit paired experiment, regardless of which estimator drove the recorded trip.
-                is TripEvent.Estimator -> Unit
+                is TripEvent.Estimator, is TripEvent.Inertial -> Unit
 
                 is TripEvent.RouteSet -> installRoute(event)
 
@@ -220,7 +224,10 @@ class NativeComparison(
             val route = engine.route ?: return
             // Global projection avoids favouring either estimator's route position when scoring.
             val projected = route.project(truth.point, 0.0, 0.0, route.length, 0.0)
-            samples += ComparisonSample(timeMs, hidden, projected.s, projected.offsetM, engine.progressS, estimate.positionM, estimate.positionSigmaM, estimate.safetyRadiusM)
+            samples += ComparisonSample(
+                timeMs, hidden, projected.s, projected.offsetM, engine.progressS, estimate.positionM, estimate.positionSigmaM, estimate.safetyRadiusM,
+                truth.point, engine.state.position ?: route.pointAt(engine.progressS).point, route.pointAt(estimate.positionM).point,
+            )
         }
 
         override fun close() {
