@@ -288,14 +288,17 @@ impl CellStore {
     /// Returns an error when the database cannot be queried.
     pub fn counts(&self, policy: &Policy) -> Result<(usize, usize)> {
         let connection = self.connection()?;
-        let contributions =
+        let contributions_count: i64 =
             connection.query_row("SELECT COUNT(*) FROM contributions", [], |row| row.get(0))?;
-        let published = connection.query_row(
+        let published_count: i64 = connection.query_row(
             "SELECT COUNT(*) FROM consensus WHERE seeded=1 OR devices>=?1",
             [i64::try_from(policy.min_devices)?],
             |row| row.get(0),
         )?;
-        Ok((published, contributions))
+        Ok((
+            usize::try_from(published_count)?,
+            usize::try_from(contributions_count)?,
+        ))
     }
 }
 
@@ -488,7 +491,9 @@ fn row_to_consensus(row: &rusqlite::Row<'_>) -> rusqlite::Result<Consensus> {
             range_m: row.get(7)?,
             samples: row.get(8)?,
         },
-        devices: row.get(9)?,
+        devices: usize::try_from(row.get::<_, i64>(9)?).map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(9, Type::Integer, Box::new(error))
+        })?,
         seeded: row.get(10)?,
         updated_s: row.get(11)?,
     })
