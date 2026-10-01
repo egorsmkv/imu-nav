@@ -454,10 +454,10 @@
         <item quantity="other">Работает: %1$d результата для «Киев»</item>
     </plurals>
     <plurals name="trip_log_count">
-        <item quantity="one">Показана %1$d из %2$d записи</item>
-        <item quantity="few">Показано %1$d из %2$d записей</item>
-        <item quantity="many">Показано %1$d из %2$d записей</item>
-        <item quantity="other">Показано %1$d из %2$d записи</item>
+        <item quantity="one">Показано записей: %1$d из %2$d</item>
+        <item quantity="few">Показано записей: %1$d из %2$d</item>
+        <item quantity="many">Показано записей: %1$d из %2$d</item>
+        <item quantity="other">Показано записей: %1$d из %2$d</item>
     </plurals>
     <plurals name="trip_log_copied">
         <item quantity="one">Скопировано %1$d событие</item>

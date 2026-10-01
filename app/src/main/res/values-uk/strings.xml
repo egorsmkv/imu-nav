@@ -454,10 +454,10 @@
         <item quantity="other">Працює: %1$d результату для «Київ»</item>
     </plurals>
     <plurals name="trip_log_count">
-        <item quantity="one">Показано %1$d із %2$d запису</item>
-        <item quantity="few">Показано %1$d із %2$d записів</item>
-        <item quantity="many">Показано %1$d із %2$d записів</item>
-        <item quantity="other">Показано %1$d із %2$d запису</item>
+        <item quantity="one">Показано записів: %1$d із %2$d</item>
+        <item quantity="few">Показано записів: %1$d із %2$d</item>
+        <item quantity="many">Показано записів: %1$d із %2$d</item>
+        <item quantity="other">Показано записів: %1$d із %2$d</item>
     </plurals>
     <plurals name="trip_log_copied">
         <item quantity="one">Скопійовано %1$d подію</item>
