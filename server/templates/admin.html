@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en" data-bs-theme="light">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>IMU Nav · Server admin</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
+</head>
+<body class="bg-body-tertiary">
+<nav class="navbar bg-dark border-bottom border-body" data-bs-theme="dark">
+    <div class="container-fluid container-xl">
+        <span class="navbar-brand mb-0 h1">IMU Nav cell server</span>
+        <span class="navbar-text"><span class="badge text-bg-secondary">Read only</span></span>
+    </div>
+</nav>
+
+<main class="container-xl py-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <div>
+            <h1 class="h2 mb-1">Management dashboard</h1>
+            <p class="text-body-secondary mb-0">Database health and recently updated cell-tower consensuses.</p>
+        </div>
+        <a class="btn btn-outline-secondary" href="/admin">Refresh</a>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-lg-3">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body">
+                    <div class="text-body-secondary">Published towers</div>
+                    <div class="display-6">{{ counts.published }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body">
+                    <div class="text-body-secondary">Pending towers</div>
+                    <div class="display-6">{{ pending }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body">
+                    <div class="text-body-secondary">Seeded towers</div>
+                    <div class="display-6">{{ counts.seeded }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body">
+                    <div class="text-body-secondary">Contributions</div>
+                    <div class="display-6">{{ counts.contributions }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <section class="card shadow-sm">
+        <div class="card-header bg-body d-flex flex-wrap justify-content-between align-items-center gap-2 py-3">
+            <div>
+                <h2 class="h5 mb-1">Recent towers</h2>
+                <div class="small text-body-secondary">Published after {{ minimum_devices }} independent devices, or immediately when seeded.</div>
+            </div>
+            <form class="row row-cols-lg-auto g-2 align-items-end" method="get" action="/admin">
+                <div class="col-12">
+                    <label class="form-label small mb-1" for="mcc">MCC filter</label>
+                    <input class="form-control form-control-sm" id="mcc" name="mcc" inputmode="numeric" placeholder="255 or 255,260" value="{{ mcc }}">
+                </div>
+                <div class="col-12">
+                    <label class="form-label small mb-1" for="limit">Rows</label>
+                    <input class="form-control form-control-sm" id="limit" name="limit" type="number" min="1" max="1000" value="{{ limit }}">
+                </div>
+                <div class="col-12">
+                    <button class="btn btn-primary btn-sm" type="submit">Apply</button>
+                    {% if has_mcc_filter %}<a class="btn btn-link btn-sm" href="/admin">Clear</a>{% endif %}
+                </div>
+            </form>
+        </div>
+
+        {% if towers.is_empty() %}
+        <div class="card-body py-5 text-center text-body-secondary">No towers match this filter.</div>
+        {% else %}
+        <div class="table-responsive">
+            <table class="table table-hover table-striped align-middle mb-0">
+                <caption class="px-3">Showing up to {{ limit }} most recently updated towers. Times are Unix seconds.</caption>
+                <thead class="table-light">
+                    <tr>
+                        <th scope="col">Status</th>
+                        <th scope="col">Radio</th>
+                        <th scope="col">MCC</th>
+                        <th scope="col">MNC</th>
+                        <th scope="col">Area</th>
+                        <th scope="col">Cell ID</th>
+                        <th scope="col">Latitude</th>
+                        <th scope="col">Longitude</th>
+                        <th scope="col">Range</th>
+                        <th scope="col">Samples</th>
+                        <th scope="col">Devices</th>
+                        <th scope="col">Updated</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for tower in towers %}
+                    <tr>
+                        <td><span class="badge {{ tower.status_class }}">{{ tower.status }}</span></td>
+                        <td>{{ tower.radio }}</td>
+                        <td>{{ tower.mcc }}</td>
+                        <td>{{ tower.mnc }}</td>
+                        <td>{{ tower.area }}</td>
+                        <td><a href="{{ tower.detail_path }}">{{ tower.cid }}</a></td>
+                        <td class="font-monospace">{{ tower.lat }}</td>
+                        <td class="font-monospace">{{ tower.lon }}</td>
+                        <td>{{ tower.range_m }} m</td>
+                        <td>{{ tower.samples }}</td>
+                        <td>{{ tower.devices }}</td>
+                        <td class="font-monospace">{{ tower.updated_s }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </section>
+</main>
+</body>
+</html>

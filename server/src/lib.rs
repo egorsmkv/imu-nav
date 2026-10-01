@@ -1,5 +1,6 @@
 //! Persistent HTTP and WebSocket server for sharing cell-tower positions.
 
+mod admin;
 mod api;
 mod csv_format;
 mod model;
@@ -13,4 +14,4 @@ pub use model::{
     CellKey, CellTower, Consensus, Policy, PolicyError, Radio, RadioParseError, ServerEvent,
     UploadResult,
 };
-pub use store::CellStore;
+pub use store::{CellStore, StoreCounts};

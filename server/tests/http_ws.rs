@@ -218,6 +218,78 @@ async fn management_api_is_authenticated_and_broadcasts_deletes() -> Result<()> 
 }
 
 #[tokio::test]
+async fn read_only_admin_pages_use_browser_auth_and_render_towers() -> Result<()> {
+    let server = start_server().await?;
+    let client = reqwest::Client::new();
+
+    let unauthorized = client
+        .get(format!("{}/admin", server.base_url))
+        .send()
+        .await?;
+    assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        unauthorized
+            .headers()
+            .get("www-authenticate")
+            .and_then(|value| value.to_str().ok()),
+        Some("Basic realm=\"IMU Nav admin\", charset=\"UTF-8\"")
+    );
+
+    let path = "/v1/towers/LTE/255/1/1864/99";
+    let response = client
+        .put(format!("{}{}", server.base_url, path))
+        .bearer_auth("secret")
+        .json(&serde_json::json!({"lat": 50.45, "lon": 30.52, "range_m": 700.0, "samples": 20}))
+        .send()
+        .await?;
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let dashboard = client
+        .get(format!("{}/admin?mcc=255&limit=10", server.base_url))
+        .basic_auth("admin", Some("secret"))
+        .send()
+        .await?;
+    assert_eq!(dashboard.status(), StatusCode::OK);
+    assert_eq!(
+        dashboard
+            .headers()
+            .get("content-security-policy")
+            .and_then(|value| value.to_str().ok()),
+        Some(
+            "default-src 'none'; style-src https://cdn.jsdelivr.net; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+        )
+    );
+    let dashboard_html = dashboard.text().await?;
+    assert!(dashboard_html.contains("Management dashboard"));
+    assert!(dashboard_html.contains("bootstrap@5.3.8"));
+    assert!(dashboard_html.contains("/admin/towers/LTE/255/1/1864/99"));
+    assert!(dashboard_html.contains("Read only"));
+    assert!(!dashboard_html.contains("Delete"));
+
+    let detail = client
+        .get(format!(
+            "{}/admin/towers/LTE/255/1/1864/99",
+            server.base_url
+        ))
+        .basic_auth("admin", Some("secret"))
+        .send()
+        .await?;
+    assert_eq!(detail.status(), StatusCode::OK);
+    let detail_html = detail.text().await?;
+    assert!(detail_html.contains("Tower LTE 255-1 / 1864 / 99"));
+    assert!(detail_html.contains("50.4500000"));
+    assert!(!detail_html.contains("Delete"));
+
+    let invalid_filter = client
+        .get(format!("{}/admin?mcc=invalid", server.base_url))
+        .basic_auth("admin", Some("secret"))
+        .send()
+        .await?;
+    assert_eq!(invalid_filter.status(), StatusCode::BAD_REQUEST);
+    Ok(())
+}
+
+#[tokio::test]
 async fn invalid_filters_keys_and_oversized_uploads_are_rejected() -> Result<()> {
     let policy = Policy {
         max_rows_per_upload: 1,

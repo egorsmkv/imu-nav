@@ -1,3 +1,4 @@
+use crate::admin;
 use crate::{
     CellKey, CellStore, CellTower, Consensus, CsvDecodeError, Policy, PolicyError, Radio,
     ServerEvent, decode_towers, encode_towers,
@@ -34,8 +35,8 @@ pub struct ServerConfig {
 /// Shared application state used by HTTP requests and WebSocket connections.
 #[derive(Clone)]
 pub struct AppState {
-    store: CellStore,
-    config: ServerConfig,
+    pub(crate) store: CellStore,
+    pub(crate) config: ServerConfig,
     events: broadcast::Sender<ServerEvent>,
     limits: Arc<Mutex<Limits>>,
 }
@@ -61,6 +62,7 @@ impl AppState {
 /// Construct all compatibility, management, and real-time routes.
 pub fn router(state: AppState) -> Router {
     Router::new()
+        .merge(admin::router())
         .route("/health", get(health))
         .route("/v1/cells", post(upload_cells))
         .route("/v1/cells.csv.gz", get(download_cells))
@@ -75,7 +77,7 @@ pub fn router(state: AppState) -> Router {
 }
 
 #[derive(Debug)]
-struct ApiError(StatusCode, &'static str);
+pub(crate) struct ApiError(pub(crate) StatusCode, pub(crate) &'static str);
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
@@ -361,7 +363,7 @@ fn authorize(headers: &HeaderMap, api_key: Option<&str>) -> Result<(), ApiError>
         .ok_or(ApiError(StatusCode::UNAUTHORIZED, "UNAUTHORIZED"))
 }
 
-fn path_key(
+pub(crate) fn path_key(
     (radio, mcc, mnc, area, cid): (String, i64, i64, i64, i64),
 ) -> Result<CellKey, ApiError> {
     if !(1..=999).contains(&mcc) || !(0..=999).contains(&mnc) || area < 0 || cid < 0 {
@@ -377,7 +379,7 @@ fn path_key(
     })
 }
 
-async fn run_db<T: Send + 'static>(
+pub(crate) async fn run_db<T: Send + 'static>(
     operation: impl FnOnce() -> anyhow::Result<T> + Send + 'static,
 ) -> Result<T, ApiError> {
     tokio::task::spawn_blocking(operation)

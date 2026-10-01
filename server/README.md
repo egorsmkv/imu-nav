@@ -2,7 +2,7 @@
 
 The reference sharing server preserves the Android app's gzip-CSV sync protocol while storing every
 per-device contribution and materialized consensus in SQLite. SQLite runs in WAL mode, so downloads
-and management reads can continue during uploads.
+and management reads can continue during uploads. Building the server requires Rust 1.88 or newer.
 
 ```bash
 cargo build --release --manifest-path server/Cargo.toml
@@ -15,6 +15,18 @@ Put the server behind a TLS reverse proxy for public deployments. `CELLS_API_KEY
 connections. `--trust-proxy` honors the first `X-Forwarded-For` address for per-IP limits and must
 only be enabled when direct access to the server port is blocked. Run with `RUST_LOG=debug` for more
 detailed operational logs.
+
+## Read-only admin interface
+
+Open `/admin` for a server-rendered dashboard with database totals, MCC filtering, recent tower
+consensuses, and individual tower details. The pages use Askama templates and Bootstrap 5.3.8 from
+the jsDelivr CDN. They contain no create, edit, or delete controls.
+
+When an API key is configured, the browser prompts for HTTP Basic credentials: use `admin` as the
+username and the API key as the password. The dashboard also accepts the existing
+`Authorization: Bearer <key>` header for reverse-proxy and scripted access. Serve it over HTTPS so
+credentials are encrypted in transit. If no API key is configured, the dashboard follows the
+existing management API behavior and is public.
 
 ## API
 

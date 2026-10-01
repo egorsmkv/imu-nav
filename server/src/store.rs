@@ -29,6 +29,15 @@ pub struct CellStore {
     path: PathBuf,
 }
 
+/// Aggregate database counts displayed by operational and management views.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StoreCounts {
+    pub published: usize,
+    pub consensus: usize,
+    pub contributions: usize,
+    pub seeded: usize,
+}
+
 impl CellStore {
     /// Open the database, create its schema, and enable WAL for concurrent readers.
     ///
@@ -184,7 +193,7 @@ impl CellStore {
         limit: Option<usize>,
         policy: &Policy,
     ) -> Result<Vec<Consensus>> {
-        self.query_internal(mccs, since_s, limit, Some(policy))
+        self.query_internal(mccs, since_s, limit, Some(policy), false)
     }
 
     /// Return published and pending consensuses for authenticated management clients.
@@ -198,7 +207,20 @@ impl CellStore {
         since_s: i64,
         limit: Option<usize>,
     ) -> Result<Vec<Consensus>> {
-        self.query_internal(mccs, since_s, limit, None)
+        self.query_internal(mccs, since_s, limit, None, false)
+    }
+
+    /// Return the most recently updated consensuses for the read-only management interface.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the database query fails or a stored radio value is invalid.
+    pub fn query_recent_all(
+        &self,
+        mccs: Option<&HashSet<i64>>,
+        limit: usize,
+    ) -> Result<Vec<Consensus>> {
+        self.query_internal(mccs, 0, Some(limit), None, true)
     }
 
     fn query_internal(
@@ -207,6 +229,7 @@ impl CellStore {
         since_s: i64,
         limit: Option<usize>,
         publication_policy: Option<&Policy>,
+        newest_first: bool,
     ) -> Result<Vec<Consensus>> {
         let connection = self.connection()?;
         let mut query = String::from(
@@ -230,7 +253,11 @@ impl CellStore {
             sorted_mccs.sort_unstable();
             values.extend(sorted_mccs.into_iter().map(Value::Integer));
         }
-        query.push_str(" ORDER BY updated_s,radio,mcc,mnc,area,cid");
+        if newest_first {
+            query.push_str(" ORDER BY updated_s DESC,radio,mcc,mnc,area,cid");
+        } else {
+            query.push_str(" ORDER BY updated_s,radio,mcc,mnc,area,cid");
+        }
         if let Some(limit) = limit {
             query.push_str(" LIMIT ?");
             values.push(Value::Integer(i64::try_from(limit)?));
@@ -287,18 +314,34 @@ impl CellStore {
     ///
     /// Returns an error when the database cannot be queried.
     pub fn counts(&self, policy: &Policy) -> Result<(usize, usize)> {
+        let counts = self.management_counts(policy)?;
+        Ok((counts.published, counts.contributions))
+    }
+
+    /// Return aggregate counts without loading individual tower rows.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the database cannot be queried or a count cannot fit in `usize`.
+    pub fn management_counts(&self, policy: &Policy) -> Result<StoreCounts> {
         let connection = self.connection()?;
         let contributions_count: i64 =
             connection.query_row("SELECT COUNT(*) FROM contributions", [], |row| row.get(0))?;
-        let published_count: i64 = connection.query_row(
-            "SELECT COUNT(*) FROM consensus WHERE seeded=1 OR devices>=?1",
-            [i64::try_from(policy.min_devices)?],
-            |row| row.get(0),
-        )?;
-        Ok((
-            usize::try_from(published_count)?,
-            usize::try_from(contributions_count)?,
-        ))
+        let (consensus_count, published_count, seeded_count): (i64, i64, i64) = connection
+            .query_row(
+                "SELECT COUNT(*),
+                        COALESCE(SUM(CASE WHEN seeded=1 OR devices>=?1 THEN 1 ELSE 0 END), 0),
+                        COALESCE(SUM(CASE WHEN seeded=1 THEN 1 ELSE 0 END), 0)
+                 FROM consensus",
+                [i64::try_from(policy.min_devices)?],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )?;
+        Ok(StoreCounts {
+            published: usize::try_from(published_count)?,
+            consensus: usize::try_from(consensus_count)?,
+            contributions: usize::try_from(contributions_count)?,
+            seeded: usize::try_from(seeded_count)?,
+        })
     }
 }
 
