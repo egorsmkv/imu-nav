@@ -333,7 +333,7 @@ class NavigationEngine(
         val usedGps = gps != null && gps.fix.elapsedMs > lastGpsProcessedMs && handleGps(car, gps, nowMs, dt)
         if (!usedGps) {
             // GPS fixes arrive once per second but we tick twice: between fixes, keep gliding.
-            if (lastGpsUseMs > 0 && nowMs - lastGpsUseMs < 3000 && source.isGps) {
+            if (!simulateGpsLoss && lastGpsUseMs > 0 && nowMs - lastGpsUseMs < 3000 && source.isGps) {
                 if (smoother.valid) car.moveTo(smoother.follow(car.s, nowMs, dt, snap = false))
             } else {
                 when (activeNavigationMethod) {

@@ -139,6 +139,38 @@ class EngineSimulationTest {
     }
 
     @Test
+    fun simulatedGpsLossIgnoresGoodFixesAndResumesImmediately() {
+        val wallStartMs = 1_700_000_000_000L
+        var wallMs = wallStartMs
+        val hub = PositioningHub(wallClock = { wallMs })
+        val engine = NavigationEngine(listener = object : NavListener {})
+        val route = lShapedRoute()
+        engine.start(route, route.geometry.last(), nowMs = 0)
+
+        fun goodFix(elapsedMs: Long, distanceM: Double) {
+            wallMs = wallStartMs + elapsedMs
+            val point = truthPoint(distanceM)
+            hub.onFix(RawFix(FixSource.GPS, wallMs, elapsedMs, point.lat, point.lon, 4.0, 10f, 0f, 1f, 1f, null, false))
+        }
+
+        goodFix(elapsedMs = 1_000, distanceM = 100.0)
+        engine.tick(1_000, hub.snapshot(1_000))
+        assertEquals(PositionSource.GPS, engine.state.source)
+
+        engine.simulateGpsLoss = true
+        goodFix(elapsedMs = 2_000, distanceM = 110.0)
+        engine.tick(2_000, hub.snapshot(2_000))
+        assertTrue(!engine.state.source.isGps, "simulation must immediately stop using GPS")
+        assertEquals(2_000, hub.lastUsable?.fix?.elapsedMs, "the ignored fix must still be trusted by the classifier")
+
+        engine.simulateGpsLoss = false
+        goodFix(elapsedMs = 3_000, distanceM = 120.0)
+        engine.tick(3_000, hub.snapshot(3_000))
+        assertEquals(PositionSource.GPS, engine.state.source)
+        assertTrue(engine.state.s >= 110.0, "GPS must resume after the simulation is disabled")
+    }
+
+    @Test
     fun laggingMarkerIsCorrectedByGyroTurnMatching() {
         // The car is faster than the engine believes: the turn happens before the marker gets there.
         val r = simulate(speedWithGps = 12.0, speedBlind = 14.0, until = { d, _ -> d >= 900 })

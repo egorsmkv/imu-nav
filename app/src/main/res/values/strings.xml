@@ -241,6 +241,7 @@
     <string name="trip_log_share_failed">Couldn’t create the log file</string>
     <string name="simulate_gps_loss">Simulate GPS loss</string>
     <string name="simulate_gps_loss_summary">Ignore GPS to test navigation without it</string>
+    <string name="gps_loss_test_active">GPS loss test active</string>
 
     <string name="sec_about">About</string>
     <string name="about_version">Version %1$s</string>

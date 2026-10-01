@@ -493,6 +493,8 @@ private fun StatusPill(ui: UiState, onClick: () -> Unit) {
     val res = LocalResources.current
     val nav = ui.guidance
     val (label, dot) = when {
+        ui.simulateGpsLoss -> stringResource(R.string.gps_loss_test_active) to InfoBlue
+
         nav.active -> sourceLabel(res, nav.source) + " · " + formatAccuracy(res, nav.uncertaintyM) to when (nav.source) {
             PositionSource.GPS -> GoodGreen
             PositionSource.GPS_SUSPECT -> WarnAmber
@@ -509,6 +511,7 @@ private fun StatusPill(ui: UiState, onClick: () -> Unit) {
         else -> stringResource(R.string.src_none) to Color.Gray
     }
     val gps = when {
+        ui.simulateGpsLoss -> Triple(Icons.Filled.GpsOff, stringResource(R.string.gps_loss_test_active), InfoBlue)
         ui.jammed -> Triple(Icons.Filled.GpsOff, stringResource(R.string.gps_jammed), BadRed)
         ui.lastVerdict?.level == TrustLevel.BAD -> Triple(Icons.Filled.GpsOff, stringResource(R.string.gps_rejected), BadRed)
         ui.gpsState == GpsState.OK -> Triple(Icons.Filled.GpsFixed, stringResource(R.string.gps_ok), GoodGreen)
@@ -922,7 +925,10 @@ private fun DiagnosticsContent(ui: UiState, app: AppGraph, onOpenLog: () -> Unit
         DiagRow(stringResource(R.string.diag_satellites), "${gn.satellitesUsed} / ${gn.satellitesVisible}")
         DiagRow(stringResource(R.string.diag_signal), gn.meanCn0Used?.let { "%.0f ± %.1f dB-Hz".format(it, gn.cn0SpreadUsed ?: 0f) } ?: none)
         DiagRow(stringResource(R.string.diag_agc), gn.agcDb?.let { "%.1f dB".format(it) } ?: none)
-        if (ui.jammed) DiagRow(stringResource(R.string.diag_gps), stringResource(R.string.gps_jammed), valueColor = BadRed)
+        when {
+            ui.simulateGpsLoss -> DiagRow(stringResource(R.string.diag_gps), stringResource(R.string.gps_loss_test_active), valueColor = InfoBlue)
+            ui.jammed -> DiagRow(stringResource(R.string.diag_gps), stringResource(R.string.gps_jammed), valueColor = BadRed)
+        }
         DiagRow(
             stringResource(R.string.diag_cells),
             "${ui.cells.located} / ${ui.cells.seen}" + (ui.cells.accuracyM?.let { " · " + formatAccuracy(res, it) } ?: ""),

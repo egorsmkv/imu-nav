@@ -239,6 +239,7 @@
     <string name="trip_log_share_failed">Не вдалося створити файл журналу</string>
     <string name="simulate_gps_loss">Імітувати втрату GPS</string>
     <string name="simulate_gps_loss_summary">Ігнорувати GPS, щоб перевірити навігацію без нього</string>
+    <string name="gps_loss_test_active">Тест втрати GPS активний</string>
 
     <string name="sec_about">Про застосунок</string>
     <string name="about_version">Версія %1$s</string>

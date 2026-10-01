@@ -28,10 +28,10 @@ class NativeEstimatorBridge(private val log: (String) -> Unit) {
         estimator?.onVehicleSpeed(kmh, elapsedMs)
     }
 
-    /** Feed one post-engine snapshot; raw BAD GPS never appears in [PositioningSnapshot.lastUsableGps]. */
-    fun tick(nowMs: Long, guidance: GuidanceState, positioning: PositioningSnapshot) {
+    /** Feed one post-engine snapshot; raw BAD GPS and deliberately simulated GPS loss are excluded. */
+    fun tick(nowMs: Long, guidance: GuidanceState, positioning: PositioningSnapshot, ignoreGps: Boolean = false) {
         val current = estimator ?: return
-        val state = current.tick(nowMs, positioning.lastUsableGps)
+        val state = current.tick(nowMs, positioning.lastUsableGps.takeUnless { ignoreGps })
 
         if (nowMs - lastLogMs >= LOG_EVERY_MS) {
             lastLogMs = nowMs
