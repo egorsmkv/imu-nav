@@ -381,7 +381,11 @@ impl NavigationEstimator {
                 .unwrap_or(DEFAULT_GPS_SPEED_SIGMA_MPS)
                 .max(MIN_SPEED_SIGMA_MPS)
                 * multiplier;
-            speed_accepted = self.update_measured_speed(speed_mps, speed_sigma)?;
+            speed_accepted = self.update_measured_speed(
+                speed_mps,
+                speed_sigma,
+                observation.trust == ObservationTrust::Good,
+            )?;
             if speed_accepted && observation.trust == ObservationTrust::Good {
                 self.state.last_gps_speed_ms = observation.elapsed_ms;
             }
@@ -431,6 +435,7 @@ impl NavigationEstimator {
         let accepted = self.update_measured_speed(
             speed_mps * self.state.vehicle_speed_scale,
             OBD_SPEED_SIGMA_MPS,
+            true,
         )?;
         if accepted {
             self.state.last_vehicle_speed_ms = self.state.elapsed_ms;

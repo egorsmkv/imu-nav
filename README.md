@@ -177,6 +177,9 @@ samples, satellite/AGC status, routes and the engine's own estimates (gzip text,
   and confident cell movement do not contradict it. Add `--no-native-motion` to disable these hints
   for an A/B comparison. Hints expire with the IMU samples; they are speed-model assumptions, not
   position anchors. Quiet highway travel without independent movement evidence remains ambiguous.
+  After a false stop, returning GOOD GPS or OBD speed can also be checked against the saved cruising
+  speed, so valid highway-speed readings are not locked out by the near-zero stop model. Both models
+  retain innovation gates; recovering speed does not erase accumulated position error.
   The native estimator still does not control the displayed navigation position.
 
 ### Cell tower database

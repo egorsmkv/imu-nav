@@ -8,6 +8,7 @@ import org.imunav.core.imu.ImuSample
 import org.imunav.core.record.TripEvent
 import org.imunav.core.route.Route
 import org.imunav.core.route.Step
+import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -56,23 +57,45 @@ class MotionComparisonTest {
         assertTrue(duringGap.nativeS > beforeGap.nativeS + 100.0)
     }
 
+    @Test
+    fun returningHighwayObdReleasesAFalseStopWithoutInventingAPositionAnchor() {
+        val result = NativeComparison().replay(drive(Scenario.HIGHWAY_OBD_RETURN), 60.0)
+        val before = result.samples.first { it.elapsedMs - START_MS == 89_000L }
+        val recovered = result.samples.first { it.elapsedMs - START_MS == 100_000L }
+        val last = result.samples.last()
+        println("highway OBD return\n${result.summary()}final error=${last.nativeErrorM} m")
+        assertTrue(before.nativeErrorM > 500.0, "Quiet highway IMU still causes a false stop before independent speed returns")
+        assertTrue(recovered.nativeS - before.nativeS > 340.0, "Returning OBD must restore highway motion")
+        assertTrue(last.nativeErrorM < 1200.0, result.summary())
+        assertTrue(abs(last.nativeErrorM - recovered.nativeErrorM) < 5.0, "Recovery must stop further drift")
+        assertTrue(recovered.nativeErrorM > 500.0, "Speed recovery must not invent a position correction")
+    }
+
     /** One minute visible, then braking, a long stop and independent linear acceleration to cruise. */
     private fun drive(scenario: Scenario): List<TripEvent> {
         val projection = LocalProjection(GeoPoint(50.45, 30.52))
-        val points = (0..3000 step 20).map { projection.toGeo(0.0, it.toDouble()) }
-        val route = Route(points, listOf(Step("depart", null, "test", 3000.0, 300.0, 0), Step("arrive", null, "", 0.0, 0.0, points.lastIndex)), 300.0)
+        val highway = scenario == Scenario.HIGHWAY_OBD_RETURN
+        val lengthM = if (highway) 10_000 else 3000
+        val points = (0..lengthM step 20).map { projection.toGeo(0.0, it.toDouble()) }
+        val route = Route(points, listOf(Step("depart", null, "test", lengthM.toDouble(), 300.0, 0), Step("arrive", null, "", 0.0, 0.0, points.lastIndex)), 300.0)
         return buildList {
             add(TripEvent.Start(START_MS, points.last(), emptyList(), 5.0))
             add(TripEvent.RouteSet(START_MS, route))
             var distanceM = 0.0
-            var previousSpeedMps = 10.0
+            var previousSpeedMps = if (highway) 35.0 else 10.0
             for (offsetMs in 20L..180_000L step 20) {
                 val smooth = scenario == Scenario.SMOOTH_WITH_CELLS
-                val speedMps = if (smooth) 10.0 else speedAt(offsetMs)
+                val speedMps = if (highway) {
+                    35.0
+                } else if (smooth) {
+                    10.0
+                } else {
+                    speedAt(offsetMs)
+                }
                 distanceM += (previousSpeedMps + speedMps) * 0.01
                 previousSpeedMps = speedMps
                 val phoneMovement = scenario == Scenario.PHONE_MOVEMENT && offsetMs in 95_000..95_180
-                val quiet = (smooth || speedMps == 0.0) && !phoneMovement
+                val quiet = (highway || smooth || speedMps == 0.0) && !phoneMovement
                 val acceleration = if (quiet) {
                     0.03f
                 } else if (offsetMs % 40L == 0L) {
@@ -83,6 +106,9 @@ class MotionComparisonTest {
                 val gyro = if (quiet) 0.005f else 0.2f
                 val elapsedMs = START_MS + offsetMs
                 add(TripEvent.Imu(ImuSample(elapsedMs, null, 0f, floatArrayOf(acceleration, 0f, 0f), floatArrayOf(gyro, 0f, 0f))))
+                if (highway && offsetMs >= 90_000 && offsetMs % 200L == 0L) {
+                    add(TripEvent.VehicleSpeed(elapsedMs, (speedMps * 3.6).toFloat()))
+                }
                 if (offsetMs % 1000L == 0L) {
                     val point = route.pointAt(distanceM).point
                     add(TripEvent.Fix(RawFix(FixSource.GPS, WALL_MS + offsetMs, elapsedMs, point.lat, point.lon, 150.0, speedMps.toFloat(), 0f, 4f, 3f, 0.3f, false)))
@@ -102,7 +128,7 @@ class MotionComparisonTest {
         else -> 10.0
     }
 
-    private enum class Scenario { TRAFFIC, PHONE_MOVEMENT, SMOOTH_WITH_CELLS }
+    private enum class Scenario { TRAFFIC, PHONE_MOVEMENT, SMOOTH_WITH_CELLS, HIGHWAY_OBD_RETURN }
 
     private companion object {
         const val START_MS = 1_000_000L

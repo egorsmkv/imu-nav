@@ -82,6 +82,14 @@ The pre-stop cruising speed is retained for resuming. Hints expire two seconds a
 IMU sample, including across long tick gaps; missing or vetoed hints restore an uncertain cruising
 prior instead of leaving the car permanently stopped. Delayed GNSS replays the recorded hints.
 
+If the stopped/ramping speed model rejects a GOOD GNSS or OBD speed, the estimator also tests the
+saved cruising-speed prior (6 m/s standard deviation) with the same innovation gate. This prevents
+a false stop from repeatedly rejecting legitimate highway speeds above the stopped model's gate.
+SUSPECT GNSS cannot use this alternative. Rejection by both models leaves the predicted state and
+measurement freshness unchanged; accepting a speed clears motion control but does not correct
+position, reduce its uncertainty, or erase systematic drift. A measured zero speed still uses the
+stopped model first, rather than forcing a return to cruise.
+
 Quiet highway motion cannot reliably be distinguished from standing still by vibration alone.
 Likewise, prolonged phone handling can look like movement. If IMU disappears during a real stop,
 the cruising fallback can drift forward. These are unresolved model limitations, not guarantees
@@ -225,3 +233,9 @@ brief phone movement, missing IMU and smooth travel with cell-derived movement e
 synthetic stop/start drive, motion hints reduce native blind p95 from 630 m to 45 m; this is not a
 real-drive accuracy claim. To compare recordings with hints disabled, add `--no-native-motion`
 to the same `--compare-native` command and use a separate output directory.
+
+A separate 126 km/h synthetic drive deliberately uses quiet IMU without cells, hides GPS after
+60 seconds and introduces OBD at 90 seconds. Previously the false-stop model rejected every returning
+OBD reading: final error at 180 seconds was 4,148 m. Testing the saved cruising model restores motion
+on the first OBD reading, limiting final error to 998 m. The error accumulated before OBD returns
+remains; this regression demonstrates recovery, not a solution to quiet-highway stop ambiguity.

@@ -29,11 +29,16 @@ pub(super) struct MotionControl {
 
 impl NavigationEstimator {
     /// GPS/OBD observations can overturn an IMU speed prior without being rejected solely
-    /// because the heuristic stop had reduced speed uncertainty. Rejected updates stay inert.
+    /// because the heuristic stop had reduced speed uncertainty. If the stopped/ramping model
+    /// rejects a trusted observation, also test the saved cruising model. This handles false
+    /// highway stops without accepting arbitrary speed jumps or relaxing SUSPECT GPS gates.
+    /// During motion control neither speed hypothesis changes position; rejecting both leaves
+    /// the state untouched. Ordinary speed updates retain their position/speed correlation.
     pub(super) fn update_measured_speed(
         &mut self,
         speed_mps: f64,
         sigma_mps: f64,
+        allow_cruise_recovery: bool,
     ) -> Result<bool, FilterError> {
         let mut candidate = self.state.filter.clone();
         if self.state.motion_control.is_some() {
@@ -45,9 +50,18 @@ impl NavigationEstimator {
                     .max(RESUME_SPEED_SIGMA_MPS),
             )?;
         }
-        let accepted = candidate
+        let mut accepted = candidate
             .update_speed(speed_mps, sigma_mps, SPEED_NIS_GATE)?
             .accepted;
+        if !accepted
+            && allow_cruise_recovery
+            && let Some(control) = self.state.motion_control
+        {
+            candidate.set_speed_prior(control.cruise_speed_mps, RESUME_SPEED_SIGMA_MPS)?;
+            accepted = candidate
+                .update_speed(speed_mps, sigma_mps, SPEED_NIS_GATE)?
+                .accepted;
+        }
         if accepted {
             self.state.filter = candidate;
             self.state.motion_control = None;

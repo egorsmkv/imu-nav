@@ -12,6 +12,105 @@ fn hint(now_ms: i64, factor: f64) -> MotionObservation {
     }
 }
 
+/// A quiet IMU can falsely stop a highway-speed car; independent speed must recover it.
+fn highway_false_stop() -> NavigationEstimator {
+    let mut navigation = estimator(20.0);
+    navigation.state.filter = crate::RouteFilter::new(0.0, 35.0, 20.0, 2.0, 0.0).unwrap();
+    navigation.history.clear();
+    navigation.remember(None);
+    navigation
+        .tick_with_motion(1_000, None, Some(hint(1_000, 0.0)))
+        .unwrap();
+    navigation
+}
+
+#[test]
+fn highway_obd_can_overturn_a_false_stop() {
+    let mut navigation = highway_false_stop();
+    let stopped = navigation.estimate();
+    assert!(navigation.on_vehicle_speed(126.0, 1_100).unwrap());
+    assert!((navigation.estimate().speed_mps - 35.0).abs() < 0.1);
+    assert_eq!(navigation.estimate().position_m, stopped.position_m);
+    assert_eq!(
+        navigation.estimate().systematic_drift_m,
+        stopped.systematic_drift_m
+    );
+    assert!(navigation.estimate().position_sigma_m() >= stopped.position_sigma_m());
+    assert!(navigation.state.motion_control.is_none());
+}
+
+#[test]
+fn highway_good_gps_can_overturn_a_false_stop() {
+    let mut navigation = highway_false_stop();
+    let mut observation = gps(1_100, 50.000_35);
+    observation.speed_mps = Some(35.0);
+    let result = navigation
+        .tick_with_motion(1_100, Some(observation), Some(hint(1_100, 0.0)))
+        .unwrap();
+    assert!(result.speed_accepted);
+    assert!((result.estimate.speed_mps - 35.0).abs() < 0.1);
+}
+
+#[test]
+fn highway_recovery_still_rejects_outliers_and_suspect_gps() {
+    let mut navigation = highway_false_stop();
+    for time in [1_100, 1_200, 1_300] {
+        let mut predicted = navigation.clone();
+        predicted.predict_to(time).unwrap();
+        assert!(!navigation.on_vehicle_speed(250.0, time).unwrap());
+        assert_eq!(navigation.estimate(), predicted.estimate());
+        assert_eq!(navigation.state.last_vehicle_speed_ms, -1);
+        assert!(navigation.state.motion_control.is_some());
+    }
+    let mut observation = gps(1_400, 50.000_35);
+    observation.speed_mps = Some(35.0);
+    observation.trust = super::super::ObservationTrust::Suspect;
+    let result = navigation
+        .tick_with_motion(1_400, Some(observation), Some(hint(1_400, 0.0)))
+        .unwrap();
+    assert!(!result.speed_accepted);
+    assert!(result.estimate.speed_mps.abs() < f64::EPSILON);
+    assert!(navigation.on_vehicle_speed(126.0, 1_500).unwrap());
+}
+
+#[test]
+fn highway_recovery_does_not_override_a_real_measured_stop() {
+    let mut navigation = highway_false_stop();
+    assert!(navigation.on_vehicle_speed(0.0, 1_100).unwrap());
+    assert!(navigation.estimate().speed_mps.abs() < f64::EPSILON);
+    assert!(navigation.state.motion_control.is_none());
+}
+
+#[test]
+fn highway_recovery_matches_delayed_gps_replay() {
+    let mut timely = highway_false_stop();
+    let mut delayed = timely.clone();
+    let mut observation = gps(1_100, 50.000_35);
+    observation.speed_mps = Some(35.0);
+    timely
+        .tick_with_motion(1_100, Some(observation), Some(hint(1_100, 0.0)))
+        .unwrap();
+    delayed
+        .tick_with_motion(1_100, None, Some(hint(1_100, 0.0)))
+        .unwrap();
+    for time in [1_200, 1_300] {
+        timely
+            .tick_with_motion(time, None, Some(hint(time, 0.0)))
+            .unwrap();
+        delayed
+            .tick_with_motion(time, None, Some(hint(time, 0.0)))
+            .unwrap();
+    }
+    timely
+        .tick_with_motion(1_500, None, Some(hint(1_500, 0.0)))
+        .unwrap();
+    let result = delayed
+        .tick_with_motion(1_500, Some(observation), Some(hint(1_500, 0.0)))
+        .unwrap();
+    assert!(result.speed_accepted);
+    assert_eq!(timely.estimate(), delayed.estimate());
+}
+
 #[test]
 fn stop_holds_position_without_erasing_uncertainty_and_resume_restores_motion() {
     let mut navigation = estimator(20.0);
