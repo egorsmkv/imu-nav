@@ -146,7 +146,10 @@ val buildRustAndroid = tasks.register<Exec>("buildRustAndroid") {
     outputs.dir(layout.buildDirectory.dir("generated/rustJniLibs"))
 }
 
-tasks.matching { it.name.startsWith("merge") && it.name.endsWith("NativeLibs") }.configureEach {
+// AGP reads generated JNI directories in JniLibFolders before packaging them in NativeLibs.
+tasks.matching {
+    it.name.startsWith("merge") && (it.name.endsWith("JniLibFolders") || it.name.endsWith("NativeLibs"))
+}.configureEach {
     dependsOn(buildRustAndroid)
 }
 
