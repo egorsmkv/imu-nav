@@ -14,6 +14,8 @@ pub use network_position::NetworkObservation;
 mod turn;
 pub use turn::TurnObservation;
 use turn::TurnState;
+mod walking;
+pub use walking::WalkingObservation;
 
 const MIN_POSITION_SIGMA_M: f64 = 3.0;
 const MIN_SPEED_SIGMA_MPS: f64 = 0.2;
@@ -112,6 +114,7 @@ struct FilterState {
     last_gps_speed_ms: i64,
     last_gps_position_ms: i64,
     motion_control: Option<MotionControl>,
+    walking_valid_until_ms: Option<i64>,
     network_evidence: NetworkEvidence,
     turn_state: TurnState,
 }
@@ -166,6 +169,7 @@ struct HistoryFrame {
     motion: Option<MotionObservation>,
     network: Option<NetworkObservation>,
     turn: Option<TurnObservation>,
+    walking: Option<WalkingObservation>,
 }
 
 impl NavigationEstimator {
@@ -180,7 +184,7 @@ impl NavigationEstimator {
         mode: TravelMode,
         now_ms: i64,
     ) -> Result<Self, FilterError> {
-        let state = FilterState {
+        let mut state = FilterState {
             filter: RouteFilter::new(
                 initial.position_m,
                 initial.speed_mps,
@@ -195,9 +199,14 @@ impl NavigationEstimator {
             last_gps_speed_ms: -1,
             last_gps_position_ms: -1,
             motion_control: None,
+            walking_valid_until_ms: None,
             network_evidence: NetworkEvidence::new(now_ms),
             turn_state: TurnState::new(now_ms),
         };
+        // Walking starts/restores stationary until recorded GPS, steps or IMU supply movement.
+        if mode == TravelMode::Foot {
+            state.filter.set_speed_prior(0.0, initial.speed_sigma_mps)?;
+        }
         Ok(Self {
             state: state.clone(),
             route,
@@ -211,6 +220,7 @@ impl NavigationEstimator {
                 motion: None,
                 network: None,
                 turn: None,
+                walking: None,
             }]),
         })
     }
@@ -315,8 +325,24 @@ impl NavigationEstimator {
         network: Option<NetworkObservation>,
         turn: Option<TurnObservation>,
     ) -> Result<TickOutcome, FilterError> {
+        self.tick_with_walking(now_ms, gps, motion, network, turn, None)
+    }
+
+    /// Adds an explicit pedestrian speed model; car hints never stand in for walking evidence.
+    ///
+    /// # Errors
+    /// Returns [`FilterError`] for invalid filter updates, without changing the estimator.
+    pub fn tick_with_walking(
+        &mut self,
+        now_ms: i64,
+        gps: Option<GpsObservation>,
+        motion: Option<MotionObservation>,
+        network: Option<NetworkObservation>,
+        turn: Option<TurnObservation>,
+        walking: Option<WalkingObservation>,
+    ) -> Result<TickOutcome, FilterError> {
         let mut pending = self.clone();
-        let outcome = pending.tick_inner(now_ms, gps, motion, network, turn)?;
+        let outcome = pending.tick_inner(now_ms, gps, motion, network, turn, walking)?;
         *self = pending;
         Ok(outcome)
     }
@@ -329,6 +355,7 @@ impl NavigationEstimator {
         motion: Option<MotionObservation>,
         network: Option<NetworkObservation>,
         turn: Option<TurnObservation>,
+        walking: Option<WalkingObservation>,
     ) -> Result<TickOutcome, FilterError> {
         let mut projection = None;
         let mut position_accepted = false;
@@ -351,6 +378,7 @@ impl NavigationEstimator {
                             && frame.vehicle_speed_mps.is_none()
                             && frame.motion.is_none()
                             && frame.turn.is_none()
+                            && frame.walking.is_none()
                             && frame.network.is_none())
                 })
         }) {
@@ -400,12 +428,14 @@ impl NavigationEstimator {
                         self.apply_network(frame.network, frame.motion)?;
                         self.apply_motion(frame.motion)?;
                         self.apply_turn(frame.turn)?;
+                        self.apply_walking(frame.walking)?;
                     }
                     self.remember_observations(
                         frame.vehicle_speed_mps,
                         frame.motion,
                         frame.network,
                         frame.turn,
+                        frame.walking,
                     );
                 }
             } else {
@@ -419,7 +449,8 @@ impl NavigationEstimator {
         self.apply_network(network, motion)?;
         self.apply_motion(motion)?;
         self.apply_turn(turn)?;
-        self.remember_observations(None, motion, network, turn);
+        self.apply_walking(walking)?;
+        self.remember_observations(None, motion, network, turn, walking);
         Ok(TickOutcome {
             estimate: self.estimate(),
             projection,
@@ -482,6 +513,13 @@ impl NavigationEstimator {
             )?;
             if speed_accepted && observation.trust == ObservationTrust::Good {
                 self.state.last_gps_speed_ms = observation.elapsed_ms;
+                if self.mode == TravelMode::Foot {
+                    self.state.walking_valid_until_ms = Some(
+                        observation
+                            .elapsed_ms
+                            .saturating_add(walking::GPS_SPEED_MAX_AGE_MS),
+                    );
+                }
             }
         }
         if position_accepted && speed_accepted && observation.trust == ObservationTrust::Good {
@@ -550,6 +588,7 @@ impl NavigationEstimator {
             TravelMode::Foot => WALK_ACCELERATION_SIGMA_MPS2,
         };
         while self.state.elapsed_ms < elapsed_ms {
+            self.expire_walking()?;
             if self
                 .state
                 .motion_control
@@ -568,6 +607,9 @@ impl NavigationEstimator {
             if let Some(control) = self.state.motion_control {
                 end_ms = end_ms.min(control.valid_until_ms);
             }
+            if let Some(expiry_ms) = self.state.walking_valid_until_ms {
+                end_ms = end_ms.min(expiry_ms);
+            }
             if obd_fresh {
                 end_ms = end_ms.min(expiry_ms);
             }
@@ -582,12 +624,13 @@ impl NavigationEstimator {
             )?;
             self.state.elapsed_ms = end_ms;
         }
+        self.expire_walking()?;
         Ok(())
     }
 
     /// Keeps bounded replay work and one checkpoint preceding the time window when available.
     fn remember(&mut self, vehicle_speed_mps: Option<f64>) {
-        self.remember_observations(vehicle_speed_mps, None, None, None);
+        self.remember_observations(vehicle_speed_mps, None, None, None, None);
     }
 
     /// Retains model hints as events, not just their resulting speed, for delayed-GNSS replay.
@@ -597,6 +640,7 @@ impl NavigationEstimator {
         motion: Option<MotionObservation>,
         network: Option<NetworkObservation>,
         turn: Option<TurnObservation>,
+        walking: Option<WalkingObservation>,
     ) {
         self.history.push_back(HistoryFrame {
             state: self.state.clone(),
@@ -604,6 +648,7 @@ impl NavigationEstimator {
             motion,
             network,
             turn,
+            walking,
         });
         let cutoff_ms = self.state.elapsed_ms.saturating_sub(GPS_HISTORY_MS);
         while self.history.len() > MAX_HISTORY_FRAMES

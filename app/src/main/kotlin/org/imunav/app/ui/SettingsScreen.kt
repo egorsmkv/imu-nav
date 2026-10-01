@@ -126,7 +126,6 @@ import org.imunav.core.cells.Radio
 import org.imunav.core.geo.GeoPoint
 import org.imunav.core.nav.NavigationEstimator
 import org.imunav.core.nav.NavigationMethod
-import org.imunav.core.route.TravelMode
 import org.imunav.core.search.PhotonServer
 import java.io.File
 import java.text.NumberFormat
@@ -230,7 +229,6 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                     // ---------------- Navigation without GPS
                     SectionHeader(stringResource(R.string.sec_navigation_method))
                     val navigationEstimator by app.navigationEstimator.collectAsStateWithLifecycle()
-                    val travelMode by app.travelMode.collectAsStateWithLifecycle()
                     val selectedEstimator = if (ui.guidance.active) app.engine.estimator else navigationEstimator
                     ListItem(
                         headlineContent = { Text(stringResource(R.string.navigation_estimator_title)) },
@@ -260,7 +258,7 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                                     NavigationMethod.entries.forEach { method ->
                                         FilterChip(
                                             selected = navigationMethod == method,
-                                            enabled = selectedEstimator == NavigationEstimator.KOTLIN || (!ui.guidance.active && travelMode == TravelMode.FOOT),
+                                            enabled = selectedEstimator == NavigationEstimator.KOTLIN,
                                             onClick = { app.setNavigationMethod(method) },
                                             label = { Text(navigationMethodName(method)) },
                                         )

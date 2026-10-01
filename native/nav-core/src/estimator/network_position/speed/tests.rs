@@ -258,7 +258,11 @@ fn walking_and_cached_fixes_cannot_learn_speed_even_when_opted_in() {
             navigation
                 .tick_with_observations(time, None, None, Some(observation))
                 .unwrap();
-            assert_eq!(navigation.estimate().speed_mps, 10.0);
+            // Without steps/GPS, pedestrians hold; these fixes must never create speed in either mode.
+            assert_eq!(
+                navigation.estimate().speed_mps,
+                if walking { 0.0 } else { 10.0 }
+            );
         }
     }
 }

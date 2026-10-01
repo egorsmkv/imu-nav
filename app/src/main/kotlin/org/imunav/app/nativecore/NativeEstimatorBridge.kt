@@ -10,7 +10,7 @@ import org.imunav.core.route.TravelMode
 import java.util.Locale
 
 /**
- * Owns the Rust estimator used either in shadow mode or as the live car-navigation state owner.
+ * Owns the Rust estimator used either in shadow mode or as the live navigation state owner.
  * Route geometry is prepared off the main thread by AppGraph before starting this bridge.
  */
 class NativeEstimatorBridge(private val log: (String) -> Unit) : RouteEstimateProvider {
@@ -29,7 +29,7 @@ class NativeEstimatorBridge(private val log: (String) -> Unit) : RouteEstimatePr
             }
             return null
         }
-        return RouteEstimate(state.positionM, state.speedMps, state.safetyRadiusM, state.gpsPositionAccepted)
+        return RouteEstimate(state.positionM, state.speedMps, state.safetyRadiusM, state.gpsPositionAccepted, state.gpsSpeedAccepted)
     }
 
     fun start(route: NativeRouteGeometry, positionM: Double, speedMps: Double, positionSigmaM: Double, mode: TravelMode, nowMs: Long) {

@@ -150,7 +150,7 @@
     <string name="navigation_estimator_title">Navigation estimator</string>
     <string name="navigation_estimator_kotlin">Kotlin (default)</string>
     <string name="navigation_estimator_native">Native Kalman (experimental)</string>
-    <string name="navigation_estimator_summary">Choose before starting a trip. Native Kalman drives car position, speed and guidance using GPS, OBD, motion and conservative cell/turn corrections. It replaces the fallback method and terrain snaps. Walking always uses Kotlin. Accuracy improvement is not guaranteed; this is a research prototype, not a safety system.</string>
+    <string name="navigation_estimator_summary">Choose before starting a trip. Native Kalman drives position, speed and guidance for driving and walking. Walking uses GPS and steps × learned stride; without steps it uses fresh motion evidence, otherwise holds without fresh GPS. OBD and cell/turn corrections are car-only. It replaces the fallback method and terrain snaps. Accuracy improvement is not guaranteed; this is a research prototype, not a safety system.</string>
     <string name="navigation_estimator_locked">Stop navigation to change the estimator.</string>
     <string name="navigation_method_dr">Dead reckoning</string>
     <string name="navigation_method_cells">Cell towers</string>

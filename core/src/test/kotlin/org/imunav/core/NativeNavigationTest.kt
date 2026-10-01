@@ -74,15 +74,64 @@ class NativeNavigationTest {
     }
 
     @Test
-    fun kotlinDefaultAndWalkingNeverConsumeNativeEstimate() {
+    fun kotlinRemainsTheDefaultForBothTravelModes() {
         val engine = NavigationEngine(listener = listener, nativeEstimator = RouteEstimateProvider { _, _, _, _ -> error("must not be called") })
         engine.start(route, points.last(), nowMs = 1000)
         engine.tick(1500, empty)
         assertEquals(NavigationEstimator.KOTLIN, engine.estimator)
         engine.stop()
-        engine.start(route, points.last(), nowMs = 2000, mode = TravelMode.FOOT, estimator = NavigationEstimator.NATIVE_KALMAN)
+        engine.start(route, points.last(), nowMs = 2000, mode = TravelMode.FOOT)
         engine.tick(2500, empty)
         assertEquals(NavigationEstimator.KOTLIN, engine.estimator)
+    }
+
+    @Test
+    fun nativeWalkingReceivesStepEvidenceAndDrivesGuidance() {
+        val engine = NavigationEngine(
+            listener = listener,
+            nativeEstimator = RouteEstimateProvider { _, _, motion, turn ->
+                assertTrue(motion?.walking == true)
+                assertEquals(1.44, motion.cruiseSpeedMps)
+                assertFalse(motion.networkMoving)
+                assertNull(turn)
+                RouteEstimate(100.0, 1.44, 80.0, false)
+            },
+        )
+        engine.start(route, points.last(), nowMs = 1000, mode = TravelMode.FOOT, estimator = NavigationEstimator.NATIVE_KALMAN)
+        engine.onStep(1500)
+        engine.onStep(2000)
+        engine.onVehicleSpeed(100.0, 2000)
+        engine.tick(2000, empty)
+        assertEquals(NavigationEstimator.NATIVE_KALMAN, engine.estimator)
+        assertEquals(TravelMode.FOOT, engine.state.travelMode)
+        assertEquals(100.0, engine.progressS)
+        assertEquals(PositionSource.DR, engine.state.source)
+    }
+
+    @Test
+    fun nativeWalkingLearnsStrideOnlyFromFreshAcceptedGoodGpsSpeed() {
+        var acceptedSpeed = false
+        val engine = NavigationEngine(
+            listener = listener,
+            nativeEstimator = RouteEstimateProvider { _, _, _, _ ->
+                RouteEstimate(100.0, 1.8, 20.0, true, acceptedSpeed)
+            },
+        )
+        engine.start(route, points.last(), nowMs = 1000, mode = TravelMode.FOOT, estimator = NavigationEstimator.NATIVE_KALMAN)
+        for (time in 1500L..5000L step 500) engine.onStep(time)
+        fun gps(time: Long, verdict: Verdict = Verdict.GOOD): PositioningSnapshot {
+            val fix = RawFix(FixSource.GPS, time, time, 50.001, 30.0, accuracyM = 5f, speedMps = 1.8f)
+            return empty.copy(lastUsableGps = JudgedFix(fix, verdict))
+        }
+        engine.tick(5000, gps(5000))
+        assertEquals(0.72, engine.pedometer.strideM)
+        acceptedSpeed = true
+        engine.tick(5500, gps(5500, Verdict(TrustLevel.SUSPECT, emptyList())))
+        assertEquals(0.72, engine.pedometer.strideM)
+        engine.tick(6500, gps(5600))
+        assertEquals(0.72, engine.pedometer.strideM, "delayed speed cannot calibrate a different cadence window")
+        engine.tick(6500, gps(6500))
+        assertTrue(engine.pedometer.strideM > 0.72)
     }
 
     @Test

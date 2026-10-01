@@ -148,7 +148,7 @@
     <string name="navigation_estimator_title">Алгоритм навігації</string>
     <string name="navigation_estimator_kotlin">Kotlin (типовий)</string>
     <string name="navigation_estimator_native">Native Kalman (експериментальний)</string>
-    <string name="navigation_estimator_summary">Оберіть перед початком поїздки. Native Kalman визначає положення, швидкість і підказки для авто за GPS, OBD, рухом та обережними поправками від веж і поворотів. Він замінює резервний метод і прив’язку до рельєфу. Пішки завжди використовується Kotlin. Покращення точності не гарантовано; це дослідницький прототип, а не система безпеки.</string>
+    <string name="navigation_estimator_summary">Оберіть перед початком маршруту. Native Kalman визначає положення, швидкість і підказки для авто та пішки. Пішки використовує GPS і кроки × вивчену довжину кроку; без кроків — свіжі дані про рух, а без них і свіжого GPS утримує позицію. OBD і поправки від веж та поворотів — лише для авто. Замінює резервний метод і прив’язку до рельєфу. Покращення точності не гарантовано; це дослідницький прототип, а не система безпеки.</string>
     <string name="navigation_estimator_locked">Зупиніть навігацію, щоб змінити алгоритм.</string>
     <string name="navigation_method_dr">Числення шляху</string>
     <string name="navigation_method_cells">Вишки зв’язку</string>

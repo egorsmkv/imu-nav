@@ -212,7 +212,7 @@ class NativeComparison(
             engine.simulateGpsLoss = hidden
             val snapshot = hub.snapshot(timeMs)
             engine.tick(timeMs, snapshot)
-            val motion = if (nativeMotionEnabled) engine.motionEvidence(timeMs) else null
+            val motion = if (nativeMotionEnabled || mode == TravelMode.FOOT) engine.motionEvidence(timeMs) else null
             val network = snapshot.lastNet.takeIf { nativeNetworkEnabled }
             val turn = if (nativeTurnsEnabled) engine.turnEvidence(timeMs) else null
             val estimate = estimator.tick(timeMs, snapshot.lastUsableGps.takeUnless { hidden }, motion, network, turn)

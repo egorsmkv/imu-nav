@@ -198,7 +198,7 @@ class NavigationEngine(
         estimator: NavigationEstimator = NavigationEstimator.KOTLIN,
     ) {
         this.mode = mode
-        this.estimator = if (mode == TravelMode.CAR) estimator else NavigationEstimator.KOTLIN
+        this.estimator = estimator
         pedometer.reset()
         this.startAccuracyM = startAccuracyM.coerceAtLeast(0.0)
         this.destination = destination
@@ -290,8 +290,8 @@ class NavigationEngine(
      * locations cannot keep vetoing a real stop. No engine position correction is exported.
      */
     fun motionEvidence(nowMs: Long): MotionEvidence? {
-        if (mode != TravelMode.CAR) return null
         val car = cursor ?: return null
+        if (mode == TravelMode.FOOT) return walkingEvidence(pedometer, motion, nowMs)
         val factor = motion.motionFactor(nowMs) ?: return null
         val networkFresh = net.history.lastOrNull()?.let { nowMs - it.elapsedMs in 0..MOTION_NETWORK_MAX_AGE_MS } == true
         val network = if (networkFresh) net.speedEstimate(nowMs) else null
@@ -406,7 +406,7 @@ class NavigationEngine(
         }
         car.moveTo(estimate.positionM)
         currentSpeed = estimate.speedMps
-        updateNativeGps(car, input.lastUsableGps, estimate.gpsPositionAccepted, nowMs)
+        updateNativeGps(car, input.lastUsableGps, estimate, nowMs)
         if (simulateGpsLoss || lastGpsUseMs == 0L || nowMs - lastGpsUseMs >= 3000) {
             source = when {
                 currentSpeed < VEHICLE_STOPPED_MPS -> PositionSource.DR_STOPPED
@@ -421,7 +421,7 @@ class NavigationEngine(
     }
 
     /** Keep raw GOOD-GPS off-route detection even when the route-constrained filter rejects its projection. */
-    private fun updateNativeGps(car: RouteCursor, gps: JudgedFix?, accepted: Boolean, nowMs: Long) {
+    private fun updateNativeGps(car: RouteCursor, gps: JudgedFix?, estimate: RouteEstimate, nowMs: Long) {
         val fix = gps?.fix ?: return
         if (nowMs - fix.elapsedMs !in 0..NATIVE_GPS_MAX_AGE_MS) return
         if (fix.elapsedMs <= lastGpsProcessedMs) return
@@ -436,9 +436,10 @@ class NavigationEngine(
             }
             checkOffRoute(car, projection, courseDiff, fix, nowMs)
         }
-        if (!accepted) return
+        if (!estimate.gpsPositionAccepted) return
         lastGpsUseMs = fix.elapsedMs
         lastGpsSpeed = fix.speedMps?.toDouble()?.takeIf { it in 0.0..MAX_SPEED_MPS }
+        if (mode == TravelMode.FOOT && good && estimate.gpsSpeedAccepted && nowMs - fix.elapsedMs <= TICK_MS) lastGpsSpeed?.let { pedometer.learnStride(it, nowMs) }
         if (deviation.pending) deviation.clear(nowMs, 90_000)
         source = if (good) PositionSource.GPS else PositionSource.GPS_SUSPECT
     }

@@ -182,8 +182,15 @@ samples, satellite/AGC status, routes and the engine's own estimates (gzip text,
   retain innovation gates; recovering speed does not erase accumulated position error.
   **Settings → Everyday settings → Navigation without GPS → Navigation estimator** now offers
   **Kotlin (default)** and **Native Kalman (experimental)**. Select before starting navigation;
-  changes are locked during a trip. Native mode owns car position, speed, uncertainty and the
-  state used by guidance, while walking always uses Kotlin. It replaces the Kotlin fallback method
+  changes are locked during a trip. Native mode owns position, speed, uncertainty and the
+  state used by guidance for both driving and walking. Walking uses step cadence × learned stride;
+  only fresh GOOD GPS whose position and speed were accepted can calibrate that stride. Fresh GPS
+  speed takes priority. Without a step sensor, fresh IMU permits an uncertain typical-pace model;
+  without either input or fresh GPS, native walking holds instead of assuming continued movement.
+  Step/IMU expiry also bounds prediction across long tick gaps. OBD, car turn matching and coarse
+  cell-position/speed corrections remain car-only. Existing step events (`P`) feed walking replay;
+  `--no-native-motion` disables car stop/resume hints, not walking step evidence.
+  Native mode replaces the Kotlin fallback method
   and its terrain/compass/signal snaps; shared guidance and GPS/network deviation checks remain.
   This is a route-constrained linear Kalman filter, not a full inertial EKF. Better real-drive accuracy
   is not yet established; the app remains a research prototype, not a safety system.

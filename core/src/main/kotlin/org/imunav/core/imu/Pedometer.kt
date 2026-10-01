@@ -19,6 +19,9 @@ class Pedometer {
     var available = false
         private set
 
+    /** Last real step bounds extrapolation; reading cadence must never refresh this deadline. */
+    val movingUntilMs: Long get() = (steps.lastOrNull() ?: 0L) + STOPPED_AFTER_MS
+
     /** Forget the steps of a previous trip (the learned stride is kept). */
     fun reset() {
         steps.clear()
@@ -27,6 +30,7 @@ class Pedometer {
 
     /** One step detected at [elapsedMs]. */
     fun onStep(elapsedMs: Long) {
+        if (elapsedMs < 0 || steps.lastOrNull()?.let { elapsedMs <= it } == true) return
         available = true
         steps.addLast(elapsedMs)
         while (steps.isNotEmpty() && elapsedMs - steps.first() > WINDOW_MS) steps.removeFirst()

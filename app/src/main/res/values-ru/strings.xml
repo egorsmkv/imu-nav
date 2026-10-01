@@ -148,7 +148,7 @@
     <string name="navigation_estimator_title">Алгоритм навигации</string>
     <string name="navigation_estimator_kotlin">Kotlin (по умолчанию)</string>
     <string name="navigation_estimator_native">Native Kalman (экспериментальный)</string>
-    <string name="navigation_estimator_summary">Выберите перед началом поездки. Native Kalman определяет положение, скорость и подсказки для авто по GPS, OBD, движению и осторожным поправкам от вышек и поворотов. Он заменяет резервный метод и привязку к рельефу. Пешком всегда используется Kotlin. Улучшение точности не гарантировано; это исследовательский прототип, а не система безопасности.</string>
+    <string name="navigation_estimator_summary">Выберите перед началом маршрута. Native Kalman определяет положение, скорость и подсказки для авто и пешком. Пешком использует GPS и шаги × изученную длину шага; без шагов — свежие данные о движении, а без них и свежего GPS удерживает позицию. OBD и поправки от вышек и поворотов — только для авто. Заменяет резервный метод и привязку к рельефу. Улучшение точности не гарантировано; это исследовательский прототип, а не система безопасности.</string>
     <string name="navigation_estimator_locked">Остановите навигацию, чтобы изменить алгоритм.</string>
     <string name="navigation_method_dr">Счисление пути</string>
     <string name="navigation_method_cells">Вышки связи</string>

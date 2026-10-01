@@ -217,14 +217,12 @@ fn delayed_gps_replays_motion_hints_instead_of_latching_an_obsolete_stop() {
 fn stale_invalid_and_walking_hints_cannot_stop_prediction() {
     let mut walking = estimator(20.0);
     walking.mode = TravelMode::Foot;
-    assert!(
-        walking
-            .tick_with_motion(1_000, None, Some(hint(1_000, 0.0)))
-            .unwrap()
-            .estimate
-            .speed_mps
-            > 0.0
-    );
+    let mut walking_without_car_hint = walking.clone();
+    walking
+        .tick_with_motion(1_000, None, Some(hint(1_000, 0.0)))
+        .unwrap();
+    walking_without_car_hint.tick(1_000, None).unwrap();
+    assert_eq!(walking.estimate(), walking_without_car_hint.estimate());
     for observation in [
         MotionObservation {
             valid_until_ms: 1_000,

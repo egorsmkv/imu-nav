@@ -64,7 +64,7 @@ sealed class TripEvent {
     /** The travel mode of the trip; written right after [Start] (missing in old recordings = car). */
     data class Mode(override val elapsedMs: Long, val mode: TravelMode) : TripEvent()
 
-    /** Actual position owner, not the preference (walking remains Kotlin). Missing in old trips = Kotlin. */
+    /** Actual position owner. Missing in old trips = Kotlin. */
     data class Estimator(override val elapsedMs: Long, val estimator: NavigationEstimator) : TripEvent()
 
     /** The car's own speed from an OBD-II adapter, km/h. */

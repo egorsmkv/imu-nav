@@ -6,7 +6,7 @@
 
 use imu_nav_core::estimator::{
     GpsObservation, InitialEstimate, MotionObservation, NavigationEstimator, NetworkObservation,
-    ObservationTrust, TravelMode as EstimatorTravelMode, TurnObservation,
+    ObservationTrust, TravelMode as EstimatorTravelMode, TurnObservation, WalkingObservation,
 };
 use imu_nav_core::network::{GateResult as NetworkGateResult, NetworkSample, NetworkTracker};
 use imu_nav_core::route::{GeoPoint, RouteGeometry};
@@ -1170,6 +1170,14 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNavigationEstimator_
         } else {
             None
         };
+        let walking = if has_motion_fields && flags[3] == 2 {
+            Some(WalkingObservation {
+                speed_mps: values[5] * values[6],
+                valid_until_ms: flags[4],
+            })
+        } else {
+            None
+        };
         let turn = if has_turn_fields && flags[8] == 1 {
             Some(TurnObservation {
                 start_ms: flags[9],
@@ -1180,12 +1188,13 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNavigationEstimator_
             None
         };
         let outcome = with_estimator(handle, |estimator| {
-            estimator.tick_with_turn(now_ms, gps, motion, network, turn)
+            estimator.tick_with_walking(now_ms, gps, motion, network, turn, walking)
         })
         .ok()?
         .ok()?;
         let mut result = estimate_values(outcome.estimate)?.to_vec();
         result.push(if outcome.position_accepted { 1.0 } else { 0.0 });
+        result.push(if outcome.speed_accepted { 1.0 } else { 0.0 });
         new_double_array(&env, &result)
     }))
     .ok()

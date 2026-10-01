@@ -59,6 +59,30 @@ class MotionEvidenceTest {
     @Test
     fun walkingDoesNotExportCarMotionHints() {
         start(TravelMode.FOOT)
-        assertNull(engine.motionEvidence(31_000))
+        val hint = assertNotNull(engine.motionEvidence(31_000))
+        assertTrue(hint.walking)
+        assertEquals(0.0, hint.factor)
+        assertFalse(hint.networkMoving)
+        assertNull(engine.motionEvidence(33_000))
+    }
+
+    @Test
+    fun walkingStepExpiryIsNotRefreshedByPollingOrDuplicateSteps() {
+        start(TravelMode.FOOT)
+        engine.onStep(31_000)
+        engine.onStep(31_500)
+        engine.onStep(31_500)
+        engine.onStep(30_000)
+        val hint = assertNotNull(engine.motionEvidence(31_500))
+        assertEquals(1.44, hint.cruiseSpeedMps)
+        assertEquals(34_000L, hint.validUntilMs)
+        assertEquals(hint.validUntilMs, assertNotNull(engine.motionEvidence(33_000)).validUntilMs)
+        assertEquals(0.0, assertNotNull(engine.motionEvidence(34_001)).cruiseSpeedMps)
+    }
+
+    @Test
+    fun walkingWithoutStepsOrFreshImuHasNoMovementEvidence() {
+        start(TravelMode.FOOT)
+        assertNull(engine.motionEvidence(100_000))
     }
 }
