@@ -17,7 +17,7 @@ offline (GraphHopper packs). UI: Jetpack Compose + MapLibre, Ukrainian, English 
 | `:core` | pure Kotlin/JVM | the algorithm: trust classifier, navigation engine, speed fusion, cell positioning, trip recording/replay, search logic, shared OkHttp client (`core/net/Http.kt`). **No Android imports.** |
 | `:app` | Android app | Android glue and UI: `AppGraph` (manual DI, wires everything), `SensorHub`, `CellScanner`/`CellManager`, `NavService` (foreground service), `TripManager`, Compose screens in `ui/` |
 | `:routing` | JVM | GraphHopper integration used by both the phone (`OfflineGraph`, `PhoneGraphHopper`) and the desktop pack builder (`BuildGraph`, `SearchIndexBuilder`) |
-| `:server` | JVM app | reference cell-sharing server (JDK `HttpServer`, anti-poisoning consensus) |
+| `server/` | Rust app | persistent SQLite cell-sharing server (Axum HTTP/WebSocket, anti-poisoning consensus) |
 | `:replay` | JVM app | CLI that replays recorded trips (`.rec.gz`) through the engine and reports errors |
 
 Package root: `org.imunav.<module>`. Put new logic in `:core` whenever it does not need Android.
