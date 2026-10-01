@@ -1,0 +1,168 @@
+//! Conservative coarse-position evidence. Repeated tower estimates are correlated, not anchors.
+
+use super::{FilterError, GeoPoint, NavigationEstimator, TravelMode};
+use crate::milliseconds_to_seconds;
+
+const MAX_AGE_MS: i64 = 2_500;
+const MIN_INTERVAL_MS: i64 = 5_000;
+const MAX_GAP_MS: i64 = 15_000;
+const MIN_SPAN_MS: i64 = 10_000;
+const MIN_FIXES: u8 = 3;
+const MIN_ACCURACY_M: f64 = 30.0;
+const MAX_ACCURACY_M: f64 = 200.0;
+const MAX_SPEED_MPS: f64 = 150.0 / 3.6;
+const MAX_BACKWARD_MPS: f64 = 6.0;
+const MAX_JUMP_M: f64 = 500.0;
+const MAX_CORRECTION_M: f64 = 50.0;
+const POSITION_GATE: f64 = 9.0;
+const CACHE_SIZE: usize = 8;
+
+/// Only non-mock CELL/NET fixes may enter here; the JNI wrapper excludes GPS and fused fixes.
+#[derive(Clone, Copy, Debug)]
+pub struct NetworkObservation {
+    pub point: GeoPoint,
+    pub elapsed_ms: i64,
+    pub accuracy_m: f64,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Candidate {
+    first_ms: i64,
+    last_ms: i64,
+    position_m: f64,
+    accuracy_m: f64,
+    residual_m: f64,
+    count: u8,
+}
+
+/// Checkpointed together with the filter, so delayed GNSS re-evaluates coarse corrections.
+#[derive(Clone, Debug)]
+pub(super) struct NetworkEvidence {
+    valid_after_ms: i64,
+    last_input_ms: i64,
+    last_evaluated_ms: i64,
+    seen: [Option<GeoPoint>; CACHE_SIZE],
+    next_seen: usize,
+    candidate: Option<Candidate>,
+}
+
+impl NetworkEvidence {
+    pub(super) fn new(now_ms: i64) -> Self {
+        Self {
+            valid_after_ms: now_ms,
+            last_input_ms: -1,
+            last_evaluated_ms: -1,
+            seen: [None; CACHE_SIZE],
+            next_seen: 0,
+            candidate: None,
+        }
+    }
+
+    /// Preserve duplicate protection across rerouting, but discard the old route's sequence.
+    pub(super) fn reroute(&mut self, now_ms: i64) {
+        self.valid_after_ms = now_ms;
+        self.candidate = None;
+    }
+}
+
+impl NavigationEstimator {
+    /// Apply fresh coarse locations at the tick time with an age-dependent error allowance.
+    /// Three distinct reachable fixes over ten seconds are required; one jump never corrects.
+    pub(super) fn apply_network(
+        &mut self,
+        observation: Option<NetworkObservation>,
+    ) -> Result<bool, FilterError> {
+        let Some(observation) = observation else {
+            return Ok(false);
+        };
+        let now_ms = self.state.elapsed_ms;
+        let predicted_position_m = self.estimate().position_m;
+        let age_ms = now_ms.saturating_sub(observation.elapsed_ms);
+        let evidence = &mut self.state.network_evidence;
+        if self.mode != TravelMode::Car
+            || !(0..=MAX_AGE_MS).contains(&age_ms)
+            || observation.elapsed_ms < evidence.valid_after_ms
+            || observation.elapsed_ms <= evidence.last_input_ms
+            || !observation.accuracy_m.is_finite()
+            || !(0.0..=MAX_ACCURACY_M).contains(&observation.accuracy_m)
+            || observation.accuracy_m == 0.0
+            || !(-90.0..=90.0).contains(&observation.point.latitude_deg)
+            || !(-180.0..=180.0).contains(&observation.point.longitude_deg)
+        {
+            return Ok(false);
+        }
+        evidence.last_input_ms = observation.elapsed_ms;
+        if evidence
+            .seen
+            .iter()
+            .flatten()
+            .any(|point| *point == observation.point)
+        {
+            return Ok(false);
+        }
+        if evidence.last_evaluated_ms >= 0
+            && observation.elapsed_ms - evidence.last_evaluated_ms < MIN_INTERVAL_MS
+        {
+            return Ok(false);
+        }
+        evidence.last_evaluated_ms = observation.elapsed_ms;
+        evidence.seen[evidence.next_seen] = Some(observation.point);
+        evidence.next_seen = (evidence.next_seen + 1) % CACHE_SIZE;
+        let accuracy_m = observation.accuracy_m.max(MIN_ACCURACY_M);
+        let Some(projected) = self
+            .route
+            .project_unambiguous(observation.point, accuracy_m)
+            .map_err(|_| FilterError::NonFinite)?
+        else {
+            evidence.candidate = None;
+            return Ok(false);
+        };
+        if projected.offset_m > accuracy_m {
+            evidence.candidate = None;
+            return Ok(false);
+        }
+        let mut candidate = Candidate {
+            first_ms: observation.elapsed_ms,
+            last_ms: observation.elapsed_ms,
+            position_m: projected.position_m,
+            accuracy_m,
+            residual_m: projected.position_m - predicted_position_m,
+            count: 1,
+        };
+        if let Some(previous) = evidence.candidate {
+            let gap_ms = observation.elapsed_ms - previous.last_ms;
+            let dt = milliseconds_to_seconds(gap_ms);
+            let delta_m = projected.position_m - previous.position_m;
+            let slack_m = accuracy_m + previous.accuracy_m;
+            if gap_ms <= MAX_GAP_MS
+                && delta_m <= MAX_SPEED_MPS * dt + slack_m
+                && delta_m >= -MAX_BACKWARD_MPS * dt - slack_m
+                && (candidate.residual_m - previous.residual_m).abs() <= 2.0 * slack_m
+            {
+                candidate.first_ms = previous.first_ms;
+                candidate.count = previous.count.saturating_add(1);
+            }
+        }
+        evidence.candidate = Some(candidate);
+        let fresh_gps = self.state.last_gps_position_ms >= 0
+            && now_ms.saturating_sub(self.state.last_gps_position_ms) <= MAX_AGE_MS;
+        if candidate.count < MIN_FIXES
+            || candidate.last_ms - candidate.first_ms < MIN_SPAN_MS
+            || fresh_gps
+            || (projected.position_m - self.estimate().position_m).abs() > MAX_JUMP_M
+        {
+            return Ok(false);
+        }
+        // Do not extrapolate using the same DR speed we are trying to correct. Inflate instead.
+        let sigma_m = 2.0 * accuracy_m + MAX_SPEED_MPS * milliseconds_to_seconds(age_ms);
+        self.state.filter.update_coarse_position(
+            projected.position_m,
+            sigma_m,
+            POSITION_GATE,
+            MAX_CORRECTION_M,
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests;

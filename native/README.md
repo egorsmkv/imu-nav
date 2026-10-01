@@ -43,7 +43,7 @@ The main public types are `RouteFilter`, `Estimate`, `Covariance2`, `UpdateOutco
 
 - selects car or walking process noise;
 - advances the filter to measurement timestamps and elapsed-realtime ticks;
-- applies delayed GNSS fixes at their observation time, replaying later predictions, motion hints and OBD
+- applies delayed GNSS fixes at their observation time, replaying later predictions, coarse fixes, motion hints and OBD
   readings from a bounded history (up to five seconds / 128 checkpoints); future, duplicate,
   out-of-order and expired GNSS fixes are ignored;
 - projects trusted or suspect GNSS observations onto the route;
@@ -52,6 +52,7 @@ The main public types are `RouteFilter`, `Estimate`, `Covariance2`, `UpdateOutco
 - derives measurement uncertainty from GNSS accuracy and trust level;
 - incorporates GNSS speed and fresh OBD-II vehicle speed;
 - uses shared IMU stop/resume hints for car dead reckoning, with measured-speed and network-motion vetoes;
+- gently corrects car position from confirmed coarse CELL/NET fixes without treating them as precise anchors;
 - learns a per-trip OBD speed scale from precise, accepted GOOD GNSS while raw OBD has remained
   stable for at least three seconds; subsequent OBD updates use the learned scale;
 - uses lower drift growth only after an accepted OBD speed update and until its 2.5-second
@@ -97,6 +98,35 @@ of stop detection; the estimator remains comparison-only in this research protot
 
 It returns a `TickOutcome` containing the estimate, optional route projection, and whether the
 position and speed measurements passed their innovation gates.
+
+### `estimator/network_position.rs`: coarse position correction
+
+The comparison estimator receives `PositioningHub.lastNet`, independently of the live engine's
+position corrections. The Kotlin JNI wrapper excludes mock, GPS and fused fixes. Only car mode
+uses this input; no new recording fields or sensor polling are needed.
+
+- Fixes must be no more than 2.5 seconds old, with a positive reported accuracy at most 200 m.
+  Accuracy is floored at 30 m. Future/out-of-order timestamps and the last eight repeated coordinates
+  cannot contribute evidence. Projection work is limited to one distinct fix per five observation seconds.
+- Three fixes spanning at least ten seconds must be reachable in sequence, with no gap over fifteen
+  seconds and no abrupt change in residual relative to the prediction. An inconsistent fix restarts
+  confirmation. A global projection rejects a coarse error corridor touching distant route occurrences,
+  such as parallel returns, loops or crossings; fixes farther off-route than their accuracy are ignored.
+- Fresh accepted GOOD GNSS position takes precedence. Corrections also require a discrepancy no larger
+  than 500 m and a normalized squared innovation no larger than 9. Coherent but very distant cell
+  locations do not force reacquisition.
+- The coarse model uses twice the floored accuracy, plus a 150 km/h travel allowance for input age.
+  It is applied at the tick time, not extrapolated with the DR speed. Each correction is at most
+  25% of the innovation and 50 m. Position uncertainty cannot fall below that coarse model's standard
+  deviation; speed is unchanged and accumulated systematic drift is retained. Position-speed
+  correlation is cleared so later speed updates cannot reuse a coarse correction as precise evidence.
+- Evidence and raw correction inputs are checkpointed for delayed-GNSS replay. At equal timestamps,
+  OBD precedes GNSS calibration, then GNSS precedes coarse positions and motion hints. Rerouting
+  discards route-specific confirmation while retaining duplicate protection.
+
+These gates cannot eliminate persistent, plausible cell bias. They deliberately decline very coarse
+coverage, ambiguous routes and recovery beyond 500 m rather than forcing a large position jump.
+Reported uncertainty remains a model, not a navigation safety guarantee.
 
 ### `route.rs`: route geometry
 
@@ -239,3 +269,9 @@ A separate 126 km/h synthetic drive deliberately uses quiet IMU without cells, h
 OBD reading: final error at 180 seconds was 4,148 m. Testing the saved cruising model restores motion
 on the first OBD reading, limiting final error to 998 m. The error accumulated before OBD returns
 remains; this regression demonstrates recovery, not a solution to quiet-highway stop ambiguity.
+
+The coarse-position JNI regression hides GPS at 60 seconds while actual speed rises from 15 to
+17 m/s, then supplies 40 m-accuracy cell fixes with alternating ±20 m along-route error every five
+seconds. At 300 seconds, blind native p95 is 481 m without corrections versus 43 m with them.
+This is a synthetic regression, not measured road accuracy. `--no-native-network` disables only
+these position corrections for A/B replay; cell-derived motion vetoes remain controlled separately.

@@ -5,8 +5,8 @@
 //! cleanly instead of dereferencing freed memory.
 
 use imu_nav_core::estimator::{
-    GpsObservation, InitialEstimate, MotionObservation, NavigationEstimator, ObservationTrust,
-    TravelMode as EstimatorTravelMode,
+    GpsObservation, InitialEstimate, MotionObservation, NavigationEstimator, NetworkObservation,
+    ObservationTrust, TravelMode as EstimatorTravelMode,
 };
 use imu_nav_core::network::{GateResult as NetworkGateResult, NetworkSample, NetworkTracker};
 use imu_nav_core::route::{GeoPoint, RouteGeometry};
@@ -1089,22 +1089,35 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNavigationEstimator_
     catch_unwind(AssertUnwindSafe(|| {
         let double_count = env.get_array_length(&doubles).ok()?;
         let long_count = env.get_array_length(&longs).ok()?;
-        let has_motion_fields = double_count == 7 && long_count == 6;
+        let has_network_fields = double_count == 10 && long_count == 8;
+        let has_motion_fields = has_network_fields || (double_count == 7 && long_count == 6);
         if !has_motion_fields && (double_count != 5 || long_count != 3) {
             return None;
         }
-        let mut values = [0.0; 7];
-        let mut flags = [0_i64; 6];
+        let mut values = [0.0; 10];
+        let mut flags = [0_i64; 8];
         env.get_double_array_region(
             &doubles,
             0,
-            &mut values[..if has_motion_fields { 7 } else { 5 }],
+            &mut values[..if has_network_fields {
+                10
+            } else if has_motion_fields {
+                7
+            } else {
+                5
+            }],
         )
         .ok()?;
         env.get_long_array_region(
             &longs,
             0,
-            &mut flags[..if has_motion_fields { 6 } else { 3 }],
+            &mut flags[..if has_network_fields {
+                8
+            } else if has_motion_fields {
+                6
+            } else {
+                3
+            }],
         )
         .ok()?;
         let gps = if flags[0] == 0 {
@@ -1140,8 +1153,20 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNavigationEstimator_
         } else {
             None
         };
+        let network = if has_network_fields && flags[6] == 1 {
+            Some(NetworkObservation {
+                point: GeoPoint {
+                    latitude_deg: values[7],
+                    longitude_deg: values[8],
+                },
+                accuracy_m: values[9],
+                elapsed_ms: flags[7],
+            })
+        } else {
+            None
+        };
         let estimate = with_estimator(handle, |estimator| {
-            estimator.tick_with_motion(now_ms, gps, motion)
+            estimator.tick_with_observations(now_ms, gps, motion, network)
         })
         .ok()?
         .ok()?

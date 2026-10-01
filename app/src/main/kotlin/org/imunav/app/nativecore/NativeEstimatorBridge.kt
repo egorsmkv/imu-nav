@@ -32,7 +32,7 @@ class NativeEstimatorBridge(private val log: (String) -> Unit) {
     /** Feed one post-engine snapshot; raw BAD GPS and deliberately simulated GPS loss are excluded. */
     fun tick(nowMs: Long, guidance: GuidanceState, positioning: PositioningSnapshot, ignoreGps: Boolean = false, motion: MotionEvidence? = null) {
         val current = estimator ?: return
-        val state = current.tick(nowMs, positioning.lastUsableGps.takeUnless { ignoreGps }, motion)
+        val state = current.tick(nowMs, positioning.lastUsableGps.takeUnless { ignoreGps }, motion, positioning.lastNet)
 
         if (nowMs - lastLogMs >= LOG_EVERY_MS) {
             lastLogMs = nowMs

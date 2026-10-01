@@ -1,6 +1,8 @@
 package org.imunav.app.nativecore
 
+import org.imunav.core.gnss.FixSource
 import org.imunav.core.gnss.JudgedFix
+import org.imunav.core.gnss.RawFix
 import org.imunav.core.gnss.TrustLevel
 import org.imunav.core.nav.MotionEvidence
 import org.imunav.core.route.TravelMode
@@ -21,8 +23,10 @@ class NativeNavigationEstimator private constructor(private var handle: Long) : 
         val positionSigmaM: Double get() = sqrt(positionVarianceM2)
     }
 
-    fun tick(nowMs: Long, gps: JudgedFix?, motion: MotionEvidence? = null): State {
+    fun tick(nowMs: Long, gps: JudgedFix?, motion: MotionEvidence? = null, network: RawFix? = null): State {
         val fix = gps?.fix
+        // Fused/GPS locations must never bypass trust classification through the coarse input.
+        val coarse = network?.takeIf { !it.isMock && (it.source == FixSource.CELL || it.source == FixSource.NET) }
         val doubles = doubleArrayOf(
             fix?.lat ?: Double.NaN,
             fix?.lon ?: Double.NaN,
@@ -31,6 +35,9 @@ class NativeNavigationEstimator private constructor(private var handle: Long) : 
             fix?.speedAccuracyMps?.toDouble() ?: Double.NaN,
             motion?.factor ?: Double.NaN,
             motion?.cruiseSpeedMps ?: Double.NaN,
+            coarse?.lat ?: Double.NaN,
+            coarse?.lon ?: Double.NaN,
+            coarse?.accuracyM?.toDouble() ?: Double.NaN,
         )
         val longs = longArrayOf(
             if (fix == null) 0 else 1,
@@ -39,6 +46,8 @@ class NativeNavigationEstimator private constructor(private var handle: Long) : 
             if (motion == null) 0 else 1,
             motion?.validUntilMs ?: 0,
             if (motion?.networkMoving == true) 1 else 0,
+            if (coarse == null) 0 else 1,
+            coarse?.elapsedMs ?: 0,
         )
         val values = nativeTick(requireHandle(), nowMs, doubles, longs) ?: error("native navigation estimator tick failed")
         check(values.size == STATE_SIZE) { "native navigation estimator returned ${values.size} values" }

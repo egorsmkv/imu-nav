@@ -237,6 +237,54 @@ impl RouteFilter {
         self.update_scalar(speed_mps, sigma_mps, nis_gate, 0.0, 1.0)
     }
 
+    /// A correlated coarse location may gently move position, never infer a speed change.
+    /// Cap gain at 25%, bound each correction, retain a measurement-sized uncertainty floor,
+    /// and leave systematic drift intact. This is not an independent precise anchor.
+    ///
+    /// # Errors
+    /// Returns [`FilterError`] for invalid inputs or resulting covariance.
+    pub fn update_coarse_position(
+        &mut self,
+        position_m: f64,
+        sigma_m: f64,
+        nis_gate: f64,
+        max_correction_m: f64,
+    ) -> Result<bool, FilterError> {
+        validate_finite(position_m)?;
+        validate_sigma(sigma_m)?;
+        validate_non_negative(max_correction_m)?;
+        if !nis_gate.is_finite() || nis_gate <= 0.0 {
+            return Err(FilterError::InvalidGate);
+        }
+        let old = self.estimate;
+        let measurement_variance = sigma_m * sigma_m;
+        let innovation = position_m - old.position_m;
+        let innovation_variance = old.covariance.position + measurement_variance;
+        if !innovation_variance.is_finite() || innovation_variance <= 0.0 {
+            return Err(FilterError::InvalidCovariance);
+        }
+        if innovation * innovation / innovation_variance > nis_gate {
+            return Ok(false);
+        }
+        let gain = (old.covariance.position / innovation_variance)
+            .min(0.25)
+            .min(max_correction_m / innovation.abs().max(MIN_VARIANCE));
+        let covariance = Covariance2 {
+            position: ((1.0 - gain).powi(2) * old.covariance.position
+                + gain * gain * measurement_variance)
+                .max(measurement_variance),
+            position_speed: 0.0,
+            speed: old.covariance.speed,
+        }
+        .floored();
+        if !covariance.is_valid() {
+            return Err(FilterError::InvalidCovariance);
+        }
+        self.estimate.position_m += gain * innovation;
+        self.estimate.covariance = covariance;
+        Ok(true)
+    }
+
     /// Install a trusted landmark or explicit route correction while retaining speed uncertainty.
     ///
     /// # Errors

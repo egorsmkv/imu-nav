@@ -8,6 +8,9 @@ use std::sync::Arc;
 mod motion;
 use motion::MotionControl;
 pub use motion::MotionObservation;
+mod network_position;
+use network_position::NetworkEvidence;
+pub use network_position::NetworkObservation;
 
 const MIN_POSITION_SIGMA_M: f64 = 3.0;
 const MIN_SPEED_SIGMA_MPS: f64 = 0.2;
@@ -103,7 +106,9 @@ struct FilterState {
     vehicle_speed_scale: f64,
     stable_vehicle_speed: Option<StableVehicleSpeed>,
     last_gps_speed_ms: i64,
+    last_gps_position_ms: i64,
     motion_control: Option<MotionControl>,
+    network_evidence: NetworkEvidence,
 }
 
 /// A continuous plateau of accepted raw OBD readings. Calibration during acceleration would
@@ -154,6 +159,7 @@ struct HistoryFrame {
     state: FilterState,
     vehicle_speed_mps: Option<f64>,
     motion: Option<MotionObservation>,
+    network: Option<NetworkObservation>,
 }
 
 impl NavigationEstimator {
@@ -181,7 +187,9 @@ impl NavigationEstimator {
             vehicle_speed_scale: 1.0,
             stable_vehicle_speed: None,
             last_gps_speed_ms: -1,
+            last_gps_position_ms: -1,
             motion_control: None,
+            network_evidence: NetworkEvidence::new(now_ms),
         };
         Ok(Self {
             state: state.clone(),
@@ -193,6 +201,7 @@ impl NavigationEstimator {
                 state,
                 vehicle_speed_mps: None,
                 motion: None,
+                network: None,
             }]),
         })
     }
@@ -256,8 +265,22 @@ impl NavigationEstimator {
         gps: Option<GpsObservation>,
         motion: Option<MotionObservation>,
     ) -> Result<TickOutcome, FilterError> {
+        self.tick_with_observations(now_ms, gps, motion, None)
+    }
+
+    /// Adds conservative coarse-position corrections; all inputs are retained for GNSS replay.
+    ///
+    /// # Errors
+    /// Returns [`FilterError`] for invalid filter updates, without changing the estimator.
+    pub fn tick_with_observations(
+        &mut self,
+        now_ms: i64,
+        gps: Option<GpsObservation>,
+        motion: Option<MotionObservation>,
+        network: Option<NetworkObservation>,
+    ) -> Result<TickOutcome, FilterError> {
         let mut pending = self.clone();
-        let outcome = pending.tick_inner(now_ms, gps, motion)?;
+        let outcome = pending.tick_inner(now_ms, gps, motion, network)?;
         *self = pending;
         Ok(outcome)
     }
@@ -268,6 +291,7 @@ impl NavigationEstimator {
         now_ms: i64,
         gps: Option<GpsObservation>,
         motion: Option<MotionObservation>,
+        network: Option<NetworkObservation>,
     ) -> Result<TickOutcome, FilterError> {
         let mut projection = None;
         let mut position_accepted = false;
@@ -284,19 +308,25 @@ impl NavigationEstimator {
             observation.elapsed_ms > self.last_gps_ms
                 && observation.elapsed_ms <= now_ms
                 && now_ms.saturating_sub(observation.elapsed_ms) <= GPS_HISTORY_MS
-                && self
-                    .history
-                    .front()
-                    .is_some_and(|frame| observation.elapsed_ms >= frame.state.elapsed_ms)
+                && self.history.front().is_some_and(|frame| {
+                    observation.elapsed_ms > frame.state.elapsed_ms
+                        || (observation.elapsed_ms == frame.state.elapsed_ms
+                            && frame.vehicle_speed_mps.is_none()
+                            && frame.motion.is_none()
+                            && frame.network.is_none())
+                })
         }) {
             self.last_gps_ms = observation.elapsed_ms;
             let original_state = self.state.clone();
             let original_history = self.history.clone();
             let mut later = Vec::new();
-            while self
-                .history
-                .back()
-                .is_some_and(|frame| frame.state.elapsed_ms > observation.elapsed_ms)
+            // Replay same-time hints too. OBD must precede GNSS (plateau calibration), then
+            // GNSS precedes coarse positions and motion hints. Keep the initial checkpoint.
+            while self.history.len() > 1
+                && self
+                    .history
+                    .back()
+                    .is_some_and(|frame| frame.state.elapsed_ms >= observation.elapsed_ms)
             {
                 if let Some(frame) = self.history.pop_back() {
                     later.push(frame);
@@ -306,17 +336,37 @@ impl NavigationEstimator {
                 self.state = frame.state.clone();
             }
             self.predict_to(observation.elapsed_ms)?;
+            for frame in later
+                .iter()
+                .rev()
+                .filter(|frame| frame.state.elapsed_ms == observation.elapsed_ms)
+            {
+                if let Some(speed) = frame.vehicle_speed_mps {
+                    self.apply_vehicle_speed(speed)?;
+                    self.remember(Some(speed));
+                }
+            }
             (projection, position_accepted, speed_accepted) = self.apply_gps(observation)?;
             if position_accepted || speed_accepted {
                 self.remember(None);
                 for frame in later.into_iter().rev() {
+                    if frame.state.elapsed_ms == observation.elapsed_ms
+                        && frame.vehicle_speed_mps.is_some()
+                    {
+                        continue;
+                    }
                     self.predict_to(frame.state.elapsed_ms)?;
                     if let Some(speed) = frame.vehicle_speed_mps {
                         self.apply_vehicle_speed(speed)?;
                     } else {
+                        self.apply_network(frame.network)?;
                         self.apply_motion(frame.motion)?;
                     }
-                    self.remember_motion(frame.vehicle_speed_mps, frame.motion);
+                    self.remember_observations(
+                        frame.vehicle_speed_mps,
+                        frame.motion,
+                        frame.network,
+                    );
                 }
             } else {
                 // A rejected observation must not change process-noise partitioning or cause
@@ -326,8 +376,9 @@ impl NavigationEstimator {
             }
         }
         self.predict_to(now_ms)?;
+        self.apply_network(network)?;
         self.apply_motion(motion)?;
-        self.remember_motion(None, motion);
+        self.remember_observations(None, motion, network);
         Ok(TickOutcome {
             estimate: self.estimate(),
             projection,
@@ -373,6 +424,7 @@ impl NavigationEstimator {
             .accepted;
         if position_accepted && observation.trust == ObservationTrust::Good {
             self.state.filter.reset_systematic_drift();
+            self.state.last_gps_position_ms = observation.elapsed_ms;
         }
         let mut speed_accepted = false;
         if let Some(speed_mps) = observation.speed_mps {
@@ -493,19 +545,21 @@ impl NavigationEstimator {
 
     /// Keeps bounded replay work and one checkpoint preceding the time window when available.
     fn remember(&mut self, vehicle_speed_mps: Option<f64>) {
-        self.remember_motion(vehicle_speed_mps, None);
+        self.remember_observations(vehicle_speed_mps, None, None);
     }
 
     /// Retains model hints as events, not just their resulting speed, for delayed-GNSS replay.
-    fn remember_motion(
+    fn remember_observations(
         &mut self,
         vehicle_speed_mps: Option<f64>,
         motion: Option<MotionObservation>,
+        network: Option<NetworkObservation>,
     ) {
         self.history.push_back(HistoryFrame {
             state: self.state.clone(),
             vehicle_speed_mps,
             motion,
+            network,
         });
         let cutoff_ms = self.state.elapsed_ms.saturating_sub(GPS_HISTORY_MS);
         while self.history.len() > MAX_HISTORY_FRAMES
@@ -533,6 +587,7 @@ impl NavigationEstimator {
             .filter
             .anchor_position(position_m, position_sigma_m.max(MIN_POSITION_SIGMA_M))?;
         self.route = route;
+        self.state.network_evidence.reroute(self.state.elapsed_ms);
         self.history.clear();
         self.remember(None);
         Ok(())

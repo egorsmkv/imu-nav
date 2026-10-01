@@ -130,6 +130,36 @@ impl RouteGeometry {
         low
     }
 
+    /// Globally projects a coarse fix only when its error corridor does not touch a distant
+    /// route occurrence (loops, parallel returns or crossings). Adjacent segments are one match.
+    ///
+    /// # Errors
+    /// Returns [`RouteError::InvalidSearch`] for invalid coordinates or uncertainty.
+    pub fn project_unambiguous(
+        &self,
+        point: GeoPoint,
+        accuracy_m: f64,
+    ) -> Result<Option<Projection>, RouteError> {
+        if !accuracy_m.is_finite()
+            || accuracy_m <= 0.0
+            || !(-90.0..=90.0).contains(&point.latitude_deg)
+            || !(-180.0..=180.0).contains(&point.longitude_deg)
+        {
+            return Err(RouteError::InvalidSearch);
+        }
+        let best = self.project_range(point, 0, self.points.len() - 2);
+        let distinct_distance_m = (4.0 * accuracy_m).max(100.0);
+        for segment in 0..self.points.len() - 1 {
+            let rival = self.project_range(point, segment, segment);
+            if (rival.position_m - best.position_m).abs() > distinct_distance_m
+                && rival.offset_m <= best.offset_m + 2.0 * accuracy_m
+            {
+                return Ok(None);
+            }
+        }
+        Ok(Some(best))
+    }
+
     fn project_range(&self, point: GeoPoint, from: usize, to: usize) -> Projection {
         let metres_per_degree_longitude =
             METRES_PER_DEGREE_LONGITUDE_EQUATOR * (point.latitude_deg * PI / 180.0).cos();

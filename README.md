@@ -181,6 +181,10 @@ samples, satellite/AGC status, routes and the engine's own estimates (gzip text,
   speed, so valid highway-speed readings are not locked out by the near-zero stop model. Both models
   retain innovation gates; recovering speed does not erase accumulated position error.
   The native estimator still does not control the displayed navigation position.
+  It also applies small cell/network position corrections after three distinct, consistent fixes
+  spanning at least ten seconds. Cached fixes, ambiguous route matches, stale or very coarse fixes,
+  and large discrepancies are excluded. Corrections preserve a coarse uncertainty floor and do not
+  reset drift or change speed. Add `--no-native-network` to isolate their effect in paired replay.
 
 ### Cell tower database
 Tower locations come from four sources, each in its own table and looked up in this order:
