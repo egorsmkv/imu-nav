@@ -161,6 +161,18 @@ samples, satellite/AGC status, routes and the engine's own estimates (gzip text,
   `--set key=value,...` overrides `Tuning` fields and `--ukraine` enables the service-area check.
   It writes `summary.txt` (median / p95 / max error with and without GPS), `errors-*.csv` per trip and
   `compare-*.geojson` (real vs. engine tracks) for any GeoJSON viewer.
+- **Native estimator comparison:** build the host JNI library and score the Rust estimator and
+  Kotlin engine at the same trusted GPS timestamps (no Android SDK needed):
+  ```bash
+  ./gradlew -PnativeReplay :replay:run --args="path/to/trips --compare-native --hide-gps-after 30,120,300 --out native-replay-out"
+  ```
+  Each value starts a separate run that hides GPS after that many seconds until the trip ends.
+  Reference GPS is classified separately and never enters either navigation estimator or its
+  gyro-bias learner during the hidden interval. Reports include paired errors and native safety-radius
+  coverage in `summary.txt` and `native-errors-*.csv`. Reference GPS is not survey ground truth;
+  route projections can be ambiguous on repeated sections. This stricter comparison has different
+  sampling/hidden-GPS semantics from the legacy replay, so their error figures are not interchangeable.
+  Rust 1.99+ is required; `:replay:test` also builds the host library and runs synthetic JNI comparisons.
 
 ### Cell tower database
 Tower locations come from four sources, each in its own table and looked up in this order:

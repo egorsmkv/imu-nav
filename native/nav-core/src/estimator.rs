@@ -29,6 +29,17 @@ const GPS_GLOBAL_IF_FARTHER_M: f64 = 120.0;
 // explicit recovery signal, which the comparison estimator does not currently receive.
 const SUSPECT_MAX_OFFSET_M: f64 = 60.0;
 const SUSPECT_MAX_JUMP_M: f64 = 300.0;
+const SCALE_MIN_SPEED_MPS: f64 = 5.0;
+const SCALE_MIN_RATIO: f64 = 0.8;
+const SCALE_MAX_RATIO: f64 = 1.2;
+const SCALE_BLEND: f64 = 0.05;
+const SCALE_MAX_GPS_SIGMA_MPS: f64 = 0.8;
+const SCALE_MAX_GPS_SIGMA_M: f64 = 20.0;
+const SCALE_MAX_OFFSET_M: f64 = 25.0;
+const SCALE_MAX_SAMPLE_AGE_MS: i64 = 250;
+const SCALE_STABLE_MS: i64 = 3_000;
+const SCALE_MAX_OBD_GAP_MS: i64 = 1_000;
+const SCALE_STABLE_RANGE_MPS: f64 = 0.5;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TravelMode {
@@ -85,6 +96,49 @@ struct FilterState {
     filter: RouteFilter,
     elapsed_ms: i64,
     last_vehicle_speed_ms: i64,
+    vehicle_speed_scale: f64,
+    stable_vehicle_speed: Option<StableVehicleSpeed>,
+}
+
+/// A continuous plateau of accepted raw OBD readings. Calibration during acceleration would
+/// mistake sensor latency for wheel-speed scale error, so only stable plateaus qualify.
+#[derive(Clone, Copy, Debug)]
+struct StableVehicleSpeed {
+    since_ms: i64,
+    latest_ms: i64,
+    latest_mps: f64,
+    min_mps: f64,
+    max_mps: f64,
+}
+
+impl StableVehicleSpeed {
+    fn new(elapsed_ms: i64, speed_mps: f64) -> Self {
+        Self {
+            since_ms: elapsed_ms,
+            latest_ms: elapsed_ms,
+            latest_mps: speed_mps,
+            min_mps: speed_mps,
+            max_mps: speed_mps,
+        }
+    }
+
+    /// Restarts the plateau after a speed change or an OBD gap instead of fitting stale data.
+    fn add(self, elapsed_ms: i64, speed_mps: f64) -> Self {
+        let minimum = self.min_mps.min(speed_mps);
+        let maximum = self.max_mps.max(speed_mps);
+        if elapsed_ms.saturating_sub(self.latest_ms) > SCALE_MAX_OBD_GAP_MS
+            || maximum - minimum > SCALE_STABLE_RANGE_MPS
+        {
+            return Self::new(elapsed_ms, speed_mps);
+        }
+        Self {
+            latest_ms: elapsed_ms,
+            latest_mps: speed_mps,
+            min_mps: minimum,
+            max_mps: maximum,
+            ..self
+        }
+    }
 }
 
 /// Post-event checkpoint plus the OBD input needed to replay this event after a delayed fix.
@@ -117,6 +171,8 @@ impl NavigationEstimator {
             )?,
             elapsed_ms: now_ms,
             last_vehicle_speed_ms: -1,
+            vehicle_speed_scale: 1.0,
+            stable_vehicle_speed: None,
         };
         Ok(Self {
             state: state.clone(),
@@ -303,7 +359,44 @@ impl NavigationEstimator {
                 .update_speed(speed_mps, speed_sigma, SPEED_NIS_GATE)?
                 .accepted;
         }
+        if position_accepted && speed_accepted && observation.trust == ObservationTrust::Good {
+            self.learn_vehicle_speed_scale(observation, projected.offset_m);
+        }
         Ok((Some(projected), position_accepted, speed_accepted))
+    }
+
+    /// Learns only from precise, accepted GOOD GNSS near the route and contemporaneous stable
+    /// OBD. The scale lives in checkpoints, so delayed GNSS calibrates before later OBD is replayed.
+    fn learn_vehicle_speed_scale(&mut self, observation: GpsObservation, offset_m: f64) {
+        let Some(stable) = self.state.stable_vehicle_speed else {
+            return;
+        };
+        let Some(gps_speed) = observation.speed_mps else {
+            return;
+        };
+        let precise_speed = observation.speed_accuracy_mps.is_some_and(|sigma| {
+            sigma.is_finite() && (0.0..=SCALE_MAX_GPS_SIGMA_MPS).contains(&sigma)
+        });
+        let precise_position = observation.position_accuracy_m.is_some_and(|sigma| {
+            sigma.is_finite() && (0.0..=SCALE_MAX_GPS_SIGMA_M).contains(&sigma)
+        });
+        if self.mode != TravelMode::Car
+            || !precise_speed
+            || !precise_position
+            || offset_m >= SCALE_MAX_OFFSET_M
+            || gps_speed < SCALE_MIN_SPEED_MPS
+            || stable.latest_mps < SCALE_MIN_SPEED_MPS
+            || stable.latest_ms.saturating_sub(stable.since_ms) < SCALE_STABLE_MS
+            || !(0..=SCALE_MAX_SAMPLE_AGE_MS)
+                .contains(&observation.elapsed_ms.saturating_sub(stable.latest_ms))
+        {
+            return;
+        }
+        let ratio = gps_speed / stable.latest_mps;
+        if (SCALE_MIN_RATIO..=SCALE_MAX_RATIO).contains(&ratio) {
+            self.state.vehicle_speed_scale +=
+                SCALE_BLEND * (ratio - self.state.vehicle_speed_scale);
+        }
     }
 
     /// A rejected speed must not start or extend the lower OBD drift allowance.
@@ -311,10 +404,20 @@ impl NavigationEstimator {
         let accepted = self
             .state
             .filter
-            .update_speed(speed_mps, OBD_SPEED_SIGMA_MPS, SPEED_NIS_GATE)?
+            .update_speed(
+                speed_mps * self.state.vehicle_speed_scale,
+                OBD_SPEED_SIGMA_MPS,
+                SPEED_NIS_GATE,
+            )?
             .accepted;
         if accepted {
             self.state.last_vehicle_speed_ms = self.state.elapsed_ms;
+            self.state.stable_vehicle_speed = Some(self.state.stable_vehicle_speed.map_or_else(
+                || StableVehicleSpeed::new(self.state.elapsed_ms, speed_mps),
+                |stable| stable.add(self.state.elapsed_ms, speed_mps),
+            ));
+        } else {
+            self.state.stable_vehicle_speed = None;
         }
         Ok(accepted)
     }

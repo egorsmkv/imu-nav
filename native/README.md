@@ -51,6 +51,8 @@ The main public types are `RouteFilter`, `Estimate`, `Covariance2`, `UpdateOutco
   from the estimate at measurement time, independently of the innovation gates;
 - derives measurement uncertainty from GNSS accuracy and trust level;
 - incorporates GNSS speed and fresh OBD-II vehicle speed;
+- learns a per-trip OBD speed scale from precise, accepted GOOD GNSS while raw OBD has remained
+  stable for at least three seconds; subsequent OBD updates use the learned scale;
 - uses lower drift growth only after an accepted OBD speed update and until its 2.5-second
   expiry; rejected readings cannot extend freshness, and duplicate or stale OBD inputs are ignored;
 - resets systematic drift after an accepted GOOD GNSS position; and
@@ -61,6 +63,14 @@ does not receive jam-recovery state, so it does not apply the live engine's rela
 limit. Neither these checks nor Kalman innovation gating replace the upstream trust classifier.
 Prediction splits long intervals into steps of at most five seconds and splits at OBD expiry,
 so all elapsed travel is accounted for without applying fresh-OBD uncertainty to earlier travel.
+
+OBD scale learning requires speeds of at least 5 m/s, a GNSS/OBD time difference no greater than
+250 ms, GNSS speed uncertainty at most 0.8 m/s, position uncertainty at most 20 m, and route offset
+below 25 m. The stable raw OBD range is at most 0.5 m/s with no gap longer than one second.
+Only ratios in 0.8–1.2 qualify, blended by 5% per accepted GNSS observation. SUSPECT fixes and
+missing accuracy fields cannot calibrate the scale. Scale and plateau history are checkpointed
+with the filter so delayed GNSS and OBD replay produce the same calibration as chronological input.
+The existing systematic-drift allowance remains; learning a scale does not eliminate uncertainty.
 
 It returns a `TickOutcome` containing the estimate, optional route projection, and whether the
 position and speed measurements passed their innovation gates.
@@ -171,3 +181,26 @@ uses the Android NDK to build `imu-nav-jni` for:
 It copies the resulting `libimu_nav_jni.so` files into
 `app/build/generated/rustJniLibs/<abi>/`, which the Android Gradle plugin packages with the app. The
 minimum native Android API is 26, matching the app's `minSdk`.
+
+## Host replay comparison
+
+The JVM replay tool can load this exact JNI implementation alongside the Kotlin engine:
+
+```bash
+./gradlew -PnativeReplay :replay:run --args="trips/ --compare-native --hide-gps-after 120 --out native-replay-out"
+./gradlew :replay:test
+```
+
+Both require Rust 1.99+ and a JDK, but no Android SDK. The replay module compiles the app's pure-JVM
+JNI wrappers directly, preserving their exported JNI names. Gradle tracks the host library as a
+test input so Rust changes invalidate the JNI integration tests.
+
+Comparison samples use exact trusted GPS timestamps; hidden GPS only reaches an independent
+reference classifier. CSV retains off-route samples, while summary statistics exclude reference
+offsets of 60 m or more. Global reference projection avoids favouring either estimator but cannot
+resolve repeated-route ambiguity. These are GPS-reference errors, not independent survey accuracy.
+
+Synthetic regression drives cover unbiased OBD, a 5% high OBD scale, and noisy 5% low OBD with
+braking/stopping/restarting during a five-minute outage after two minutes of GNSS calibration.
+On the ideal 5%-high case, adding scale learning reduced native blind p95 from 223 m to about 1 m.
+This isolates scale drift under controlled inputs; it is not a claim of real-world metre accuracy.

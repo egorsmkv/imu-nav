@@ -259,3 +259,108 @@ fn long_tick_gap_accounts_for_all_elapsed_travel() {
     assert!((outcome.estimate.position_m - 120.0).abs() < 1.0e-9);
     assert!((outcome.estimate.systematic_drift_m - 9.6).abs() < 1.0e-9);
 }
+
+/// Provides a stable raw OBD plateau before a GNSS scale observation.
+fn stable_obd_estimator() -> NavigationEstimator {
+    let mut navigation = estimator(20.0);
+    for time in (200..=4_000).step_by(200) {
+        assert!(navigation.on_vehicle_speed(56.7, time).unwrap());
+    }
+    navigation
+}
+
+#[test]
+fn precise_good_gps_learns_scale_and_delayed_delivery_replays_it() {
+    let mut timely = stable_obd_estimator();
+    let mut delayed = timely.clone();
+    let mut observation = gps(4_000, 50.00054);
+    observation.speed_mps = Some(15.0);
+    assert!(
+        timely
+            .tick(4_000, Some(observation))
+            .unwrap()
+            .speed_accepted
+    );
+    assert!(timely.state.vehicle_speed_scale < 1.0);
+    for time in [4_200, 4_400, 4_600] {
+        timely.on_vehicle_speed(56.7, time).unwrap();
+        delayed.on_vehicle_speed(56.7, time).unwrap();
+    }
+    timely.tick(5_000, None).unwrap();
+    delayed.tick(5_000, Some(observation)).unwrap();
+    assert_eq!(timely.estimate(), delayed.estimate());
+    assert!(
+        (timely.state.vehicle_speed_scale - delayed.state.vehicle_speed_scale).abs() < f64::EPSILON
+    );
+}
+
+#[test]
+fn uncertain_suspect_rejected_or_stale_gps_cannot_calibrate_obd() {
+    let mut good = gps(4_000, 50.00054);
+    good.speed_mps = Some(15.0);
+    let cases = [
+        GpsObservation {
+            trust: ObservationTrust::Suspect,
+            ..good
+        },
+        GpsObservation {
+            speed_accuracy_mps: None,
+            ..good
+        },
+        GpsObservation {
+            speed_accuracy_mps: Some(2.0),
+            ..good
+        },
+        GpsObservation {
+            position_accuracy_m: Some(100.0),
+            ..good
+        },
+        GpsObservation {
+            point: GeoPoint {
+                latitude_deg: 50.00054,
+                longitude_deg: 30.001,
+            },
+            ..good
+        },
+        GpsObservation {
+            point: GeoPoint {
+                latitude_deg: 50.01,
+                longitude_deg: 30.0,
+            },
+            ..good
+        },
+        GpsObservation {
+            elapsed_ms: 5_000,
+            ..good
+        },
+        GpsObservation {
+            speed_mps: Some(3.0),
+            ..good
+        },
+    ];
+    for observation in cases {
+        let mut navigation = stable_obd_estimator();
+        navigation
+            .tick(observation.elapsed_ms, Some(observation))
+            .unwrap();
+        assert!((navigation.state.vehicle_speed_scale - 1.0).abs() < f64::EPSILON);
+    }
+}
+
+#[test]
+fn acceleration_and_obd_dropout_restart_calibration_plateau() {
+    let mut accelerating = stable_obd_estimator();
+    accelerating.on_vehicle_speed(60.3, 4_200).unwrap();
+    let mut observation = gps(4_200, 50.00057);
+    observation.speed_mps = Some(16.0);
+    accelerating.tick(4_200, Some(observation)).unwrap();
+    assert!((accelerating.state.vehicle_speed_scale - 1.0).abs() < f64::EPSILON);
+
+    let mut dropout = stable_obd_estimator();
+    dropout.on_vehicle_speed(56.7, 6_000).unwrap();
+    observation.elapsed_ms = 6_000;
+    observation.point.latitude_deg = 50.00081;
+    observation.speed_mps = Some(15.0);
+    dropout.tick(6_000, Some(observation)).unwrap();
+    assert!((dropout.state.vehicle_speed_scale - 1.0).abs() < f64::EPSILON);
+}
