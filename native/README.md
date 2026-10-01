@@ -42,13 +42,25 @@ The main public types are `RouteFilter`, `Estimate`, `Covariance2`, `UpdateOutco
 `NavigationEstimator` owns a `RouteFilter` and applies the policy needed to run it during a trip. It:
 
 - selects car or walking process noise;
-- advances the filter from elapsed-realtime ticks;
+- advances the filter to measurement timestamps and elapsed-realtime ticks;
+- applies delayed GNSS fixes at their observation time, replaying later predictions and OBD
+  readings from a bounded history (up to five seconds / 128 checkpoints); future, duplicate,
+  out-of-order and expired GNSS fixes are ignored;
 - projects trusted or suspect GNSS observations onto the route;
+- rejects both position and speed from SUSPECT fixes at least 60 m off-route or at least 300 m
+  from the estimate at measurement time, independently of the innovation gates;
 - derives measurement uncertainty from GNSS accuracy and trust level;
 - incorporates GNSS speed and fresh OBD-II vehicle speed;
-- uses lower drift growth while OBD speed is fresh;
+- uses lower drift growth only after an accepted OBD speed update and until its 2.5-second
+  expiry; rejected readings cannot extend freshness, and duplicate or stale OBD inputs are ignored;
 - resets systematic drift after an accepted GOOD GNSS position; and
-- replaces and re-anchors route geometry after rerouting.
+- replaces and re-anchors route geometry after rerouting, discarding the previous route's history.
+
+The SUSPECT gates match the live engine's normal consistency limits. The comparison estimator
+does not receive jam-recovery state, so it does not apply the live engine's relaxed recovery jump
+limit. Neither these checks nor Kalman innovation gating replace the upstream trust classifier.
+Prediction splits long intervals into steps of at most five seconds and splits at OBD expiry,
+so all elapsed travel is accounted for without applying fresh-OBD uncertainty to earlier travel.
 
 It returns a `TickOutcome` containing the estimate, optional route projection, and whether the
 position and speed measurements passed their innovation gates.
