@@ -19,6 +19,11 @@ const val MAX_SPEED_MPS = 150.0 / 3.6
  */
 data class SpeedEstimate(val speedMps: Double, val sigmaMps: Double, val samples: Int, val spanS: Double)
 
+/** Speed-fusion math boundary; Android uses Rust while JVM replay uses [SpeedFusion]. */
+fun interface SpeedFusionProvider {
+    fun fuse(lastGpsSpeed: Double?, gpsAgeMs: Long, routePrior: Double?, network: SpeedEstimate?): Double
+}
+
 /**
  * Combines up to three speed guesses into one.
  *
@@ -28,14 +33,14 @@ data class SpeedEstimate(val speedMps: Double, val sigmaMps: Double, val samples
  *  - the route prior (speed limit × how fast this driver usually goes), σ = 6 m/s,
  *  - speed derived from network/cell fixes ([NetSpeedEstimator]), with its own σ (at least 0.3 m/s).
  */
-object SpeedFusion {
+object SpeedFusion : SpeedFusionProvider {
     private const val ROUTE_PRIOR_SIGMA = 6.0
     private const val GPS_SIGMA = 1.5
     private const val GPS_SIGMA_PER_S = 0.08
     private const val MIN_NETWORK_SIGMA = 0.3
 
     /** Fused speed in m/s (0 when there is no source at all). */
-    fun fuse(lastGpsSpeed: Double?, gpsAgeMs: Long, routePrior: Double?, network: SpeedEstimate?): Double {
+    override fun fuse(lastGpsSpeed: Double?, gpsAgeMs: Long, routePrior: Double?, network: SpeedEstimate?): Double {
         val sources = buildList {
             if (lastGpsSpeed != null) add(lastGpsSpeed to GPS_SIGMA + max(gpsAgeMs, 0L) / 1000.0 * GPS_SIGMA_PER_S)
             if (routePrior != null) add(routePrior to ROUTE_PRIOR_SIGMA)

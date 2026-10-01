@@ -73,6 +73,7 @@ remaining along-track drift is repeatedly corrected by landmarks.
 | Motion detector | `core/.../imu/MotionDetector.kt` | Stop = quiet accelerometer (mean & σ) or quiet gyro for 1.5 s; resume after 0.7 s of vibration; speed ramps 0.15→1 over 8 s after a stop. Integrates vertical yaw rate for turns. |
 | Speed | `core/.../speed/Speed.kt` | Inverse-variance fusion of last GPS speed (σ grows with age), route prior (speed limit × learned driver ratio, or router's modelled speed), and **network speed** from a weighted linear regression of route-projected cell/Wi-Fi fixes. Speed caps near traffic signals / speed bumps. |
 | Engine | `core/.../nav/NavigationEngine.kt` | Main loop, turn hold, corrections, deviation offers, uncertainty (`25 + 0.08·distance`, or `0.02·distance` with OBD-II speed, capped 350/600 m), voice announcements. |
+| Native navigation core | `native/nav-core/`, `native/nav-jni/` | Rust GPS trust firewall, AGC jamming hysteresis, route projection, network/cell reachability gating, weighted speed regression and inverse-variance speed fusion, plus `[s, speed]` covariance with Joseph updates, innovation gating and a separate systematic-drift safety allowance. Android uses these native decisions through opaque JNI handles; the estimator runs in comparison mode while replay data validates its tuning. JVM replay keeps Kotlin implementations for parity testing. |
 | Car speed (OBD-II) | `core/.../obd/Elm327.kt`, `app/.../obd/ObdLink.kt` | Reads vehicle speed (PID `010D`) 5× per second from a paired Bluetooth ELM327 adapter. While fresh it replaces the speed guess; a GPS/OBD scale factor is learned while GPS is trusted. |
 | Terrain matching | `core/.../nav/ElevationMatcher.kt` | Keeps the last 1.5 km of (odometer, barometric height) and slides it along the route's elevation profile, trying odometer scales 0.75–1.35. Only a clear fit counts: ≥ 4 m relief, ≤ 2.5 m RMS misfit, and every other position ≥ 1.8× worse. It snaps the marker there (never across an unconfirmed turn) or confirms it, and shrinks the uncertainty. |
 | Network gate | `core/.../nav/NetworkTracker.kt` | Feasibility gate for network fixes (reachable at 150 km/h) with re-anchoring. |
@@ -242,14 +243,17 @@ gyro turn is matched against route turns 400 m behind … 300 m ahead (turn-sign
 
 ## Build
 
-Runs on Android 8.0 (API 26) and newer; targets Android 16 (API 36). Build requirements: JDK 17+
-and Android SDK 36.
+Runs on Android 8.0 (API 26) and newer; targets Android 16 (API 36). Build requirements: JDK 17+,
+Android SDK 36, the Android NDK and Rust with the `aarch64-linux-android`,
+`armv7-linux-androideabi` and `x86_64-linux-android` targets. Set `ANDROID_NDK_HOME` when the NDK
+is outside the Android SDK. Android builds compile and package the Rust estimator automatically.
 
 ```bash
 ./gradlew test                # engine, routing/search, server and replay tests
 ./gradlew :app:assemblePlayDebug    # normal development build
 ./gradlew :app:assembleFdroidRelease # unsigned F-Droid release build
 ./gradlew :app:assemblePlayBenchmark # release speed + freeze diagnostics, installs as org.imunav.app.bench
+cargo test --manifest-path native/Cargo.toml # native estimator and covariance tests
 ```
 
 **Responsiveness.** Debug and benchmark builds enable StrictMode and a main-thread watchdog
@@ -394,6 +398,8 @@ etc.) and its licence from the published POM. All are compatible with this proje
 | Library | Version | Used for | Licence |
 |---|---|---|---|
 | Kotlin standard library | 2.3.21 | language runtime | Apache 2.0 |
+| IMU Nav native estimator | 0.1.0 | route-state estimation and covariance math | MIT |
+| Rust `jni` crate | 0.21.1 | checked JNI access for the native estimator | MIT / Apache 2.0 |
 | kotlinx.coroutines | 1.11.0 | background work, flows | Apache 2.0 |
 | AndroidX Core KTX, Activity Compose, Lifecycle (runtime-compose, service) | 1.18 / 1.13 / 2.10 | Android integration | Apache 2.0 |
 | Jetpack Compose (BOM 2026.06.01: UI 1.11, Material 3 1.4) + Material Icons Extended 1.7.8 | — | user interface | Apache 2.0 |

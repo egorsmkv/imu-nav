@@ -33,3 +33,28 @@ subprojects {
 }
 
 tasks.named("check") { dependsOn("spotlessCheck") }
+
+val rustFmtCheck = tasks.register<Exec>("rustFmtCheck") {
+    group = "verification"
+    description = "Checks formatting of the Rust navigation core"
+    commandLine("cargo", "fmt", "--manifest-path", "native/Cargo.toml", "--all", "--check")
+    inputs.files(fileTree("native") { exclude("target/**") })
+}
+
+val rustTest = tasks.register<Exec>("rustTest") {
+    group = "verification"
+    description = "Runs the Rust navigation core tests"
+    commandLine("cargo", "test", "--manifest-path", "native/Cargo.toml")
+    inputs.files(fileTree("native") { exclude("target/**") })
+}
+
+val rustClippy = tasks.register<Exec>("rustClippy") {
+    group = "verification"
+    description = "Runs strict Rust static analysis"
+    commandLine("cargo", "clippy", "--manifest-path", "native/Cargo.toml", "--all-targets", "--", "-D", "warnings")
+    inputs.files(fileTree("native") { exclude("target/**") })
+}
+
+tasks.named("check") {
+    dependsOn(rustFmtCheck, rustTest, rustClippy)
+}

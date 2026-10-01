@@ -6,6 +6,21 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
+/** Stateful GPS trust boundary; Android uses Rust through JNI while JVM replay uses [TrustClassifier]. */
+interface TrustEvaluator {
+    fun reset()
+
+    fun evaluate(fix: RawFix, lastGood: RawFix?, lastNet: RawFix?, gnss: GnssSnapshot, jammed: Boolean, compassDeg: Float?, wallNowMs: Long): Verdict
+}
+
+/** Stateful AGC jamming detector; Android uses Rust while JVM replay uses [JamDetector]. */
+interface JammingDetector {
+    val jammed: Boolean
+
+    /** @return true when the jamming state changed. */
+    fun update(agcDb: Float?, nowMs: Long): Boolean
+}
+
 /**
  * Plausibility checks on every GPS fix. Each failed check adds a reason to either the *hard* list
  * (any one ⇒ [TrustLevel.BAD]) or the *soft* list (⇒ [TrustLevel.SUSPECT]).
@@ -14,12 +29,12 @@ import kotlin.math.min
  * vs. displacement, frozen coordinates), the receiver (satellite count, flat C/N0 across
  * satellites, AGC level) and independent sources (network position, compass heading).
  */
-class TrustClassifier(private val config: TrustConfig = TrustConfig(), private val area: ServiceArea = ServiceArea.EVERYWHERE) {
+class TrustClassifier(private val config: TrustConfig = TrustConfig(), private val area: ServiceArea = ServiceArea.EVERYWHERE) : TrustEvaluator {
     private var previousRaw: RawFix? = null
     private var frozenSinceMs = -1L
     private var jamStrongAtMs = -1L
 
-    fun reset() {
+    override fun reset() {
         previousRaw = null
         frozenSinceMs = -1L
         jamStrongAtMs = -1L
@@ -32,7 +47,7 @@ class TrustClassifier(private val config: TrustConfig = TrustConfig(), private v
      * @param compassDeg current device heading, if known
      * @param wallNowMs current wall-clock time, for clock-skew detection
      */
-    fun evaluate(fix: RawFix, lastGood: RawFix?, lastNet: RawFix?, gnss: GnssSnapshot, jammed: Boolean, compassDeg: Float?, wallNowMs: Long): Verdict {
+    override fun evaluate(fix: RawFix, lastGood: RawFix?, lastNet: RawFix?, gnss: GnssSnapshot, jammed: Boolean, compassDeg: Float?, wallNowMs: Long): Verdict {
         val r = Reasons()
         val prevRaw = previousRaw
         previousRaw = fix
@@ -202,13 +217,13 @@ class TrustClassifier(private val config: TrustConfig = TrustConfig(), private v
  * AGC-based jamming state with hysteresis: enters below [enterDb], leaves only after staying
  * above [exitDb] for [exitHoldMs].
  */
-class JamDetector(private val enterDb: Float = -12f, private val exitDb: Float = -8f, private val exitHoldMs: Long = 15_000) {
-    var jammed = false
+class JamDetector(private val enterDb: Float = -12f, private val exitDb: Float = -8f, private val exitHoldMs: Long = 15_000) : JammingDetector {
+    override var jammed = false
         private set
     private var aboveSinceMs = -1L
 
     /** @return true if the state changed. */
-    fun update(agcDb: Float?, nowMs: Long): Boolean {
+    override fun update(agcDb: Float?, nowMs: Long): Boolean {
         if (agcDb == null) return false
         val before = jammed
         if (!jammed) {

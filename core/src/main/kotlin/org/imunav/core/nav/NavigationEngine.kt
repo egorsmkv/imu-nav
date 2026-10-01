@@ -16,12 +16,14 @@ import org.imunav.core.route.HazardKind
 import org.imunav.core.route.Projection
 import org.imunav.core.route.Route
 import org.imunav.core.route.RouteCursor
+import org.imunav.core.route.RouteProjector
 import org.imunav.core.route.Step
 import org.imunav.core.route.TravelMode
 import org.imunav.core.speed.MAX_SPEED_MPS
 import org.imunav.core.speed.RouteSpeedPrior
 import org.imunav.core.speed.SpeedEstimate
 import org.imunav.core.speed.SpeedFusion
+import org.imunav.core.speed.SpeedFusionProvider
 import org.imunav.core.speed.SpeedPlan
 import org.imunav.core.speed.SpeedProfile
 import java.util.Locale
@@ -55,6 +57,12 @@ class NavigationEngine(
     private val listener: NavListener,
     /** Extra traffic-calming points (speed bumps) to consider on every route. */
     private val trafficCalming: List<GeoPoint> = emptyList(),
+    /** Route-projected cell/network gate; Android injects the native implementation. */
+    private val networkTracker: NetworkPositionTracker = NetworkTracker(),
+    /** Geographic observation projection; Android injects Rust geometry. */
+    private val routeProjector: RouteProjector = RouteProjector.KOTLIN,
+    /** Inverse-variance speed fusion; Android injects the native implementation. */
+    private val speedFusion: SpeedFusionProvider = SpeedFusion,
 ) {
     val motion = MotionDetector(tuning).also { it.log = ::log }
 
@@ -137,7 +145,7 @@ class NavigationEngine(
     private var lastTerrainTryMs = -TERRAIN_EVERY_MS
 
     // Network
-    private val net = NetworkTracker()
+    private val net = networkTracker
     private var lastNetProcessedMs = -1L
     private var netRejectLogMs = 0L
     private var netDevFastCount = 0
@@ -283,7 +291,7 @@ class NavigationEngine(
         val car = RouteCursor(route)
         cursor = car
         hazards = route.hazards(trafficCalming)
-        waypointS = waypoints.map { it to route.project(it, 0.0, 0.0, route.length, 0.0).s }
+        waypointS = waypoints.map { it to routeProjector.project(route, it, 0.0, 0.0, route.length, 0.0).s }
         consumedSteps.clear()
         usedSignals.clear()
         announced.clear()
@@ -365,7 +373,7 @@ class NavigationEngine(
         val fix = judged.fix
         lastGpsProcessedMs = fix.elapsedMs
         val route = car.route
-        val proj = route.project(fix.point, car.s, 250.0, 2500.0, 120.0)
+        val proj = routeProjector.project(route, fix.point, car.s, 250.0, 2500.0, 120.0)
         val good = judged.verdict.level == TrustLevel.GOOD
         recovery.onFix(good)
         val inRecovery = recovery.active(nowMs)
@@ -505,7 +513,7 @@ class NavigationEngine(
             return
         }
         if (fix.elapsedMs != lastCellProcessedMs) {
-            val projection = car.route.project(fix.point, car.s, 250.0, 2500.0, 120.0)
+            val projection = routeProjector.project(car.route, fix.point, car.s, 250.0, 2500.0, 120.0)
             car.moveTo(projection.s)
             lastCellProcessedMs = fix.elapsedMs
             cellAccuracyM = fix.accuracyM?.toDouble() ?: DEFAULT_CELL_ACCURACY_M
@@ -531,10 +539,10 @@ class NavigationEngine(
         val factor = motion.motionFactor(nowMs)
         val netSpeed = networkSpeed(nowMs, factor)
 
-        val base = SpeedFusion.fuse(lastGpsSpeed, sinceGps, RouteSpeedPrior.at(route, car.s, speedProfile), netSpeed)
+        val base = speedFusion.fuse(lastGpsSpeed, sinceGps, RouteSpeedPrior.at(route, car.s, speedProfile), netSpeed)
         // A long, consistent network speed while the IMU says "stopped" means we are in fact
         // moving smoothly (e.g. on a highway with a phone in a soft holder).
-        val strict = net.speed.strictEstimate(nowMs)
+        val strict = net.strictSpeedEstimate(nowMs)
         val override = strict != null && strict.speedMps >= 4.0 && strict.sigmaMps <= 1.5 && strict.spanS >= 45.0 && motion.accMean >= 0.08
         if (override != netOverridesStop && factor == 0.0) log("net_overrides_stop active=$override netv=${((strict?.speedMps ?: 0.0) * 3.6).toInt()}")
         netOverridesStop = override
@@ -579,7 +587,7 @@ class NavigationEngine(
      * rescaled by the moving duty cycle because it averages over stops.
      */
     private fun networkSpeed(nowMs: Long, factor: Double?): SpeedEstimate? {
-        var netSpeed = net.speed.estimate(nowMs)
+        var netSpeed = net.speedEstimate(nowMs)
         if (netSpeed != null) {
             cachedNet = netSpeed
             cachedNetAtMs = nowMs
@@ -901,7 +909,7 @@ class NavigationEngine(
         lastNetProcessedMs = fix.elapsedMs
         if (nowMs - fix.elapsedMs > 30_000) return
         val route = car.route
-        val proj = route.project(fix.point, car.s, 250.0, 2500.0, 120.0)
+        val proj = routeProjector.project(route, fix.point, car.s, 250.0, 2500.0, 120.0)
         val acc = fix.accuracyM?.toDouble() ?: 500.0
         checkNetworkDeviation(car, proj, acc, fix, nowMs)
 

@@ -16,6 +16,12 @@ import org.imunav.app.cells.CellManager
 import org.imunav.app.cells.CellStatus
 import org.imunav.app.haptics.Haptics
 import org.imunav.app.maps.OfflineMap
+import org.imunav.app.nativecore.NativeEstimatorBridge
+import org.imunav.app.nativecore.NativeNetworkTracker
+import org.imunav.app.nativecore.NativeRouteGeometry
+import org.imunav.app.nativecore.NativeRouteProjector
+import org.imunav.app.nativecore.NativeSpeedFusion
+import org.imunav.app.nativecore.NativeTrustEvaluator
 import org.imunav.app.net.ProxySettings
 import org.imunav.app.obd.ObdLink
 import org.imunav.app.power.PowerMode
@@ -208,7 +214,11 @@ class AppGraph(private val context: Context) {
 
     /** Fixes outside this area are treated as spoofed. Set to [ServiceArea.EVERYWHERE] to use the app elsewhere. */
     val serviceArea: ServiceArea = ServiceArea.UKRAINE_COARSE
-    val hub = PositioningHub(area = serviceArea).also { it.log = tripLog::write }
+    private val nativeTrustEvaluator = NativeTrustEvaluator(serviceArea)
+    val hub = PositioningHub(area = serviceArea, trustEvaluator = nativeTrustEvaluator, jammingDetector = nativeTrustEvaluator).also { it.log = tripLog::write }
+    private val nativeEstimator = NativeEstimatorBridge(tripLog::write)
+    private val nativeNetworkTracker = NativeNetworkTracker.create()
+    private val nativeRouteProjector = NativeRouteProjector()
 
     /** Where the map opens (Settings → Map start). */
     val mapStart = MapStartPrefs(context, serviceArea)
@@ -234,17 +244,20 @@ class AppGraph(private val context: Context) {
         override fun onLog(message: String) = tripLog.write(message)
         override fun onRerouteRequested(from: GeoPoint, destination: GeoPoint, via: List<GeoPoint>, auto: Boolean) {
             scope.launch {
-                runCatching { router.route(from, destination, via, engine.mode) }
-                    .onSuccess {
-                        engine.setRoute(it, SystemClock.elapsedRealtime())
-                        trips.onRoute(it)
-                        offlineMap.saveCorridor(it, darkTheme())
-                    }
-                    .onFailure {
-                        tripLog.write("reroute_failed ${it.message}")
-                        engine.rerouteFailed()
-                        _ui.value = _ui.value.copy(error = it.message)
-                    }
+                runCatching {
+                    val route = router.route(from, destination, via, engine.mode)
+                    route to withContext(Dispatchers.Default) { NativeRouteGeometry.create(route) }
+                }.onSuccess { (route, nativeRoute) ->
+                    nativeRouteProjector.install(route, nativeRoute)
+                    engine.setRoute(route, SystemClock.elapsedRealtime())
+                    nativeEstimator.replaceRoute(nativeRoute, engine.progressS, engine.state.uncertaintyM)
+                    trips.onRoute(route)
+                    offlineMap.saveCorridor(route, darkTheme())
+                }.onFailure {
+                    tripLog.write("reroute_failed ${it.message}")
+                    engine.rerouteFailed()
+                    _ui.value = _ui.value.copy(error = it.message)
+                }
             }
         }
     }
@@ -256,6 +269,9 @@ class AppGraph(private val context: Context) {
         speedProfile = SpeedProfile(PrefsSpeedProfileStore(context)),
         phrases = phrasesFor(),
         listener = listener,
+        networkTracker = nativeNetworkTracker,
+        routeProjector = nativeRouteProjector,
+        speedFusion = NativeSpeedFusion,
     )
 
     /** Trip recording (for replay), history, and restoring a trip after the app was killed. */
@@ -283,6 +299,7 @@ class AppGraph(private val context: Context) {
     /** The car's own speed from a Bluetooth OBD-II adapter (Settings → Car speed), used while driving. */
     val obd = ObdLink(context, tripLog::write) { kmh, elapsedMs ->
         engine.onVehicleSpeed(kmh.toDouble(), elapsedMs)
+        nativeEstimator.onVehicleSpeed(kmh.toDouble(), elapsedMs)
         trips.onVehicleSpeed(kmh, elapsedMs)
     }
 
@@ -405,19 +422,22 @@ class AppGraph(private val context: Context) {
         _ui.value = _ui.value.copy(planning = true, error = null)
         scope.launch {
             val mode = travelMode.value
-            runCatching { router.route(from, dest, mode = mode) }
-                .onSuccess { route ->
-                    tripLog.startTrip()
-                    tripLog.write("start_accuracy=${startAccuracy.toInt()}")
-                    engine.start(route, dest, nowMs = SystemClock.elapsedRealtime(), startAccuracyM = startAccuracy, mode = mode)
-                    trips.begin(route, dest, emptyList(), startAccuracy, mode)
-                    offlineMap.saveCorridor(route, darkTheme())
-                    if (mode == TravelMode.CAR) obd.start()
-                    applyPower()
-                    _ui.value = _ui.value.copy(planning = false)
-                    onStarted()
-                }
-                .onFailure { _ui.value = _ui.value.copy(planning = false, error = it.message) }
+            runCatching {
+                val route = router.route(from, dest, mode = mode)
+                route to withContext(Dispatchers.Default) { NativeRouteGeometry.create(route) }
+            }.onSuccess { (route, nativeRoute) ->
+                tripLog.startTrip()
+                tripLog.write("start_accuracy=${startAccuracy.toInt()}")
+                nativeRouteProjector.install(route, nativeRoute)
+                nativeEstimator.start(nativeRoute, 0.0, hub.lastGood?.speedMps?.toDouble() ?: 0.0, startAccuracy, mode, SystemClock.elapsedRealtime())
+                engine.start(route, dest, nowMs = SystemClock.elapsedRealtime(), startAccuracyM = startAccuracy, mode = mode)
+                trips.begin(route, dest, emptyList(), startAccuracy, mode)
+                offlineMap.saveCorridor(route, darkTheme())
+                if (mode == TravelMode.CAR) obd.start()
+                applyPower()
+                _ui.value = _ui.value.copy(planning = false)
+                onStarted()
+            }.onFailure { _ui.value = _ui.value.copy(planning = false, error = it.message) }
         }
     }
 
@@ -425,6 +445,8 @@ class AppGraph(private val context: Context) {
     fun stopNavigation() {
         trips.end(arrived = engine.state.arrived)
         engine.stop()
+        nativeEstimator.close()
+        nativeRouteProjector.close()
         obd.stop()
         applyPower()
         tripLog.endTrip()
@@ -442,7 +464,9 @@ class AppGraph(private val context: Context) {
     /** One engine step; called every [NavigationEngine.TICK_MS] by the service. */
     fun tick() {
         val now = SystemClock.elapsedRealtime()
-        engine.tick(now, hub.snapshot(now))
+        val positioning = hub.snapshot(now)
+        engine.tick(now, positioning)
+        nativeEstimator.tick(now, engine.state, positioning)
         trips.onTick(now)
         tickCount++
         // Battery level / charger / battery saver change slowly: re-check AUTO once a minute.
@@ -486,6 +510,26 @@ class AppGraph(private val context: Context) {
         // The process was killed mid-trip (or the system restarted the sticky service): resume navigation.
         if (trips.restore()) {
             tripLog.startTrip()
+            engine.route?.let { route ->
+                scope.launch {
+                    runCatching { withContext(Dispatchers.Default) { NativeRouteGeometry.create(route) } }
+                        .onSuccess { nativeRoute ->
+                            if (engine.state.active && engine.route === route) {
+                                nativeRouteProjector.install(route, nativeRoute)
+                                nativeEstimator.start(
+                                    nativeRoute,
+                                    engine.progressS,
+                                    engine.state.speedKmh.toDouble() / 3.6,
+                                    engine.state.uncertaintyM,
+                                    engine.mode,
+                                    SystemClock.elapsedRealtime(),
+                                )
+                            } else {
+                                nativeRoute.close()
+                            }
+                        }.onFailure { tripLog.write("native_estimator_restore_failed ${it.message}") }
+                }
+            }
             if (engine.mode == TravelMode.CAR) obd.start()
             runCatching { NavService.start(context) }.onFailure { tripLog.write("nav_service_restart_failed ${it.message}") }
         }

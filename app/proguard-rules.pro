@@ -28,3 +28,22 @@
 
 # Referenced only by GraphHopper OSM import (desktop builder), never on the phone.
 -dontwarn aQute.bnd.annotation.spi.ServiceProvider
+# JNI resolves these methods by their Java names. Keep the bridge stable in R8 release builds.
+-keep class org.imunav.app.nativecore.NativeRouteFilter {
+    native <methods>;
+}
+-keep class org.imunav.app.nativecore.NativeRouteGeometry {
+    native <methods>;
+}
+-keep class org.imunav.app.nativecore.NativeNetworkTracker {
+    native <methods>;
+}
+-keep class org.imunav.app.nativecore.NativeSpeedFusion {
+    native <methods>;
+}
+-keep class org.imunav.app.nativecore.NativeNavigationEstimator {
+    native <methods>;
+}
+-keep class org.imunav.app.nativecore.NativeTrustEvaluator {
+    native <methods>;
+}

@@ -1,0 +1,13 @@
+[workspace]
+members = ["nav-core", "nav-jni"]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+rust-version = "1.77"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+strip = "symbols"
