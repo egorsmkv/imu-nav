@@ -1,9 +1,11 @@
 use crate::model::{distance_m, plausible};
 use crate::{CellKey, CellTower, Consensus, Policy, Radio, UploadResult};
 use anyhow::{Context, Result};
-use rusqlite::types::Value;
-use rusqlite::{Connection, OptionalExtension, Transaction, params, params_from_iter};
-use std::collections::HashSet;
+use rusqlite::types::{Type, Value};
+use rusqlite::{
+    Connection, OptionalExtension, Transaction, TransactionBehavior, params, params_from_iter,
+};
+use std::collections::{BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -57,7 +59,6 @@ impl CellStore {
              );
              CREATE INDEX IF NOT EXISTS consensus_sync ON consensus(mcc, updated_s);",
         )?;
-        drop(connection);
         Ok(store)
     }
 
@@ -80,11 +81,14 @@ impl CellStore {
         now_s: i64,
         policy: &Policy,
     ) -> Result<(UploadResult, Vec<Consensus>)> {
+        policy.validate()?;
         let mut connection = self.connection()?;
-        let transaction = connection.transaction()?;
+        // Acquire the single SQLite writer slot before doing any reads. A deferred transaction can
+        // otherwise fail while upgrading its lock when two uploads arrive together.
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let mut accepted = 0;
         let mut rejected = 0;
-        let mut changed_keys = HashSet::new();
+        let mut changed_keys = BTreeSet::new();
 
         for tower in towers {
             if !plausible(tower, policy)
@@ -264,7 +268,7 @@ impl CellStore {
     /// Returns an error when the delete transaction cannot be committed.
     pub fn delete(&self, key: &CellKey) -> Result<bool> {
         let mut connection = self.connection()?;
-        let transaction = connection.transaction()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         transaction.execute(
             "DELETE FROM contributions WHERE radio=?1 AND mcc=?2 AND mnc=?3 AND area=?4 AND cid=?5",
             params![key.radio.to_string(), key.mcc, key.mnc, key.area, key.cid],
@@ -315,6 +319,9 @@ fn recompute(transaction: &Transaction<'_>, key: &CellKey, policy: &Policy) -> R
             },
         )?
         .collect::<rusqlite::Result<Vec<_>>>()?;
+    if contributions.is_empty() {
+        anyhow::bail!("cannot recompute a cell without contributions");
+    }
 
     let median_lat = weighted_median(
         contributions
@@ -355,8 +362,7 @@ fn recompute(transaction: &Transaction<'_>, key: &CellKey, policy: &Policy) -> R
             range_m: ranges[ranges.len() / 2].max(spread),
             samples: inliers
                 .iter()
-                .map(|item| item.samples)
-                .sum::<i64>()
+                .fold(0_i64, |total, item| total.saturating_add(item.samples))
                 .min(1_000_000),
         },
         devices: inliers
@@ -465,7 +471,9 @@ fn save_consensus(transaction: &Transaction<'_>, consensus: &Consensus) -> Resul
 
 fn row_to_consensus(row: &rusqlite::Row<'_>) -> rusqlite::Result<Consensus> {
     let radio_text: String = row.get(0)?;
-    let radio = Radio::from_str(&radio_text).map_err(|_| rusqlite::Error::InvalidQuery)?;
+    let radio = Radio::from_str(&radio_text).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(0, Type::Text, Box::new(error))
+    })?;
     Ok(Consensus {
         tower: CellTower {
             key: CellKey {

@@ -1,6 +1,6 @@
 use crate::{
-    CellKey, CellStore, CellTower, Consensus, Policy, Radio, ServerEvent, decode_towers,
-    encode_towers,
+    CellKey, CellStore, CellTower, Consensus, CsvDecodeError, Policy, PolicyError, Radio,
+    ServerEvent, decode_towers, encode_towers,
 };
 use axum::body::Bytes;
 use axum::extract::ws::{Message, WebSocket};
@@ -15,15 +15,15 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast;
 
 const MAX_UPLOAD_BYTES: usize = 20 * 1024 * 1024;
-const HOUR_MS: i64 = 3_600_000;
-const DAY_MS: i64 = 86_400_000;
+const HOUR: Duration = Duration::from_secs(60 * 60);
+const DAY: Duration = Duration::from_secs(24 * 60 * 60);
 
 /// Runtime server settings not stored in SQLite.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ServerConfig {
     pub api_key: Option<String>,
     pub policy: Policy,
@@ -34,22 +34,27 @@ pub struct ServerConfig {
 /// Shared application state used by HTTP requests and WebSocket connections.
 #[derive(Clone)]
 pub struct AppState {
-    pub store: CellStore,
-    pub config: ServerConfig,
+    store: CellStore,
+    config: ServerConfig,
     events: broadcast::Sender<ServerEvent>,
     limits: Arc<Mutex<Limits>>,
 }
 
 impl AppState {
-    #[must_use]
-    pub fn new(store: CellStore, config: ServerConfig) -> Self {
+    /// Build state after validating every policy invariant used by request handlers.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for invalid limits or consensus thresholds.
+    pub fn new(store: CellStore, config: ServerConfig) -> Result<Self, PolicyError> {
+        config.policy.validate()?;
         let (events, _) = broadcast::channel(1_024);
-        Self {
+        Ok(Self {
             store,
             config,
             events,
             limits: Arc::new(Mutex::new(Limits::default())),
-        }
+        })
     }
 }
 
@@ -89,6 +94,13 @@ impl From<anyhow::Error> for ApiError {
     }
 }
 
+impl From<tokio::task::JoinError> for ApiError {
+    fn from(error: tokio::task::JoinError) -> Self {
+        tracing::error!(error = %error, "blocking task failed");
+        Self(StatusCode::INTERNAL_SERVER_ERROR, "SERVER_ERROR")
+    }
+}
+
 async fn health(State(state): State<AppState>) -> Result<String, ApiError> {
     let policy = state.config.policy.clone();
     let counts = run_db(move || state.store.counts(&policy)).await?;
@@ -119,8 +131,20 @@ async fn upload_cells(
         return Err(ApiError(StatusCode::BAD_REQUEST, "BAD_DEVICE"));
     }
     enforce_limits(&state, &ip, &device)?;
-    let towers = decode_towers(&body, state.config.policy.max_rows_per_upload)
-        .map_err(|_| ApiError(StatusCode::BAD_REQUEST, "BAD_BODY"))?;
+    let row_limit = state.config.policy.max_rows_per_upload;
+    let towers = tokio::task::spawn_blocking(move || decode_towers(&body, row_limit))
+        .await
+        .map_err(ApiError::from)?
+        .map_err(|error| {
+            if matches!(
+                error,
+                CsvDecodeError::TooManyRows { .. } | CsvDecodeError::DecompressedBodyTooLarge
+            ) {
+                ApiError(StatusCode::PAYLOAD_TOO_LARGE, "UPLOAD_TOO_LARGE")
+            } else {
+                ApiError(StatusCode::BAD_REQUEST, "BAD_BODY")
+            }
+        })?;
     let store = state.store.clone();
     let policy = state.config.policy.clone();
     let device_for_log = device.clone();
@@ -151,16 +175,20 @@ struct TowerQuery {
 }
 
 impl TowerQuery {
-    fn mccs(&self) -> Option<HashSet<i64>> {
-        self.mcc
-            .as_ref()
-            .map(|value| {
-                value
-                    .split(',')
-                    .filter_map(|part| part.trim().parse().ok())
-                    .collect()
-            })
-            .filter(|set: &HashSet<_>| !set.is_empty())
+    fn mccs(&self) -> Result<Option<HashSet<i64>>, ApiError> {
+        let Some(value) = &self.mcc else {
+            return Ok(None);
+        };
+        let mccs = value
+            .split(',')
+            .map(str::trim)
+            .map(str::parse::<i64>)
+            .collect::<Result<HashSet<_>, _>>()
+            .map_err(|_| ApiError(StatusCode::BAD_REQUEST, "BAD_MCC"))?;
+        if mccs.is_empty() || mccs.iter().any(|mcc| !(1..=999).contains(mcc)) {
+            return Err(ApiError(StatusCode::BAD_REQUEST, "BAD_MCC"));
+        }
+        Ok(Some(mccs))
     }
 }
 
@@ -168,8 +196,15 @@ async fn download_cells(
     State(state): State<AppState>,
     Query(query): Query<TowerQuery>,
 ) -> Result<Response, ApiError> {
-    let towers = query_towers(&state, &query, None).await?;
-    let body = encode_towers(&towers)?;
+    let store = state.store.clone();
+    let policy = state.config.policy.clone();
+    let mccs = query.mccs()?;
+    let since = query.since.unwrap_or(0).max(0);
+    let body = run_db(move || {
+        let towers = store.query(mccs.as_ref(), since, None, &policy)?;
+        Ok(encode_towers(&towers)?)
+    })
+    .await?;
     Ok(([(header::CONTENT_TYPE, "application/gzip")], body).into_response())
 }
 
@@ -186,22 +221,10 @@ async fn list_towers(
     authorize(&headers, state.config.api_key.as_deref())?;
     let limit = query.limit.unwrap_or(500).clamp(1, 5_000);
     let store = state.store.clone();
-    let mccs = query.mccs();
+    let mccs = query.mccs()?;
     let since = query.since.unwrap_or(0).max(0);
     let towers = run_db(move || store.query_all(mccs.as_ref(), since, Some(limit))).await?;
     Ok(Json(TowerList { towers }))
-}
-
-async fn query_towers(
-    state: &AppState,
-    query: &TowerQuery,
-    limit: Option<usize>,
-) -> Result<Vec<Consensus>, ApiError> {
-    let store = state.store.clone();
-    let policy = state.config.policy.clone();
-    let mccs = query.mccs();
-    let since = query.since.unwrap_or(0).max(0);
-    run_db(move || store.query(mccs.as_ref(), since, limit, &policy)).await
 }
 
 #[derive(Deserialize)]
@@ -303,7 +326,12 @@ async fn stream_events(mut socket: WebSocket, state: AppState) {
         tokio::select! {
             event = events.recv() => match event {
                 Ok(event) if send_event(&mut socket, &event).await.is_err() => break,
-                Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => {}
+                Ok(_) => {}
+                Err(broadcast::error::RecvError::Lagged(missed)) => {
+                    if send_event(&mut socket, &ServerEvent::ResyncRequired { missed }).await.is_err() {
+                        break;
+                    }
+                }
                 Err(broadcast::error::RecvError::Closed) => break,
             },
             incoming = socket.next() => match incoming {
@@ -314,12 +342,10 @@ async fn stream_events(mut socket: WebSocket, state: AppState) {
     }
 }
 
-async fn send_event(socket: &mut WebSocket, event: &ServerEvent) -> Result<(), axum::Error> {
-    socket
-        .send(Message::Text(
-            serde_json::to_string(event).unwrap_or_default().into(),
-        ))
-        .await
+async fn send_event(socket: &mut WebSocket, event: &ServerEvent) -> anyhow::Result<()> {
+    let json = serde_json::to_string(event)?;
+    socket.send(Message::Text(json.into())).await?;
+    Ok(())
 }
 
 fn authorize(headers: &HeaderMap, api_key: Option<&str>) -> Result<(), ApiError> {
@@ -338,6 +364,9 @@ fn authorize(headers: &HeaderMap, api_key: Option<&str>) -> Result<(), ApiError>
 fn path_key(
     (radio, mcc, mnc, area, cid): (String, i64, i64, i64, i64),
 ) -> Result<CellKey, ApiError> {
+    if !(1..=999).contains(&mcc) || !(0..=999).contains(&mnc) || area < 0 || cid < 0 {
+        return Err(ApiError(StatusCode::BAD_REQUEST, "BAD_CELL_KEY"));
+    }
     Ok(CellKey {
         radio: Radio::from_str(&radio)
             .map_err(|_| ApiError(StatusCode::BAD_REQUEST, "BAD_RADIO"))?,
@@ -353,29 +382,52 @@ async fn run_db<T: Send + 'static>(
 ) -> Result<T, ApiError> {
     tokio::task::spawn_blocking(operation)
         .await
-        .map_err(|error| {
-            tracing::error!(error = %error, "database task failed");
-            ApiError(StatusCode::INTERNAL_SERVER_ERROR, "SERVER_ERROR")
-        })?
+        .map_err(ApiError::from)?
         .map_err(ApiError::from)
 }
 
 #[derive(Default)]
 struct Limits {
-    by_device: HashMap<String, VecDeque<i64>>,
-    by_ip: HashMap<String, VecDeque<i64>>,
-    devices_by_ip: HashMap<String, HashMap<String, i64>>,
+    by_device: HashMap<String, VecDeque<Instant>>,
+    by_ip: HashMap<String, VecDeque<Instant>>,
+    devices_by_ip: HashMap<String, HashMap<String, Instant>>,
+    last_cleanup: Option<Instant>,
+}
+
+impl Limits {
+    fn cleanup_if_due(&mut self, now: Instant) {
+        let cleanup_due = self
+            .last_cleanup
+            .is_none_or(|last| now.saturating_duration_since(last) >= HOUR);
+        if !cleanup_due {
+            return;
+        }
+        self.by_device.retain(|_, queue| {
+            prune(queue, now, HOUR);
+            !queue.is_empty()
+        });
+        self.by_ip.retain(|_, queue| {
+            prune(queue, now, HOUR);
+            !queue.is_empty()
+        });
+        self.devices_by_ip.retain(|_, devices| {
+            devices.retain(|_, seen| now.saturating_duration_since(*seen) <= DAY);
+            !devices.is_empty()
+        });
+        self.last_cleanup = Some(now);
+    }
 }
 
 fn enforce_limits(state: &AppState, ip: &str, device: &str) -> Result<(), ApiError> {
-    let now = now_ms();
+    let now = Instant::now();
     let mut limits = state
         .limits
         .lock()
         .map_err(|_| ApiError(StatusCode::INTERNAL_SERVER_ERROR, "SERVER_ERROR"))?;
+    limits.cleanup_if_due(now);
     let policy = &state.config.policy;
     let devices = limits.devices_by_ip.entry(ip.to_owned()).or_default();
-    devices.retain(|_, seen| now - *seen <= DAY_MS);
+    devices.retain(|_, seen| now.saturating_duration_since(*seen) <= DAY);
     if !devices.contains_key(device) && devices.len() >= policy.max_devices_per_ip_per_day {
         return Err(ApiError(StatusCode::TOO_MANY_REQUESTS, "TOO_MANY_DEVICES"));
     }
@@ -396,16 +448,28 @@ fn enforce_limits(state: &AppState, ip: &str, device: &str) -> Result<(), ApiErr
     Ok(())
 }
 
-fn allow(hits: &mut HashMap<String, VecDeque<i64>>, key: &str, now: i64, maximum: usize) -> bool {
+fn allow(
+    hits: &mut HashMap<String, VecDeque<Instant>>,
+    key: &str,
+    now: Instant,
+    maximum: usize,
+) -> bool {
     let queue = hits.entry(key.to_owned()).or_default();
-    while queue.front().is_some_and(|time| now - time > HOUR_MS) {
-        queue.pop_front();
-    }
+    prune(queue, now, HOUR);
     if queue.len() >= maximum {
         return false;
     }
     queue.push_back(now);
     true
+}
+
+fn prune(queue: &mut VecDeque<Instant>, now: Instant, window: Duration) {
+    while queue
+        .front()
+        .is_some_and(|time| now.saturating_duration_since(*time) > window)
+    {
+        queue.pop_front();
+    }
 }
 
 fn valid_device_id(value: &str) -> bool {
@@ -431,15 +495,9 @@ fn client_ip(peer: SocketAddr, headers: &HeaderMap, trust_proxy: bool) -> String
 }
 
 fn now_s() -> i64 {
-    now_ms() / 1_000
-}
-
-fn now_ms() -> i64 {
-    i64::try_from(
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis(),
-    )
-    .unwrap_or(i64::MAX)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|duration| i64::try_from(duration.as_secs()).ok())
+        .unwrap_or_default()
 }

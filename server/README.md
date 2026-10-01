@@ -25,8 +25,9 @@ detailed operational logs.
 - `PUT /v1/towers/{radio}/{mcc}/{mnc}/{area}/{cid}` creates or updates a trusted tower. Its JSON
   body contains `lat`, `lon`, `range_m`, and `samples`.
 - `DELETE /v1/towers/{radio}/{mcc}/{mnc}/{area}/{cid}` removes the tower and all contributions.
-- `GET /v1/events` upgrades to a WebSocket that emits `ready`, `tower_upserted`, and
-  `tower_deleted` JSON events.
+- `GET /v1/events` upgrades to a WebSocket that emits `ready`, `tower_upserted`,
+  `tower_deleted`, and `resync_required` JSON events. On `resync_required`, reload the management
+  list because the client fell behind the bounded event queue.
 - `GET /health` reports readiness and the number of published towers.
 
 The management list, mutations, and WebSocket use `Authorization: Bearer <key>` when an API key is

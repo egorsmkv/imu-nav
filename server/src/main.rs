@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tracing_subscriber::EnvFilter;
 
 /// Persistent cell-sharing server compatible with IMU Nav clients.
-#[derive(Debug, Parser)]
+#[derive(Parser)]
 #[command(version, about)]
 struct Options {
     #[arg(long, default_value_t = 8080)]
@@ -63,7 +63,7 @@ async fn main() -> Result<()> {
             policy: policy.clone(),
             trust_proxy: options.trust_proxy,
         },
-    );
+    )?;
     let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), options.port);
     let listener = tokio::net::TcpListener::bind(address)
         .await

@@ -1,10 +1,46 @@
 use crate::{CellKey, CellTower, Radio};
-use anyhow::{Context, Result};
 use flate2::Compression;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use std::io::{Cursor, Read};
+use std::path::PathBuf;
 use std::str::FromStr;
+
+const MAX_DECOMPRESSED_BYTES: u64 = 128 * 1024 * 1024;
+
+/// Failure while decoding an app-compatible tower upload or import.
+#[derive(Debug, thiserror::Error)]
+pub enum CsvDecodeError {
+    #[error("invalid gzip body")]
+    InvalidGzip(#[source] std::io::Error),
+    #[error("decompressed CSV exceeds {MAX_DECOMPRESSED_BYTES} bytes")]
+    DecompressedBodyTooLarge,
+    #[error("invalid CSV body")]
+    InvalidCsv(#[from] csv::Error),
+    #[error("CSV contains more than {limit} valid tower rows")]
+    TooManyRows { limit: usize },
+}
+
+/// Failure while encoding an app-compatible tower download.
+#[derive(Debug, thiserror::Error)]
+pub enum CsvEncodeError {
+    #[error("could not serialize CSV")]
+    Csv(#[from] csv::Error),
+    #[error("could not compress CSV")]
+    Io(#[from] std::io::Error),
+}
+
+/// Failure while reading a seed import from disk.
+#[derive(Debug, thiserror::Error)]
+pub enum ImportError {
+    #[error("cannot read {path}")]
+    Read {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    #[error(transparent)]
+    Decode(#[from] CsvDecodeError),
+}
 
 const HEADER: [&str; 14] = [
     "radio",
@@ -28,15 +64,20 @@ const HEADER: [&str; 14] = [
 /// # Errors
 ///
 /// Returns an error for corrupt gzip or CSV data and when the valid-row limit is exceeded.
-pub fn decode_towers(bytes: &[u8], limit: usize) -> Result<Vec<CellTower>> {
-    let mut decoded = Vec::new();
-    if bytes.starts_with(&[0x1f, 0x8b]) {
+pub fn decode_towers(bytes: &[u8], limit: usize) -> Result<Vec<CellTower>, CsvDecodeError> {
+    let decoded = if bytes.starts_with(&[0x1f, 0x8b]) {
+        let mut decoded = Vec::new();
         GzDecoder::new(Cursor::new(bytes))
+            .take(MAX_DECOMPRESSED_BYTES + 1)
             .read_to_end(&mut decoded)
-            .context("invalid gzip body")?;
+            .map_err(CsvDecodeError::InvalidGzip)?;
+        if u64::try_from(decoded.len()).unwrap_or(u64::MAX) > MAX_DECOMPRESSED_BYTES {
+            return Err(CsvDecodeError::DecompressedBodyTooLarge);
+        }
+        decoded
     } else {
-        decoded.extend_from_slice(bytes);
-    }
+        bytes.to_vec()
+    };
 
     let mut towers = Vec::new();
     let mut reader = csv::ReaderBuilder::new()
@@ -44,7 +85,7 @@ pub fn decode_towers(bytes: &[u8], limit: usize) -> Result<Vec<CellTower>> {
         .flexible(true)
         .from_reader(decoded.as_slice());
     for row in reader.records() {
-        let row = row.context("invalid CSV body")?;
+        let row = row?;
         if row
             .get(0)
             .is_some_and(|value| value.eq_ignore_ascii_case("radio"))
@@ -55,7 +96,7 @@ pub fn decode_towers(bytes: &[u8], limit: usize) -> Result<Vec<CellTower>> {
             continue;
         };
         if towers.len() >= limit {
-            anyhow::bail!("too many rows");
+            return Err(CsvDecodeError::TooManyRows { limit });
         }
         towers.push(tower);
     }
@@ -83,7 +124,7 @@ fn parse_tower(row: &csv::StringRecord) -> Option<CellTower> {
 /// # Errors
 ///
 /// Returns an error if CSV serialization or gzip compression fails.
-pub fn encode_towers(towers: &[crate::Consensus]) -> Result<Vec<u8>> {
+pub fn encode_towers(towers: &[crate::Consensus]) -> Result<Vec<u8>, CsvEncodeError> {
     let output = Vec::new();
     let encoder = GzEncoder::new(output, Compression::default());
     let mut writer = csv::WriterBuilder::new()
@@ -121,7 +162,10 @@ pub fn encode_towers(towers: &[crate::Consensus]) -> Result<Vec<u8>> {
 /// # Errors
 ///
 /// Returns an error when the file cannot be read or contains invalid encoded data.
-pub fn read_import(path: &std::path::Path, limit: usize) -> Result<Vec<CellTower>> {
-    let bytes = std::fs::read(path).with_context(|| format!("cannot read {}", path.display()))?;
-    decode_towers(&bytes, limit)
+pub fn read_import(path: &std::path::Path, limit: usize) -> Result<Vec<CellTower>, ImportError> {
+    let bytes = std::fs::read(path).map_err(|source| ImportError::Read {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    Ok(decode_towers(&bytes, limit)?)
 }

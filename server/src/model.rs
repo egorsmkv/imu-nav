@@ -2,6 +2,15 @@ use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 
+/// Invalid anti-poisoning or request-limit configuration.
+#[derive(Clone, Debug, thiserror::Error)]
+pub enum PolicyError {
+    #[error("{0} must be greater than zero")]
+    NotPositive(&'static str),
+    #[error("{0} must be finite")]
+    NotFinite(&'static str),
+}
+
 /// Anti-poisoning and request limits. Defaults are suitable for a public server.
 #[derive(Clone, Debug)]
 pub struct Policy {
@@ -34,8 +43,55 @@ impl Default for Policy {
     }
 }
 
+impl Policy {
+    /// Validate invariants relied upon by consensus and rate-limiting code.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first invalid field so configuration errors fail at startup rather than during
+    /// an upload.
+    pub fn validate(&self) -> Result<(), PolicyError> {
+        if self.max_samples_per_device <= 0 {
+            return Err(PolicyError::NotPositive("max_samples_per_device"));
+        }
+        for (name, value) in [
+            ("min_devices", self.min_devices),
+            ("max_rows_per_upload", self.max_rows_per_upload),
+            (
+                "max_uploads_per_hour_per_device",
+                self.max_uploads_per_hour_per_device,
+            ),
+            (
+                "max_uploads_per_hour_per_ip",
+                self.max_uploads_per_hour_per_ip,
+            ),
+            (
+                "max_devices_per_ip_per_day",
+                self.max_devices_per_ip_per_day,
+            ),
+        ] {
+            if value == 0 {
+                return Err(PolicyError::NotPositive(name));
+            }
+        }
+        for (name, value) in [
+            ("outlier_min_m", self.outlier_min_m),
+            ("max_jump_m", self.max_jump_m),
+            ("max_range_m", self.max_range_m),
+        ] {
+            if !value.is_finite() {
+                return Err(PolicyError::NotFinite(name));
+            }
+            if value <= 0.0 {
+                return Err(PolicyError::NotPositive(name));
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Radio technology, matching the `OpenCellID` `radio` field.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum Radio {
     Gsm,
@@ -44,6 +100,11 @@ pub enum Radio {
     Nr,
     Cdma,
 }
+
+/// A radio name that is not part of the `OpenCellID` vocabulary.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("unknown radio {0}")]
+pub struct RadioParseError(String);
 
 impl Display for Radio {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
@@ -58,7 +119,7 @@ impl Display for Radio {
 }
 
 impl FromStr for Radio {
-    type Err = &'static str;
+    type Err = RadioParseError;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value.to_ascii_uppercase().as_str() {
@@ -67,13 +128,13 @@ impl FromStr for Radio {
             "LTE" => Ok(Self::Lte),
             "NR" => Ok(Self::Nr),
             "CDMA" => Ok(Self::Cdma),
-            _ => Err("unknown radio"),
+            _ => Err(RadioParseError(value.to_owned())),
         }
     }
 }
 
 /// Globally unique identity of a radio cell.
-#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct CellKey {
     pub radio: Radio,
     pub mcc: i64,
@@ -117,6 +178,7 @@ pub enum ServerEvent {
     Ready { published: usize },
     TowerUpserted { tower: Consensus },
     TowerDeleted { key: CellKey },
+    ResyncRequired { missed: u64 },
 }
 
 /// Great-circle distance in metres.
@@ -137,8 +199,38 @@ pub(crate) fn plausible(tower: &CellTower, policy: &Policy) -> bool {
     tower.range_m > 0.0
         && tower.range_m <= policy.max_range_m
         && tower.samples > 0
+        && (1..=999).contains(&tower.key.mcc)
+        && (0..=999).contains(&tower.key.mnc)
+        && tower.key.area >= 0
+        && tower.key.cid >= 0
         && (-90.0..=90.0).contains(&tower.lat)
         && (-180.0..=180.0).contains(&tower.lon)
         && !(tower.lat == 0.0 && tower.lon == 0.0)
         && in_ukraine
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invalid_policy_is_rejected_before_serving_requests() {
+        let invalid_samples = Policy {
+            max_samples_per_device: 0,
+            ..Policy::default()
+        };
+        assert!(matches!(
+            invalid_samples.validate(),
+            Err(PolicyError::NotPositive("max_samples_per_device"))
+        ));
+
+        let invalid_distance = Policy {
+            max_jump_m: f64::NAN,
+            ..Policy::default()
+        };
+        assert!(matches!(
+            invalid_distance.validate(),
+            Err(PolicyError::NotFinite("max_jump_m"))
+        ));
+    }
 }

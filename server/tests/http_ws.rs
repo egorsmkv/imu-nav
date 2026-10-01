@@ -23,16 +23,20 @@ impl Drop for TestServer {
 }
 
 async fn start_server() -> Result<TestServer> {
+    start_server_with_policy(Policy::default()).await
+}
+
+async fn start_server_with_policy(policy: Policy) -> Result<TestServer> {
     let database = NamedTempFile::new()?;
     let store = CellStore::open(database.path())?;
     let state = AppState::new(
         store,
         ServerConfig {
             api_key: Some("secret".to_owned()),
-            policy: Policy::default(),
+            policy,
             trust_proxy: false,
         },
-    );
+    )?;
     let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?;
     let address = listener.local_addr()?;
     let task = tokio::spawn(async move {
@@ -67,12 +71,12 @@ fn tower(lat: f64) -> CellTower {
 }
 
 fn upload_body(tower: CellTower) -> Result<Vec<u8>> {
-    encode_towers(&[Consensus {
+    Ok(encode_towers(&[Consensus {
         tower,
         devices: 2,
         seeded: false,
         updated_s: 1,
-    }])
+    }])?)
 }
 
 #[tokio::test]
@@ -88,7 +92,11 @@ async fn android_protocol_and_websocket_events_stay_compatible() -> Result<()> {
     let ready = websocket.next().await.expect("ready event")?;
     assert!(ready.to_text()?.contains("\"type\":\"ready\""));
 
-    for (device, lat) in [("device-aaaa-1111", 50.400), ("device-bbbb-2222", 50.402)] {
+    for (upload_index, (device, lat)) in
+        [("device-aaaa-1111", 50.400), ("device-bbbb-2222", 50.402)]
+            .into_iter()
+            .enumerate()
+    {
         let response = client
             .post(format!("{}/v1/cells", server.base_url))
             .bearer_auth("secret")
@@ -99,6 +107,29 @@ async fn android_protocol_and_websocket_events_stay_compatible() -> Result<()> {
             .await?;
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response.json::<serde_json::Value>().await?["accepted"], 1);
+        if upload_index == 0 {
+            let response = client
+                .get(format!(
+                    "{}/v1/cells.csv.gz?mcc=255&since=0",
+                    server.base_url
+                ))
+                .send()
+                .await?;
+            assert!(decode_towers(&response.bytes().await?, 10)?.is_empty());
+
+            let response = client
+                .get(format!("{}/v1/towers?mcc=255", server.base_url))
+                .bearer_auth("secret")
+                .send()
+                .await?;
+            assert_eq!(
+                response.json::<serde_json::Value>().await?["towers"]
+                    .as_array()
+                    .map(Vec::len),
+                Some(1),
+                "management includes pending consensus"
+            );
+        }
     }
 
     let event = websocket.next().await.expect("tower event")?;
@@ -183,5 +214,83 @@ async fn management_api_is_authenticated_and_broadcasts_deletes() -> Result<()> 
             .map(Vec::len),
         Some(0)
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn invalid_filters_keys_and_oversized_uploads_are_rejected() -> Result<()> {
+    let policy = Policy {
+        max_rows_per_upload: 1,
+        ..Policy::default()
+    };
+    let server = start_server_with_policy(policy).await?;
+    let client = reqwest::Client::new();
+
+    let response = client
+        .get(format!("{}/v1/towers?mcc=not-a-number", server.base_url))
+        .bearer_auth("secret")
+        .send()
+        .await?;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let response = client
+        .put(format!("{}/v1/towers/LTE/-1/1/1864/99", server.base_url))
+        .bearer_auth("secret")
+        .json(&serde_json::json!({"lat": 50.45, "lon": 30.52, "range_m": 700.0, "samples": 20}))
+        .send()
+        .await?;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let mut second_tower = tower(50.4);
+    second_tower.key.cid = 43;
+    let body = encode_towers(&[
+        Consensus {
+            tower: tower(50.4),
+            devices: 1,
+            seeded: false,
+            updated_s: 1,
+        },
+        Consensus {
+            tower: second_tower,
+            devices: 1,
+            seeded: false,
+            updated_s: 1,
+        },
+    ])?;
+    let response = client
+        .post(format!("{}/v1/cells", server.base_url))
+        .bearer_auth("secret")
+        .header("x-device-id", "device-aaaa-1111")
+        .body(body)
+        .send()
+        .await?;
+    assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    Ok(())
+}
+
+#[tokio::test]
+async fn repeated_device_uploads_are_rate_limited() -> Result<()> {
+    let policy = Policy {
+        max_uploads_per_hour_per_device: 2,
+        ..Policy::default()
+    };
+    let server = start_server_with_policy(policy).await?;
+    let client = reqwest::Client::new();
+    let body = upload_body(tower(50.4))?;
+
+    for expected in [
+        StatusCode::OK,
+        StatusCode::OK,
+        StatusCode::TOO_MANY_REQUESTS,
+    ] {
+        let response = client
+            .post(format!("{}/v1/cells", server.base_url))
+            .bearer_auth("secret")
+            .header("x-device-id", "device-aaaa-1111")
+            .body(body.clone())
+            .send()
+            .await?;
+        assert_eq!(response.status(), expected);
+    }
     Ok(())
 }

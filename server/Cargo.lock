@@ -774,6 +774,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "thiserror",
  "tokio",
  "tokio-tungstenite 0.27.0",
  "tracing",
