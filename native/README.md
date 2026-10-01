@@ -1,54 +1,161 @@
-# Native navigation core
+# Native Rust crates
 
-`imu-nav-core` contains deterministic, Android-independent estimation and trust logic. `imu-nav-jni`
-is a deliberately small handle-based boundary; Kotlin never owns or dereferences a native pointer.
-`NavigationEstimator` owns prediction timing, travel-mode process noise, OBD freshness, GNSS route
-projection, measurement sigma policy, innovation gating and systematic-drift resets; Kotlin passes
-observations rather than manipulating its covariance matrix.
+The `native` Cargo workspace contains the route-constrained navigation code that Android runs
+through JNI. It has two crates:
 
-## Filter model
+| Crate | Type | Purpose |
+|---|---|---|
+| [`imu-nav-core`](nav-core/) | Rust library | Android-independent navigation algorithms and state |
+| [`imu-nav-jni`](nav-jni/) | `cdylib` | JNI adapter that exposes `imu-nav-core` to Kotlin as `libimu_nav_jni.so` |
 
-The state is `x = [s, v]`: metres along the selected route and along-route speed. With a constant
-velocity model, both the transition and the position/speed observations are linear, so a conventional
-Kalman filter is the correct model. An Extended Kalman Filter would add Jacobian complexity without
-adding information. Route projection is nonlinear geospatial work, but it happens before the scalar
-`s` observation reaches the filter.
+The split keeps the algorithms deterministic and directly testable on the host. Android-specific
+array conversion, handle ownership and error codes stay in the JNI crate.
 
-The 2×2 covariance matrix is
+## `imu-nav-core`
+
+`imu-nav-core` has no external dependencies and forbids unsafe Rust. Its modules are:
+
+### `lib.rs`: route-state filter
+
+The crate root defines a fixed-size linear Kalman filter whose state is:
 
 ```text
-P = [ var(s)    cov(s,v) ]
-    [ cov(s,v)  var(v)   ]
+x = [s, v]
 ```
 
-The off-diagonal term matters: after prediction, a position correction can also improve speed. The
-prediction derives `Q` from unknown acceleration and `dt`; each update derives `R` by squaring the
-sensor's standard deviation (`sigma`). Updates use normalized innovation squared for outlier gating
-and the Joseph covariance form for numerical stability. A separate distance-proportional allowance
-covers persistent odometer/model bias, which Gaussian covariance alone tends to underestimate.
+`s` is distance in metres along the route and `v` is along-route speed in metres per second. The
+filter provides:
 
-“Sigma algebra” is not an additional Kalman operation. In probability theory a sigma-algebra defines
-measurable events. If “sigma” means sigma points, that describes an Unscented Kalman Filter. A UKF is
-not useful for the present linear `[s, v]` state; it would become a candidate only if the native state
-later included nonlinear latitude/longitude, heading and IMU-bias dynamics.
+- constant-velocity prediction with acceleration process noise;
+- position and speed measurement updates;
+- normalized-innovation-squared gates for statistical outliers;
+- Joseph-form covariance updates;
+- trusted position anchors;
+- a distance-proportional systematic-drift allowance in addition to covariance; and
+- a conservative safety radius that combines random uncertainty and systematic drift.
 
-## Why the external crate is not a dependency
+The main public types are `RouteFilter`, `Estimate`, `Covariance2`, `UpdateOutcome` and
+`FilterError`.
 
-[`SuperInstance/kalman-filter`](https://github.com/SuperInstance/kalman-filter) was evaluated at commit
-`371789b60f99e034227048bc8ff26bc8ae013926`. Its small Rust `KalmanFilter2D` is a useful teaching
-implementation of the same constant-velocity idea, but it exposes mutable state, accepts only position
-observations, uses a fixed caller-supplied process matrix, has no input validation or innovation gate,
-and uses the shortened covariance update. Its 2D update also mutates covariance entries while later
-entries still depend on the old matrix. The navigation core therefore keeps a purpose-built fixed-size
-implementation with speed observations, Joseph updates, explicit error handling, long-run covariance
-tests, spoofing gates, route geometry and JNI lifecycle management.
+### `estimator.rs`: navigation estimator
 
-## Security boundary and rollout
+`NavigationEstimator` owns a `RouteFilter` and applies the policy needed to run it during a trip. It:
 
-Kalman consistency is not spoofing detection: a gradual spoofer can remain statistically plausible.
-Receiver health, clock/physics checks, independent network agreement, service-area checks and AGC
-jamming hysteresis run before measurement fusion. Android already uses these native trust decisions,
-native route projection, the physical gate for network/cell fixes, weighted speed regression and
-inverse-variance speed fusion. The route estimator currently runs beside the established Kotlin
-engine and logs disagreement; it must pass recorded-trip accuracy comparisons before becoming the
-displayed navigation state.
+- selects car or walking process noise;
+- advances the filter from elapsed-realtime ticks;
+- projects trusted or suspect GNSS observations onto the route;
+- derives measurement uncertainty from GNSS accuracy and trust level;
+- incorporates GNSS speed and fresh OBD-II vehicle speed;
+- uses lower drift growth while OBD speed is fresh;
+- resets systematic drift after an accepted GOOD GNSS position; and
+- replaces and re-anchors route geometry after rerouting.
+
+It returns a `TickOutcome` containing the estimate, optional route projection, and whether the
+position and speed measurements passed their innovation gates.
+
+### `route.rs`: route geometry
+
+`RouteGeometry` stores a geographic polyline and its cumulative distances. It validates coordinates
+and projects a `GeoPoint` to the nearest route segment, returning:
+
+- distance along the route;
+- perpendicular offset from the route;
+- segment index; and
+- the projected geographic point.
+
+Projection first searches a window around the current `s` value. If that result is too far from the
+route, it can fall back to a global search. This avoids snapping to a distant repeated section while
+still allowing recovery from a large position error.
+
+### `trust.rs`: GNSS trust firewall
+
+`TrustClassifier` classifies each GNSS fix as `Good`, `Suspect` or `Bad` before the fix reaches the
+navigation estimator. Its checks cover:
+
+- invalid, mock and out-of-service-area fixes;
+- altitude, speed, accuracy and wall-clock consistency;
+- duplicate timestamps, impossible jumps and frozen coordinates;
+- reported speed versus geographic displacement;
+- disagreement with an independent network fix;
+- satellite count, C/N0 strength and C/N0 spread;
+- GNSS bearing versus compass heading; and
+- weak, hard and chained jamming evidence.
+
+The same module contains `JamDetector`, an AGC-based state machine with hysteresis. Trust checks are
+separate from Kalman innovation gating because a gradual spoofing signal may remain statistically
+plausible.
+
+### `network.rs`: cell/network position tracking
+
+`NetworkTracker` handles route-projected network and cell observations. It:
+
+- rejects positions that are not physically reachable from the current anchor;
+- accepts a new anchor only after consistent evidence;
+- keeps short recent and 30-second history views;
+- detects whether the last two samples are mutually consistent; and
+- feeds suitable, non-duplicate samples to the network speed estimator.
+
+### `speed.rs`: speed estimation and fusion
+
+This module contains two related components:
+
+- `NetworkSpeedEstimator` fits weighted position-over-time regression to recent network samples,
+  removes large residual outliers, and reports speed with uncertainty.
+- `fuse_speed` combines available GNSS speed, route-speed prior and network-derived speed using
+  inverse-variance weighting, with increasing uncertainty as the last GNSS speed ages.
+
+## `imu-nav-jni`
+
+`imu-nav-jni` is the Android boundary. It does not contain navigation policy of its own; it validates
+and converts JNI inputs, calls `imu-nav-core`, and converts results back to primitive Java arrays and
+status codes.
+
+The exported functions are grouped by their Kotlin owners in
+`app/src/main/kotlin/org/imunav/app/nativecore/`:
+
+| Kotlin wrapper | Native state or operation |
+|---|---|
+| `NativeTrustEvaluator` | `TrustClassifier` and `JamDetector` lifecycle, AGC updates and fix verdicts |
+| `NativeRouteGeometry` | Route creation, destruction and point projection |
+| `NativeRouteFilter` | Low-level filter prediction, measurement updates, route installation and state reads |
+| `NativeNavigationEstimator` | Trip estimator lifecycle, ticks, OBD speed and route replacement |
+| `NativeNetworkTracker` | Network/cell gating, sample history and speed regression |
+| `NativeSpeedFusion` | Stateless inverse-variance speed fusion |
+
+Stateful objects live in synchronized Rust registries. Kotlin receives opaque integer handles, not
+native pointers. Invalid or already-destroyed handles return an error instead of dereferencing freed
+memory. Every JNI entry point also catches Rust panics so none unwind across the JNI boundary.
+
+## Android integration
+
+Android currently uses the native trust classifier, jamming detector, route projector, network
+tracker and speed fusion in the live navigation engine. `NativeNavigationEstimator` runs beside the
+established Kotlin engine and logs their difference while its tuning is validated against recorded
+trips; it does not yet own the position shown to the user.
+
+The Kotlin/JVM implementations remain in `:core` for replay, parity tests and non-Android tools.
+Changes to native behavior should keep the corresponding Kotlin behavior and boundary tests aligned.
+
+## Building and testing
+
+Run the host-side Rust checks from the repository root:
+
+```bash
+cargo fmt --manifest-path native/Cargo.toml --all --check
+cargo test --manifest-path native/Cargo.toml
+cargo clippy --manifest-path native/Cargo.toml --all-targets -- -W clippy::pedantic -D warnings
+```
+
+The root Gradle `check` task runs the same checks through `rustFmtCheck`, `rustTest` and
+`rustClippy`.
+
+Android builds invoke [`scripts/build-rust-android.sh`](../scripts/build-rust-android.sh). The script
+uses the Android NDK to build `imu-nav-jni` for:
+
+- `arm64-v8a`;
+- `armeabi-v7a`; and
+- `x86_64`.
+
+It copies the resulting `libimu_nav_jni.so` files into
+`app/build/generated/rustJniLibs/<abi>/`, which the Android Gradle plugin packages with the app. The
+minimum native Android API is 26, matching the app's `minSdk`.
