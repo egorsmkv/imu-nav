@@ -467,6 +467,8 @@
     <string name="setup_bluetooth">Nearby devices</string>
     <string name="setup_bluetooth_hint">Read vehicle speed from a paired Bluetooth OBD-II adapter. Granting access does not connect an adapter.</string>
     <string name="setup_battery_hint">Allow uninterrupted navigation when the screen is off. Android asks you to confirm the battery exemption separately.</string>
+    <string name="setup_access">Access and permissions</string>
+    <string name="setup_progress">Essentials ready: %1$d of %2$d</string>
     <string name="setup_enable_permissions">Enable permissions</string>
     <string name="setup_granted">Allowed</string>
     <string name="setup_not_granted">Not allowed</string>

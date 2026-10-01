@@ -477,6 +477,8 @@
     <string name="setup_bluetooth">Устройства поблизости</string>
     <string name="setup_bluetooth_hint">Чтение скорости автомобиля со сопряжённого Bluetooth-адаптера OBD-II. Предоставление доступа не подключает адаптер.</string>
     <string name="setup_battery_hint">Разрешите непрерывную навигацию с выключенным экраном. Android отдельно запросит подтверждение отключения оптимизации батареи.</string>
+    <string name="setup_access">Доступ и разрешения</string>
+    <string name="setup_progress">Готово: %1$d из %2$d основных пунктов</string>
     <string name="setup_enable_permissions">Предоставить разрешения</string>
     <string name="setup_granted">Разрешено</string>
     <string name="setup_not_granted">Не разрешено</string>
