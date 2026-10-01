@@ -15,7 +15,7 @@ use imu_nav_core::trust::{
     JamDetector, LocationFix, Reason, ReceiverHealth, TrustClassifier, TrustConfig, TrustInput,
     TrustLevel,
 };
-use imu_nav_core::{FilterError, RouteFilter};
+use imu_nav_core::{Estimate, FilterError, RouteFilter};
 use jni::JNIEnv;
 use jni::objects::{JClass, JDoubleArray, JIntArray, JLongArray};
 use jni::sys::{jdouble, jdoubleArray, jint, jintArray, jlong};
@@ -142,6 +142,35 @@ fn usize_as_f64(value: usize) -> Option<f64> {
 #[must_use]
 fn elapsed_milliseconds_as_f64(value: i64) -> f64 {
     value as f64
+}
+
+/// Serializes an estimate in the stable order consumed by both Kotlin estimator wrappers.
+fn estimate_values(estimate: Estimate) -> Option<[f64; 7]> {
+    Some([
+        estimate.position_m,
+        estimate.speed_mps,
+        estimate.covariance.position,
+        estimate.covariance.position_speed,
+        estimate.covariance.speed,
+        estimate.systematic_drift_m,
+        estimate.safety_radius_m(2.0).ok()?,
+    ])
+}
+
+/// Copies Rust doubles into a newly allocated Java array and returns its JNI-owned reference.
+fn new_double_array(env: &JNIEnv, values: &[f64]) -> Option<jdoubleArray> {
+    let output: JDoubleArray = env
+        .new_double_array(i32::try_from(values.len()).ok()?)
+        .ok()?;
+    env.set_double_array_region(&output, 0, values).ok()?;
+    Some(output.into_raw())
+}
+
+/// Copies Rust integers into a newly allocated Java array and returns its JNI-owned reference.
+fn new_int_array(env: &JNIEnv, values: &[jint]) -> Option<jintArray> {
+    let output: JIntArray = env.new_int_array(i32::try_from(values.len()).ok()?).ok()?;
+    env.set_int_array_region(&output, 0, values).ok()?;
+    Some(output.into_raw())
 }
 
 #[unsafe(no_mangle)]
@@ -386,10 +415,12 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteGeometry_native
             return None;
         }
         let points = values
-            .chunks_exact(2)
-            .map(|value| GeoPoint {
-                latitude_deg: value[0],
-                longitude_deg: value[1],
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|&[latitude_deg, longitude_deg]| GeoPoint {
+                latitude_deg,
+                longitude_deg,
             })
             .collect();
         let route = Arc::new(RouteGeometry::new(points).ok()?);
@@ -459,11 +490,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteGeometry_native
             projection.point.latitude_deg,
             projection.point.longitude_deg,
         ];
-        let output: JDoubleArray = env
-            .new_double_array(i32::try_from(values.len()).ok()?)
-            .ok()?;
-        env.set_double_array_region(&output, 0, &values).ok()?;
-        Some(output.into_raw())
+        new_double_array(&env, &values)
     }))
     .ok()
     .flatten()
@@ -532,11 +559,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteFilter_nativePr
             projection.point.latitude_deg,
             projection.point.longitude_deg,
         ];
-        let output: JDoubleArray = env
-            .new_double_array(i32::try_from(values.len()).ok()?)
-            .ok()?;
-        env.set_double_array_region(&output, 0, &values).ok()?;
-        Some(output.into_raw())
+        new_double_array(&env, &values)
     }))
     .ok()
     .flatten()
@@ -551,21 +574,8 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteFilter_nativeGe
 ) -> jdoubleArray {
     catch_unwind(AssertUnwindSafe(|| {
         let estimate = with_filter(handle, |filter| filter.estimate()).ok()?;
-        let safety_radius = estimate.safety_radius_m(2.0).ok()?;
-        let values = [
-            estimate.position_m,
-            estimate.speed_mps,
-            estimate.covariance.position,
-            estimate.covariance.position_speed,
-            estimate.covariance.speed,
-            estimate.systematic_drift_m,
-            safety_radius,
-        ];
-        let output: JDoubleArray = env
-            .new_double_array(i32::try_from(values.len()).ok()?)
-            .ok()?;
-        env.set_double_array_region(&output, 0, &values).ok()?;
-        Some(output.into_raw())
+        let values = estimate_values(estimate)?;
+        new_double_array(&env, &values)
     }))
     .ok()
     .flatten()
@@ -726,9 +736,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeTrustEvaluator_nativ
         let mut result = Vec::with_capacity(verdict.reasons.len() + 1);
         result.push(trust_level_code(verdict.level));
         result.extend(verdict.reasons.into_iter().map(reason_code));
-        let output: JIntArray = env.new_int_array(i32::try_from(result.len()).ok()?).ok()?;
-        env.set_int_array_region(&output, 0, &result).ok()?;
-        Some(output.into_raw())
+        new_int_array(&env, &result)
     }))
     .ok()
     .flatten()
@@ -911,11 +919,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNetworkTracker_nativ
             usize_as_f64(estimate.samples)?,
             estimate.span_s,
         ];
-        let output: JDoubleArray = env
-            .new_double_array(i32::try_from(values.len()).ok()?)
-            .ok()?;
-        env.set_double_array_region(&output, 0, &values).ok()?;
-        Some(output.into_raw())
+        new_double_array(&env, &values)
     }))
     .ok()
     .flatten()
@@ -949,11 +953,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNetworkTracker_nativ
                 ]
             })
             .collect();
-        let output: JDoubleArray = env
-            .new_double_array(i32::try_from(values.len()).ok()?)
-            .ok()?;
-        env.set_double_array_region(&output, 0, &values).ok()?;
-        Some(output.into_raw())
+        new_double_array(&env, &values)
     }))
     .ok()
     .flatten()
@@ -1117,23 +1117,36 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNavigationEstimator_
             .ok()?
             .ok()?
             .estimate;
-        let safety_radius_m = estimate.safety_radius_m(2.0).ok()?;
-        let result = [
-            estimate.position_m,
-            estimate.speed_mps,
-            estimate.covariance.position,
-            estimate.covariance.position_speed,
-            estimate.covariance.speed,
-            estimate.systematic_drift_m,
-            safety_radius_m,
-        ];
-        let output: JDoubleArray = env
-            .new_double_array(i32::try_from(result.len()).ok()?)
-            .ok()?;
-        env.set_double_array_region(&output, 0, &result).ok()?;
-        Some(output.into_raw())
+        let result = estimate_values(estimate)?;
+        new_double_array(&env, &result)
     }))
     .ok()
     .flatten()
     .unwrap_or(ptr::null_mut())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use imu_nav_core::Covariance2;
+
+    #[test]
+    fn estimate_values_preserves_kotlin_wire_order() {
+        let values = estimate_values(Estimate {
+            position_m: 1.0,
+            speed_mps: 2.0,
+            covariance: Covariance2 {
+                position: 3.0,
+                position_speed: 4.0,
+                speed: 5.0,
+            },
+            systematic_drift_m: 6.0,
+        })
+        .expect("the fixed safety multiplier is valid");
+        let expected = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 6.0 + 2.0 * 3.0_f64.sqrt()];
+
+        for (actual, expected) in values.into_iter().zip(expected) {
+            assert!((actual - expected).abs() < f64::EPSILON);
+        }
+    }
 }

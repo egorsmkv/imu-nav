@@ -349,10 +349,10 @@ impl TrustClassifier {
         };
         if let (Some(accuracy), Some(last_accuracy)) =
             (fix.horizontal_accuracy_m, last.horizontal_accuracy_m)
+            && accuracy > 15.0
+            && accuracy > last_accuracy * 3.0
         {
-            if accuracy > 15.0 && accuracy > last_accuracy * 3.0 {
-                soft.push(Reason::Accuracy);
-            }
+            soft.push(Reason::Accuracy);
         }
         if fix.elapsed_ms <= last.elapsed_ms {
             return;
@@ -539,12 +539,10 @@ impl TrustClassifier {
     fn check_heading(&self, fix: LocationFix, compass_deg: Option<f64>, soft: &mut Vec<Reason>) {
         if let (Some(bearing), Some(speed), Some(compass)) =
             (fix.bearing_deg, fix.speed_mps, compass_deg)
+            && speed > self.config.heading_check_min_speed_mps
+            && angle_difference_deg(bearing, compass) > self.config.max_heading_difference_deg
         {
-            if speed > self.config.heading_check_min_speed_mps
-                && angle_difference_deg(bearing, compass) > self.config.max_heading_difference_deg
-            {
-                soft.push(Reason::HeadingDifference);
-            }
+            soft.push(Reason::HeadingDifference);
         }
     }
 }

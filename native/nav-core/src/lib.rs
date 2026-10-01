@@ -54,7 +54,7 @@ impl Covariance2 {
         }
         // A symmetric 2x2 matrix is positive semidefinite exactly when both diagonal entries and
         // its determinant are non-negative. Permit a tiny floating-point tolerance.
-        let determinant = self.position * self.speed - self.position_speed * self.position_speed;
+        let determinant = self.position * self.speed - self.position_speed.powi(2);
         determinant >= -SYMMETRY_TOLERANCE * (1.0 + self.position * self.speed)
     }
 
