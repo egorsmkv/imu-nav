@@ -19,12 +19,14 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -91,6 +93,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
@@ -129,6 +132,10 @@ private val WarnAmber = Color(0xFFE37400)
 private val BadRed = Color(0xFFD93025)
 private val InfoBlue = Color(0xFF1A73E8)
 private const val LANDSCAPE_PANEL_MAX_WIDTH_DP = 600
+private const val LANDSCAPE_TOOLBAR_WIDTH_DP = 300
+private val MapButtonSize = 48.dp
+private val MapButtonSpacing = 10.dp
+private val MapOverlayPadding = 12.dp
 
 /**
  * The main screen: full-screen map with status on top, map buttons on the right, and either the
@@ -206,7 +213,14 @@ fun MapScreen(
         ui.cells.message?.let { snackbar.showSnackbar(it) }
     }
 
-    Box(Modifier.fillMaxSize()) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val showRecenter = ui.currentPosition != null && !(nav.active && following)
+        val mapButtonCount = if (showRecenter) 4 else 3
+        val controlsHeight = MapButtonSize * mapButtonCount + MapButtonSpacing * (mapButtonCount - 1)
+        val topInset = with(LocalDensity.current) { topInsetPx.toDp() }
+        // Reserve the complete control rail before measuring the panel, even with large system text.
+        val panelMaxHeight = (maxHeight - topInset - if (landscape) 0.dp else controlsHeight + MapOverlayPadding * 2).coerceAtLeast(0.dp)
+        val panelMaxWidth = (maxWidth - LANDSCAPE_TOOLBAR_WIDTH_DP.dp - MapOverlayPadding * 2).coerceIn(0.dp, LANDSCAPE_PANEL_MAX_WIDTH_DP.dp)
         val dark = isSystemInDarkTheme()
         key(dark) {
             NavMap(
@@ -260,7 +274,7 @@ fun MapScreen(
             Modifier.align(if (landscape) Alignment.TopEnd else Alignment.TopCenter)
                 .onGloballyPositioned { topInsetPx = it.positionInRoot().y.toInt() + it.size.height }
                 .statusBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp)
-                .then(if (landscape) Modifier.widthIn(max = 300.dp).fillMaxWidth() else Modifier.fillMaxWidth()),
+                .then(if (landscape) Modifier.widthIn(max = LANDSCAPE_TOOLBAR_WIDTH_DP.dp).fillMaxWidth() else Modifier.fillMaxWidth()),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (nav.active && !nav.arrived) ManeuverBanner(nav)
@@ -283,8 +297,9 @@ fun MapScreen(
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                StatusPill(ui) { showDiagnostics = true }
-                Spacer(Modifier.weight(1f))
+                Box(Modifier.weight(1f)) {
+                    StatusPill(ui) { showDiagnostics = true }
+                }
                 if (!nav.active) {
                     FilledTonalIconButton(onClick = onOpenHistory) {
                         Icon(Icons.Filled.History, contentDescription = stringResource(R.string.cd_history))
@@ -303,8 +318,8 @@ fun MapScreen(
             Modifier.align(Alignment.CenterEnd).offset { IntOffset(0, (topInsetPx - bottomInsetPx) / 2) }.padding(end = 12.dp)
         }
         Column(
-            mapControlsModifier,
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            Modifier.heightIn(max = (maxHeight - topInset).coerceAtLeast(0.dp)).then(mapControlsModifier).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(MapButtonSpacing),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             MapButton(Icons.Filled.CellTower, stringResource(R.string.cd_towers), selected = ui.cells.showTowers) {
@@ -313,7 +328,7 @@ fun MapScreen(
             MapButton(Icons.Filled.Add, stringResource(R.string.cd_zoom_in)) { controller.zoomBy(1.0) }
             MapButton(Icons.Filled.Remove, stringResource(R.string.cd_zoom_out)) { controller.zoomBy(-1.0) }
             val pos = ui.currentPosition
-            if (pos != null && !(nav.active && following)) {
+            if (pos != null && showRecenter) {
                 MapButton(Icons.Filled.MyLocation, stringResource(R.string.cd_recenter)) {
                     if (nav.active) following = true else controller.moveTo(pos)
                 }
@@ -326,8 +341,9 @@ fun MapScreen(
                 bottomInsetPx = it.size.height
                 bottomInsetWidthPx = it.size.width
             }
-                .navigationBarsPadding().padding(12.dp)
-                .then(if (landscape) Modifier.widthIn(max = LANDSCAPE_PANEL_MAX_WIDTH_DP.dp).fillMaxWidth() else Modifier.fillMaxWidth()),
+                .heightIn(max = panelMaxHeight)
+                .then(if (landscape) Modifier.widthIn(max = panelMaxWidth) else Modifier)
+                .navigationBarsPadding().padding(MapOverlayPadding).fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (ui.cells.showTowers) TowerLegend(towerLayer, ui.cells.radios)
@@ -522,7 +538,7 @@ private fun StatusPill(ui: UiState, onClick: () -> Unit) {
         Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(10.dp).background(dot, CircleShape))
             Spacer(Modifier.width(8.dp))
-            Text(label, style = MaterialTheme.typography.labelLarge)
+            Text(label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.width(10.dp))
             Icon(gps.first, contentDescription = gps.second, tint = gps.third, modifier = Modifier.size(18.dp))
         }
@@ -538,7 +554,7 @@ private fun MapButton(icon: ImageVector, description: String, selected: Boolean 
         onClick = onClick,
         containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
         contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-        modifier = Modifier.size(48.dp).semantics { contentDescription = description },
+        modifier = Modifier.size(MapButtonSize).semantics { contentDescription = description },
     ) { Icon(icon, contentDescription = null) }
 }
 
@@ -588,11 +604,11 @@ private fun TowerLegend(layer: TowerLayer, radios: Set<Radio>) {
 
 // ------------------------------------------------------------------ bottom panels
 
-/** The rounded card at the bottom of the map that the panels live in. */
+/** A bounded card: large text scrolls inside it instead of covering the map controls. */
 @Composable
 private fun PanelSurface(compact: Boolean = false, content: @Composable () -> Unit) {
     Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surface, shadowElevation = 8.dp, tonalElevation = 2.dp) {
-        Column(Modifier.fillMaxWidth().padding(if (compact) 12.dp else 20.dp)) { content() }
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(if (compact) 12.dp else 20.dp)) { content() }
     }
 }
 
