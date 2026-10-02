@@ -473,7 +473,11 @@ pattern for an upcoming turn (one buzz), the turn itself (two), leaving the rout
 **Vibrate on turns and alerts** in the same group. Start, Stop, the Car/Walk selector and choosing a destination
 also give a short tap of feedback, following the phone's touch-feedback setting. Map and settings layouts adapt to portrait and landscape.
 Map panels scroll when text does not fit, preserving space for zoom controls; long position labels
-shorten to keep History and Settings accessible, including with enlarged system text. Text trip logs are written to
+shorten to keep History and Settings accessible, including with enlarged system text. In short windows,
+map warnings and controls scroll separately from the route panel; the compass stays clear of the zoom buttons.
+Action buttons, travel modes, legends and trip statistics wrap to the next line when needed. Settings,
+address search and the trip log keep content above the keyboard, and the setup and log control panels
+limit their height so the main content remains reachable. System font scaling is preserved. Text trip logs are written to
 `files/logs/`, trip recordings to `files/trips/` in app storage. The in-app trip-log viewer shows timestamps, highlights problems, and can search,
 filter, follow, copy or share the latest diagnostic events as a text file.
 

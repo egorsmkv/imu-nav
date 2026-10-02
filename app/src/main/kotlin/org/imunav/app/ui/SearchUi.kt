@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
@@ -39,10 +39,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import org.imunav.app.R
@@ -73,11 +73,11 @@ fun SearchScreen(search: PlaceSearch, near: GeoPoint?, hint: String, onPick: (Se
     }
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
-        Column(Modifier.statusBarsPadding().imePadding()) {
+        Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
             TextField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = { Text(hint) },
+                placeholder = { Text(hint, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 leadingIcon = { IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.cd_back)) } },
                 trailingIcon = {
                     if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Close, stringResource(R.string.cd_clear)) }
@@ -94,17 +94,19 @@ fun SearchScreen(search: PlaceSearch, near: GeoPoint?, hint: String, onPick: (Se
                 modifier = Modifier.fillMaxWidth().padding(4.dp).focusRequester(focus),
             )
             if (loading) LinearProgressIndicator(Modifier.fillMaxWidth()) else HorizontalDivider()
-            if (!search.hasOffline) {
-                Text(
-                    stringResource(R.string.search_offline_missing),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(16.dp),
-                )
-            }
             val showRecent = query.trim().length < 2
             val list = if (showRecent) search.recent() else results
-            LazyColumn(Modifier.fillMaxSize()) {
+            LazyColumn(Modifier.weight(1f)) {
+                item {
+                    if (!search.hasOffline) {
+                        Text(
+                            stringResource(R.string.search_offline_missing),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(16.dp),
+                        )
+                    }
+                }
                 if (showRecent && list.isNotEmpty()) {
                     item {
                         Text(

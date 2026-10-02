@@ -13,6 +13,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -20,8 +21,11 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -99,6 +103,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
@@ -190,11 +195,13 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
                 }
             }
-            TopAppBar(title = { Text(stringResource(R.string.settings_title)) }, navigationIcon = navigationIcon, scrollBehavior = scroll)
+            TopAppBar(title = {
+                Text(stringResource(R.string.settings_title), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }, navigationIcon = navigationIcon, scrollBehavior = scroll)
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
+        Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
             Column(Modifier.align(Alignment.TopCenter).widthIn(max = 840.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
                 if (busy) {
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
@@ -398,7 +405,7 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                         keyboard = KeyboardType.Uri,
                         helper = stringResource(R.string.routing_url_help),
                     )
-                    FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = { app.offlineRouting.download(packUrl) }, enabled = packUrl.isNotBlank() && routing.busy == null) {
                             Text(stringResource(R.string.action_download))
                         }
@@ -479,12 +486,14 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                     SectionHeader(stringResource(R.string.sec_sources))
                     ListItem(
                         headlineContent = { Text(stringResource(R.string.mozilla_title)) },
-                        supportingContent = { Text(stringResource(R.string.mozilla_summary)) },
-                        trailingContent = {
-                            TextButton(onClick = {
-                                save()
-                                mgr.downloadMozilla()
-                            }, enabled = !busy) { Text(stringResource(R.string.action_download)) }
+                        supportingContent = {
+                            Column {
+                                Text(stringResource(R.string.mozilla_summary))
+                                TextButton(onClick = {
+                                    save()
+                                    mgr.downloadMozilla()
+                                }, enabled = !busy) { Text(stringResource(R.string.action_download)) }
+                            }
                         },
                     )
                     ListItem(
@@ -492,7 +501,7 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                         supportingContent = { Text(stringResource(R.string.ocid_summary)) },
                     )
                     Field(token, { token = it }, stringResource(R.string.ocid_token), null, secret = true)
-                    Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = {
                             save()
                             mgr.downloadOpenCellId(token)
@@ -534,12 +543,11 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                         autoSync = it
                         save()
                     }
-                    Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = {
                             save()
                             mgr.sync()
                         }, enabled = syncUrl.isNotBlank() && !busy) { Text(stringResource(R.string.action_sync_now)) }
-                        Spacer(Modifier.size(12.dp))
                         c.lastSync?.let {
                             Text(
                                 stringResource(R.string.sync_last, it),
@@ -618,7 +626,7 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
             icon = { Icon(Icons.Filled.DeleteForever, contentDescription = null) },
             title = { Text(stringResource(R.string.reset_title)) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(stringResource(R.string.reset_text))
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { deleteLearned = !deleteLearned }) {
                         Checkbox(checked = deleteLearned, onCheckedChange = { deleteLearned = it })
@@ -890,7 +898,7 @@ private fun OfflineMapSection(app: AppGraph, state: OfflineMapStatus) {
         keyboard = KeyboardType.Uri,
         helper = stringResource(R.string.offline_map_url_help),
     )
-    FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Button(onClick = { app.offlineMap.download(url) }, enabled = url.isNotBlank() && state.busy == null) {
             Text(stringResource(R.string.action_download))
         }
@@ -1054,7 +1062,7 @@ private fun SearchServerSection(app: AppGraph, onlineAllowed: Boolean) {
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
     )
-    FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Button(onClick = { app.search.setPhotonUrl(text) }, enabled = normalized != null && normalized != saved) {
             Text(stringResource(R.string.action_apply))
         }
@@ -1135,7 +1143,7 @@ private fun MapStartSection(app: AppGraph, ui: UiState) {
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
     )
-    FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Button(
             onClick = { parsed?.let { app.setMapStart(MapStartMode.FIXED, it) } },
             enabled =
@@ -1190,7 +1198,7 @@ fun LogScreen(app: AppGraph, onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.trip_log)) },
+                title = { Text(stringResource(R.string.trip_log), maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back)) } },
                 actions = {
                     IconButton(
@@ -1236,61 +1244,67 @@ fun LogScreen(app: AppGraph, onBack: () -> Unit) {
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                label = { Text(stringResource(R.string.trip_log_search)) },
-                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                trailingIcon = {
-                    if (query.isNotEmpty()) {
-                        IconButton(onClick = { query = "" }) {
-                            Icon(Icons.Filled.Clear, contentDescription = stringResource(R.string.cd_clear))
+        BoxWithConstraints(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
+            val controlsMaxHeight = maxHeight * LOG_CONTROLS_HEIGHT_FRACTION
+            Column(Modifier.fillMaxSize()) {
+                Column(Modifier.heightIn(max = controlsMaxHeight).verticalScroll(rememberScrollState())) {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        label = { Text(stringResource(R.string.trip_log_search)) },
+                        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                        trailingIcon = {
+                            if (query.isNotEmpty()) {
+                                IconButton(onClick = { query = "" }) {
+                                    Icon(Icons.Filled.Clear, contentDescription = stringResource(R.string.cd_clear))
+                                }
+                            }
+                        },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        LogFilter.entries.forEach { choice ->
+                            FilterChip(selected = filter == choice, onClick = { filter = choice }, label = { Text(stringResource(choice.label)) })
                         }
                     }
-                },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                LogFilter.entries.forEach { choice ->
-                    FilterChip(selected = filter == choice, onClick = { filter = choice }, label = { Text(stringResource(choice.label)) })
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            pluralStringResource(R.plurals.trip_log_count, visibleLines.size, visibleLines.size, lines.size),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        FilterChip(
+                            selected = followNewest,
+                            onClick = { followNewest = !followNewest },
+                            label = { Text(stringResource(R.string.trip_log_follow)) },
+                        )
+                    }
                 }
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text(
-                    pluralStringResource(R.plurals.trip_log_count, visibleLines.size, visibleLines.size, lines.size),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f),
-                )
-                FilterChip(
-                    selected = followNewest,
-                    onClick = { followNewest = !followNewest },
-                    label = { Text(stringResource(R.string.trip_log_follow)) },
-                )
-            }
-            when {
-                lines.isEmpty() -> Text(stringResource(R.string.trip_log_empty), modifier = Modifier.padding(16.dp))
+                when {
+                    lines.isEmpty() -> Text(stringResource(R.string.trip_log_empty), modifier = Modifier.verticalScroll(rememberScrollState()).padding(16.dp))
 
-                visibleLines.isEmpty() -> Text(stringResource(R.string.trip_log_no_matches), modifier = Modifier.padding(16.dp))
+                    visibleLines.isEmpty() -> Text(stringResource(R.string.trip_log_no_matches), modifier = Modifier.verticalScroll(rememberScrollState()).padding(16.dp))
 
-                else -> SelectionContainer {
-                    LazyColumn(state = list, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 12.dp)) {
-                        items(visibleLines) { line -> LogLine(line) }
+                    else -> SelectionContainer {
+                        LazyColumn(state = list, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 12.dp)) {
+                            items(visibleLines) { line -> LogLine(line) }
+                        }
                     }
                 }
             }
         }
     }
 }
+
+private const val LOG_CONTROLS_HEIGHT_FRACTION = 0.5f
 
 /** A compact timestamp and message row that highlights failures without changing the log text. */
 @Composable

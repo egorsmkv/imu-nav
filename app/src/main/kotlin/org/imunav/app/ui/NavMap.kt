@@ -1,6 +1,7 @@
 package org.imunav.app.ui
 
 import android.graphics.Color
+import android.view.Gravity
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -214,7 +215,8 @@ fun NavMap(
         val m = controller.map ?: return@LaunchedEffect
         val margin = (8 * density).toInt()
         m.moveCamera(CameraUpdateFactory.paddingTo(cameraInsetStartPx.toDouble(), insetTopPx.toDouble(), 0.0, cameraInsetBottomPx.toDouble()))
-        m.uiSettings.setCompassMargins(0, insetTopPx + margin, margin * 2, 0)
+        m.uiSettings.compassGravity = Gravity.TOP or Gravity.START
+        m.uiSettings.setCompassMargins(cameraInsetStartPx + margin, insetTopPx + margin, 0, 0)
         m.uiSettings.setAttributionMargins(margin, 0, 0, insetBottomPx + margin)
     }
 

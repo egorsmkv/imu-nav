@@ -7,6 +7,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -56,6 +57,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.graphics.toColorInt
@@ -104,13 +106,13 @@ fun HistoryScreen(app: AppGraph, onBack: () -> Unit, onOpen: (TripSummary) -> Un
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.history_title)) },
+                title = { Text(stringResource(R.string.history_title), maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.cd_back)) } },
             )
         },
     ) { padding ->
         if (trips.isEmpty()) {
-            Box(Modifier.fillMaxSize().padding(padding).padding(32.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(32.dp), contentAlignment = Alignment.Center) {
                 Text(stringResource(R.string.history_empty), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             return@Scaffold
@@ -193,6 +195,8 @@ fun TripDetailScreen(app: AppGraph, trip: TripSummary, onBack: () -> Unit) {
                     Text(
                         DateFormat.getMediumDateFormat(context).format(Date(trip.startWallMs)) + " " +
                             DateFormat.getTimeFormat(context).format(Date(trip.startWallMs)),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.cd_back)) } },
@@ -212,7 +216,7 @@ fun TripDetailScreen(app: AppGraph, trip: TripSummary, onBack: () -> Unit) {
                     TrackMap(t.gps, t.engine, matched.orEmpty(), Modifier.fillMaxSize(), offlineStyle = app.offlineMap::styleJson)
                 }
             }
-            Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            FlowRow(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 LegendDot(GpsGreen, stringResource(R.string.trip_legend_gps))
                 LegendDot(EngineRed, stringResource(R.string.trip_legend_engine))
                 if (matched != null) LegendDot(MatchedBlue, stringResource(R.string.trip_legend_matched))
@@ -283,13 +287,17 @@ fun TripDetailScreen(app: AppGraph, trip: TripSummary, onBack: () -> Unit) {
     }
 }
 
-/** A "label ……… value" statistics row. */
+/** Values wrap below their labels when either translation or system text needs more room. */
 @Composable
 private fun Stat(label: String, value: String) {
-    ListItem(
-        headlineContent = { Text(label) },
-        trailingContent = { if (value.isNotEmpty()) Text(value, style = MaterialTheme.typography.titleMedium) },
-    )
+    FlowRow(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(label, modifier = Modifier.padding(end = 16.dp))
+        if (value.isNotEmpty()) Text(value, style = MaterialTheme.typography.titleMedium)
+    }
 }
 
 /** A coloured line sample with a label, for the map legend. */

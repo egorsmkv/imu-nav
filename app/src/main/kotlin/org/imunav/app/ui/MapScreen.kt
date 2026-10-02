@@ -21,20 +21,27 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -60,15 +67,13 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -98,7 +103,9 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -133,6 +140,10 @@ private val BadRed = Color(0xFFD93025)
 private val InfoBlue = Color(0xFF1A73E8)
 private const val LANDSCAPE_PANEL_MAX_WIDTH_DP = 600
 private const val LANDSCAPE_TOOLBAR_WIDTH_DP = 300
+private const val ROUTE_FIELDS_MIN_WIDTH_DP = 480
+private const val MAP_HEADER_HEIGHT_FRACTION = 0.4f
+private const val MAP_CONTROLS_HEIGHT_FRACTION = 0.45f
+private const val SPEED_SIGN_TEXT_HEIGHTS = 3
 private val MapButtonSize = 48.dp
 private val MapButtonSpacing = 10.dp
 private val MapOverlayPadding = 12.dp
@@ -181,6 +192,8 @@ fun MapScreen(
     val startMode by app.mapStartMode.collectAsStateWithLifecycle()
     var centeredOnce by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
+    val panelScroll = rememberScrollState()
+    val headerScroll = rememberScrollState()
     var topInsetPx by remember { mutableIntStateOf(0) }
     var bottomInsetPx by remember { mutableIntStateOf(0) }
     var bottomInsetWidthPx by remember { mutableIntStateOf(0) }
@@ -194,6 +207,9 @@ fun MapScreen(
     }
 
     LaunchedEffect(nav.active) { if (nav.active) following = true }
+    // A newly opened navigation panel or warning must start with its summary visible.
+    LaunchedEffect(nav.active, nav.arrived) { panelScroll.scrollTo(0) }
+    LaunchedEffect(nav.active, hasLocation, ui.locationEnabled) { headerScroll.scrollTo(0) }
     // GPS mode: jump to the first live trusted position once, so the map shows where the user is.
     // Fixed mode keeps the chosen place; the re-centre button still goes to the position.
     LaunchedEffect(ui.currentPosition != null) {
@@ -218,8 +234,12 @@ fun MapScreen(
         val mapButtonCount = if (showRecenter) 4 else 3
         val controlsHeight = MapButtonSize * mapButtonCount + MapButtonSpacing * (mapButtonCount - 1)
         val topInset = with(LocalDensity.current) { topInsetPx.toDp() }
-        // Reserve the complete control rail before measuring the panel, even with large system text.
-        val panelMaxHeight = (maxHeight - topInset - if (landscape) 0.dp else controlsHeight + MapOverlayPadding * 2).coerceAtLeast(0.dp)
+        val bottomInset = with(LocalDensity.current) { bottomInsetPx.toDp() }
+        val availableHeight = (maxHeight - topInset).coerceAtLeast(0.dp)
+        // In short windows both the control rail and the panel can scroll; neither may consume the other.
+        val reservedControlsHeight = minOf(controlsHeight + MapOverlayPadding * 2, availableHeight * MAP_CONTROLS_HEIGHT_FRACTION)
+        val panelMaxHeight = if (landscape) availableHeight else availableHeight - reservedControlsHeight
+        val controlsMaxHeight = if (landscape) availableHeight else (availableHeight - bottomInset).coerceAtLeast(0.dp)
         val panelMaxWidth = (maxWidth - LANDSCAPE_TOOLBAR_WIDTH_DP.dp - MapOverlayPadding * 2).coerceIn(0.dp, LANDSCAPE_PANEL_MAX_WIDTH_DP.dp)
         val dark = isSystemInDarkTheme()
         key(dark) {
@@ -273,29 +293,12 @@ fun MapScreen(
         Column(
             Modifier.align(if (landscape) Alignment.TopEnd else Alignment.TopCenter)
                 .onGloballyPositioned { topInsetPx = it.positionInRoot().y.toInt() + it.size.height }
+                .heightIn(max = maxHeight * MAP_HEADER_HEIGHT_FRACTION)
+                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
                 .statusBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp)
                 .then(if (landscape) Modifier.widthIn(max = LANDSCAPE_TOOLBAR_WIDTH_DP.dp).fillMaxWidth() else Modifier.fillMaxWidth()),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            if (nav.active && !nav.arrived) ManeuverBanner(nav)
-            when {
-                !hasLocation -> WarningBanner(
-                    Icons.Filled.LocationOff,
-                    stringResource(R.string.permission_title),
-                    stringResource(R.string.permission_text),
-                    stringResource(R.string.action_allow),
-                    onRequestPermission,
-                )
-
-                !ui.locationEnabled -> WarningBanner(
-                    Icons.Filled.LocationOff,
-                    stringResource(R.string.location_off_title),
-                    stringResource(R.string.location_off_text),
-                    stringResource(R.string.action_turn_on),
-                ) {
-                    context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
-                }
-            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f)) {
                     StatusPill(ui) { showDiagnostics = true }
@@ -309,6 +312,27 @@ fun MapScreen(
                     }
                 }
             }
+            Column(Modifier.weight(1f, fill = false).verticalScroll(headerScroll), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (nav.active && !nav.arrived) ManeuverBanner(nav)
+                when {
+                    !hasLocation -> WarningBanner(
+                        Icons.Filled.LocationOff,
+                        stringResource(R.string.permission_title),
+                        stringResource(R.string.permission_text),
+                        stringResource(R.string.action_allow),
+                        onRequestPermission,
+                    )
+
+                    !ui.locationEnabled -> WarningBanner(
+                        Icons.Filled.LocationOff,
+                        stringResource(R.string.location_off_title),
+                        stringResource(R.string.location_off_text),
+                        stringResource(R.string.action_turn_on),
+                    ) {
+                        context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                    }
+                }
+            }
         }
 
         // ---- Right: map controls
@@ -318,7 +342,9 @@ fun MapScreen(
             Modifier.align(Alignment.CenterEnd).offset { IntOffset(0, (topInsetPx - bottomInsetPx) / 2) }.padding(end = 12.dp)
         }
         Column(
-            Modifier.heightIn(max = (maxHeight - topInset).coerceAtLeast(0.dp)).then(mapControlsModifier).verticalScroll(rememberScrollState()),
+            Modifier.heightIn(
+                max = controlsMaxHeight,
+            ).windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)).then(mapControlsModifier).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(MapButtonSpacing),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -343,7 +369,9 @@ fun MapScreen(
             }
                 .heightIn(max = panelMaxHeight)
                 .then(if (landscape) Modifier.widthIn(max = panelMaxWidth) else Modifier)
-                .navigationBarsPadding().padding(MapOverlayPadding).fillMaxWidth(),
+                .windowInsetsPadding(
+                    WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
+                ).navigationBarsPadding().padding(MapOverlayPadding).fillMaxWidth().verticalScroll(panelScroll),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (ui.cells.showTowers) TowerLegend(towerLayer, ui.cells.radios)
@@ -396,7 +424,7 @@ fun MapScreen(
             onDismissRequest = {},
             icon = { Icon(Icons.AutoMirrored.Filled.AltRoute, null) },
             title = { Text(stringResource(R.string.deviation_title)) },
-            text = { Text(stringResource(R.string.deviation_text, nav.blindDeviationSecLeft)) },
+            text = { Text(stringResource(R.string.deviation_text, nav.blindDeviationSecLeft), modifier = Modifier.verticalScroll(rememberScrollState())) },
             confirmButton = { TextButton(onClick = { app.engine.confirmDeviation(SystemClock.elapsedRealtime()) }) { Text(stringResource(R.string.action_reroute_now)) } },
             dismissButton = { TextButton(onClick = { app.engine.dismissDeviation(SystemClock.elapsedRealtime()) }) { Text(stringResource(R.string.action_on_route)) } },
         )
@@ -473,7 +501,7 @@ private fun ManeuverBanner(nav: GuidanceState) {
             }
             nav.thenStep?.let { then ->
                 Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(stringResource(R.string.then), style = MaterialTheme.typography.labelLarge)
+                    Text(stringResource(R.string.then), style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f, fill = false))
                     Spacer(Modifier.width(6.dp))
                     Icon(maneuverOf(then).icon, contentDescription = maneuverText(res, then), modifier = Modifier.size(20.dp))
                 }
@@ -491,12 +519,14 @@ private fun WarningBanner(icon: ImageVector, title: String, text: String, action
         shape = RoundedCornerShape(20.dp),
         shadowElevation = 4.dp,
     ) {
-        Row(Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, contentDescription = null)
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleSmall)
-                Text(text, style = MaterialTheme.typography.bodySmall)
+        Column {
+            Row(Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(icon, contentDescription = null)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(title, style = MaterialTheme.typography.titleSmall)
+                    Text(text, style = MaterialTheme.typography.bodySmall)
+                }
             }
             TextButton(onClick = onAction) { Text(action) }
         }
@@ -576,18 +606,22 @@ private fun TowerLegend(layer: TowerLayer, radios: Set<Radio>) {
         shadowElevation = 2.dp,
     ) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 listOf(
                     Triple(Radio.GSM, "2G", Color(0xFF8E24AA)),
                     Triple(Radio.UMTS, "3G", Color(0xFFFB8C00)),
                     Triple(Radio.LTE, "4G", Color(0xFF00897B)),
                     Triple(Radio.NR, "5G", Color(0xFFE53935)),
                 ).filter { it.first in radios }.forEach { (_, name, color) ->
-                    Box(Modifier.size(10.dp).background(color, CircleShape))
-                    Text(name, style = MaterialTheme.typography.labelMedium)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Box(Modifier.size(10.dp).background(color, CircleShape))
+                        Text(name, style = MaterialTheme.typography.labelMedium)
+                    }
                 }
-                Box(Modifier.size(12.dp).border(2.dp, BadRed, CircleShape))
-                Text(stringResource(R.string.legend_seen_now), style = MaterialTheme.typography.labelMedium)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(Modifier.size(12.dp).border(2.dp, BadRed, CircleShape))
+                    Text(stringResource(R.string.legend_seen_now), style = MaterialTheme.typography.labelMedium)
+                }
             }
             Text(
                 when {
@@ -604,11 +638,11 @@ private fun TowerLegend(layer: TowerLayer, radios: Set<Radio>) {
 
 // ------------------------------------------------------------------ bottom panels
 
-/** A bounded card: large text scrolls inside it instead of covering the map controls. */
+/** Rounded card inside the bounded, scrollable map panel, shared by route planning and navigation. */
 @Composable
 private fun PanelSurface(compact: Boolean = false, content: @Composable () -> Unit) {
     Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surface, shadowElevation = 8.dp, tonalElevation = 2.dp) {
-        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(if (compact) 12.dp else 20.dp)) { content() }
+        Column(Modifier.fillMaxWidth().padding(if (compact) 12.dp else 20.dp)) { content() }
     }
 }
 
@@ -677,8 +711,6 @@ private fun IdlePanel(
                 stringResource(R.string.mode_walk_needs_pack),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = if (compact) 1 else Int.MAX_VALUE,
-                overflow = TextOverflow.Ellipsis,
             )
         }
         if (routingBusy != null) {
@@ -692,16 +724,16 @@ private fun IdlePanel(
             Text(stringResource(R.string.planning), style = MaterialTheme.typography.bodySmall)
         }
         Spacer(Modifier.size(if (compact) 8.dp else 12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (pickStart) {
-                OutlinedButton(onClick = onSetStart, modifier = Modifier.weight(1f)) {
-                    Text(stringResource(if (ui.manualStart == null) R.string.action_set_start else R.string.action_move_start), maxLines = 1)
+                OutlinedButton(onClick = onSetStart) {
+                    Text(stringResource(if (ui.manualStart == null) R.string.action_set_start else R.string.action_move_start))
                 }
             }
-            Button(onClick = onStart, enabled = canStart, modifier = Modifier.weight(1f)) {
+            Button(onClick = onStart, enabled = canStart) {
                 Icon(Icons.Filled.Navigation, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.action_start), maxLines = 1)
+                Text(stringResource(R.string.action_start))
             }
         }
     }
@@ -718,41 +750,46 @@ private fun RoutePointEditor(
     onClearStart: (() -> Unit)?,
     onClearDestination: (() -> Unit)?,
 ) {
-    if (compact) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            RoutePointField(
-                icon = Icons.Filled.TripOrigin,
-                label = stringResource(R.string.route_from),
-                value = startValue,
-                onClick = onSearchStart,
-                onClear = onClearStart,
-                modifier = Modifier.weight(1f),
-            )
-            RoutePointField(
-                icon = Icons.Filled.Navigation,
-                label = stringResource(R.string.route_to),
-                value = destinationValue,
-                onClick = onSearchDestination,
-                onClear = onClearDestination,
-                modifier = Modifier.weight(1f),
-            )
+    BoxWithConstraints {
+        val sideBySide = compact && maxWidth / LocalDensity.current.fontScale >= ROUTE_FIELDS_MIN_WIDTH_DP.dp
+        Column {
+            if (sideBySide) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    RoutePointField(
+                        icon = Icons.Filled.TripOrigin,
+                        label = stringResource(R.string.route_from),
+                        value = startValue,
+                        onClick = onSearchStart,
+                        onClear = onClearStart,
+                        modifier = Modifier.weight(1f),
+                    )
+                    RoutePointField(
+                        icon = Icons.Filled.Navigation,
+                        label = stringResource(R.string.route_to),
+                        value = destinationValue,
+                        onClick = onSearchDestination,
+                        onClear = onClearDestination,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            } else {
+                RoutePointField(
+                    icon = Icons.Filled.TripOrigin,
+                    label = stringResource(R.string.route_from),
+                    value = startValue,
+                    onClick = onSearchStart,
+                    onClear = onClearStart,
+                )
+                Spacer(Modifier.size(8.dp))
+                RoutePointField(
+                    icon = Icons.Filled.Navigation,
+                    label = stringResource(R.string.route_to),
+                    value = destinationValue,
+                    onClick = onSearchDestination,
+                    onClear = onClearDestination,
+                )
+            }
         }
-    } else {
-        RoutePointField(
-            icon = Icons.Filled.TripOrigin,
-            label = stringResource(R.string.route_from),
-            value = startValue,
-            onClick = onSearchStart,
-            onClear = onClearStart,
-        )
-        Spacer(Modifier.size(8.dp))
-        RoutePointField(
-            icon = Icons.Filled.Navigation,
-            label = stringResource(R.string.route_to),
-            value = destinationValue,
-            onClick = onSearchDestination,
-            onClear = onClearDestination,
-        )
     }
     Spacer(Modifier.size(8.dp))
 }
@@ -788,22 +825,22 @@ private enum class RoutePoint { START, DESTINATION }
 private fun SearchResult.routePointLabel(): String = if (kind == ResultKind.PLACE || subtitle.isBlank()) title else "$title, $subtitle"
 
 /** Car / Walk choice before starting. Walking is disabled when the map pack has no walking data. */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TravelModeSelector(mode: TravelMode, walkingAvailable: Boolean, onModeChange: (TravelMode) -> Unit) {
     val options = listOf(
         Triple(TravelMode.CAR, Icons.Filled.DirectionsCar, R.string.mode_car),
         Triple(TravelMode.FOOT, Icons.AutoMirrored.Filled.DirectionsWalk, R.string.mode_walk),
     )
-    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-        options.forEachIndexed { index, (option, icon, label) ->
-            SegmentedButton(
+    FlowRow(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        options.forEach { (option, icon, label) ->
+            FilterChip(
+                modifier = Modifier.semantics { role = Role.RadioButton },
                 selected = mode == option,
                 onClick = { onModeChange(option) },
                 enabled = option == TravelMode.CAR || walkingAvailable,
-                shape = SegmentedButtonDefaults.itemShape(index, options.size),
-                icon = { Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp)) },
-            ) { Text(stringResource(label)) }
+                leadingIcon = { Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                label = { Text(stringResource(label)) },
+            )
         }
     }
 }
@@ -829,14 +866,14 @@ private fun NavigationPanel(nav: GuidanceState, onStop: () -> Unit, onReroute: (
     val res = LocalResources.current
     PanelSurface {
         if (nav.arrived) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.arrived), style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(R.string.arrived), style = MaterialTheme.typography.titleLarge)
                 Button(onClick = onStop) { Text(stringResource(R.string.action_done)) }
             }
             return@PanelSurface
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
+        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column {
                 Text(
                     formatDuration(res, nav.remainingS),
                     style = MaterialTheme.typography.headlineSmall,
@@ -854,23 +891,21 @@ private fun NavigationPanel(nav: GuidanceState, onStop: () -> Unit, onReroute: (
             SpeedBadge(nav.speedKmh.toInt(), nav.speedLimitKmh)
         }
         Spacer(Modifier.size(14.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(
                 onClick = onReroute,
                 enabled = !nav.rerouting,
                 contentPadding = PaddingValues(horizontal = 12.dp),
-                modifier = Modifier.weight(1f),
             ) {
-                Text(stringResource(R.string.action_reroute), maxLines = 1, softWrap = false)
+                Text(stringResource(R.string.action_reroute))
             }
             Button(
                 onClick = onStop,
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError),
-                modifier = Modifier.weight(1f),
             ) {
                 Icon(Icons.Filled.Close, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.action_stop), maxLines = 1)
+                Text(stringResource(R.string.action_stop))
             }
         }
     }
@@ -891,7 +926,10 @@ private fun SpeedBadge(speedKmh: Int, limitKmh: Int?) {
                 color = Color.White,
                 contentColor = Color.Black,
                 border = BorderStroke(4.dp, BadRed),
-                modifier = Modifier.size(46.dp).semantics { contentDescription = res.getString(R.string.speed_limit_cd, limitKmh) },
+                modifier = Modifier.size(maxOf(46.dp, with(LocalDensity.current) { 16.sp.toDp() } * SPEED_SIGN_TEXT_HEIGHTS)).semantics {
+                    contentDescription =
+                        res.getString(R.string.speed_limit_cd, limitKmh)
+                },
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Text("$limitKmh", fontWeight = FontWeight.Bold, fontSize = 16.sp)

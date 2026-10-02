@@ -13,10 +13,12 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
@@ -167,126 +169,137 @@ fun OnboardingScreen(app: AppGraph, onPermissionsChanged: () -> Unit, onContinue
     val allReady = granted.values.all { it } && locationEnabled && batteryUnrestricted && routing.preparation == Preparation.READY
     val readyCount = granted.values.count { it } + listOf(locationEnabled, batteryUnrestricted, routing.preparation == Preparation.READY).count { it }
     val requiredCount = permissionItems.size + REQUIRED_NON_PERMISSION_ITEMS
-    Column(
-        Modifier.fillMaxSize().safeDrawingPadding(),
-    ) {
-        Column(
-            Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer) {
-                        Icon(Icons.Filled.Navigation, contentDescription = null, modifier = Modifier.padding(14.dp).size(28.dp))
-                    }
-                    Text(stringResource(R.string.setup_title), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                }
-                Text(stringResource(R.string.setup_intro), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                LanguageSelector(app)
-                ReadinessCard(readyCount, requiredCount)
-
-                SectionHeader(number = 1, title = stringResource(R.string.setup_access))
-                if (granted.values.any { !it }) {
-                    Button(
-                        onClick = { request(permissionItems.filter { granted[it] != true }.flatMap { it.permissions }) },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(stringResource(R.string.setup_enable_permissions))
-                    }
-                }
-                SetupCard(
-                    title = stringResource(R.string.setup_location_services),
-                    explanation = stringResource(R.string.setup_location_services_hint),
-                    status = stringResource(if (locationEnabled) R.string.setup_ready else R.string.setup_location_off),
-                    statusKind = if (locationEnabled) SetupStatus.READY else SetupStatus.ATTENTION,
-                ) {
-                    if (!locationEnabled) {
-                        OutlinedButton(
-                            onClick = { openSystem(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)) },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text(stringResource(R.string.setup_open_settings))
-                        }
-                    }
-                }
-                permissionItems.forEach { item ->
-                    val ready = granted[item] == true
-                    val blocked = item.permissions.any {
-                        ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED &&
-                            preferences.getBoolean(it, false) && !ActivityCompat.shouldShowRequestPermissionRationale(activity, it)
-                    }
-                    SetupCard(
-                        title = stringResource(item.title),
-                        explanation = stringResource(item.explanation),
-                        status = stringResource(if (ready) R.string.setup_granted else R.string.setup_not_granted),
-                        statusKind = if (ready) SetupStatus.READY else SetupStatus.ATTENTION,
-                    ) {
-                        if (!ready) {
-                            if (item.permissions.first() == Manifest.permission.ACCESS_FINE_LOCATION &&
-                                ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-                            ) {
-                                Text(stringResource(R.string.setup_approximate), color = MaterialTheme.colorScheme.error)
-                            }
-                            OutlinedButton(onClick = { request(item.permissions) }, modifier = Modifier.fillMaxWidth()) {
-                                Text(stringResource(if (blocked) R.string.setup_open_settings else R.string.action_allow))
-                            }
-                        }
-                    }
-                }
-                SetupCard(
-                    title = stringResource(R.string.battery_title),
-                    explanation = stringResource(R.string.setup_battery_hint),
-                    status = stringResource(if (batteryUnrestricted) R.string.setup_granted else R.string.setup_not_granted),
-                    statusKind = if (batteryUnrestricted) SetupStatus.READY else SetupStatus.ATTENTION,
-                ) {
-                    if (!batteryUnrestricted) {
-                        OutlinedButton(
-                            onClick = {
-                                @android.annotation.SuppressLint("BatteryLife") // Background navigation needs uninterrupted positioning; the user explicitly opts in.
-                                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, "package:${context.packageName}".toUri())
-                                openSystem(intent)
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { Text(stringResource(R.string.action_allow)) }
-                    }
-                }
-
-                SectionHeader(number = 2, title = stringResource(R.string.setup_data))
-                PreparationCard(
-                    title = R.string.setup_routing,
-                    explanation = stringResource(R.string.setup_routing_hint),
-                    preparation = routing.preparation,
-                    progress = routing.busy,
-                    message = routing.message,
-                    canRetry = routing.busy == null,
-                    optionalAction = routing.bundled?.let { stringResource(R.string.routing_install_builtin, it.name) },
-                    retry = app.offlineRouting::retryBundled,
-                )
-                PreparationCard(
-                    title = R.string.setup_cells,
-                    preparation = cells.preparation,
-                    progress = cells.busy,
-                    message = cells.message,
-                    canRetry = cells.busy == null,
-                    optionalAction = stringResource(R.string.setup_cells_install),
-                    retry = app.cells::retryBundled,
-                )
-                Text(stringResource(R.string.setup_cells_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                TextButton(onClick = onSettings) { Text(stringResource(R.string.setup_cells_server)) }
-                if (systemUnavailable) Text(stringResource(R.string.setup_system_unavailable), color = MaterialTheme.colorScheme.error)
-                if (!allReady) Text(stringResource(R.string.setup_limited_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                TextButton(onClick = { uriHandler.openUri(TELEGRAM_GROUP_URL) }) { Text(stringResource(R.string.telegram_group)) }
-            }
-        }
-        Surface(modifier = Modifier.fillMaxWidth(), tonalElevation = 3.dp, shadowElevation = 8.dp) {
+    BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding()) {
+        val actionsMaxHeight = maxHeight * SETUP_ACTIONS_HEIGHT_FRACTION
+        Column(Modifier.fillMaxSize()) {
             Column(
-                Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+                Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Button(onClick = onContinue, modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth()) {
-                    Text(stringResource(if (allReady) R.string.setup_continue else R.string.setup_continue_limited))
+                Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer) {
+                            Icon(Icons.Filled.Navigation, contentDescription = null, modifier = Modifier.padding(14.dp).size(28.dp))
+                        }
+                        Text(stringResource(R.string.setup_title), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    }
+                    Text(stringResource(R.string.setup_intro), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    LanguageSelector(app)
+                    ReadinessCard(readyCount, requiredCount)
+
+                    SectionHeader(number = 1, title = stringResource(R.string.setup_access))
+                    if (granted.values.any { !it }) {
+                        Button(
+                            onClick = { request(permissionItems.filter { granted[it] != true }.flatMap { it.permissions }) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(stringResource(R.string.setup_enable_permissions))
+                        }
+                    }
+                    SetupCard(
+                        title = stringResource(R.string.setup_location_services),
+                        explanation = stringResource(R.string.setup_location_services_hint),
+                        status = stringResource(if (locationEnabled) R.string.setup_ready else R.string.setup_location_off),
+                        statusKind = if (locationEnabled) SetupStatus.READY else SetupStatus.ATTENTION,
+                    ) {
+                        if (!locationEnabled) {
+                            OutlinedButton(
+                                onClick = { openSystem(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)) },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text(stringResource(R.string.setup_open_settings))
+                            }
+                        }
+                    }
+                    permissionItems.forEach { item ->
+                        val ready = granted[item] == true
+                        val blocked = item.permissions.any {
+                            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED &&
+                                preferences.getBoolean(it, false) && !ActivityCompat.shouldShowRequestPermissionRationale(activity, it)
+                        }
+                        SetupCard(
+                            title = stringResource(item.title),
+                            explanation = stringResource(item.explanation),
+                            status = stringResource(if (ready) R.string.setup_granted else R.string.setup_not_granted),
+                            statusKind = if (ready) SetupStatus.READY else SetupStatus.ATTENTION,
+                        ) {
+                            if (!ready) {
+                                if (item.permissions.first() == Manifest.permission.ACCESS_FINE_LOCATION &&
+                                    ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                                ) {
+                                    Text(stringResource(R.string.setup_approximate), color = MaterialTheme.colorScheme.error)
+                                }
+                                OutlinedButton(onClick = { request(item.permissions) }, modifier = Modifier.fillMaxWidth()) {
+                                    Text(stringResource(if (blocked) R.string.setup_open_settings else R.string.action_allow))
+                                }
+                            }
+                        }
+                    }
+                    SetupCard(
+                        title = stringResource(R.string.battery_title),
+                        explanation = stringResource(R.string.setup_battery_hint),
+                        status = stringResource(if (batteryUnrestricted) R.string.setup_granted else R.string.setup_not_granted),
+                        statusKind = if (batteryUnrestricted) SetupStatus.READY else SetupStatus.ATTENTION,
+                    ) {
+                        if (!batteryUnrestricted) {
+                            OutlinedButton(
+                                onClick = {
+                                    @android.annotation.SuppressLint("BatteryLife") // Background navigation needs uninterrupted positioning; the user explicitly opts in.
+                                    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, "package:${context.packageName}".toUri())
+                                    openSystem(intent)
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text(stringResource(R.string.action_allow)) }
+                        }
+                    }
+
+                    SectionHeader(number = 2, title = stringResource(R.string.setup_data))
+                    PreparationCard(
+                        title = R.string.setup_routing,
+                        explanation = stringResource(R.string.setup_routing_hint),
+                        preparation = routing.preparation,
+                        progress = routing.busy,
+                        message = routing.message,
+                        canRetry = routing.busy == null,
+                        optionalAction = routing.bundled?.let { stringResource(R.string.routing_install_builtin, it.name) },
+                        retry = app.offlineRouting::retryBundled,
+                    )
+                    PreparationCard(
+                        title = R.string.setup_cells,
+                        preparation = cells.preparation,
+                        progress = cells.busy,
+                        message = cells.message,
+                        canRetry = cells.busy == null,
+                        optionalAction = stringResource(R.string.setup_cells_install),
+                        retry = app.cells::retryBundled,
+                    )
+                    Text(stringResource(R.string.setup_cells_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    TextButton(onClick = onSettings) { Text(stringResource(R.string.setup_cells_server)) }
+                    if (systemUnavailable) Text(stringResource(R.string.setup_system_unavailable), color = MaterialTheme.colorScheme.error)
+                    if (!allReady) {
+                        Text(
+                            stringResource(R.string.setup_limited_hint),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    TextButton(onClick = { uriHandler.openUri(TELEGRAM_GROUP_URL) }) { Text(stringResource(R.string.telegram_group)) }
                 }
-                TextButton(onClick = onSettings) { Text(stringResource(R.string.setup_manage_data)) }
+            }
+            Surface(
+                modifier = Modifier.fillMaxWidth().heightIn(max = actionsMaxHeight),
+                tonalElevation = 3.dp,
+                shadowElevation = 8.dp,
+            ) {
+                Column(
+                    Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Button(onClick = onContinue, modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth()) {
+                        Text(stringResource(if (allReady) R.string.setup_continue else R.string.setup_continue_limited))
+                    }
+                    TextButton(onClick = onSettings) { Text(stringResource(R.string.setup_manage_data)) }
+                }
             }
         }
     }
@@ -421,3 +434,5 @@ private fun PreparationCard(
 }
 
 private const val REQUIRED_NON_PERMISSION_ITEMS = 3
+
+private const val SETUP_ACTIONS_HEIGHT_FRACTION = 0.4f
