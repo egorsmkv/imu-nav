@@ -1,5 +1,6 @@
 package org.imunav.app.ui
 
+import android.content.Intent
 import android.text.format.DateFormat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -27,11 +28,13 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,6 +42,8 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -65,6 +70,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -74,6 +80,7 @@ import org.imunav.app.maps.mapStyle
 import org.imunav.app.trips.TripSummary
 import org.imunav.app.trips.TripTracks
 import org.imunav.app.trips.extractTracks
+import org.imunav.app.trips.tripShareIntent
 import org.imunav.core.geo.GeoPoint
 import org.imunav.core.geo.ServiceArea
 import org.imunav.core.route.TravelMode
@@ -168,7 +175,7 @@ private fun TripRow(t: TripSummary, onClick: () -> Unit) {
     )
 }
 
-/** One trip: map with the GPS track and the engine's estimate, statistics, "Snap to roads" and delete. */
+/** One trip: recorded tracks, statistics, map matching, sharing the recording and deletion. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TripDetailScreen(app: AppGraph, trip: TripSummary, onBack: () -> Unit) {
@@ -181,6 +188,8 @@ fun TripDetailScreen(app: AppGraph, trip: TripSummary, onBack: () -> Unit) {
     var matching by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf<String?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var sharing by remember { mutableStateOf(false) }
+    val snackbar = remember { SnackbarHostState() }
 
     LaunchedEffect(trip.id) {
         tracks = withContext(Dispatchers.IO) {
@@ -200,9 +209,37 @@ fun TripDetailScreen(app: AppGraph, trip: TripSummary, onBack: () -> Unit) {
                     )
                 },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.cd_back)) } },
-                actions = { IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Filled.Delete, stringResource(R.string.action_delete)) } },
+                actions = {
+                    IconButton(enabled = !sharing, onClick = {
+                        sharing = true
+                        scope.launch {
+                            try {
+                                runCatching {
+                                    val intent = tripShareIntent(context, app.trips.recordingFile(trip))
+                                    context.startActivity(Intent.createChooser(intent, res.getString(R.string.trip_share)))
+                                }.onFailure { error ->
+                                    if (error is CancellationException) throw error
+                                    app.tripLog.write("trip_share_failed type=${error.javaClass.simpleName}")
+                                    snackbar.showSnackbar(res.getString(R.string.trip_share_failed))
+                                }
+                            } finally {
+                                sharing = false
+                            }
+                        }
+                    }) {
+                        if (sharing) {
+                            CircularProgressIndicator(Modifier.size(24.dp))
+                        } else {
+                            Icon(Icons.Filled.Share, stringResource(R.string.trip_share))
+                        }
+                    }
+                    IconButton(enabled = !sharing, onClick = { confirmDelete = true }) {
+                        Icon(Icons.Filled.Delete, stringResource(R.string.action_delete))
+                    }
+                },
             )
         },
+        snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())) {
             val t = tracks

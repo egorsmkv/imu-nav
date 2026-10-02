@@ -148,6 +148,10 @@ samples, satellite/AGC status, routes and the engine's own estimates (gzip text,
 - **History** (clock icon on the map) lists trips with totals; a trip shows its trusted-GPS track and
   the engine's estimate on a map, distance, duration, moving time, time/distance without GPS and the
   largest uncertainty. *Snap to roads* map-matches the drive with GraphHopper.
+- **Share a trip:** open it in History and tap the share icon. Android's share menu sends a separate
+  `.rec.gz` copy containing the route, positions and recorded sensor events, usable by the replay tool.
+  The original stays in app storage. Preparing the attachment runs in the background; missing files
+  or insufficient storage produce an error without changing the trip.
 - **Surviving the app being killed:** the active trip is saved every 10 s. If Android or the user kills
   the app mid-trip, the next start (within 3 h) restores the route and position — widening the
   uncertainty for the time lost — restarts the foreground service and keeps recording into the same

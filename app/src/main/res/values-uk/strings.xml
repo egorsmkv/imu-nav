@@ -414,6 +414,8 @@
     <string name="map_match_no_gps">У цій поїздці замало достовірних даних GPS для прив’язки</string>
     <string name="action_delete">Видалити</string>
     <string name="trip_delete_title">Видалити цю поїздку?</string>
+    <string name="trip_share">Поділитися записом поїздки</string>
+    <string name="trip_share_failed">Не вдалося поділитися записом поїздки. Перевірте, чи доступний файл і чи достатньо вільного місця.</string>
     <string name="trip_loading">Завантажуємо запис…</string>
 
     <!-- Батарея -->

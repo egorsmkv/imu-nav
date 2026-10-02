@@ -416,6 +416,8 @@
     <string name="map_match_no_gps">Not enough trusted GPS in this trip to match</string>
     <string name="action_delete">Delete</string>
     <string name="trip_delete_title">Delete this trip?</string>
+    <string name="trip_share">Share trip recording</string>
+    <string name="trip_share_failed">Couldn’t share the trip recording. Check that the file is available and there is enough free space.</string>
     <string name="trip_loading">Loading recording…</string>
 
     <!-- Battery -->
