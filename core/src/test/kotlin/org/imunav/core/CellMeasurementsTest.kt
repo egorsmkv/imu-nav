@@ -94,6 +94,17 @@ class CellMeasurementsTest {
     }
 
     @Test
+    fun expiringNeighbourDoesNotTurnRemainingCachedCellIntoNewFix() {
+        val tracker = CellMeasurementTracker()
+        val cells = listOf(measurement(1, 10_000), measurement(2, 15_000))
+        val first = tracker.update(1, cells, 16_000)
+        assertNotNull(tracker.positionFix(locate(first), first, 16_000, 1_000_000))
+        val remaining = tracker.update(1, cells, 21_000)
+        assertEquals(listOf(cells[1]), remaining)
+        assertNull(tracker.positionFix(locate(remaining), remaining, 21_000, 1_005_000))
+    }
+
+    @Test
     fun onlyContributingCellsDetermineFixTime() {
         val tracker = CellMeasurementTracker()
         val known = listOf(measurement(1, 19_000))

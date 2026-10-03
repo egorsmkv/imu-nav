@@ -24,6 +24,7 @@ fun cellLearningKeys(measurements: List<CellMeasurement>, gpsElapsedMs: Long, no
 class CellMeasurementTracker {
     private val perSim = mutableMapOf<Int, List<CellMeasurement>>()
     private var lastFixElapsedMs = 0L
+    private var lastContributors = emptyMap<CellKey, Long>()
 
     /** Merge recent measurements, choosing the newest copy of any cell reported by multiple SIMs. */
     fun update(subscriptionId: Int, measurements: List<CellMeasurement>, nowMs: Long): List<CellMeasurement> {
@@ -41,14 +42,18 @@ class CellMeasurementTracker {
      */
     fun positionFix(fix: CellFix, measurements: List<CellMeasurement>, nowMs: Long, wallTimeMs: Long): RawFix? {
         val byKey = measurements.associateBy { it.observation.key }
-        val times = fix.contributions.map { contribution ->
-            val elapsedMs = byKey[contribution.observation.key]?.elapsedMs ?: return null
+        val contributors = fix.contributions.associate { contribution ->
+            val key = contribution.observation.key
+            val elapsedMs = byKey[key]?.elapsedMs ?: return null
             if (!isFreshCellMeasurement(elapsedMs, nowMs)) return null
-            elapsedMs
+            key to elapsedMs
         }
-        val elapsedMs = times.minOrNull() ?: return null
+        val elapsedMs = contributors.values.minOrNull() ?: return null
         if (elapsedMs <= lastFixElapsedMs) return null
+        // Expiring an old neighbour must not turn the remaining cached cells into another sample.
+        if (contributors.none { (key, time) -> time > (lastContributors[key] ?: 0L) }) return null
         lastFixElapsedMs = elapsedMs
+        lastContributors = contributors
         return RawFix(
             source = FixSource.CELL,
             timeMs = wallTimeMs - (nowMs - elapsedMs),
