@@ -13,6 +13,19 @@ RUSTC = 'rustc 1.100.0-nightly (8925ea358 2026-08-20)'
 OUTPUT = ROOT / 'build/native-verification'
 # Names and cover labels are intentional inventory, not discovery: deleting a proof must fail CI.
 REQUIRED = {
+    'estimator::motion::kani_proofs::fresh_measured_speed_blocks_all_motion_hints': {'gps wins', 'obd wins'},
+    'estimator::motion::kani_proofs::measured_priority_ends_at_exact_freshness_boundary': {'gps fresh boundary', 'obd fresh boundary', 'gps expired boundary', 'obd expired boundary'},
+    'estimator::motion::kani_proofs::walking_mode_ignores_car_motion_hints': {'hint ignored', 'missing hint'},
+    'estimator::motion::kani_proofs::repeated_motion_hint_preserves_position_and_cruise': {'stop', 'ramp', 'cruise'},
+    'estimator::motion::kani_proofs::repeated_motion_hint_preserves_fallback_cruise': {'stop', 'ramp', 'cruise'},
+    'estimator::motion::kani_proofs::repeated_motion_hint_preserves_capped_cruise': {'stop', 'ramp', 'cruise'},
+    'estimator::motion::kani_proofs::vetoed_motion_restores_cruise_without_an_anchor': {'missing', 'network moving', 'invalid'},
+    'estimator::motion::kani_proofs::measured_speed_recovery_clears_control_only_when_accepted': {'trusted recovery', 'suspect rejected'},
+    'estimator::walking::kani_proofs::car_mode_ignores_all_walking_hints': {'hint ignored', 'missing hint'},
+    'estimator::walking::kani_proofs::fresh_gps_preserves_walking_speed_and_original_deadline': {'gps wins', 'gps without hint', 'saturated deadline'},
+    'estimator::walking::kani_proofs::walking_hint_takes_over_at_gps_expiry': {'fresh boundary', 'expired boundary', 'expired'},
+    'estimator::walking::kani_proofs::repeated_walking_hints_are_bounded_and_never_anchor_position': {'moving', 'stopped', 'invalid', 'missing'},
+
     'estimator::kani_proofs::prediction_boundaries_advance_and_split_at_expiry': {'fresh', 'expired', 'motion boundary', 'walking boundary', 'integer limit'},
     'estimator::kani_proofs::gps_time_gate_obeys_history_and_watermarks': {'accepted', 'future', 'duplicate', 'history boundary', 'initial checkpoint'},
     'estimator::kani_proofs::vehicle_time_gate_rejects_stale_samples': {'duplicate', 'stale', 'same time accepted'},

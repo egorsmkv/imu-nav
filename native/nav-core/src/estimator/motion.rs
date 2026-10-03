@@ -88,3 +88,6 @@ impl NavigationEstimator {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(kani)]
+mod kani_proofs;

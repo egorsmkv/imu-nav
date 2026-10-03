@@ -14,7 +14,7 @@ SPEC.loader.exec_module(coverage)
 class CoverageTests(unittest.TestCase):
     def test_proof_harnesses_do_not_count_as_production(self):
         for module in ['', 'trust/', 'network/', 'speed/', 'estimator/', 'route/', 'estimator/network_position/',
-                       'estimator/network_position/speed/']:
+                       'estimator/network_position/speed/', 'estimator/motion/', 'estimator/walking/']:
             proof = coverage.ROOT / f'native/nav-core/src/{module}kani_proofs.rs'
             self.assertIsNone(coverage.production_file(proof))
             self.assertEqual(coverage.merge_lcov([f'SF:{proof}\nDA:1,0\nend_of_record']), {})

@@ -51,6 +51,12 @@ the authoritative list of required harnesses and named `kani::cover!` witnesses.
 | Prediction scheduling | Each step advances, stays within the target and 5 s cap, and stops at active hint/OBD expiry; expired OBD is not fresh | Arbitrary signed timestamps; target strictly later, OBD absent or nonnegative and no later than now, active hint deadlines strictly later than now. Includes `i64::MAX`; this proves step selection, not termination over an arbitrary duration |
 | GPS/OBD timestamp gates | Future, duplicate, too-old and pre-checkpoint GPS cannot rewind; stale/duplicate OBD cannot pass ingress | All `i64` bit patterns; expected GPS age computed in `i128` to independently check saturating arithmetic. Same-time GPS is allowed only at an initial checkpoint; same-time OBD requires a newer input watermark |
 | Hint expiry | Reapplying a hint never moves its deadline; an expired walking hint stops speed, an expired car stop restores cruise; no sensor freshness is invented | Nonnegative arbitrary current time and arbitrary deadline; initial speed 10 m/s, no GPS/OBD, walking speed 2 m/s or car stop factor 0. Full production setters/expiry handler; fixed position/covariance/drift remain unchanged |
+| Car measured-speed priority | Fresh GPS or OBD makes every motion hint inert; a stop hint becomes eligible exactly at 2,500 ms age | Nonnegative measurement time ≤ arbitrary current time, age < 2,500 ms, no active motion control, speed 10 m/s; optional hint fields use all scalar bit patterns. Boundary proof uses current time 5,000 ms, ages 0–3,000 ms and a valid stop hint, separately covering GPS and OBD |
+| Travel-mode isolation | Car motion hints cannot alter a walking estimator; walking hints cannot alter a car estimator | All hint scalar bit patterns/deadlines and optional absence; walking fixture has speed 1.5 m/s and an active step deadline, car fixture speed 10 m/s; full logical-state snapshots compared |
+| Repeated car model hints | A repeated stop/ramp uses saved cruise speed rather than compounding slowdown; position, position variance and drift remain unchanged | Two identical hints at 5,000 ms, deadline 6,000 ms, no fresh sensors; initial speed 0 or 10 m/s with every floating-point factor 0–1; capped initial speed 63.75 m/s with factors 0–1 in 1/256 increments, fallback cruise 16 m/s, initial cross-covariance 2 |
+| Motion veto and measurement recovery | Missing/invalid/network-moving hints release a modeled stop; accepted trusted speed clears control, while rejected recovery preserves state | Veto: stop from 10 m/s, then missing hint, NaN factor or network-moving flag. Recovery: false stop with saved cruise 35 m/s, measurement 35 m/s with sigma 0.6, recovery permission symbolic; permission is supplied by production GPS/OBD callers, whose classification is outside this harness |
+| Walking GPS priority | Fresh GPS preserves measured speed and its original deadline despite repeated hints; step speed takes over at exact expiry | Speed 1.5 m/s, nonnegative GPS time ≤ current time < saturating GPS expiry; all optional hint bit patterns, two applications. Boundary proof uses age 0–3,000 ms at time 5,000 ms and a 2 m/s step hint |
+| Repeated walking priors | Speed stays finite within 0–4 m/s; invalid/missing hints hold at zero; repetition never anchors position or refreshes a sensor timestamp | Two identical hints at 5,000 ms with all speed/deadline bit patterns or absence; no GPS/OBD, initial cross-covariance 2, fixed position variance 400 and drift 5 |
 | OBD drift expiry | Prediction changes from OBD to estimated drift at the exact expiry boundary | Actual two-step prediction from 2,000 to 3,000 ms, OBD at 0, speed 10 m/s: total added drift 0.5 m |
 | Calibration eligibility | Only accepted position AND speed from GOOD GPS, in car mode, with precise, fresh measurements and stable OBD may learn; rejection changes no state | Optional OBD/GPS inputs, all trust/mode/acceptance combinations, optional uncertainty with all `f64` bit patterns, arbitrary ordered nonnegative plateau times and arbitrary GPS time; OBD/GPS speeds fixed at 15/16 m/s, offset integer 0–255 m |
 | Calibration arithmetic | Learning remains finite and inside 0.8–1.2, moving toward the measured ratio; low speeds/out-of-range ratios cannot learn | Blend: arbitrary `f64` values in 0.8–1.2 for prior and ratio. Production ratio gates: OBD/GPS speeds 0–63.75 m/s in quarter-m/s increments, prior scale 1, precise GOOD GPS and 3 s stable plateau; both ratio boundaries reachable |
@@ -132,6 +138,26 @@ separately tested: the eligibility proof does not assume or prove that a GPS fix
 Scale arithmetic is proved independently over the full valid scale/ratio interval. Plateaus and
 hint sequences have the explicit finite bounds above; these do not prove arbitrary event histories.
 Kotlin modem timestamp tracking is outside this Rust proof suite and retains its own JVM tests.
+
+## Motion and walking priority
+
+The motion/walking harnesses call `apply_motion`, `apply_walking`, and
+`update_measured_speed` directly. They do not replace those operations with models or stubs.
+Accepted measured speed clears car motion control before fresh GPS/OBD timestamps are published;
+the fresh-priority fixture therefore starts without active motion control. The recovery harness
+checks this clearing transition on a false highway stop, with SUSPECT-style fallback denial as a
+separate reachable branch. Real GPS/OBD classification and full delayed replay remain covered by
+existing integration/regression tests.
+
+Position preservation means the route position, its variance, and systematic drift remain
+unchanged while installing a speed prior. Cross-covariance may intentionally be cleared, and speed
+variance may change. Full-state no-op checks also inspect history and input watermarks. Repeated
+hint proofs cover two applications without intervening prediction, not arbitrary driving histories.
+These harnesses use unwind 3; none changes production arithmetic or disables verifier checks.
+The repeated car-ramp proofs separate initial-speed cases after the larger quarter-m/s input
+domain exceeded the five-minute solver budget. Normal/fallback cases retain every valid floating-point
+factor; the slower capped case uses 257 factors at 1/256 intervals. The larger combined domain and
+unrestricted capped-case factors are not claimed as verified. Every assertion is retained.
 
 ## CI and adding proofs
 

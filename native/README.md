@@ -468,3 +468,7 @@ Timestamp proofs cover prediction-step progress, GPS/OBD ingress ordering and hi
 calibration proofs cover accepted GOOD GPS eligibility, stability/age limits and the 0.8–1.2 scale
 interval. These decision helpers are shared with production; exact domains are documented in
 [the verification scope](../docs/NATIVE_VERIFICATION.md).
+
+Motion/walking proofs additionally check measured-speed priority, travel-mode isolation, repeated
+prior bounds, and stop recovery without a position anchor. They exercise production setters with
+symbolic inputs and retain the explicit fixture/sequence bounds in the verification scope.

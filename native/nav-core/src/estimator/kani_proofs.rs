@@ -2,7 +2,7 @@
 //! Numerical bodies and real-geometry replay sequences have separate proofs/regression tests.
 use super::*;
 
-fn estimator() -> NavigationEstimator {
+pub(super) fn estimator() -> NavigationEstimator {
     let mut navigation = NavigationEstimator::new(
         Arc::new(crate::route::kani_proofs::straight_route()),
         InitialEstimate {
@@ -49,7 +49,7 @@ fn unchanged(actual: &NavigationEstimator, expected: &NavigationEstimator) {
 }
 
 /// Fixed-size inspection avoids allocating another deque just to remember expected values.
-fn snapshot(navigation: &NavigationEstimator) -> impl PartialEq + use<> {
+pub(super) fn snapshot(navigation: &NavigationEstimator) -> impl PartialEq + use<> {
     let NavigationEstimator {
         state,
         route,
