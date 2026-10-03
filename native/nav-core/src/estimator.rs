@@ -1,11 +1,12 @@
 //! Stateful route estimator used by the Android JNI boundary.
 
 use crate::route::{GeoPoint, Projection, RouteGeometry};
-use crate::{Estimate, FilterError, RouteFilter, milliseconds_to_seconds};
+use crate::{Estimate, FilterError, RouteFilter};
 use std::collections::VecDeque;
 use std::sync::Arc;
 
 mod motion;
+mod state;
 use motion::MotionControl;
 pub use motion::MotionObservation;
 mod network_position;
@@ -95,6 +96,7 @@ pub struct InitialEstimate {
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(any(test, kani), derive(PartialEq))]
 pub struct NavigationEstimator {
     state: FilterState,
     route: Arc<RouteGeometry>,
@@ -107,6 +109,7 @@ pub struct NavigationEstimator {
 
 /// Everything that must be restored before applying a delayed GNSS observation.
 #[derive(Clone, Debug)]
+#[cfg_attr(any(test, kani), derive(PartialEq))]
 struct FilterState {
     filter: RouteFilter,
     elapsed_ms: i64,
@@ -124,6 +127,7 @@ struct FilterState {
 /// A continuous plateau of accepted raw OBD readings. Calibration during acceleration would
 /// mistake sensor latency for wheel-speed scale error, so only stable plateaus qualify.
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(any(test, kani), derive(PartialEq))]
 struct StableVehicleSpeed {
     since_ms: i64,
     latest_ms: i64,
@@ -165,6 +169,7 @@ impl StableVehicleSpeed {
 /// Post-event checkpoint plus the OBD input needed to replay this event after a delayed fix.
 /// GNSS timestamps are strictly increasing, so a replay never crosses a newer GNSS update.
 #[derive(Clone, Debug)]
+#[cfg_attr(any(test, kani), derive(PartialEq))]
 struct HistoryFrame {
     state: FilterState,
     vehicle_speed_mps: Option<f64>,
@@ -250,7 +255,8 @@ impl NavigationEstimator {
     ///
     /// # Errors
     ///
-    /// Returns [`FilterError`] if the accepted measurement produces an invalid filter update.
+    /// Returns [`FilterError`] for an invalid prediction or measurement update, without changing
+    /// the filter, calibration, history or timestamp watermarks.
     pub fn on_vehicle_speed(
         &mut self,
         speed_kmh: f64,
@@ -264,8 +270,12 @@ impl NavigationEstimator {
         {
             return Ok(false);
         }
-        self.predict_to(elapsed_ms)?;
-        let accepted = self.apply_vehicle_speed(speed_kmh / 3.6)?;
+        // Only fixed-size state is staged; history/watermarks are written after success.
+        let mode = self.mode;
+        let accepted = self.state.try_update(|pending| {
+            pending.predict_to(elapsed_ms, mode)?;
+            pending.apply_vehicle_speed(speed_kmh / 3.6)
+        })?;
         self.last_vehicle_input_ms = elapsed_ms;
         self.remember(Some(speed_kmh / 3.6));
         Ok(accepted)
@@ -343,8 +353,16 @@ impl NavigationEstimator {
         turn: Option<TurnObservation>,
         walking: Option<WalkingObservation>,
     ) -> Result<TickOutcome, FilterError> {
+        self.try_tick(|pending| pending.tick_inner(now_ms, gps, motion, network, turn, walking))
+    }
+
+    /// A pending tick owns its history; an error cannot publish any part of that update.
+    fn try_tick<T>(
+        &mut self,
+        update: impl FnOnce(&mut Self) -> Result<T, FilterError>,
+    ) -> Result<T, FilterError> {
         let mut pending = self.copy_for_tick();
-        let outcome = pending.tick_inner(now_ms, gps, motion, network, turn, walking)?;
+        let outcome = update(&mut pending)?;
         *self = pending;
         Ok(outcome)
     }
@@ -420,14 +438,14 @@ impl NavigationEstimator {
             if let Some(frame) = self.history.back() {
                 self.state = frame.state.clone();
             }
-            self.predict_to(observation.elapsed_ms)?;
+            self.state.predict_to(observation.elapsed_ms, self.mode)?;
             for frame in later
                 .iter()
                 .rev()
                 .filter(|frame| frame.state.elapsed_ms == observation.elapsed_ms)
             {
                 if let Some(speed) = frame.vehicle_speed_mps {
-                    self.apply_vehicle_speed(speed)?;
+                    self.state.apply_vehicle_speed(speed)?;
                     self.remember(Some(speed));
                 }
             }
@@ -440,9 +458,9 @@ impl NavigationEstimator {
                     {
                         continue;
                     }
-                    self.predict_to(frame.state.elapsed_ms)?;
+                    self.state.predict_to(frame.state.elapsed_ms, self.mode)?;
                     if let Some(speed) = frame.vehicle_speed_mps {
-                        self.apply_vehicle_speed(speed)?;
+                        self.state.apply_vehicle_speed(speed)?;
                     } else {
                         self.apply_network(frame.network, frame.motion)?;
                         self.apply_motion(frame.motion)?;
@@ -468,7 +486,7 @@ impl NavigationEstimator {
                 self.history.extend(later.into_iter().rev());
             }
         }
-        self.predict_to(now_ms)?;
+        self.state.predict_to(now_ms, self.mode)?;
         self.apply_network(network, motion)?;
         self.apply_motion(motion)?;
         self.apply_turn(turn)?;
@@ -529,7 +547,7 @@ impl NavigationEstimator {
                 .unwrap_or(DEFAULT_GPS_SPEED_SIGMA_MPS)
                 .max(MIN_SPEED_SIGMA_MPS)
                 * multiplier;
-            speed_accepted = self.update_measured_speed(
+            speed_accepted = self.state.update_measured_speed(
                 speed_mps,
                 speed_sigma,
                 observation.trust == ObservationTrust::Good,
@@ -583,72 +601,6 @@ impl NavigationEstimator {
             self.state.vehicle_speed_scale +=
                 SCALE_BLEND * (ratio - self.state.vehicle_speed_scale);
         }
-    }
-
-    /// A rejected speed must not start or extend the lower OBD drift allowance.
-    fn apply_vehicle_speed(&mut self, speed_mps: f64) -> Result<bool, FilterError> {
-        let accepted = self.update_measured_speed(
-            speed_mps * self.state.vehicle_speed_scale,
-            OBD_SPEED_SIGMA_MPS,
-            true,
-        )?;
-        if accepted {
-            self.state.last_vehicle_speed_ms = self.state.elapsed_ms;
-            self.state.stable_vehicle_speed = Some(self.state.stable_vehicle_speed.map_or_else(
-                || StableVehicleSpeed::new(self.state.elapsed_ms, speed_mps),
-                |stable| stable.add(self.state.elapsed_ms, speed_mps),
-            ));
-        } else {
-            self.state.stable_vehicle_speed = None;
-        }
-        Ok(accepted)
-    }
-
-    /// Predicts chronologically, splitting at OBD expiry so freshness cannot cover older travel.
-    fn predict_to(&mut self, elapsed_ms: i64) -> Result<(), FilterError> {
-        let acceleration_sigma = match self.mode {
-            TravelMode::Car => CAR_ACCELERATION_SIGMA_MPS2,
-            TravelMode::Foot => WALK_ACCELERATION_SIGMA_MPS2,
-        };
-        while self.state.elapsed_ms < elapsed_ms {
-            self.expire_walking()?;
-            if self
-                .state
-                .motion_control
-                .is_some_and(|control| control.valid_until_ms <= self.state.elapsed_ms)
-            {
-                self.release_motion()?;
-            }
-            let expiry_ms = self
-                .state
-                .last_vehicle_speed_ms
-                .saturating_add(OBD_MAX_AGE_MS);
-            let obd_fresh =
-                self.state.last_vehicle_speed_ms >= 0 && self.state.elapsed_ms < expiry_ms;
-            let mut end_ms =
-                elapsed_ms.min(self.state.elapsed_ms.saturating_add(MAX_PREDICTION_MS));
-            if let Some(control) = self.state.motion_control {
-                end_ms = end_ms.min(control.valid_until_ms);
-            }
-            if let Some(expiry_ms) = self.state.walking_valid_until_ms {
-                end_ms = end_ms.min(expiry_ms);
-            }
-            if obd_fresh {
-                end_ms = end_ms.min(expiry_ms);
-            }
-            self.state.filter.predict(
-                milliseconds_to_seconds(end_ms.saturating_sub(self.state.elapsed_ms)),
-                acceleration_sigma,
-                if obd_fresh {
-                    OBD_SYSTEMATIC_DRIFT_PER_M
-                } else {
-                    ESTIMATED_SYSTEMATIC_DRIFT_PER_M
-                },
-            )?;
-            self.state.elapsed_ms = end_ms;
-        }
-        self.expire_walking()?;
-        Ok(())
     }
 
     /// Keeps bounded replay work and one checkpoint preceding the time window when available.
@@ -712,3 +664,6 @@ mod tests;
 
 #[cfg(test)]
 mod regression_tests;
+
+#[cfg(kani)]
+mod kani_proofs;

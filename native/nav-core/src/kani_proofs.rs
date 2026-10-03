@@ -321,3 +321,192 @@ fn invalid_restore_prior_uncertainty_preserves_state() {
 fn invalid_prediction_uncertainty_preserves_state() {
     invalid_uncertainty_preserves_state(7);
 }
+
+/// Full scalar domain, including finite values whose square overflows.
+#[kani::proof]
+#[kani::unwind(2)]
+fn diagonal_success_is_finite() {
+    let sigma = arbitrary_float();
+    let result = Covariance2::diagonal(sigma, 1.0);
+    if let Ok(covariance) = result {
+        assert!(covariance.position.is_finite());
+        assert!(covariance.speed.is_finite());
+        assert!(covariance.position_speed.is_finite());
+    }
+    kani::cover!(result.is_ok(), "accepted");
+    kani::cover!(result.is_err(), "rejected");
+}
+
+fn assert_finite(estimate: Estimate) {
+    assert!(estimate.position_m.is_finite());
+    assert!(estimate.speed_mps.is_finite());
+    assert!(estimate.systematic_drift_m.is_finite());
+    assert!(estimate.covariance.position.is_finite());
+    assert!(estimate.covariance.position_speed.is_finite());
+    assert!(estimate.covariance.speed.is_finite());
+}
+
+/// Every candidate bit pattern is checked; no numerical-result assumptions or stubs.
+#[kani::proof]
+#[kani::unwind(2)]
+fn commit_is_atomic_and_finite() {
+    let mut filter = filter();
+    let before = filter.estimate();
+    let candidate = Estimate {
+        position_m: arbitrary_float(),
+        speed_mps: arbitrary_float(),
+        systematic_drift_m: arbitrary_float(),
+        covariance: Covariance2 {
+            position: arbitrary_float(),
+            position_speed: arbitrary_float(),
+            speed: arbitrary_float(),
+        },
+    };
+    let result = filter.commit_estimate(candidate);
+    if result.is_err() {
+        same_state(filter.estimate(), before);
+    }
+    assert_finite(filter.estimate());
+    kani::cover!(result.is_ok(), "accepted");
+    kani::cover!(result.is_err(), "rejected");
+}
+
+#[kani::proof]
+#[kani::unwind(2)]
+fn constructor_success_is_finite() {
+    let result = RouteFilter::new(
+        arbitrary_float(),
+        arbitrary_float(),
+        arbitrary_float(),
+        arbitrary_float(),
+        arbitrary_float(),
+    );
+    if let Ok(ref filter) = result {
+        assert_finite(filter.estimate());
+    }
+    kani::cover!(result.is_ok(), "accepted");
+    kani::cover!(result.is_err(), "rejected");
+}
+
+fn prior_success_is_finite(operation: u8) {
+    let mut filter = filter();
+    let before = filter.estimate();
+    let value = arbitrary_float();
+    let sigma = arbitrary_float();
+    let result = match operation {
+        0 => filter.anchor_position(value, sigma),
+        1 => filter.set_speed_prior(value, sigma),
+        _ => filter.restore_speed_prior(value, sigma),
+    };
+    if result.is_err() {
+        same_state(filter.estimate(), before);
+    }
+    assert_finite(filter.estimate());
+    kani::cover!(result.is_ok(), "accepted");
+    kani::cover!(result.is_err(), "rejected");
+}
+
+#[kani::proof]
+#[kani::unwind(2)]
+fn anchor_success_is_finite() {
+    prior_success_is_finite(0);
+}
+
+#[kani::proof]
+#[kani::unwind(2)]
+fn speed_prior_success_is_finite() {
+    prior_success_is_finite(1);
+}
+
+#[kani::proof]
+#[kani::unwind(2)]
+fn restored_prior_success_is_finite() {
+    prior_success_is_finite(2);
+}
+
+/// Arbitrary finite state scalars; fixed valid covariance isolates state arithmetic overflow.
+#[kani::proof]
+#[kani::unwind(2)]
+fn prediction_success_is_finite() {
+    let mut filter = filter();
+    let position = arbitrary_float();
+    let speed = arbitrary_float();
+    let drift = arbitrary_float();
+    kani::assume(position.is_finite() && speed.is_finite() && drift.is_finite() && drift >= 0.0);
+    filter.estimate.position_m = position;
+    filter.estimate.speed_mps = speed;
+    filter.estimate.systematic_drift_m = drift;
+    let before = filter.estimate();
+    let dt = if kani::any() { 1.0 } else { 5.0 };
+    let result = filter.predict(dt, 1.0, 1.0);
+    if result.is_err() {
+        same_state(filter.estimate(), before);
+    }
+    assert_finite(filter.estimate());
+    kani::cover!(result.is_ok(), "accepted");
+    kani::cover!(result.is_err(), "rejected");
+}
+
+/// All measurement/sigma bit patterns against the documented valid correlated fixture.
+fn measurement_success_is_finite(operation: u8) {
+    let mut filter = RouteFilter::new(10.0, 2.0, 10.0, 2.0, 5.0).unwrap();
+    filter.estimate.covariance.position_speed = 2.0;
+    let before = filter.estimate();
+    let measurement = arbitrary_float();
+    let sigma = arbitrary_float();
+    let result = match operation {
+        0 => filter
+            .update_position(measurement, sigma, 9.0)
+            .map(|outcome| outcome.accepted),
+        1 => filter
+            .update_speed(measurement, sigma, 9.0)
+            .map(|outcome| outcome.accepted),
+        2 => filter.update_coarse_position(measurement, sigma, 9.0, 5.0),
+        _ => filter.update_coarse_speed(measurement, sigma, 9.0, 1.0),
+    };
+    if result != Ok(true) {
+        same_state(filter.estimate(), before);
+    }
+    assert_finite(filter.estimate());
+    kani::cover!(result == Ok(true), "accepted");
+    kani::cover!(result == Ok(false), "gated");
+    kani::cover!(result.is_err(), "error");
+}
+
+#[kani::proof]
+#[kani::unwind(2)]
+fn position_update_success_is_finite() {
+    measurement_success_is_finite(0);
+}
+
+#[kani::proof]
+#[kani::unwind(2)]
+fn speed_update_success_is_finite() {
+    measurement_success_is_finite(1);
+}
+
+#[kani::proof]
+#[kani::unwind(2)]
+fn coarse_position_success_is_finite() {
+    measurement_success_is_finite(2);
+}
+
+#[kani::proof]
+#[kani::unwind(2)]
+fn coarse_speed_success_is_finite() {
+    measurement_success_is_finite(3);
+}
+
+#[kani::proof]
+#[kani::unwind(2)]
+fn safety_radius_success_is_finite() {
+    let estimate = RouteFilter::new(0.0, 0.0, 2.0, 1.0, 5.0)
+        .unwrap()
+        .estimate();
+    let result = estimate.safety_radius_m(arbitrary_float());
+    if let Ok(radius) = result {
+        assert!(radius.is_finite());
+    }
+    kani::cover!(result.is_ok(), "accepted");
+    kani::cover!(result.is_err(), "rejected");
+}

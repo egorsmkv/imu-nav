@@ -6,7 +6,7 @@ use super::{FilterError, NavigationEstimator, TravelMode};
 pub(super) const GPS_SPEED_MAX_AGE_MS: i64 = 2_500;
 const MAX_HINT_LIFETIME_MS: i64 = 2_500;
 const MAX_WALK_SPEED_MPS: f64 = 4.0;
-const WALK_SPEED_SIGMA_MPS: f64 = 1.5;
+pub(super) const WALK_SPEED_SIGMA_MPS: f64 = 1.5;
 
 /// Explicit walking evidence from recorded steps/IMU. A car motion hint cannot create this input.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -43,22 +43,6 @@ impl NavigationEstimator {
             WALK_SPEED_SIGMA_MPS,
         )?;
         self.state.walking_valid_until_ms = hint.map(|hint| hint.valid_until_ms);
-        Ok(())
-    }
-
-    /// Split prediction at evidence expiry, including a long app pause, then stop rather than coast forever.
-    pub(super) fn expire_walking(&mut self) -> Result<(), FilterError> {
-        if self.mode == TravelMode::Foot
-            && self
-                .state
-                .walking_valid_until_ms
-                .is_some_and(|expiry| self.state.elapsed_ms >= expiry)
-        {
-            self.state
-                .filter
-                .set_speed_prior(0.0, WALK_SPEED_SIGMA_MPS)?;
-            self.state.walking_valid_until_ms = None;
-        }
         Ok(())
     }
 }

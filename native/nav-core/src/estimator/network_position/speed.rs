@@ -33,6 +33,7 @@ mod maneuver_tests;
 
 /// Fixed storage is cheap to checkpoint; consecutive batches share no samples.
 #[derive(Clone, Debug)]
+#[cfg_attr(all(test, not(kani)), derive(PartialEq))]
 pub(super) struct SpeedBatch {
     samples: [Option<Candidate>; MAX_BATCH_SIZE],
     count: usize,
@@ -186,3 +187,6 @@ impl SpeedBatch {
         Some(estimate)
     }
 }
+
+#[cfg(kani)]
+mod kani_proofs;

@@ -32,14 +32,13 @@ impl Covariance2 {
     ///
     /// # Errors
     ///
-    /// Returns [`FilterError`] when either standard deviation is negative or non-finite.
+    /// Returns [`FilterError`] when either standard deviation is negative or non-finite, or
+    /// its variance cannot be represented as a finite value.
     pub fn diagonal(position_sigma_m: f64, speed_sigma_mps: f64) -> Result<Self, FilterError> {
-        validate_sigma(position_sigma_m)?;
-        validate_sigma(speed_sigma_mps)?;
         Ok(Self {
-            position: position_sigma_m * position_sigma_m,
+            position: finite_variance(position_sigma_m)?,
             position_speed: 0.0,
-            speed: speed_sigma_mps * speed_sigma_mps,
+            speed: finite_variance(speed_sigma_mps)?,
         })
     }
 
@@ -54,8 +53,13 @@ impl Covariance2 {
         }
         // A symmetric 2x2 matrix is positive semidefinite exactly when both diagonal entries and
         // its determinant are non-negative. Permit a tiny floating-point tolerance.
-        let determinant = self.position * self.speed - self.position_speed.powi(2);
-        determinant >= -SYMMETRY_TOLERANCE * (1.0 + self.position * self.speed)
+        let diagonal_product = self.position * self.speed;
+        let cross_squared = self.position_speed.powi(2);
+        if !diagonal_product.is_finite() || !cross_squared.is_finite() {
+            return false;
+        }
+        let determinant = diagonal_product - cross_squared;
+        determinant >= -SYMMETRY_TOLERANCE * (1.0 + diagonal_product)
     }
 
     fn floored(self) -> Self {
@@ -93,12 +97,15 @@ impl Estimate {
     ///
     /// # Errors
     ///
-    /// Returns [`FilterError::InvalidSigma`] for a negative or non-finite multiplier.
+    /// Returns [`FilterError::InvalidSigma`] for a negative or non-finite multiplier, or
+    /// [`FilterError::NonFinite`] when the resulting radius is not finite.
     pub fn safety_radius_m(self, sigma_multiplier: f64) -> Result<f64, FilterError> {
         if !sigma_multiplier.is_finite() || sigma_multiplier < 0.0 {
             return Err(FilterError::InvalidSigma);
         }
-        Ok(sigma_multiplier * self.position_sigma_m() + self.systematic_drift_m)
+        let radius = sigma_multiplier * self.position_sigma_m() + self.systematic_drift_m;
+        validate_finite(radius)?;
+        Ok(radius)
     }
 }
 
@@ -123,6 +130,7 @@ pub enum FilterError {
 
 /// Fixed-size linear Kalman filter for `[s, v]`, where `s` is metres along the route.
 #[derive(Clone, Debug)]
+#[cfg_attr(any(test, kani), derive(PartialEq))]
 pub struct RouteFilter {
     estimate: Estimate,
 }
@@ -133,7 +141,7 @@ impl RouteFilter {
     /// # Errors
     ///
     /// Returns [`FilterError`] when a value is non-finite, an uncertainty is negative, or the
-    /// initial systematic drift is negative.
+    /// initial systematic drift is negative, or an uncertainty squared overflows.
     pub fn new(
         position_m: f64,
         speed_mps: f64,
@@ -168,7 +176,8 @@ impl RouteFilter {
     ///
     /// # Errors
     ///
-    /// Returns [`FilterError`] for invalid timing, noise, drift, or resulting covariance values.
+    /// Returns [`FilterError`] for invalid timing, noise, drift, covariance, or a non-finite
+    /// resulting estimate. Errors leave all state unchanged.
     pub fn predict(
         &mut self,
         dt_s: f64,
@@ -185,8 +194,9 @@ impl RouteFilter {
 
         let old = self.estimate;
         let distance = old.speed_mps * dt_s;
+        validate_finite(distance)?;
         let dt2 = dt_s * dt_s;
-        let acceleration_variance = acceleration_sigma_mps2 * acceleration_sigma_mps2;
+        let acceleration_variance = finite_variance(acceleration_sigma_mps2)?;
         let q00 = acceleration_variance * dt2 * dt2 / 4.0;
         let q01 = acceleration_variance * dt2 * dt_s / 2.0;
         let q11 = acceleration_variance * dt2;
@@ -197,16 +207,12 @@ impl RouteFilter {
             speed: p.speed + q11,
         }
         .floored();
-        if !predicted_covariance.is_valid() {
-            return Err(FilterError::InvalidCovariance);
-        }
-        self.estimate = Estimate {
+        self.commit_estimate(Estimate {
             position_m: old.position_m + distance,
             speed_mps: old.speed_mps,
             covariance: predicted_covariance,
             systematic_drift_m: old.systematic_drift_m + distance.abs() * systematic_drift_per_m,
-        };
-        Ok(())
+        })
     }
 
     /// Update from a route-projected position measurement.
@@ -277,11 +283,11 @@ impl RouteFilter {
             speed: old.covariance.speed,
         }
         .floored();
-        if !covariance.is_valid() {
-            return Err(FilterError::InvalidCovariance);
-        }
-        self.estimate.position_m += gain * innovation;
-        self.estimate.covariance = covariance;
+        self.commit_estimate(Estimate {
+            position_m: old.position_m + gain * innovation,
+            covariance,
+            ..old
+        })?;
         Ok(true)
     }
 
@@ -324,11 +330,11 @@ impl RouteFilter {
                 .max(measurement_variance),
         }
         .floored();
-        if !covariance.is_valid() {
-            return Err(FilterError::InvalidCovariance);
-        }
-        self.estimate.speed_mps += gain * innovation;
-        self.estimate.covariance = covariance;
+        self.commit_estimate(Estimate {
+            speed_mps: old.speed_mps + gain * innovation,
+            covariance,
+            ..old
+        })?;
         Ok(true)
     }
 
@@ -339,9 +345,9 @@ impl RouteFilter {
     /// Returns [`FilterError`] when the position is non-finite or the uncertainty is invalid.
     pub fn anchor_position(&mut self, position_m: f64, sigma_m: f64) -> Result<(), FilterError> {
         validate_finite(position_m)?;
-        validate_sigma(sigma_m)?;
+        let variance = finite_variance(sigma_m)?.max(MIN_VARIANCE);
         self.estimate.position_m = position_m;
-        self.estimate.covariance.position = (sigma_m * sigma_m).max(MIN_VARIANCE);
+        self.estimate.covariance.position = variance;
         self.estimate.covariance.position_speed = 0.0;
         self.estimate.systematic_drift_m = 0.0;
         Ok(())
@@ -360,9 +366,9 @@ impl RouteFilter {
     /// Returns [`FilterError`] for non-finite speed or invalid speed uncertainty.
     pub fn set_speed_prior(&mut self, speed_mps: f64, sigma_mps: f64) -> Result<(), FilterError> {
         validate_finite(speed_mps)?;
-        validate_sigma(sigma_mps)?;
+        let variance = finite_variance(sigma_mps)?.max(MIN_VARIANCE);
         self.estimate.speed_mps = speed_mps;
-        self.estimate.covariance.speed = (sigma_mps * sigma_mps).max(MIN_VARIANCE);
+        self.estimate.covariance.speed = variance;
         self.estimate.covariance.position_speed = 0.0;
         Ok(())
     }
@@ -377,6 +383,19 @@ impl RouteFilter {
         let previous_variance = self.estimate.covariance.speed;
         self.set_speed_prior(speed_mps, minimum_sigma_mps)?;
         self.estimate.covariance.speed = self.estimate.covariance.speed.max(previous_variance);
+        Ok(())
+    }
+
+    /// Publish a complete numerical update only after validating every state component.
+    /// Keeping the assignment last makes all arithmetic-error paths atomic.
+    fn commit_estimate(&mut self, candidate: Estimate) -> Result<(), FilterError> {
+        if !candidate.covariance.is_valid() {
+            return Err(FilterError::InvalidCovariance);
+        }
+        validate_finite(candidate.position_m)?;
+        validate_finite(candidate.speed_mps)?;
+        validate_non_negative(candidate.systematic_drift_m)?;
+        self.estimate = candidate;
         Ok(())
     }
 
@@ -444,16 +463,12 @@ impl RouteFilter {
             speed: ap10 * a10 + ap11 * a11 + k1 * measurement_variance * k1,
         }
         .floored();
-        if !updated_covariance.is_valid() {
-            return Err(FilterError::InvalidCovariance);
-        }
-
-        self.estimate = Estimate {
+        self.commit_estimate(Estimate {
             position_m: old.position_m + k0 * innovation,
             speed_mps: old.speed_mps + k1 * innovation,
             covariance: updated_covariance,
             systematic_drift_m: old.systematic_drift_m,
-        };
+        })?;
         Ok(outcome)
     }
 }
@@ -485,6 +500,17 @@ fn validate_non_negative(value: f64) -> Result<(), FilterError> {
 
 fn validate_sigma(value: f64) -> Result<(), FilterError> {
     validate_non_negative(value)
+}
+
+/// Validate the squared uncertainty before any caller can install it in live state.
+fn finite_variance(sigma: f64) -> Result<f64, FilterError> {
+    validate_sigma(sigma)?;
+    let variance = sigma * sigma;
+    if variance.is_finite() {
+        Ok(variance)
+    } else {
+        Err(FilterError::InvalidCovariance)
+    }
 }
 
 #[cfg(test)]

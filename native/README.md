@@ -458,3 +458,8 @@ The native core has a pinned Kani proof suite for input rejection, state preserv
 corrections, trust anchors, jamming hysteresis and network resets. Run `python3 tools/verify_native.py`
 from the repository root. See [setup, exact bounds and CI checks](../docs/NATIVE_VERIFICATION.md);
 these bounded contracts complement replay/testing and do not certify the whole navigator.
+
+Finite inputs that overflow uncertainty or retained state calculations now return `FilterError`
+before publishing the update. Failed OBD predictions also restore earlier prediction steps,
+calibration and timestamps. The Kani suite checks numerical guards and bounded estimator rollback
+sequences; real-geometry delayed-GPS rollback and retry are covered by Rust regression tests.

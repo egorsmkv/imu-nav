@@ -56,7 +56,7 @@ fn highway_recovery_still_rejects_outliers_and_suspect_gps() {
     let mut navigation = highway_false_stop();
     for time in [1_100, 1_200, 1_300] {
         let mut predicted = navigation.clone();
-        predicted.predict_to(time).unwrap();
+        predicted.state.predict_to(time, predicted.mode).unwrap();
         assert!(!navigation.on_vehicle_speed(250.0, time).unwrap());
         assert_eq!(navigation.estimate(), predicted.estimate());
         assert_eq!(navigation.state.last_vehicle_speed_ms, -1);

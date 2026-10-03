@@ -13,6 +13,27 @@ RUSTC = 'rustc 1.100.0-nightly (8925ea358 2026-08-20)'
 OUTPUT = ROOT / 'build/native-verification'
 # Names and cover labels are intentional inventory, not discovery: deleting a proof must fail CI.
 REQUIRED = {
+    'estimator::kani_proofs::tick_transactions_commit_only_success': {'committed', 'rolled back'},
+    'estimator::kani_proofs::state_transactions_commit_only_success': {'committed', 'rolled back'},
+    'estimator::kani_proofs::delayed_gps_error_restores_history_and_watermarks': {'rolled back'},
+    'estimator::kani_proofs::future_gps_matches_no_observation': {'ignored'},
+    'estimator::kani_proofs::old_gps_matches_no_observation': {'ignored'},
+    'estimator::kani_proofs::checkpoint_copy_preserves_complete_state': {'copied'},
+
+
+    'kani_proofs::diagonal_success_is_finite': {'accepted', 'rejected'},
+    'kani_proofs::commit_is_atomic_and_finite': {'accepted', 'rejected'},
+    'kani_proofs::constructor_success_is_finite': {'accepted', 'rejected'},
+    'kani_proofs::anchor_success_is_finite': {'accepted', 'rejected'},
+    'kani_proofs::speed_prior_success_is_finite': {'accepted', 'rejected'},
+    'kani_proofs::restored_prior_success_is_finite': {'accepted', 'rejected'},
+    'kani_proofs::prediction_success_is_finite': {'accepted', 'rejected'},
+    'kani_proofs::position_update_success_is_finite': {'accepted', 'gated', 'error'},
+    'kani_proofs::speed_update_success_is_finite': {'accepted', 'gated', 'error'},
+    'kani_proofs::coarse_position_success_is_finite': {'accepted', 'gated', 'error'},
+    'kani_proofs::coarse_speed_success_is_finite': {'accepted', 'gated', 'error'},
+    'kani_proofs::safety_radius_success_is_finite': {'accepted', 'rejected'},
+
     'kani_proofs::constructor_rejects_invalid_inputs': {'rejected'},
     'kani_proofs::invalid_correction_limit_preserves_state': {'rejected'},
     'kani_proofs::validators_reject_invalid_numbers': {'nan', 'infinity', 'negative zero'},

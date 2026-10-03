@@ -28,6 +28,7 @@ const CACHE_SIZE: usize = 8;
 
 /// Only non-mock CELL/NET fixes may enter here; the JNI wrapper excludes GPS and fused fixes.
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(any(test, kani), derive(PartialEq))]
 pub struct NetworkObservation {
     pub point: GeoPoint,
     pub elapsed_ms: i64,
@@ -35,6 +36,7 @@ pub struct NetworkObservation {
 }
 
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(any(test, kani), derive(PartialEq))]
 struct Candidate {
     first_ms: i64,
     last_ms: i64,
@@ -46,6 +48,7 @@ struct Candidate {
 
 /// Checkpointed together with the filter, so delayed GNSS re-evaluates coarse corrections.
 #[derive(Clone, Debug)]
+#[cfg_attr(all(test, not(kani)), derive(PartialEq))]
 pub(super) struct NetworkEvidence {
     valid_after_ms: i64,
     last_input_ms: i64,
@@ -259,3 +262,6 @@ impl NavigationEstimator {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(kani)]
+mod kani_proofs;

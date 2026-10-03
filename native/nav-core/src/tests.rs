@@ -105,3 +105,52 @@ fn long_sequence_preserves_valid_covariance() {
         assert!(filter.estimate().covariance.is_valid());
     }
 }
+
+#[test]
+fn finite_uncertainty_overflow_is_rejected_before_mutation() {
+    assert_eq!(
+        Covariance2::diagonal(f64::MAX, 1.0),
+        Err(FilterError::InvalidCovariance)
+    );
+    assert_eq!(
+        Covariance2::diagonal(1.0, f64::MAX),
+        Err(FilterError::InvalidCovariance)
+    );
+    assert!(RouteFilter::new(0.0, 1.0, f64::MAX, 1.0, 0.0).is_err());
+    let mut filter = RouteFilter::new(10.0, 2.0, 3.0, 4.0, 5.0).unwrap();
+    let before = filter.estimate();
+    assert_eq!(
+        filter.anchor_position(50.0, f64::MAX),
+        Err(FilterError::InvalidCovariance)
+    );
+    assert_eq!(filter.estimate(), before);
+    assert_eq!(
+        filter.set_speed_prior(8.0, f64::MAX),
+        Err(FilterError::InvalidCovariance)
+    );
+    assert_eq!(filter.estimate(), before);
+    assert_eq!(
+        filter.restore_speed_prior(8.0, f64::MAX),
+        Err(FilterError::InvalidCovariance)
+    );
+    assert_eq!(filter.estimate(), before);
+}
+
+#[test]
+fn prediction_rejects_position_and_drift_overflow_atomically() {
+    for (position, speed, drift) in [(f64::MAX, f64::MAX, 0.0), (0.0, f64::MAX, f64::MAX)] {
+        let mut filter = RouteFilter::new(position, speed, 1.0, 1.0, drift).unwrap();
+        let before = filter.estimate();
+        assert_eq!(filter.predict(1.0, 0.0, 1.0), Err(FilterError::NonFinite));
+        assert_eq!(filter.estimate(), before);
+    }
+}
+
+#[test]
+fn safety_radius_rejects_finite_arithmetic_overflow() {
+    let filter = RouteFilter::new(0.0, 0.0, 2.0, 1.0, 0.0).unwrap();
+    assert_eq!(
+        filter.estimate().safety_radius_m(f64::MAX),
+        Err(FilterError::NonFinite)
+    );
+}

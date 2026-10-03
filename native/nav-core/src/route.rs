@@ -30,6 +30,7 @@ pub enum RouteError {
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(any(test, kani), derive(PartialEq))]
 pub struct RouteGeometry {
     points: Vec<GeoPoint>,
     cumulative_m: Vec<f64>,
@@ -259,3 +260,6 @@ fn distance_m(first: GeoPoint, second: GeoPoint) -> f64 {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(kani)]
+pub(crate) mod kani_proofs;

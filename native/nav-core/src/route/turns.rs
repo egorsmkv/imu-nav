@@ -12,6 +12,7 @@ const MAX_CLUSTER_M: f64 = 40.0;
 
 /// Approximate midpoint of a compact route corner; positive angle is a right turn.
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(any(test, kani), derive(PartialEq))]
 pub struct RouteTurn {
     pub position_m: f64,
     pub angle_deg: f64,

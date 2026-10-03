@@ -23,6 +23,7 @@ const POSITION_GATE: f64 = 9.0;
 
 /// Completed, quality-gated rotation derived from recorded IMU samples by the shared detector.
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(any(test, kani), derive(PartialEq))]
 pub struct TurnObservation {
     pub start_ms: i64,
     pub end_ms: i64,
@@ -31,6 +32,7 @@ pub struct TurnObservation {
 
 /// Deduplication and route ownership are replayed with the filter, never shared with live snaps.
 #[derive(Clone, Debug)]
+#[cfg_attr(any(test, kani), derive(PartialEq))]
 pub(super) struct TurnState {
     since_ms: i64,
     last_seen_ms: i64,

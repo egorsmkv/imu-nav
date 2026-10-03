@@ -410,3 +410,45 @@ fn rejected_gps_restores_history_prefix_and_owned_suffix() {
         }
     }
 }
+
+#[test]
+fn vehicle_prediction_failure_rolls_back_earlier_prediction_steps() {
+    let mut navigation = estimator(20.0);
+    navigation.state.filter =
+        RouteFilter::new(f64::MAX / 2.0, f64::MAX / 16.0, 20.0, 2.0, 0.0).unwrap();
+    navigation.history.clear();
+    navigation.remember(None);
+    let before = navigation.clone();
+    // The first five-second step fits, but the second overflows the position.
+    assert!(navigation.on_vehicle_speed(36.0, 10_000).is_err());
+    assert_eq!(navigation, before);
+}
+
+#[test]
+fn delayed_gps_error_after_position_update_restores_calibration_and_history() {
+    for bad_speed in [false, true] {
+        let mut navigation = stable_obd_estimator();
+        let mut good = gps(4000, 50.00054);
+        good.speed_mps = Some(15.0);
+        navigation.tick(4000, Some(good)).unwrap();
+        assert!(navigation.state.vehicle_speed_scale < 1.0);
+        navigation.on_vehicle_speed(56.7, 4500).unwrap();
+        navigation.tick(5000, None).unwrap();
+        let before = navigation.clone();
+        let mut invalid = gps(4250, 50.00058);
+        if bad_speed {
+            invalid.speed_mps = Some(f64::NAN);
+        } else {
+            invalid.position_accuracy_m = Some(f64::MAX);
+        }
+        assert!(navigation.tick(5500, Some(invalid)).is_err());
+        assert_eq!(navigation, before);
+        let mut reference = before;
+        let valid = gps(4250, 50.00058);
+        assert_eq!(
+            navigation.tick(5500, Some(valid)),
+            reference.tick(5500, Some(valid))
+        );
+        assert_eq!(navigation, reference);
+    }
+}
