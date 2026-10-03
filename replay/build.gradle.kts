@@ -24,11 +24,16 @@ kotlin {
             "org/imunav/app/nativecore/NativeNavigationEstimator.kt",
             "org/imunav/app/nativecore/NativeRouteGeometry.kt",
             "org/imunav/app/nativecore/NativeRouteFilter.kt",
+            "org/imunav/app/nativecore/NativeTrustEvaluator.kt",
+            "org/imunav/app/nativecore/NativeSpeedFusion.kt",
         )
     }
 }
 
 val nativeHeapProfile = providers.gradleProperty("nativeHeapProfile").isPresent
+
+val nativeLibraryDir = providers.gradleProperty("nativeLibraryDir")
+val nativeLibraryPath = nativeLibraryDir.getOrElse(rootProject.file("native/target/debug").absolutePath)
 
 val buildHostNative = tasks.register<Exec>("buildHostNative") {
     group = "build"
@@ -40,15 +45,16 @@ val buildHostNative = tasks.register<Exec>("buildHostNative") {
 
 tasks.named<JavaExec>("run") {
     if (providers.gradleProperty("nativeReplay").isPresent || nativeHeapProfile) dependsOn(buildHostNative)
-    systemProperty("java.library.path", rootProject.file("native/target/debug").absolutePath)
+    systemProperty("java.library.path", nativeLibraryPath)
 }
 
 tasks.test {
-    dependsOn(buildHostNative)
+    if (!nativeLibraryDir.isPresent) dependsOn(buildHostNative)
+    if (providers.gradleProperty("nativeCoverage").isPresent) outputs.upToDateWhen { false }
     systemProperty("imunav.heapProfile", nativeHeapProfile)
-    systemProperty("java.library.path", rootProject.file("native/target/debug").absolutePath)
+    systemProperty("java.library.path", nativeLibraryPath)
     // Rust changes must invalidate the JNI integration tests even when Kotlin is unchanged.
-    inputs.files(fileTree(rootProject.file("native/target/debug")) { include("libimu_nav_jni.*", "imu_nav_jni.dll") })
+    inputs.files(fileTree(file(nativeLibraryPath)) { include("libimu_nav_jni.*", "imu_nav_jni.dll") })
     useJUnit()
 }
 

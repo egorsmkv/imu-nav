@@ -421,7 +421,16 @@ impl Limits {
 }
 
 fn enforce_limits(state: &AppState, ip: &str, device: &str) -> Result<(), ApiError> {
-    let now = Instant::now();
+    enforce_limits_at(state, ip, device, Instant::now())
+}
+
+// Explicit time keeps expiry boundaries deterministic in tests.
+fn enforce_limits_at(
+    state: &AppState,
+    ip: &str,
+    device: &str,
+    now: Instant,
+) -> Result<(), ApiError> {
     let mut limits = state
         .limits
         .lock()
@@ -503,3 +512,6 @@ fn now_s() -> i64 {
         .and_then(|duration| i64::try_from(duration.as_secs()).ok())
         .unwrap_or_default()
 }
+
+#[cfg(test)]
+mod tests;

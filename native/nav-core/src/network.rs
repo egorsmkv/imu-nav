@@ -196,46 +196,4 @@ fn slope(points: &[Anchor]) -> f64 {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn rejects_impossible_fix_then_reanchors_on_consistent_evidence() {
-        let mut tracker = NetworkTracker::default();
-        assert_eq!(tracker.gate(0, 0.0, 30.0), GateResult::Accepted);
-        assert_eq!(tracker.gate(1_000, 2_000.0, 30.0), GateResult::Rejected);
-        assert_eq!(tracker.gate(14_000, 2_100.0, 30.0), GateResult::Reanchored);
-        assert_eq!(tracker.gate(15_000, 2_110.0, 30.0), GateResult::Accepted);
-    }
-
-    #[test]
-    fn coarse_fix_can_confirm_but_not_create_anchor() {
-        let mut tracker = NetworkTracker::default();
-        assert_eq!(tracker.gate(0, 0.0, 500.0), GateResult::Rejected);
-        assert_eq!(tracker.gate(1_000, 10.0, 30.0), GateResult::Accepted);
-        assert_eq!(tracker.gate(2_000, 20.0, 500.0), GateResult::Accepted);
-    }
-
-    #[test]
-    fn records_recent_history_and_ignores_duplicate_for_speed() {
-        let mut tracker = NetworkTracker::default();
-        for index in 0_i32..6 {
-            tracker.record(
-                NetworkSample {
-                    elapsed_ms: i64::from(index) * 10_000,
-                    position_m: f64::from(index) * 100.0,
-                    accuracy_m: 30.0,
-                    offset_m: 5.0,
-                },
-                50.0 + f64::from(index) / 1000.0,
-                30.0,
-            );
-        }
-        assert_eq!(tracker.recent().len(), 4);
-        assert_eq!(tracker.history().len(), 6);
-        assert!(tracker.last_two_consistent());
-        assert!((tracker.speed_estimate(50_000).unwrap().speed_mps - 10.0).abs() < 0.1);
-        tracker.prune_history(80_001);
-        assert_eq!(tracker.history().len(), 0);
-    }
-}
+mod tests;

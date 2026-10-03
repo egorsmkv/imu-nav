@@ -206,9 +206,14 @@ fn run(config: &Config, out: &Path, pass: Pass) -> Result<()> {
 
 /// A new process per pass prevents allocator/profiler state from contaminating the next measurement.
 fn run_children(config: &Config, out: &Path) -> Result<()> {
-    std::fs::copy(std::env::current_exe()?, out.join("imu-nav-sim"))?;
+    run_children_with_executable(config, out, &std::env::current_exe()?)
+}
+
+// Passing the executable explicitly lets tests verify child failure without racing the filesystem.
+fn run_children_with_executable(config: &Config, out: &Path, executable: &Path) -> Result<()> {
+    std::fs::copy(executable, out.join("imu-nav-sim"))?;
     for child in [Pass::Heap, Pass::Alloc, Pass::Cpu, Pass::Timing] {
-        let status = Command::new(std::env::current_exe()?)
+        let status = Command::new(executable)
             .args([
                 "run",
                 "--scenario",
@@ -248,25 +253,4 @@ fn run_children(config: &Config, out: &Path) -> Result<()> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn cli_rejects_invalid_sizes_and_accepts_stress() {
-        assert!(
-            Cli::try_parse_from(["sim", "run", "--out", "unused", "--duration-s", "0"]).is_err()
-        );
-        assert!(
-            Cli::try_parse_from(["sim", "run", "--out", "unused", "--route-points", "1"]).is_err()
-        );
-        assert!(Cli::try_parse_from(["sim", "run", "--out", "unused", "--stress"]).is_ok());
-    }
-
-    #[test]
-    fn existing_output_is_never_overwritten() {
-        let path = std::env::temp_dir().join(format!("imu-sim-output-{}", std::process::id()));
-        create_output(&path).unwrap();
-        assert!(create_output(&path).is_err());
-        std::fs::remove_dir(path).unwrap();
-    }
-}
+mod tests;

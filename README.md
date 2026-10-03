@@ -435,6 +435,11 @@ cargo test --manifest-path native/Cargo.toml # native estimator and covariance t
 cargo test --manifest-path server/Cargo.toml # persistent HTTP/WebSocket cell server tests
 ```
 
+**Rust coverage.** Linux host coverage combines Rust tests, actual JVM JNI calls (default and
+`heap-profile` builds), simulator subprocesses and server CLI/HTTP/WebSocket tests. Run
+`python3 tools/rust_coverage.py` after installing the pinned coverage toolchain. CI gates
+production lines per crate; see [coverage setup, thresholds and report semantics](docs/RUST_COVERAGE.md).
+
 **Responsiveness.** Debug and benchmark builds enable StrictMode and a main-thread watchdog
 (`MainThreadWatchdog`): any UI-thread task longer than 200 ms is logged with its stack under the
 `MainThreadWatchdog` Logcat tag. Benchmark builds are R8-shrunk, so read their stacks with R8 retrace

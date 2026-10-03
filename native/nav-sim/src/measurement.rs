@@ -153,17 +153,4 @@ pub fn require_sampling_disabled() -> Result<()> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn counts_requested_bytes_and_stops_at_region_boundary() {
-        let region = Region::start(true);
-        let allocation = std::hint::black_box(vec![7_u8; 4096]);
-        let (_, counts) = region.finish();
-        assert_eq!(counts.calls, 1);
-        assert_eq!(counts.requested_bytes, 4096);
-        drop(allocation);
-        assert!(!COUNTING.get());
-    }
-}
+mod tests;

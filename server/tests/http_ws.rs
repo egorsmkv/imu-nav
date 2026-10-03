@@ -366,3 +366,76 @@ async fn repeated_device_uploads_are_rate_limited() -> Result<()> {
     }
     Ok(())
 }
+
+#[tokio::test]
+async fn health_bad_uploads_and_management_validation() -> Result<()> {
+    let server = start_server().await?;
+    let client = reqwest::Client::new();
+    assert_eq!(
+        client
+            .get(format!("{}/health", server.base_url))
+            .send()
+            .await?
+            .text()
+            .await?,
+        "ok 0\n"
+    );
+    let response = client
+        .post(format!("{}/v1/cells", server.base_url))
+        .bearer_auth("secret")
+        .body(vec![0x1f, 0x8b, 0])
+        .send()
+        .await?;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response.json::<serde_json::Value>().await?["message"],
+        "BAD_BODY"
+    );
+    for path in [
+        "/v1/towers?mcc=0",
+        "/v1/towers?mcc=1000",
+        "/v1/towers?mcc=bad",
+        "/v1/towers/invalid/255/1/1/1",
+        "/v1/towers/LTE/255/-1/1/1",
+    ] {
+        assert_eq!(
+            client
+                .get(format!("{}{path}", server.base_url))
+                .bearer_auth("secret")
+                .send()
+                .await?
+                .status(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+    let url = format!("{}/v1/towers/LTE/255/1/1/1", server.base_url);
+    assert_eq!(
+        client
+            .get(&url)
+            .bearer_auth("secret")
+            .send()
+            .await?
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        client
+            .delete(&url)
+            .bearer_auth("secret")
+            .send()
+            .await?
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        client
+            .put(&url)
+            .bearer_auth("secret")
+            .json(&serde_json::json!({"lat": 500, "lon": 30, "range_m": 100, "samples": 1}))
+            .send()
+            .await?
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+    Ok(())
+}

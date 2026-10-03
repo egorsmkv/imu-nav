@@ -253,15 +253,4 @@ fn append_heap_comparison(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn incompatible_inputs_are_rejected() {
-        let first = Report::new(Config::default(), Pass::Alloc, vec![]).unwrap();
-        let mut second = Report::new(Config::default(), Pass::Alloc, vec![]).unwrap();
-        assert!(compatible(&first, &second).is_ok());
-        second.config.seed += 1;
-        assert!(compatible(&first, &second).is_err());
-    }
-}
+mod tests;

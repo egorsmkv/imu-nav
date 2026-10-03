@@ -1,0 +1,54 @@
+name: Rust coverage
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  coverage:
+    name: ${{ matrix.suite }} production coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [native, server]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned coverage toolchain
+        run: rustup toolchain install nightly-2026-09-25 --profile minimal --component llvm-tools-preview
+      - uses: actions/setup-java@v4
+        if: matrix.suite == 'native'
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        if: matrix.suite == 'native'
+      - name: Install Android platform for Gradle project configuration
+        if: matrix.suite == 'native'
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        if: matrix.suite == 'native'
+      - name: Test coverage report validation
+        run: python3 -m unittest discover -s tools/tests -v
+      - name: Collect and gate production coverage
+        run: python3 tools/rust_coverage.py --suite '${{ matrix.suite }}'
+      - name: Upload reports and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-coverage-${{ matrix.suite }}
+          path: |
+            build/rust-coverage/index.html
+            build/rust-coverage/summary.json
+            build/rust-coverage/coverage.lcov
+            build/rust-coverage/*/html/**
+            build/rust-coverage/*/*.log
+            build/rust-coverage/*/*.lcov
+            build/rust-coverage/*/objects.json
+          retention-days: 14
