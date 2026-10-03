@@ -2,7 +2,10 @@ package org.imunav.app.sensors
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorEvent
@@ -224,16 +227,34 @@ class SensorHub(
         onImu(ImuSample(SystemClock.elapsedRealtime(), null, null, linear, null))
     }
 
-    /** False when the user switched Location off system-wide: no provider will deliver fixes. */
-    val locationEnabled: Boolean
-        get() = if (Build.VERSION.SDK_INT >= 28) {
+    private val providerStatus = ProviderStatus(control) {
+        if (Build.VERSION.SDK_INT >= 28) {
             locationManager.isLocationEnabled
         } else {
-            runCatching {
-                locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
-                    locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
-            }.getOrDefault(false)
+            locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) || locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
         }
+    }
+
+    /** Cached only: safe to include in every main-thread UI snapshot. */
+    val locationEnabled: Boolean get() = providerStatus.enabled.value
+
+    /** Fresh binder query on the sensor-control worker before starting a trip. */
+    suspend fun checkLocationEnabled(): Boolean = providerStatus.check()
+
+    init {
+        // SensorHub has application lifetime, as does this receiver; no Activity is retained.
+        control.execute {
+            ContextCompat.registerReceiver(
+                context.applicationContext,
+                object : BroadcastReceiver() {
+                    override fun onReceive(context: Context?, intent: Intent?) = providerStatus.refresh()
+                },
+                IntentFilter(LocationManager.PROVIDERS_CHANGED_ACTION),
+                ContextCompat.RECEIVER_NOT_EXPORTED,
+            )
+            providerStatus.refresh()
+        }
+    }
 
     /** What is currently registered; [configure] only touches what changed. */
     private var profile: PowerProfile = PowerProfile.BALANCED
@@ -329,6 +350,7 @@ class SensorHub(
     /** Start GPS, network location, satellite status and motion sensors. */
     @SuppressLint("MissingPermission")
     fun start() = control.execute {
+        providerStatus.refresh()
         if (running) return@execute
         running = true
         injectAssistance("start")

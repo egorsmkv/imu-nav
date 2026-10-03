@@ -10,27 +10,45 @@ import java.io.Closeable
 class NativeNetworkTracker private constructor(private var handle: Long) :
     NetworkPositionTracker,
     Closeable {
-    override val recent: List<NetSample> get() = samples(history = false)
-    override val history: List<NetSample> get() = samples(history = true)
+    private var recentSnapshot: List<NetSample>? = null
+    private var historySnapshot: List<NetSample>? = null
+    override val recent: List<NetSample> get() {
+        requireHandle()
+        return recentSnapshot ?: samples(history = false).also { recentSnapshot = it }
+    }
+    override val history: List<NetSample> get() {
+        requireHandle()
+        return historySnapshot ?: samples(history = true).also { historySnapshot = it }
+    }
 
-    override fun reset() = checkResult(nativeReset(requireHandle()))
+    override fun reset() {
+        invalidateSamples()
+        checkResult(nativeReset(requireHandle()))
+    }
 
-    override fun clearSamples() = checkResult(nativeClearSamples(requireHandle()))
+    override fun clearSamples() {
+        invalidateSamples()
+        checkResult(nativeClearSamples(requireHandle()))
+    }
 
     override fun gate(elapsedMs: Long, s: Double, acc: Double): NetworkTracker.GateResult = when (
         val result = nativeGate(requireHandle(), elapsedMs, s, acc)
     ) {
         GATE_ACCEPTED -> NetworkTracker.GateResult.ACCEPTED
-        GATE_REANCHORED -> NetworkTracker.GateResult.REANCHORED
+        GATE_REANCHORED -> NetworkTracker.GateResult.REANCHORED.also { invalidateSamples() }
         GATE_REJECTED -> NetworkTracker.GateResult.REJECTED
         else -> error("native network gate error=$result")
     }
 
     override fun record(sample: NetSample, lat: Double, lon: Double) {
+        invalidateSamples()
         checkResult(nativeRecord(requireHandle(), sample.elapsedMs, doubleArrayOf(sample.s, sample.accM, sample.offsetM, lat, lon)))
     }
 
-    override fun pruneHistory(nowMs: Long) = checkResult(nativePruneHistory(requireHandle(), nowMs))
+    override fun pruneHistory(nowMs: Long) {
+        historySnapshot = null
+        checkResult(nativePruneHistory(requireHandle(), nowMs))
+    }
 
     override fun lastTwoConsistent(): Boolean = when (val result = nativeLastTwoConsistent(requireHandle())) {
         RESULT_FALSE -> false
@@ -46,6 +64,7 @@ class NativeNetworkTracker private constructor(private var handle: Long) :
         val current = handle
         if (current == 0L) return
         handle = 0L
+        invalidateSamples()
         checkResult(nativeDestroy(current))
     }
 
@@ -58,7 +77,16 @@ class NativeNetworkTracker private constructor(private var handle: Long) :
     private fun samples(history: Boolean): List<NetSample> {
         val values = nativeSamples(requireHandle(), if (history) 1 else 0) ?: error("native network samples failed")
         check(values.size % SAMPLE_SIZE == 0) { "native network samples returned ${values.size} values" }
-        return values.asList().chunked(SAMPLE_SIZE).map { NetSample(it[0].toLong(), it[1], it[2], it[3]) }
+        return List(values.size / SAMPLE_SIZE) { index ->
+            val offset = index * SAMPLE_SIZE
+            NetSample(values[offset].toLong(), values[offset + 1], values[offset + 2], values[offset + 3])
+        }
+    }
+
+    /** Snapshot values remain valid for readers; only subsequent reads observe mutations. */
+    private fun invalidateSamples() {
+        recentSnapshot = null
+        historySnapshot = null
     }
 
     private fun requireHandle(): Long = handle.also { check(it != 0L) { "native network tracker is closed" } }

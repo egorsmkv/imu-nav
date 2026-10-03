@@ -31,8 +31,9 @@ class NativeRouteProjector :
     }
 
     override fun close() {
-        geometry?.close()
+        val previous = geometry
         geometry = null
         installedRoute = null
+        previous?.close()
     }
 }

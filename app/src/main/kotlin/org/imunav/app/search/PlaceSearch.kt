@@ -160,49 +160,17 @@ class PlaceSearch(context: Context, private val offlineDb: () -> SearchDb?, priv
         emptyList()
     }
 
-    // ------------------------------------------------------------------ recent picks
+    private val history = RecentSearches(
+        load = { RecentSearchCodec.decode(prefs.getString(KEY_RECENT, "[]")) },
+        save = { values -> prefs.edit { putString(KEY_RECENT, RecentSearchCodec.encode(values)) } },
+        onFailure = { Log.w(TAG, "recent_search_failed", it) },
+    )
 
-    /** The user's last picks, newest first. */
-    fun recent(): List<SearchResult> {
-        val array = try {
-            JSONArray(prefs.getString(KEY_RECENT, "[]"))
-        } catch (_: JSONException) {
-            return emptyList() // corrupted preference: start over
-        }
-        return (0 until array.length()).mapNotNull { i -> recentFromJson(array.getJSONObject(i)) }
-    }
+    /** Shared immutable history, loaded and persisted off the UI thread. */
+    val recent: StateFlow<List<SearchResult>> = history.state
 
-    /** Put [result] at the top of the recent list (without duplicates, at most [MAX_RECENT]). */
-    fun remember(result: SearchResult) {
-        val list = (listOf(result) + recent()).distinctBy { it.title to it.subtitle }.take(MAX_RECENT)
-        val array = JSONArray()
-        list.forEach { array.put(recentToJson(it)) }
-        prefs.edit { putString(KEY_RECENT, array.toString()) }
-    }
-
-    // Short JSON keys are kept for compatibility with lists saved by earlier versions.
-    private fun recentToJson(r: SearchResult) = JSONObject()
-        .put("k", r.kind.name)
-        .put("t", r.title)
-        .put("s", r.subtitle)
-        .put("lat", r.point.lat)
-        .put("lon", r.point.lon)
-
-    /** One saved recent pick, or null if it cannot be read. */
-    private fun recentFromJson(o: JSONObject): SearchResult? = try {
-        SearchResult(
-            kind = ResultKind.valueOf(o.getString("k")),
-            title = o.getString("t"),
-            subtitle = o.optString("s"),
-            point = GeoPoint(o.getDouble("lat"), o.getDouble("lon")),
-            distanceM = null,
-            source = "recent",
-        )
-    } catch (_: JSONException) {
-        null
-    } catch (_: IllegalArgumentException) {
-        null // unknown kind from a newer/older version
-    }
+    /** Enqueue a pick from either display without blocking or a read-modify-write race. */
+    fun remember(result: SearchResult) = history.remember(result)
 
     // ------------------------------------------------------------------ online fallback (Photon)
 
@@ -247,7 +215,6 @@ class PlaceSearch(context: Context, private val offlineDb: () -> SearchDb?, priv
         const val TEST_QUERY = "Київ"
         const val KEY_RECENT = "recent"
         const val MIN_QUERY_LENGTH = 2
-        const val MAX_RECENT = 10
         const val MAX_ONLINE_RESULTS = 10
     }
 }

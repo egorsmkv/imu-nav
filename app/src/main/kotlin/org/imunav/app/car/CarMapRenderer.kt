@@ -47,7 +47,10 @@ class CarMapRenderer(
     private var view: MapView? = null
     private var map: MapLibreMap? = null
     private var style: Style? = null
+    private var styleInitialized = false
+    private var mapInitialized = false
     private var encodedRoute: Route? = null
+    private var routeInitialized = false
     private var routeJob: Job? = null
     private var styleKey: Pair<Boolean, String?>? = null
     private var state = UiState()
@@ -59,6 +62,8 @@ class CarMapRenderer(
     private var stableArea = Rect()
     private var following = true
     private var closed = false
+    private val mapUpdates = CarMapUpdates()
+    private var guidanceZoomPending = false
 
     override fun onSurfaceAvailable(surfaceContainer: SurfaceContainer) {
         if (closed) {
@@ -91,10 +96,6 @@ class CarMapRenderer(
             mapView.getMapAsync { loaded ->
                 if (view !== mapView) return@getMapAsync
                 map = loaded
-                loaded.uiSettings.isLogoEnabled = false
-                loaded.uiSettings.isAttributionEnabled = true
-                val start = graph.mapStart.initialView()
-                loaded.cameraPosition = CameraPosition.Builder().target(LatLng(start.point.lat, start.point.lon)).zoom(start.zoom).build()
                 update(state)
                 padding()
             }
@@ -122,8 +123,17 @@ class CarMapRenderer(
                 view?.onStop()
             }
             resumed = target
+            onVisibility(target)
+            if (target) {
+                update(state)
+                padding()
+            } else {
+                if (routeJob?.isActive == true) {
+                    routeJob?.cancel()
+                    routeInitialized = false
+                }
+            }
         }
-        onVisibility(target)
     }
 
     /** Route encoding runs only when geometry changes, not on every guidance update. */
@@ -131,11 +141,16 @@ class CarMapRenderer(
         if (closed) return
         if (ui.guidance.active && !state.guidance.active) {
             following = true
-            map?.moveCamera(CameraUpdateFactory.zoomTo(16.0))
+            guidanceZoomPending = true
         }
         state = ui
-        view?.setMaximumFps(graph.powerProfile.value.mapMaxFps)
+        if (!resumed) return
         val loaded = map ?: return
+        initializeMap(loaded)
+        if (guidanceZoomPending) {
+            if (ui.guidance.active) loaded.moveCamera(CameraUpdateFactory.zoomTo(16.0))
+            guidanceZoomPending = false
+        }
         val dark = context.isDarkMode
         val key = dark to if (graph.offlineMap.status.value.offlineInUse) graph.offlineMap.styleJson(dark) else null
         if (styleKey != key) {
@@ -143,15 +158,43 @@ class CarMapRenderer(
             style = null
             loaded.setStyle(mapStyle(key.second, dark)) { newStyle ->
                 if (map !== loaded || styleKey != key) return@setStyle
-                addNavigationLayers(newStyle)
                 style = newStyle
-                encodedRoute = null
+                styleInitialized = false
                 update(state)
             }
         }
         val targetStyle = style ?: return
+        initializeStyle(targetStyle)
+        updateRoute(ui, loaded, targetStyle)
+        val changes = mapUpdates.update(carMapContent(ui, following, graph.powerProfile.value.mapMaxFps), resumed) ?: return
+        if (changes.maximumFps) view?.setMaximumFps(changes.content.maximumFps)
+        updateMarkers(changes, targetStyle)
+        updateCamera(changes, loaded)
+    }
+
+    /** Native setup is deferred too when the surface or style finishes loading while paused. */
+    private fun initializeMap(loaded: MapLibreMap) {
+        if (mapInitialized) return
+        loaded.uiSettings.isLogoEnabled = false
+        loaded.uiSettings.isAttributionEnabled = true
+        val start = graph.mapStart.initialView()
+        loaded.cameraPosition = CameraPosition.Builder().target(LatLng(start.point.lat, start.point.lon)).zoom(start.zoom).build()
+        mapInitialized = true
+    }
+
+    private fun initializeStyle(targetStyle: Style) {
+        if (styleInitialized) return
+        addNavigationLayers(targetStyle)
+        routeInitialized = false
+        mapUpdates.reset()
+        styleInitialized = true
+    }
+
+    /** Geometry encoding runs only for a new route or style and is cancelled while hidden. */
+    private fun updateRoute(ui: UiState, loaded: MapLibreMap, targetStyle: Style) {
         val route = ui.guidance.route ?: ui.previewRoute
-        if (encodedRoute !== route) {
+        if (!routeInitialized || encodedRoute !== route) {
+            routeInitialized = true
             encodedRoute = route
             routeJob?.cancel()
             routeJob = scope.launch {
@@ -160,20 +203,27 @@ class CarMapRenderer(
                         LatLngBounds.from(points.maxOf { it.lat }, points.maxOf { it.lon }, points.minOf { it.lat }, points.minOf { it.lon })
                     }
                 }
-                if (style === targetStyle) {
+                if (resumed && style === targetStyle && encodedRoute === route) {
                     targetStyle.getSourceAs<GeoJsonSource>("route")?.setGeoJson(features)
                     if (!state.guidance.active && bounds != null) loaded.moveCamera(CameraUpdateFactory.newLatLngBounds(bounds, 32))
                 }
             }
         }
-        updateMapPoint(targetStyle, "dest", ui.destination ?: ui.guidance.destination)
-        updateMapPosition(targetStyle, ui.currentPosition, if (ui.guidance.active) ui.guidance.uncertaintyM else ui.trustedAccuracyM)
-        if (following && (ui.guidance.active || route == null)) {
-            val position = ui.currentPosition ?: ui.manualStart ?: ui.destination ?: return
+    }
+
+    /** Position and destination sources are independent, so changing either need not rebuild both. */
+    private fun updateMarkers(changes: CarMapChanges, targetStyle: Style) {
+        if (changes.destination) updateMapPoint(targetStyle, "dest", changes.content.destination)
+        if (changes.position) updateMapPosition(targetStyle, changes.content.position.first, changes.content.position.second)
+    }
+
+    /** A recenter gesture invalidates this cache; ordinary UI/log updates preserve the camera. */
+    private fun updateCamera(changes: CarMapChanges, loaded: MapLibreMap) {
+        val camera = changes.content.camera ?: return
+        if (changes.camera) {
             loaded.moveCamera(
                 CameraUpdateFactory.newCameraPosition(
-                    CameraPosition.Builder(loaded.cameraPosition).target(LatLng(position.lat, position.lon))
-                        .bearing(if (ui.guidance.active) ui.guidance.bearingDeg.toDouble() else 0.0).build(),
+                    CameraPosition.Builder(loaded.cameraPosition).target(LatLng(camera.first.lat, camera.first.lon)).bearing(camera.second).build(),
                 ),
             )
         }
@@ -190,6 +240,7 @@ class CarMapRenderer(
     }
 
     private fun padding() {
+        if (!resumed) return
         val area = Rect(0, 0, width, height)
         if (!stableArea.isEmpty && !area.intersect(stableArea)) return
         if (!visibleArea.isEmpty && !area.intersect(visibleArea)) return
@@ -199,6 +250,8 @@ class CarMapRenderer(
 
     override fun onScroll(distanceX: Float, distanceY: Float) {
         following = false
+        mapUpdates.invalidateCamera()
+        if (!resumed) return
         map?.scrollBy(-distanceX, -distanceY)
     }
 
@@ -207,10 +260,12 @@ class CarMapRenderer(
     }
 
     fun zoom(delta: Double) {
+        if (!resumed) return
         map?.let { it.moveCamera(CameraUpdateFactory.zoomTo((it.cameraPosition.zoom + delta).coerceIn(it.minZoomLevel, it.maxZoomLevel))) }
     }
 
     fun recenter() {
+        mapUpdates.invalidateCamera()
         following = true
         update(state)
     }
@@ -231,20 +286,24 @@ class CarMapRenderer(
     /** Release native GL resources before dismissing the window and returning the host surface. */
     fun release() {
         routeJob?.cancel()
+        mapUpdates.reset()
         if (resumed) {
-            view?.onPause()
-            view?.onStop()
+            runCatching { view?.onPause() }
+            runCatching { view?.onStop() }
         }
         resumed = false
-        view?.onDestroy()
-        presentation?.dismiss()
-        display?.release()
-        surface?.release()
+        runCatching { view?.onDestroy() }
+        runCatching { presentation?.dismiss() }
+        runCatching { display?.release() }
+        runCatching { surface?.release() }
         view = null
         map = null
+        mapInitialized = false
         style = null
+        styleInitialized = false
         styleKey = null
         encodedRoute = null
+        routeInitialized = false
         presentation = null
         display = null
         surface = null

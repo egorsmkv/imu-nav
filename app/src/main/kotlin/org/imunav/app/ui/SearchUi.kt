@@ -73,7 +73,8 @@ fun SearchScreen(
     var results by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
     val bookmarkState by bookmarks.state.collectAsStateWithLifecycle()
-    val savedPlaces = bookmarkState.items.matching(query).filterIsInstance<SavedPlace>()
+    val recent by search.recent.collectAsStateWithLifecycle()
+    val savedPlaces = remember(bookmarkState.items, query) { bookmarkState.items.matching(query).filterIsInstance<SavedPlace>() }
     val focus = remember { FocusRequester() }
     BackHandler(onBack = onClose)
     LaunchedEffect(Unit) { focus.requestFocus() }
@@ -115,7 +116,7 @@ fun SearchScreen(
             )
             if (loading) LinearProgressIndicator(Modifier.fillMaxWidth()) else HorizontalDivider()
             val showRecent = query.trim().length < 2
-            val list = if (showRecent) search.recent() else results
+            val list = if (showRecent) recent else results
             LazyColumn(Modifier.weight(1f)) {
                 if (bookmarkState.failed) item { BookmarkFailure(bookmarks::reload, !bookmarkState.busy) }
                 if (savedPlaces.isNotEmpty()) {

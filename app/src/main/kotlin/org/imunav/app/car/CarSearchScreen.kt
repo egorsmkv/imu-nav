@@ -11,11 +11,9 @@ import androidx.car.app.model.Row
 import androidx.car.app.model.SearchTemplate
 import androidx.car.app.model.Template
 import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import org.imunav.app.R
 import org.imunav.app.graph
 import org.imunav.app.ui.routePointLabel
@@ -38,6 +36,14 @@ class CarSearchScreen(context: CarContext, private val start: Boolean, initialQu
     init {
         search(query)
         lifecycleScope.launch { graph.bookmarks.state.collect { invalidate() } }
+        lifecycleScope.launch {
+            graph.search.recent.collect {
+                if (query.isBlank()) {
+                    results = it
+                    invalidate()
+                }
+            }
+        }
     }
 
     override fun onSearchTextChanged(searchText: String) = search(searchText)
@@ -52,7 +58,7 @@ class CarSearchScreen(context: CarContext, private val start: Boolean, initialQu
             delay(250)
             results =
                 if (query.isBlank()) {
-                    withContext(Dispatchers.IO) { graph.search.recent() }
+                    graph.search.recent.value
                 } else {
                     graph.search.search(
                         query,
@@ -85,7 +91,7 @@ class CarSearchScreen(context: CarContext, private val start: Boolean, initialQu
                         if (!graph.engine.state.active && !graph.ui.value.startingNavigation) {
                             graph.setTravelMode(TravelMode.CAR)
                             if (start) graph.setManualStart(result.point, result.routePointLabel()) else graph.setDestination(result.point, result.routePointLabel())
-                            graph.scope.launch(Dispatchers.IO) { graph.search.remember(result) }
+                            graph.search.remember(result)
                             screenManager.popToRoot()
                         }
                     }.build(),

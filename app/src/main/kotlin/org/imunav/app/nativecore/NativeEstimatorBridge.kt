@@ -63,8 +63,9 @@ class NativeEstimatorBridge(private val log: (String) -> Unit) : RouteEstimatePr
     }
 
     fun close() {
-        estimator?.close()
+        val previous = estimator
         estimator = null
+        previous?.close()
     }
 
     private companion object {

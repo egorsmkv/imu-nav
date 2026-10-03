@@ -545,8 +545,26 @@ map warnings and controls scroll separately from the route panel; the compass st
 Action buttons, travel modes, legends and trip statistics wrap to the next line when needed. Settings,
 address search and the trip log keep content above the keyboard, and the setup and log control panels
 limit their height so the main content remains reachable. System font scaling is preserved. Text trip logs are written to
-`files/logs/`, trip recordings to `files/trips/` in app storage. The in-app trip-log viewer shows timestamps, highlights problems, and can search,
+`files/logs/`, trip recordings to `files/trips/` in app storage. Log writes and trip boundaries share one worker, so queued messages stay with their original trip.
+Log files have unique suffixes and buffered writes flush within five seconds (or at rotation/trip end); an abrupt process kill can lose the last buffered lines. The in-app trip-log viewer shows timestamps, highlights problems, and can search,
 filter, follow, copy or share the latest diagnostic events as a text file.
+
+### Kotlin lifecycle and performance regression checks
+
+Navigation start, reroute and restoration share cancellable request ownership: a stopped or superseded
+request cannot replace a newer trip, and failed startup releases partially initialized components.
+Location-provider status is cached for UI refresh and checked on the sensor worker before starting.
+Phone and Android Auto share asynchronously loaded, serialized recent-search history; malformed rows
+are skipped without discarding valid entries. Native network sample snapshots are reused between
+mutations. Android Auto publishes changed display fields and defers map updates while its surface is
+paused, applying current state on resume; stationary ETA is refreshed at least once per minute.
+
+`./gradlew :core:test :app:testPlayDebugUnitTest :replay:test` covers queued logging boundaries,
+startup rollback and request cancellation, history concurrency, provider caching, car publication
+inputs, and real JNI sample parity. `RecentSearchCodecTest` uses Android instrumentation to verify the
+platform JSON parser. Use `assemblePlayBenchmark` on a device with an Android Auto host to check
+main-thread reports, visibility transitions, frame timing and JVM allocations. Native heap profiles
+measure Rust allocations separately; they do not measure ART object allocation.
 
 ### Bookmark storage tests
 

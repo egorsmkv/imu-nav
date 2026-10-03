@@ -50,6 +50,8 @@ class NavigationCarSession :
     private lateinit var renderer: CarMapRenderer
     private lateinit var manager: NavigationManager
     private var publishedNavigation = false
+    private var lastTrip: CarTripContent? = null
+    private var lastTemplate: CarTemplateContent? = null
     private var autoDrive = false
     private var sessionVisible = false
     private var mapVisible = false
@@ -89,6 +91,8 @@ class NavigationCarSession :
     override fun onStart(owner: LifecycleOwner) {
         sessionVisible = true
         renderer.setVisible(mapVisible)
+        lastTemplate = null
+        publish(ui)
     }
     override fun onStop(owner: LifecycleOwner) {
         sessionVisible = false
@@ -100,7 +104,11 @@ class NavigationCarSession :
         mapVisible = visible
         renderer.setVisible(sessionVisible && visible)
     }
-    override fun onCarConfigurationChanged(newConfiguration: Configuration) = renderer.update(ui)
+    override fun onCarConfigurationChanged(newConfiguration: Configuration) {
+        lastTrip = null
+        lastTemplate = null
+        publish(ui)
+    }
 
     override fun onDestroy(owner: LifecycleOwner) {
         demoJob?.cancel()
@@ -111,8 +119,11 @@ class NavigationCarSession :
             manager.clearNavigationManagerCallback()
             carContext.getCarService(AppManager::class.java).setSurfaceCallback(null)
         } finally {
-            renderer.close()
-            graph.disconnectCar(id)
+            try {
+                renderer.close()
+            } finally {
+                graph.disconnectCar(id)
+            }
         }
     }
 
@@ -151,11 +162,18 @@ class NavigationCarSession :
             }
             publishedNavigation = active
         }
-        if (active) {
+        val trip = carTripContent(state, status(), System.currentTimeMillis())
+        if (active && trip != lastTrip) {
             val adapter = CarGuidance(carContext)
-            manager.updateTrip(adapter.trip(state.guidance, state.destinationLabel ?: carContext.getString(R.string.app_name), status()))
+            manager.updateTrip(adapter.trip(state.guidance, state.destinationLabel ?: carContext.getString(R.string.app_name), trip.status))
+            lastTrip = trip
         }
-        root.invalidate()
+        if (!active) lastTrip = null
+        val template = carTemplateContent(state, trip, if (state.guidance.active) state.guidance.travelMode else graph.travelMode.value)
+        if (template != lastTemplate) {
+            lastTemplate = template
+            root.invalidate()
+        }
     }
 
     fun status(): String {
@@ -173,7 +191,7 @@ class NavigationCarSession :
 
     /** Starting from the car uses the same guarded transaction as the phone. */
     fun start() {
-        if (graph.engine.state.active || graph.ui.value.startingNavigation) return
+        if (graph.engine.state.active || graph.ui.value.startingNavigation || demonstration) return
         if (autoDrive) {
             val preview = graph.ui.value
             val route = preview.previewRoute ?: return

@@ -31,6 +31,8 @@ import org.imunav.app.nativecore.NativeRouteGeometry
 import org.imunav.app.nativecore.NativeRouteProjector
 import org.imunav.app.nativecore.NativeSpeedFusion
 import org.imunav.app.nativecore.NativeTrustEvaluator
+import org.imunav.app.navigation.NavigationWork
+import org.imunav.app.navigation.withPreparedResource
 import org.imunav.app.net.ProxySettings
 import org.imunav.app.obd.ObdLink
 import org.imunav.app.power.PowerMode
@@ -71,6 +73,7 @@ import org.imunav.core.route.Route
 import org.imunav.core.route.TravelMode
 import org.imunav.core.speed.SpeedProfile
 import org.imunav.core.speed.SpeedProfileStore
+import org.imunav.core.util.StartupTransaction
 import java.util.Locale
 
 /**
@@ -293,21 +296,29 @@ class AppGraph(private val context: Context) {
         override fun onAlert(alert: NavAlert) = haptics.play(alert)
         override fun onLog(message: String) = tripLog.write(message)
         override fun onRerouteRequested(from: GeoPoint, destination: GeoPoint, via: List<GeoPoint>, auto: Boolean) {
-            scope.launch {
-                runCatching {
-                    val route = router.route(from, destination, via, engine.mode)
-                    route to withContext(Dispatchers.Default) { NativeRouteGeometry.create(route) }
-                }.onSuccess { (route, nativeRoute) ->
-                    val uncertainty = engine.state.uncertaintyM
-                    nativeRouteProjector.install(route, nativeRoute)
-                    engine.setRoute(route, SystemClock.elapsedRealtime())
-                    nativeEstimator.replaceRoute(nativeRoute, engine.progressS, uncertainty)
-                    trips.onRoute(route)
-                    offlineMap.saveCorridor(route, darkTheme())
-                }.onFailure {
-                    tripLog.write("reroute_failed ${it.message}")
-                    engine.rerouteFailed()
-                    _ui.value = _ui.value.copy(error = it.message)
+            var committing = false
+            navigationWork.launch(onFailure = {
+                tripLog.write("reroute_failed ${it.message}")
+                if (committing) stopNavigation() else engine.rerouteFailed()
+                _ui.value = _ui.value.copy(error = it.message)
+            }, onFinished = {
+                // Includes a router that cancels itself: permit a later reroute attempt.
+                engine.rerouteFailed()
+            }) {
+                val route = router.route(from, destination, via, engine.mode)
+                ensureCurrent()
+                withPreparedResource(create = { NativeRouteGeometry.create(route) }) { prepared ->
+                    ensureCurrent()
+                    if (engine.state.active) {
+                        committing = true
+                        val uncertainty = engine.state.uncertaintyM
+                        nativeRouteProjector.install(route, prepared.value)
+                        prepared.transfer()
+                        engine.setRoute(route, SystemClock.elapsedRealtime())
+                        nativeEstimator.replaceRoute(prepared.value, engine.progressS, uncertainty)
+                        trips.onRoute(route)
+                        runCatching { offlineMap.saveCorridor(route, darkTheme()) }.onFailure { tripLog.write("corridor_save_failed ${it.message}") }
+                    }
                 }
             }
         }
@@ -360,8 +371,7 @@ class AppGraph(private val context: Context) {
 
     /** The latest preview calculation; replacing it prevents an old result winning a race. */
     private var previewJob: Job? = null
-    private var navigationStartJob: Job? = null
-    private var navigationStartGeneration = 0L
+    private val navigationWork = NavigationWork(scope)
     private var previewGeneration = 0L
     private var previewRequest: RoutePreviewRequest? = null
 
@@ -580,10 +590,6 @@ class AppGraph(private val context: Context) {
             return
         }
         val dest = _ui.value.destination ?: return
-        if (!sensors.locationEnabled) {
-            _ui.value = _ui.value.copy(error = context.getString(R.string.error_location_off))
-            return
-        }
         // A start the user placed by hand wins over a coarse automatic fix.
         val from = _ui.value.manualStart ?: currentPosition() ?: run {
             _ui.value = _ui.value.copy(error = context.getString(R.string.error_no_position))
@@ -599,49 +605,58 @@ class AppGraph(private val context: Context) {
         previewGeneration++
         val mode = travelMode.value
         _ui.value = _ui.value.copy(planning = true, startingNavigation = true, error = null)
-        val startGeneration = ++navigationStartGeneration
-        navigationStartJob = scope.launch {
-            var pendingGeometry: NativeRouteGeometry? = null
-            val request = RoutePreviewRequest(from, dest, mode)
-            runCatching {
-                val route = _ui.value.previewRoute.takeIf { previewRequest == request } ?: router.route(from, dest, mode = mode)
-                route to withContext(Dispatchers.Default) { NativeRouteGeometry.create(route).also { pendingGeometry = it } }
-            }.onSuccess { (route, nativeRoute) ->
-                try {
-                    NavService.start(context)
-                } catch (_: IllegalStateException) {
-                    nativeRoute.close()
-                    _ui.value = _ui.value.copy(planning = false, startingNavigation = false, error = context.getString(R.string.car_setup))
-                    return@onSuccess
-                } catch (_: SecurityException) {
-                    nativeRoute.close()
-                    _ui.value = _ui.value.copy(planning = false, startingNavigation = false, error = context.getString(R.string.car_setup))
-                    return@onSuccess
-                }
-                tripLog.startTrip()
-                tripLog.write("start_accuracy=${startAccuracy.toInt()}")
-                nativeRouteProjector.install(route, nativeRoute)
-                pendingGeometry = null
-                val now = SystemClock.elapsedRealtime()
-                val initialSpeed = hub.lastGood?.takeIf { _ui.value.manualStart == null && now - it.elapsedMs in 0..START_SPEED_MAX_AGE_MS }?.speedMps?.toDouble() ?: 0.0
-                nativeEstimator.start(nativeRoute, 0.0, initialSpeed, startAccuracy, mode, now)
-                engine.start(route, dest, nowMs = now, startAccuracyM = startAccuracy, mode = mode, estimator = navigationEstimator.value)
-                trips.begin(route, dest, emptyList(), startAccuracy, mode)
-                offlineMap.saveCorridor(route, darkTheme())
-                if (mode == TravelMode.CAR) obd.start()
-                applyPower()
-                previewJob?.cancel()
-                previewRequest = null
-                _ui.value = _ui.value.copy(planning = false, startingNavigation = false, previewRoute = null)
-                refresh()
-                onStarted()
-            }.onFailure {
-                pendingGeometry?.close()
-                if (startGeneration == navigationStartGeneration) {
-                    _ui.value = _ui.value.copy(planning = false, startingNavigation = false, error = if (it is CancellationException) null else it.message)
-                }
-                if (it is CancellationException) throw it
+        navigationWork.launch(onFailure = {
+            tripLog.write("navigation_start_failed ${it.message}")
+            runCatching { applyPower() }.onFailure { failure -> tripLog.write("navigation_cleanup_failed ${failure.message}") }
+            _ui.value = _ui.value.copy(
+                planning = false,
+                startingNavigation = false,
+                error = if (it is SecurityException) context.getString(R.string.car_setup) else it.message,
+            )
+        }, onFinished = {
+            _ui.value = _ui.value.copy(planning = false, startingNavigation = false)
+        }) {
+            if (!sensors.checkLocationEnabled()) {
+                ensureCurrent()
+                _ui.value = _ui.value.copy(planning = false, startingNavigation = false, error = context.getString(R.string.error_location_off))
+                return@launch
             }
+            ensureCurrent()
+            val request = RoutePreviewRequest(from, dest, mode)
+            val route = _ui.value.previewRoute.takeIf { previewRequest == request } ?: router.route(from, dest, mode = mode)
+            ensureCurrent()
+            withPreparedResource(create = { NativeRouteGeometry.create(route) }) { prepared ->
+                ensureCurrent()
+                StartupTransaction { tripLog.write("navigation_cleanup_failed ${it.message}") }.use { transaction ->
+                    transaction.acquire({ NavService.stop(context) }) { NavService.start(context) }
+                    transaction.acquire(tripLog::endTrip) {
+                        tripLog.startTrip()
+                        tripLog.write("start_accuracy=${startAccuracy.toInt()}")
+                    }
+                    transaction.acquire(nativeRouteProjector::close) {
+                        nativeRouteProjector.install(route, prepared.value)
+                        prepared.transfer()
+                    }
+                    val now = SystemClock.elapsedRealtime()
+                    val initialSpeed = hub.lastGood?.takeIf { _ui.value.manualStart == null && now - it.elapsedMs in 0..START_SPEED_MAX_AGE_MS }?.speedMps?.toDouble() ?: 0.0
+                    transaction.acquire(nativeEstimator::close) { nativeEstimator.start(prepared.value, 0.0, initialSpeed, startAccuracy, mode, now) }
+                    transaction.acquire(voice::stop) {}
+                    transaction.acquire(engine::stop) {
+                        engine.start(route, dest, nowMs = now, startAccuracyM = startAccuracy, mode = mode, estimator = navigationEstimator.value)
+                    }
+                    transaction.acquire({ trips.end(arrived = false) }) { trips.begin(route, dest, emptyList(), startAccuracy, mode) }
+                    if (mode == TravelMode.CAR) transaction.acquire(obd::stop, obd::start)
+                    applyPower()
+                    transaction.commit()
+                }
+            }
+            previewJob?.cancel()
+            previewRequest = null
+            _ui.value = _ui.value.copy(planning = false, startingNavigation = false, previewRoute = null)
+            refresh()
+            // These optional effects do not own the startup transaction.
+            runCatching { offlineMap.saveCorridor(route, darkTheme()) }.onFailure { tripLog.write("corridor_save_failed ${it.message}") }
+            runCatching(onStarted).onFailure { tripLog.write("navigation_callback_failed ${it.message}") }
         }
     }
 
@@ -653,20 +668,16 @@ class AppGraph(private val context: Context) {
 
     /** End the trip: save it to the history and stop the engine. */
     fun stopNavigation() {
-        navigationStartJob?.cancel()
-        navigationStartJob = null
+        navigationWork.cancel()
         if (_ui.value.startingNavigation) _ui.value = _ui.value.copy(startingNavigation = false, planning = false)
         if (!engine.state.active) return
-        trips.end(arrived = engine.state.arrived)
-        engine.stop()
-        voice.stop()
-        nativeEstimator.close()
-        nativeRouteProjector.close()
-        obd.stop()
-        applyPower()
-        tripLog.endTrip()
-        cells.maybeAutoSync()
-        NavService.stop(context)
+        val arrived = engine.state.arrived
+        val cleanup = listOf<() -> Unit>(
+            { trips.end(arrived = arrived) }, engine::stop, voice::stop, nativeEstimator::close,
+            nativeRouteProjector::close, obd::stop, ::applyPower, tripLog::endTrip,
+            { cells.maybeAutoSync() }, { NavService.stop(context) },
+        )
+        cleanup.forEach { release -> runCatching(release).onFailure { tripLog.write("navigation_cleanup_failed ${it.message}") } }
         updateDisplays()
         refresh()
     }
@@ -734,7 +745,7 @@ class AppGraph(private val context: Context) {
             simulateGpsLoss = engine.simulateGpsLoss,
             sensorWarning = sensors.sensorWarning,
             locationEnabled = sensors.locationEnabled,
-            log = tripLog.recent.takeLast(30),
+            log = tripLog.recent(30),
         )
         if (!hadTrustedPosition && _ui.value.hasTrustedPosition && _ui.value.destination != null && _ui.value.manualStart == null && _ui.value.previewRoute == null) {
             planRoutePreview()
@@ -746,26 +757,26 @@ class AppGraph(private val context: Context) {
         if (trips.restore()) {
             tripLog.startTrip()
             engine.route?.let { route ->
-                scope.launch {
-                    runCatching { withContext(Dispatchers.Default) { NativeRouteGeometry.create(route) } }
-                        .onSuccess { nativeRoute ->
-                            if (engine.state.active && engine.route === route) {
-                                nativeRouteProjector.install(route, nativeRoute)
-                                nativeEstimator.start(
-                                    nativeRoute,
-                                    engine.progressS,
-                                    engine.state.speedKmh.toDouble() / 3.6,
-                                    engine.state.uncertaintyM,
-                                    engine.mode,
-                                    SystemClock.elapsedRealtime(),
-                                )
-                            } else {
-                                nativeRoute.close()
-                            }
-                        }.onFailure {
-                            tripLog.write("native_estimator_restore_failed ${it.message}")
-                            if (engine.estimator == NavigationEstimator.NATIVE_KALMAN) _ui.value = _ui.value.copy(error = it.message)
+                navigationWork.launch(onFailure = {
+                    nativeEstimator.close()
+                    tripLog.write("native_estimator_restore_failed ${it.message}")
+                    if (engine.estimator == NavigationEstimator.NATIVE_KALMAN) _ui.value = _ui.value.copy(error = it.message)
+                }) {
+                    withPreparedResource(create = { NativeRouteGeometry.create(route) }) { prepared ->
+                        ensureCurrent()
+                        if (engine.state.active && engine.route === route) {
+                            nativeEstimator.start(
+                                prepared.value,
+                                engine.progressS,
+                                engine.state.speedKmh.toDouble() / 3.6,
+                                engine.state.uncertaintyM,
+                                engine.mode,
+                                SystemClock.elapsedRealtime(),
+                            )
+                            nativeRouteProjector.install(route, prepared.value)
+                            prepared.transfer()
                         }
+                    }
                 }
             }
             if (engine.mode == TravelMode.CAR) obd.start()

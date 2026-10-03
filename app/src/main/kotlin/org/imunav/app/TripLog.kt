@@ -3,13 +3,11 @@ package org.imunav.app
 import android.content.Context
 import android.os.SystemClock
 import android.util.Log
+import org.imunav.core.util.TripFileLog
 import java.io.File
-import java.text.SimpleDateFormat
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
-import java.util.Date
 import java.util.Locale
-import java.util.concurrent.Executors
 
 /**
  * The app's text log.
@@ -22,31 +20,25 @@ import java.util.concurrent.Executors
  *
  * [write] may be called from any thread.
  */
-class TripLog(context: Context, private val maxFileBytes: Long = 15L * 1024 * 1024) {
-    private val dir = File(context.filesDir, "logs").apply { mkdirs() }
-
-    /** The current trip's log file; null when no trip runs. `@Volatile`: read from the I/O thread. */
-    @Volatile private var file: File? = null
+class TripLog(context: Context, maxFileBytes: Long = 15L * 1024 * 1024) {
+    private val files = TripFileLog(File(context.filesDir, "logs"), maxFileBytes, { Log.w(TAG, "log_write_failed", it) })
 
     /** The last [MAX_RECENT] lines, for the UI. Guarded by `synchronized(tail)`. */
     private val tail = ArrayDeque<String>()
 
-    /** File appends happen on this single background thread, so logging never blocks the UI. */
-    private val io = Executors.newSingleThreadExecutor()
-
     /** A snapshot of the latest lines (oldest first). */
-    val recent: List<String> get() = synchronized(tail) { tail.toList() }
+    val recent: List<String> get() = recent(MAX_RECENT)
 
-    /** Start a new log file (called when navigation starts). */
-    fun startTrip() {
-        val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
-        file = File(dir, "trip-$stamp.log")
+    /** Copy only the displayed tail; routine navigation refresh does not need the full log. */
+    fun recent(limit: Int): List<String> = synchronized(tail) {
+        tail.takeLast(limit.coerceIn(0, MAX_RECENT))
     }
 
-    /** Stop writing to a file (in-memory lines continue). */
-    fun endTrip() {
-        file = null
-    }
+    /** Enqueue the boundary before any messages belonging to this trip. */
+    fun startTrip() = files.start()
+
+    /** Flush all messages already queued for the trip before closing its file. */
+    fun endTrip() = files.end()
 
     /** Log one line (any thread). */
     fun write(message: String) {
@@ -56,11 +48,7 @@ class TripLog(context: Context, private val maxFileBytes: Long = 15L * 1024 * 10
             tail.addLast(line)
             while (tail.size > MAX_RECENT) tail.removeFirst()
         }
-        val target = file ?: return
-        io.execute {
-            if (target.length() > maxFileBytes && file === target) startTrip() // roll over to a new file
-            runCatching { (file ?: target).appendText(line + "\n") }
-        }
+        files.write(line)
     }
 
     private companion object {
