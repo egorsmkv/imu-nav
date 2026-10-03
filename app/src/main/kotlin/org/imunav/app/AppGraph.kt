@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.imunav.app.bookmarks.BookmarkDatabase
+import org.imunav.app.bookmarks.Bookmarks
 import org.imunav.app.cells.CellManager
 import org.imunav.app.cells.CellStatus
 import org.imunav.app.haptics.Haptics
@@ -38,6 +40,9 @@ import org.imunav.app.service.NavService
 import org.imunav.app.trips.TripManager
 import org.imunav.app.voice.Voice
 import org.imunav.core.Tuning
+import org.imunav.core.bookmarks.BookmarkOrigin
+import org.imunav.core.bookmarks.SavedPlace
+import org.imunav.core.bookmarks.SavedRoute
 import org.imunav.core.geo.GeoPoint
 import org.imunav.core.geo.ServiceArea
 import org.imunav.core.gnss.GnssSnapshot
@@ -79,6 +84,8 @@ data class UiState(
     val destination: GeoPoint? = null,
     /** Address shown for a destination chosen in search; null for a point chosen directly on the map. */
     val destinationLabel: String? = null,
+    /** One-shot camera request when a bookmark is applied from the library. */
+    val mapFocusRequest: GeoPoint? = null,
     /** Start point chosen by the user on the map or in search; it overrides the trusted position. */
     val manualStart: GeoPoint? = null,
     /** Address shown for a start chosen in search; null for a point chosen directly on the map. */
@@ -131,6 +138,9 @@ class AppGraph(private val context: Context) {
     /** Coroutine scope for the app's lifetime; runs on the main thread unless told otherwise. */
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val tripLog = TripLog(context)
+
+    /** Local saved places/routes load on IO and outlive activity recreation. */
+    val bookmarks = Bookmarks(BookmarkDatabase(context), scope)
 
     /** UI and voice language: the in-app choice, or the phone's language by default. */
     private val voicePrefs = context.getSharedPreferences("voice", Context.MODE_PRIVATE)
@@ -444,6 +454,38 @@ class AppGraph(private val context: Context) {
     fun setDestination(p: GeoPoint?, label: String? = null) {
         _ui.value = _ui.value.copy(destination = p, destinationLabel = label.takeIf { p != null }, error = null)
         planRoutePreview()
+    }
+
+    /** Apply both endpoints before calculating, avoiding previews with half of a saved route. */
+    fun openBookmark(route: SavedRoute): Boolean {
+        if (engine.state.active) return false
+        val start = (route.origin as? BookmarkOrigin.Fixed)?.endpoint
+        modePrefs.edit { putString("mode", route.mode.name) }
+        travelMode.value = route.mode
+        tripLog.write("travel_mode ${route.mode}")
+        _ui.value = _ui.value.copy(
+            manualStart = start?.point,
+            manualStartLabel = start?.label,
+            destination = route.destination.point,
+            destinationLabel = route.destination.label,
+            mapFocusRequest = route.destination.point,
+            error = null,
+        )
+        planRoutePreview()
+        return true
+    }
+
+    /** A library selection never replaces the endpoints of an active trip. */
+    fun useBookmark(place: SavedPlace, asStart: Boolean): Boolean {
+        if (engine.state.active) return false
+        if (asStart) setManualStart(place.endpoint.point, place.name) else setDestination(place.endpoint.point, place.name)
+        _ui.value = _ui.value.copy(mapFocusRequest = place.endpoint.point)
+        return true
+    }
+
+    /** Consume a camera request after the map becomes visible again. */
+    fun clearMapFocusRequest() {
+        _ui.value = _ui.value.copy(mapFocusRequest = null)
     }
 
     /** Calculate the route as soon as both endpoints are known, without starting navigation. */

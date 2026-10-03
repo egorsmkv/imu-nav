@@ -32,6 +32,7 @@ android {
         targetSdk = 36
         versionCode = 7
         versionName = "0.6.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "MONOBANK_DONATION_URL", buildConfigString(configuredLink("monobankDonationUrl")))
         buildConfigField("String", "PRIVATBANK_DONATION_URL", buildConfigString(configuredLink("privatbankDonationUrl")))
         // Main-thread diagnostics (StrictMode + MainThreadWatchdog); on in debug and benchmark builds only.
@@ -173,6 +174,8 @@ dependencies {
 
     coreLibraryDesugaring(libs.desugar.jdk.libs)
     testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.junit)
 }
 
 /**

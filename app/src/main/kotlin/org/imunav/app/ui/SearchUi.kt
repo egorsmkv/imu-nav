@@ -14,6 +14,8 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LocationCity
@@ -44,26 +46,41 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import org.imunav.app.R
+import org.imunav.app.bookmarks.Bookmarks
 import org.imunav.app.search.PlaceSearch
+import org.imunav.core.bookmarks.SavedPlace
+import org.imunav.core.bookmarks.matching
 import org.imunav.core.geo.GeoPoint
 import org.imunav.core.search.ResultKind
 import org.imunav.core.search.SearchResult
 
 /** Full-screen search: type-ahead offline results (online fallback), recent picks when empty. */
 @Composable
-fun SearchScreen(search: PlaceSearch, near: GeoPoint?, hint: String, onPick: (SearchResult) -> Unit, onClose: () -> Unit) {
+fun SearchScreen(
+    search: PlaceSearch,
+    bookmarks: Bookmarks,
+    near: GeoPoint?,
+    hint: String,
+    onPick: (SearchResult) -> Unit,
+    onBookmarkPick: (SavedPlace) -> Unit,
+    onClose: () -> Unit,
+) {
     val res = LocalResources.current
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
+    val bookmarkState by bookmarks.state.collectAsStateWithLifecycle()
+    val savedPlaces = bookmarkState.items.matching(query).filterIsInstance<SavedPlace>()
     val focus = remember { FocusRequester() }
     BackHandler(onBack = onClose)
     LaunchedEffect(Unit) { focus.requestFocus() }
     LaunchedEffect(query) {
         if (query.trim().length < 2) {
             results = emptyList()
+            loading = false
             return@LaunchedEffect
         }
         delay(250) // debounce typing
@@ -84,7 +101,10 @@ fun SearchScreen(search: PlaceSearch, near: GeoPoint?, hint: String, onPick: (Se
                 },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { results.firstOrNull()?.let(onPick) }),
+                keyboardActions = KeyboardActions(onSearch = {
+                    val saved = savedPlaces.firstOrNull()
+                    if (saved != null) onBookmarkPick(saved) else results.firstOrNull()?.let(onPick)
+                }),
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = MaterialTheme.colorScheme.surface,
                     unfocusedContainerColor = MaterialTheme.colorScheme.surface,
@@ -97,6 +117,18 @@ fun SearchScreen(search: PlaceSearch, near: GeoPoint?, hint: String, onPick: (Se
             val showRecent = query.trim().length < 2
             val list = if (showRecent) search.recent() else results
             LazyColumn(Modifier.weight(1f)) {
+                if (bookmarkState.failed) item { BookmarkFailure(bookmarks::reload, !bookmarkState.busy) }
+                if (savedPlaces.isNotEmpty()) {
+                    item { Text(stringResource(R.string.bookmark_places), Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall) }
+                    items(savedPlaces, key = { "bookmark:${it.id}" }) { place ->
+                        ListItem(
+                            headlineContent = { Text(place.name) },
+                            supportingContent = { place.endpoint.label?.let { Text(it) } },
+                            leadingContent = { Icon(Icons.Filled.Bookmark, contentDescription = null) },
+                            modifier = Modifier.clickable { onBookmarkPick(place) },
+                        )
+                    }
+                }
                 item {
                     if (!search.hasOffline) {
                         Text(
@@ -117,7 +149,7 @@ fun SearchScreen(search: PlaceSearch, near: GeoPoint?, hint: String, onPick: (Se
                         )
                     }
                 }
-                if (!showRecent && !loading && list.isEmpty()) {
+                if (!showRecent && !loading && list.isEmpty() && savedPlaces.isEmpty()) {
                     item { Text(stringResource(R.string.search_no_results), modifier = Modifier.padding(24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
                 items(list) { r ->
@@ -144,6 +176,11 @@ fun SearchScreen(search: PlaceSearch, near: GeoPoint?, hint: String, onPick: (Se
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
                             )
+                        },
+                        trailingContent = {
+                            IconButton(enabled = !bookmarkState.busy, onClick = { bookmarks.savePlace(r.point, r.routePointLabel()) }) {
+                                Icon(Icons.Filled.BookmarkAdd, stringResource(R.string.bookmark_save_place))
+                            }
                         },
                         modifier = Modifier.clickable { onPick(r) },
                     )

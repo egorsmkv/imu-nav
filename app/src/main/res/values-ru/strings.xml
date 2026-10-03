@@ -516,4 +516,25 @@
     <string name="setup_location_services">Местоположение на телефоне</string>
     <string name="setup_location_services_hint">Для GPS и сканирования вышек включите местоположение в настройках Android. Предоставление разрешения не включает этот переключатель.</string>
     <string name="setup_location_off">Местоположение выключено</string>
+
+    <!-- Local saved places and route recipes. -->
+    <string name="bookmarks">Закладки</string>
+    <string name="bookmark_places">Места</string>
+    <string name="bookmark_routes">Маршруты</string>
+    <string name="bookmark_name">Название</string>
+    <string name="bookmark_save">Сохранить</string>
+    <string name="bookmark_save_place">Сохранить место</string>
+    <string name="bookmark_save_start">Сохранить начало</string>
+    <string name="bookmark_save_destination">Сохранить пункт назначения</string>
+    <string name="bookmark_save_route">Сохранить маршрут</string>
+    <string name="bookmark_use_start">Использовать как начало</string>
+    <string name="bookmark_use_destination">Использовать как пункт назначения</string>
+    <string name="bookmark_open">Открыть маршрут</string>
+    <string name="bookmark_rename">Переименовать</string>
+    <string name="bookmark_delete_confirm">Удалить «%1$s»?</string>
+    <string name="bookmark_error">Не удалось прочитать или сохранить закладки. Попробуйте ещё раз.</string>
+    <string name="bookmark_retry">Повторить</string>
+    <string name="bookmark_filter">Поиск закладок</string>
+    <string name="bookmark_empty">Закладок пока нет. Сохраните место из поиска или места и маршруты в редакторе маршрута.</string>
+    <string name="bookmark_active">Остановите навигацию, чтобы изменить маршрут.</string>
 </resources>

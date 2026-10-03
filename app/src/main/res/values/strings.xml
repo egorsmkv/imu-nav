@@ -506,4 +506,25 @@
     <string name="setup_location_services">Phone location</string>
     <string name="setup_location_services_hint">Location must be switched on in Android settings for GPS and cell scanning. Granting permission alone does not switch it on.</string>
     <string name="setup_location_off">Location is switched off</string>
+
+    <!-- Local saved places and route recipes. -->
+    <string name="bookmarks">Bookmarks</string>
+    <string name="bookmark_places">Places</string>
+    <string name="bookmark_routes">Routes</string>
+    <string name="bookmark_name">Name</string>
+    <string name="bookmark_save">Save</string>
+    <string name="bookmark_save_place">Save place</string>
+    <string name="bookmark_save_start">Save start</string>
+    <string name="bookmark_save_destination">Save destination</string>
+    <string name="bookmark_save_route">Save route</string>
+    <string name="bookmark_use_start">Use as start</string>
+    <string name="bookmark_use_destination">Use as destination</string>
+    <string name="bookmark_open">Open route</string>
+    <string name="bookmark_rename">Rename</string>
+    <string name="bookmark_delete_confirm">Delete “%1$s”?</string>
+    <string name="bookmark_error">Could not read or save bookmarks. Please try again.</string>
+    <string name="bookmark_retry">Retry</string>
+    <string name="bookmark_filter">Search bookmarks</string>
+    <string name="bookmark_empty">No bookmarks yet. Save a place from search or save places and routes in the route editor.</string>
+    <string name="bookmark_active">Stop navigation to change the route.</string>
 </resources>

@@ -41,9 +41,9 @@ import org.imunav.app.ui.theme.BlindDriverTheme
 
 /**
  * The app's screens. Navigation between them is a simple state variable in [AppRoot]
- * (no navigation library needed for five screens).
+ * (no navigation library needed for these screens).
  */
-private enum class Screen { MAP, SETTINGS, LOG, HISTORY, TRIP }
+private enum class Screen { MAP, SETTINGS, LOG, HISTORY, TRIP, BOOKMARKS }
 
 /**
  * The only Activity. It asks for permissions, tells the [AppGraph] when the app is visible, and
@@ -171,6 +171,7 @@ private fun AppRoot(app: AppGraph, hasLocation: Boolean, requestPermission: () -
             onOpenSettings = { screen = Screen.SETTINGS },
             onOpenLog = { screen = Screen.LOG },
             onOpenHistory = { screen = Screen.HISTORY },
+            onOpenBookmarks = { screen = Screen.BOOKMARKS },
             mapActive = screen == Screen.MAP && !showSetup,
         )
         if (screen != Screen.MAP) {
@@ -178,6 +179,7 @@ private fun AppRoot(app: AppGraph, hasLocation: Boolean, requestPermission: () -
                 OtherScreen(app, ui, screen, tripId, history, onScreen = { screen = it }, onTrip = { tripId = it }, onSetup = { showSetup = true })
             }
         }
+        BookmarkDialogs(app.bookmarks)
         if (showSetup) {
             Surface(Modifier.fillMaxSize().blockTouchesBelow(), color = MaterialTheme.colorScheme.background) {
                 OnboardingScreen(
@@ -212,6 +214,8 @@ private fun OtherScreen(
 ) {
     when (screen) {
         Screen.MAP -> Unit
+
+        Screen.BOOKMARKS -> BookmarksScreen(app, onBack = { onScreen(Screen.MAP) })
 
         Screen.HISTORY -> HistoryScreen(app, onBack = { onScreen(Screen.MAP) }, onOpen = {
             onTrip(it.id)

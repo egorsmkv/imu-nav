@@ -49,6 +49,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.AltRoute
 import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.CellTower
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DirectionsCar
@@ -121,6 +122,7 @@ import org.imunav.app.AppGraph
 import org.imunav.app.MapStartMode
 import org.imunav.app.R
 import org.imunav.app.UiState
+import org.imunav.app.bookmarks.Bookmarks
 import org.imunav.app.cells.TowerLayer
 import org.imunav.app.service.NavService
 import org.imunav.core.cells.Radio
@@ -165,6 +167,7 @@ fun MapScreen(
     onOpenSettings: () -> Unit,
     onOpenLog: () -> Unit,
     onOpenHistory: () -> Unit,
+    onOpenBookmarks: () -> Unit,
     mapActive: Boolean = true,
 ) {
     val context = LocalContext.current
@@ -219,6 +222,20 @@ fun MapScreen(
             controller.moveTo(p, 14.0)
         }
     }
+    LaunchedEffect(ui.mapFocusRequest, mapActive) {
+        if (mapActive) {
+            ui.mapFocusRequest?.let { point ->
+                if (!nav.active) {
+                    controller.moveTo(point, 16.0)
+                    // Saved walking routes need the same step-counter permission as the mode selector.
+                    if (travelMode == TravelMode.FOOT && Build.VERSION.SDK_INT >= 29 && !hasActivityPermission(context)) {
+                        activityPermission.launch(Manifest.permission.ACTIVITY_RECOGNITION)
+                    }
+                }
+                app.clearMapFocusRequest()
+            }
+        }
+    }
     LaunchedEffect(ui.error) {
         ui.error?.let {
             snackbar.showSnackbar(it)
@@ -231,7 +248,7 @@ fun MapScreen(
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val showRecenter = ui.currentPosition != null && !(nav.active && following)
-        val mapButtonCount = if (showRecenter) 4 else 3
+        val mapButtonCount = if (showRecenter) 5 else 4
         val controlsHeight = MapButtonSize * mapButtonCount + MapButtonSpacing * (mapButtonCount - 1)
         val topInset = with(LocalDensity.current) { topInsetPx.toDp() }
         val bottomInset = with(LocalDensity.current) { bottomInsetPx.toDp() }
@@ -348,6 +365,7 @@ fun MapScreen(
             verticalArrangement = Arrangement.spacedBy(MapButtonSpacing),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            MapButton(Icons.Filled.Bookmark, stringResource(R.string.bookmarks), onClick = onOpenBookmarks)
             MapButton(Icons.Filled.CellTower, stringResource(R.string.cd_towers), selected = ui.cells.showTowers) {
                 app.cells.setShowTowers(!ui.cells.showTowers)
             }
@@ -385,6 +403,7 @@ fun MapScreen(
             } else {
                 IdlePanel(
                     ui = ui,
+                    bookmarks = app.bookmarks,
                     mode = travelMode,
                     walkingAvailable = routing.walking,
                     onModeChange = { mode ->
@@ -433,6 +452,10 @@ fun MapScreen(
     searchTarget?.let { target ->
         SearchScreen(
             search = app.search,
+            bookmarks = app.bookmarks,
+            onBookmarkPick = { place ->
+                if (app.useBookmark(place, target == RoutePoint.START)) searchTarget = null
+            },
             near = if (target == RoutePoint.DESTINATION) ui.manualStart ?: ui.currentPosition ?: mapCenter else ui.currentPosition ?: mapCenter,
             hint = stringResource(if (target == RoutePoint.START) R.string.search_from_hint else R.string.search_to_hint),
             onPick = { r ->
@@ -650,6 +673,7 @@ private fun PanelSurface(compact: Boolean = false, content: @Composable () -> Un
 @Composable
 private fun IdlePanel(
     ui: UiState,
+    bookmarks: Bookmarks,
     mode: TravelMode,
     walkingAvailable: Boolean,
     onModeChange: (TravelMode) -> Unit,
@@ -694,6 +718,7 @@ private fun IdlePanel(
             onClearStart = onClearStart.takeIf { ui.manualStart != null },
             onClearDestination = onClearDestination.takeIf { ui.destination != null },
         )
+        BookmarkSaveActions(ui, mode, bookmarks)
         val positionLine = when {
             ui.manualStart != null -> stringResource(R.string.idle_position_manual)
             ui.hasTrustedPosition && ui.trustedFromGps -> stringResource(R.string.idle_position_gps, formatAccuracy(res, ui.trustedAccuracyM ?: 0.0))
@@ -822,7 +847,7 @@ private fun RoutePointField(icon: ImageVector, label: String, value: String, onC
 private enum class RoutePoint { START, DESTINATION }
 
 /** Compact address shown in the route editor after a search result is selected. */
-private fun SearchResult.routePointLabel(): String = if (kind == ResultKind.PLACE || subtitle.isBlank()) title else "$title, $subtitle"
+fun SearchResult.routePointLabel(): String = if (kind == ResultKind.PLACE || subtitle.isBlank()) title else "$title, $subtitle"
 
 /** Car / Walk choice before starting. Walking is disabled when the map pack has no walking data. */
 @Composable

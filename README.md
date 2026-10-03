@@ -141,6 +141,25 @@ The public server `photon.komoot.io` is the default; **Settings → Maps and rou
 server instead (a host such as `http://192.168.1.10:2322` or the full `…/api` URL), with a *Test*
 button that runs a sample query. Self-hosting keeps search text off third-party servers.
 
+### Bookmarks
+
+Tap the bookmark button on the map for **Places** and **Routes**. Save a search result with its
+bookmark button, or use **Save start**, **Save destination** and **Save route** in the route editor.
+Long-pressing the map selects a destination that can then be saved. Give each bookmark a name;
+the library supports filtering, renaming and confirmed deletion. Saved places also appear above
+recent searches and can fill either route endpoint without an address-search pack or network.
+
+A saved route remembers the endpoints and car/walking mode, then calculates a fresh preview when
+opened. **My location** remains automatic and uses the permitted position available at that time;
+a manually selected start stays fixed. Without a usable position, select a manual start or wait for
+positioning. Opening a bookmark never starts navigation. Stop an active trip before applying a
+bookmark; browsing and management remain available during navigation.
+
+Bookmarks persist locally in a separate SQLite database and survive routing-pack replacement.
+Saved routes contain their own endpoint copies, so renaming or deleting a place does not change
+any route. There is no synchronization, file import/export or backup; existing Android backup
+exclusions apply. This remains a research prototype, not a safety system.
+
 ### Trips: history, recording, restore and replay
 Every navigation is recorded to `files/trips/trip-<time>.rec.gz` in app storage — all fixes, IMU
 samples, satellite/AGC status, routes and the engine's own estimates (gzip text, flushed every 2 s).
@@ -490,6 +509,17 @@ limit their height so the main content remains reachable. System font scaling is
 `files/logs/`, trip recordings to `files/trips/` in app storage. The in-app trip-log viewer shows timestamps, highlights problems, and can search,
 filter, follow, copy or share the latest diagnostic events as a text file.
 
+### Bookmark storage tests
+
+Bookmark database instrumentation tests (requires an Android SDK/NDK and an emulator/device):
+
+```bash
+./gradlew :app:connectedFdroidDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=org.imunav.app.bookmarks.BookmarkDatabaseTest
+```
+
+These tests use an isolated database and do not load routing packs. Use a benchmark APK for manual
+bookmark-to-routing checks with a real pack, as with all GraphHopper device testing.
+
 ## Status and limitations
 
 - Walking mode is new and tuned only on simulations; record a few walks (with GPS) and check them
@@ -499,7 +529,7 @@ filter, follow, copy or share the latest diagnostic events as a text file.
   speed plan stay inactive. The OSRM fallback uses the public demo server — self-host it for real use.
 - The service area defaults to a coarse Ukraine outline (`ServiceArea.UKRAINE_COARSE`); fixes
   outside it are rejected as spoofed. Change it in `AppGraph` to use the app elsewhere.
-- Free-drive (no route) dead reckoning, speed cameras and saved places are not implemented yet;
+- Free-drive (no route) dead reckoning and speed cameras are not implemented yet;
   `Tuning` already carries the camera parameters.
 - The engine differs from the analysed app in a few places: the gyro bias estimate is applied to
   turn integration, and projections compute exact arc-length.
@@ -584,6 +614,10 @@ The desktop simulation uses Clap, Serde/serde_json, Anyhow, Flate2 and tikv-jema
 | Mozilla Location Service final export | tower positions (built-in database, optional download) | public domain (CC0) |
 | OSRM demo server | online routing fallback (only if allowed in Settings) | free for light use; self-host for real use |
 | Photon (komoot) | online address search fallback (only if allowed) | free public service; data © OpenStreetMap |
+
+
+Android bookmark instrumentation tests additionally use AndroidX Test Runner 1.6.2 and AndroidX
+JUnit extensions 1.2.1 (Apache 2.0); these are test-only dependencies and are not included in the app.
 
 ## Provenance
 
