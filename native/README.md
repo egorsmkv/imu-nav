@@ -1,11 +1,12 @@
 # Native Rust crates
 
 The `native` Cargo workspace contains the route-constrained navigation code that Android runs
-through JNI. It has two crates:
+through JNI. It has three crates:
 
 | Crate | Type | Purpose |
 |---|---|---|
 | [`imu-nav-core`](nav-core/) | Rust library | Android-independent navigation algorithms and state |
+| [`imu-nav-sim`](nav-sim/) | Host executable | Deterministic app-like workloads, heap/CPU profiling and optimization comparisons |
 | [`imu-nav-jni`](nav-jni/) | `cdylib` | JNI adapter that exposes `imu-nav-core` to Kotlin as `libimu_nav_jni.so` |
 
 The split keeps the algorithms deterministic and directly testable on the host. Android-specific
@@ -437,3 +438,11 @@ cargo test --manifest-path native/Cargo.toml --features heap-profile
 cargo clippy --manifest-path native/Cargo.toml --all-targets --features heap-profile -- -W clippy::pedantic -D warnings
 ./gradlew -PnativeHeapProfile :replay:test
 ```
+
+
+## Synthetic native workload profiling
+
+[`imu-nav-sim`](nav-sim/README.md) exercises the native app lifecycle without Android or trip recordings,
+with separate heap, allocation-counting, CPU and timing passes. It preserves baseline executables and
+checks identical navigation outputs before comparing performance. See its README for capture, inspection
+and before/after commands. These synthetic host measurements do not establish Android performance.

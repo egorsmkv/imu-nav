@@ -1,0 +1,19 @@
+[package]
+name = "imu-nav-sim"
+version = "0.1.0"
+description = "Deterministic native navigation workloads and before/after profiling"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+imu-nav-core = { path = "../nav-core" }
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tikv-jemallocator = { version = "0.7", features = ["profiling", "stats"] }
+tikv-jemalloc-ctl = { version = "0.7", features = ["use_std", "stats"] }
+jemalloc_pprof = { version = "0.9", features = ["symbolize"] }
+pprof = { version = "0.15", default-features = false, features = ["flamegraph", "prost-codec"] }
+flate2 = "1"

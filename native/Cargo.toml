@@ -1,5 +1,5 @@
 [workspace]
-members = ["nav-core", "nav-jni"]
+members = ["nav-core", "nav-jni", "nav-sim"]
 resolver = "3"
 
 [workspace.package]
@@ -11,3 +11,9 @@ rust-version = "1.99"
 codegen-units = 1
 lto = "thin"
 strip = "symbols"
+
+# Host measurements need optimization and symbols; Android release settings stay unchanged.
+[profile.profiling]
+inherits = "release"
+debug = 2
+strip = "none"
