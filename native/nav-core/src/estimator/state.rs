@@ -3,8 +3,8 @@ use super::motion::RESUME_SPEED_SIGMA_MPS;
 use super::walking::WALK_SPEED_SIGMA_MPS;
 use super::{
     CAR_ACCELERATION_SIGMA_MPS2, ESTIMATED_SYSTEMATIC_DRIFT_PER_M, FilterError, FilterState,
-    MAX_PREDICTION_MS, OBD_MAX_AGE_MS, OBD_SPEED_SIGMA_MPS, OBD_SYSTEMATIC_DRIFT_PER_M,
-    SPEED_NIS_GATE, StableVehicleSpeed, TravelMode, WALK_ACCELERATION_SIGMA_MPS2,
+    OBD_SPEED_SIGMA_MPS, OBD_SYSTEMATIC_DRIFT_PER_M, SPEED_NIS_GATE, StableVehicleSpeed,
+    TravelMode, WALK_ACCELERATION_SIGMA_MPS2,
 };
 use crate::milliseconds_to_seconds;
 
@@ -38,18 +38,13 @@ impl FilterState {
             {
                 self.release_motion()?;
             }
-            let expiry_ms = self.last_vehicle_speed_ms.saturating_add(OBD_MAX_AGE_MS);
-            let obd_fresh = self.last_vehicle_speed_ms >= 0 && self.elapsed_ms < expiry_ms;
-            let mut end_ms = elapsed_ms.min(self.elapsed_ms.saturating_add(MAX_PREDICTION_MS));
-            if let Some(control) = self.motion_control {
-                end_ms = end_ms.min(control.valid_until_ms);
-            }
-            if let Some(expiry_ms) = self.walking_valid_until_ms {
-                end_ms = end_ms.min(expiry_ms);
-            }
-            if obd_fresh {
-                end_ms = end_ms.min(expiry_ms);
-            }
+            let (end_ms, obd_fresh) = super::timing::prediction_step(
+                self.elapsed_ms,
+                elapsed_ms,
+                self.last_vehicle_speed_ms,
+                self.motion_control.map(|control| control.valid_until_ms),
+                self.walking_valid_until_ms,
+            );
             self.filter.predict(
                 milliseconds_to_seconds(end_ms.saturating_sub(self.elapsed_ms)),
                 acceleration_sigma,

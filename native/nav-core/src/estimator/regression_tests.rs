@@ -472,3 +472,80 @@ fn ignored_gps_matches_no_observation_with_complete_history() {
         assert_eq!(navigation, reference);
     }
 }
+
+#[test]
+fn hint_expiry_prediction_reaches_integer_timestamp_limit() {
+    let start = i64::MAX - 3000;
+    let expiry = i64::MAX - 1000;
+    for mode in [TravelMode::Car, TravelMode::Foot] {
+        let mut navigation = estimator(20.0);
+        navigation.mode = mode;
+        navigation.state.elapsed_ms = start;
+        navigation.history.clear();
+        navigation.remember(None);
+        match mode {
+            TravelMode::Car => {
+                navigation
+                    .tick_with_motion(
+                        start,
+                        None,
+                        Some(MotionObservation {
+                            factor: 0.0,
+                            cruise_speed_mps: 10.0,
+                            valid_until_ms: expiry,
+                            network_moving: false,
+                        }),
+                    )
+                    .unwrap();
+            }
+            TravelMode::Foot => {
+                navigation
+                    .tick_with_walking(
+                        start,
+                        None,
+                        None,
+                        None,
+                        None,
+                        Some(WalkingObservation {
+                            speed_mps: 2.0,
+                            valid_until_ms: expiry,
+                        }),
+                    )
+                    .unwrap();
+            }
+        }
+        navigation.tick(i64::MAX, None).unwrap();
+        assert_eq!(navigation.state.elapsed_ms, i64::MAX);
+        assert!(navigation.state.motion_control.is_none());
+        assert!(navigation.state.walking_valid_until_ms.is_none());
+        let expected_position = if mode == TravelMode::Car { 10.0 } else { 4.0 };
+        assert!((navigation.estimate().position_m - expected_position).abs() < 1.0e-12);
+    }
+}
+
+#[test]
+fn calibration_gates_preserve_state_for_rejected_and_inaccurate_gps() {
+    let mut navigation = stable_obd_estimator();
+    let mut observation = gps(4000, 50.00054);
+    observation.speed_mps = Some(15.0);
+    let before = navigation.state.clone();
+    for accepted in [(false, false), (false, true), (true, false)] {
+        assert!(!navigation.state.learn_vehicle_speed_scale(
+            TravelMode::Car,
+            observation,
+            0.0,
+            accepted
+        ));
+        assert_eq!(navigation.state, before);
+    }
+    for sigma in [f64::NAN, f64::INFINITY, -1.0, 0.800_001] {
+        observation.speed_accuracy_mps = Some(sigma);
+        assert!(!navigation.state.learn_vehicle_speed_scale(
+            TravelMode::Car,
+            observation,
+            0.0,
+            (true, true)
+        ));
+        assert_eq!(navigation.state, before);
+    }
+}

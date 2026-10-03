@@ -444,7 +444,8 @@ cargo test --manifest-path server/Cargo.toml # persistent HTTP/WebSocket cell se
 ```
 
 **Native formal verification.** Run `python3 tools/verify_native.py` after installing pinned Kani 0.68.0.
-The PR check verifies finite-state guards, bounded estimator rollback, and filter, trust, jamming
+The PR check verifies timestamp/expiry decisions, OBD calibration gates and bounds, finite-state
+guards, bounded estimator rollback, and filter, trust, jamming
 and network contracts; see
 [proof scope, setup and counterexample reproduction](docs/NATIVE_VERIFICATION.md).
 

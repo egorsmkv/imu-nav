@@ -463,3 +463,8 @@ Finite inputs that overflow uncertainty or retained state calculations now retur
 before publishing the update. Failed OBD predictions also restore earlier prediction steps,
 calibration and timestamps. The Kani suite checks numerical guards and bounded estimator rollback
 sequences; real-geometry delayed-GPS rollback and retry are covered by Rust regression tests.
+
+Timestamp proofs cover prediction-step progress, GPS/OBD ingress ordering and hint expiry. OBD
+calibration proofs cover accepted GOOD GPS eligibility, stability/age limits and the 0.8–1.2 scale
+interval. These decision helpers are shared with production; exact domains are documented in
+[the verification scope](../docs/NATIVE_VERIFICATION.md).

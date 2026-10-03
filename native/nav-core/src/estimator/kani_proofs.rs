@@ -192,3 +192,373 @@ fn checkpoint_copy_preserves_complete_state() {
     unchanged(&navigation.copy_for_tick(), &navigation);
     kani::cover!(true, "copied");
 }
+
+/// Every signed timestamp, restricted only by the scheduler's reachable-state preconditions.
+#[kani::proof]
+#[kani::unwind(2)]
+fn prediction_boundaries_advance_and_split_at_expiry() {
+    let now: i64 = kani::any();
+    let target: i64 = kani::any();
+    let last_obd: i64 = kani::any();
+    let motion: Option<i64> = kani::any();
+    let walking: Option<i64> = kani::any();
+    kani::assume(now < target);
+    kani::assume(last_obd == -1 || (last_obd >= 0 && last_obd <= now));
+    kani::assume(motion.is_none_or(|expiry| expiry > now));
+    kani::assume(walking.is_none_or(|expiry| expiry > now));
+    let (end, fresh) = timing::prediction_step(now, target, last_obd, motion, walking);
+    assert!(now < end && end <= target);
+    assert!(i128::from(end) - i128::from(now) <= i128::from(MAX_PREDICTION_MS));
+    assert!(motion.is_none_or(|expiry| end <= expiry));
+    assert!(walking.is_none_or(|expiry| end <= expiry));
+    let expiry = last_obd.saturating_add(OBD_MAX_AGE_MS);
+    if fresh {
+        assert!(last_obd >= 0 && now < expiry && end <= expiry);
+    } else {
+        assert!(last_obd == -1 || now >= expiry);
+    }
+    kani::cover!(fresh, "fresh");
+    kani::cover!(last_obd >= 0 && now == expiry && !fresh, "expired");
+    kani::cover!(motion == Some(end), "motion boundary");
+    kani::cover!(walking == Some(end), "walking boundary");
+    kani::cover!(end == i64::MAX, "integer limit");
+}
+
+#[kani::proof]
+#[kani::unwind(2)]
+fn gps_time_gate_obeys_history_and_watermarks() {
+    let measurement: i64 = kani::any();
+    let now: i64 = kani::any();
+    let last: i64 = kani::any();
+    let oldest: i64 = kani::any();
+    let initial: bool = kani::any();
+    let eligible = timing::gps_time_is_eligible(measurement, now, last, oldest, initial);
+    let age = i128::from(now) - i128::from(measurement);
+    let expected = measurement > last
+        && (0..=i128::from(GPS_HISTORY_MS)).contains(&age)
+        && (measurement > oldest || (measurement == oldest && initial));
+    assert_eq!(eligible, expected);
+    kani::cover!(eligible, "accepted");
+    kani::cover!(!eligible && measurement > now, "future");
+    kani::cover!(!eligible && measurement == last, "duplicate");
+    kani::cover!(
+        eligible && age == i128::from(GPS_HISTORY_MS),
+        "history boundary"
+    );
+    kani::cover!(
+        eligible && measurement == oldest && initial,
+        "initial checkpoint"
+    );
+}
+
+#[kani::proof]
+#[kani::unwind(3)]
+fn vehicle_time_gate_rejects_stale_samples() {
+    let now: i64 = kani::any();
+    let last: i64 = kani::any();
+    let observation: i64 = kani::any();
+    let eligible = timing::vehicle_time_is_eligible(observation, now, last);
+    if observation < now || observation <= last {
+        assert!(!eligible);
+    } else {
+        assert!(eligible);
+    }
+    kani::cover!(observation == last && !eligible, "duplicate");
+    kani::cover!(observation < now && !eligible, "stale");
+    kani::cover!(observation == now && eligible, "same time accepted");
+}
+
+/// The arithmetic step is proved separately from measurement eligibility and projection.
+#[kani::proof]
+#[kani::unwind(2)]
+fn calibration_blend_stays_in_valid_interval() {
+    let previous = f64::from_bits(kani::any());
+    let ratio = f64::from_bits(kani::any());
+    kani::assume((SCALE_MIN_RATIO..=SCALE_MAX_RATIO).contains(&previous));
+    kani::assume((SCALE_MIN_RATIO..=SCALE_MAX_RATIO).contains(&ratio));
+    let updated = calibration::blend_scale(previous, ratio);
+    assert!(updated.is_finite());
+    assert!((SCALE_MIN_RATIO..=SCALE_MAX_RATIO).contains(&updated));
+    assert!(updated >= previous.min(ratio) && updated <= previous.max(ratio));
+    kani::cover!(updated > previous, "increased");
+    kani::cover!(updated < previous, "decreased");
+}
+
+fn calibration_observation(elapsed_ms: i64) -> GpsObservation {
+    GpsObservation {
+        point: GeoPoint {
+            latitude_deg: 50.0,
+            longitude_deg: 30.0,
+        },
+        elapsed_ms,
+        position_accuracy_m: Some(5.0),
+        speed_mps: Some(16.0),
+        speed_accuracy_mps: Some(0.5),
+        trust: ObservationTrust::Good,
+    }
+}
+
+/// Symbolic eligibility inputs exercise the same method called after both GPS fusion results.
+#[kani::proof]
+#[kani::unwind(3)]
+fn calibration_requires_accepted_precise_fresh_good_gps() {
+    let mut state = estimator().state;
+    let since: i64 = kani::any();
+    let latest: i64 = kani::any();
+    kani::assume(since >= 0 && latest >= since);
+    let stable = StableVehicleSpeed {
+        since_ms: since,
+        latest_ms: latest,
+        latest_mps: 15.0,
+        min_mps: 15.0,
+        max_mps: 15.0,
+    };
+    state.stable_vehicle_speed = if kani::any() { Some(stable) } else { None };
+    let mut observation = calibration_observation(kani::any());
+    observation.trust = if kani::any() {
+        ObservationTrust::Good
+    } else {
+        ObservationTrust::Suspect
+    };
+    observation.position_accuracy_m = kani::any::<Option<u64>>().map(f64::from_bits);
+    observation.speed_accuracy_mps = kani::any::<Option<u64>>().map(f64::from_bits);
+    if kani::any() {
+        observation.speed_mps = None;
+    }
+    let mode = if kani::any() {
+        TravelMode::Car
+    } else {
+        TravelMode::Foot
+    };
+    let accepted: (bool, bool) = kani::any();
+    let offset = f64::from(kani::any::<u8>());
+    let before = state.clone();
+    let learned = state.learn_vehicle_speed_scale(mode, observation, offset, accepted);
+    let age = i128::from(observation.elapsed_ms) - i128::from(latest);
+    let eligible = accepted == (true, true)
+        && observation.trust == ObservationTrust::Good
+        && mode == TravelMode::Car
+        && before.stable_vehicle_speed.is_some()
+        && observation.speed_mps.is_some()
+        && observation.speed_accuracy_mps.is_some_and(|sigma| {
+            sigma.is_finite() && (0.0..=SCALE_MAX_GPS_SIGMA_MPS).contains(&sigma)
+        })
+        && observation.position_accuracy_m.is_some_and(|sigma| {
+            sigma.is_finite() && (0.0..=SCALE_MAX_GPS_SIGMA_M).contains(&sigma)
+        })
+        && offset < SCALE_MAX_OFFSET_M
+        && i128::from(latest) - i128::from(since) >= i128::from(SCALE_STABLE_MS)
+        && (0..=i128::from(SCALE_MAX_SAMPLE_AGE_MS)).contains(&age);
+    assert_eq!(learned, eligible);
+    if learned {
+        assert!(state.vehicle_speed_scale > before.vehicle_speed_scale);
+        assert!(state.vehicle_speed_scale <= SCALE_MAX_RATIO);
+        state.vehicle_speed_scale = before.vehicle_speed_scale;
+    }
+    assert!(state == before);
+    kani::cover!(learned, "learned");
+    kani::cover!(
+        !learned && observation.trust == ObservationTrust::Suspect,
+        "suspect"
+    );
+    kani::cover!(!learned && !accepted.0, "position rejected");
+    kani::cover!(!learned && !accepted.1, "speed rejected");
+    kani::cover!(learned && age == 250, "freshness boundary");
+}
+
+#[kani::proof]
+#[kani::unwind(2)]
+fn obd_plateau_restarts_after_gap_or_acceleration() {
+    let since: i64 = kani::any();
+    let latest: i64 = kani::any();
+    let elapsed: i64 = kani::any();
+    kani::assume(0 <= since && since <= latest && latest < elapsed);
+    let speed = f64::from(kani::any::<u8>()) / 4.0;
+    let stable = StableVehicleSpeed {
+        since_ms: since,
+        latest_ms: latest,
+        latest_mps: 15.0,
+        min_mps: 15.0,
+        max_mps: 15.0,
+    };
+    let next = stable.add(elapsed, speed);
+    let gap = i128::from(elapsed) - i128::from(latest);
+    let restart =
+        gap > i128::from(SCALE_MAX_OBD_GAP_MS) || (speed - 15.0).abs() > SCALE_STABLE_RANGE_MPS;
+    assert_eq!(next.latest_ms, elapsed);
+    assert_eq!(next.latest_mps, speed);
+    if restart {
+        assert_eq!(next.since_ms, elapsed);
+        assert_eq!(next.min_mps, speed);
+        assert_eq!(next.max_mps, speed);
+    } else {
+        assert_eq!(next.since_ms, since);
+        assert!(next.min_mps <= speed && next.max_mps >= speed);
+        assert!(next.max_mps - next.min_mps <= SCALE_STABLE_RANGE_MPS);
+    }
+    kani::cover!(restart && gap > 1000, "gap");
+    kani::cover!(restart && gap <= 1000, "acceleration");
+    kani::cover!(!restart && gap == 1000, "stable boundary");
+}
+
+/// Exercise the actual hint setter, expiry handler and replay of the same expired hint.
+#[kani::proof]
+#[kani::unwind(3)]
+fn walking_hint_expiry_cannot_refresh_itself() {
+    let mut navigation = estimator();
+    navigation.mode = TravelMode::Foot;
+    let now: i64 = kani::any();
+    let expiry: i64 = kani::any();
+    kani::assume(now >= 0);
+    navigation.state.elapsed_ms = now;
+    let before = navigation.estimate();
+    let hint = WalkingObservation {
+        speed_mps: 2.0,
+        valid_until_ms: expiry,
+    };
+    navigation.apply_walking(Some(hint)).unwrap();
+    let remaining = i128::from(expiry) - i128::from(now);
+    let valid = (1..=2500).contains(&remaining);
+    assert_eq!(
+        navigation.state.walking_valid_until_ms,
+        valid.then_some(expiry)
+    );
+    assert_eq!(
+        navigation.estimate().speed_mps,
+        if valid { 2.0 } else { 0.0 }
+    );
+    if valid {
+        navigation.apply_walking(Some(hint)).unwrap();
+        assert_eq!(navigation.state.walking_valid_until_ms, Some(expiry));
+        navigation.state.elapsed_ms = expiry;
+        navigation.state.expire_walking(TravelMode::Foot).unwrap();
+        navigation.apply_walking(Some(hint)).unwrap();
+        assert_eq!(navigation.estimate().speed_mps, 0.0);
+        assert!(navigation.state.walking_valid_until_ms.is_none());
+    }
+    assert_eq!(navigation.estimate().position_m, before.position_m);
+    assert_eq!(
+        navigation.estimate().covariance.position,
+        before.covariance.position
+    );
+    assert_eq!(
+        navigation.estimate().systematic_drift_m,
+        before.systematic_drift_m
+    );
+    assert_eq!(navigation.state.last_gps_speed_ms, -1);
+    assert_eq!(navigation.state.last_vehicle_speed_ms, -1);
+    kani::cover!(valid, "expires");
+    kani::cover!(!valid, "rejected");
+}
+
+#[kani::proof]
+#[kani::unwind(3)]
+fn motion_hint_expiry_cannot_refresh_itself() {
+    let mut navigation = estimator();
+    let now: i64 = kani::any();
+    let expiry: i64 = kani::any();
+    kani::assume(now >= 0);
+    navigation.state.elapsed_ms = now;
+    let before = navigation.estimate();
+    let hint = MotionObservation {
+        factor: 0.0,
+        cruise_speed_mps: 10.0,
+        valid_until_ms: expiry,
+        network_moving: false,
+    };
+    navigation.apply_motion(Some(hint)).unwrap();
+    let remaining = i128::from(expiry) - i128::from(now);
+    let valid = (1..=2000).contains(&remaining);
+    assert_eq!(
+        navigation
+            .state
+            .motion_control
+            .map(|control| control.valid_until_ms),
+        valid.then_some(expiry)
+    );
+    if valid {
+        assert_eq!(navigation.estimate().speed_mps, 0.0);
+        navigation.apply_motion(Some(hint)).unwrap();
+        assert_eq!(
+            navigation.state.motion_control.unwrap().valid_until_ms,
+            expiry
+        );
+        navigation.state.elapsed_ms = expiry;
+        navigation.apply_motion(Some(hint)).unwrap();
+        assert!(navigation.state.motion_control.is_none());
+        assert_eq!(navigation.estimate().speed_mps, before.speed_mps);
+    }
+    assert_eq!(navigation.estimate().position_m, before.position_m);
+    assert_eq!(
+        navigation.estimate().covariance.position,
+        before.covariance.position
+    );
+    assert_eq!(
+        navigation.estimate().systematic_drift_m,
+        before.systematic_drift_m
+    );
+    assert_eq!(navigation.state.last_gps_speed_ms, -1);
+    assert_eq!(navigation.state.last_vehicle_speed_ms, -1);
+    kani::cover!(valid, "expires");
+    kani::cover!(!valid, "rejected");
+}
+
+/// Real numerical prediction crosses the OBD boundary: 0.5 s trusted, then 0.5 s estimated.
+#[kani::proof]
+#[kani::unwind(3)]
+fn prediction_drops_obd_allowance_at_expiry() {
+    let mut state = estimator().state;
+    state.elapsed_ms = 2000;
+    state.last_vehicle_speed_ms = 0;
+    let before = state.filter.estimate();
+    state.predict_to(3000, TravelMode::Car).unwrap();
+    let after = state.filter.estimate();
+    assert_eq!(state.elapsed_ms, 3000);
+    assert_eq!(state.last_vehicle_speed_ms, 0);
+    assert_eq!(after.position_m - before.position_m, 10.0);
+    assert!((after.systematic_drift_m - before.systematic_drift_m - 0.5).abs() < 1.0e-12);
+    kani::cover!(true, "crossed expiry");
+}
+
+/// Bounded physical speed domain includes low speed, both ratio limits and outliers.
+#[kani::proof]
+#[kani::unwind(3)]
+fn calibration_speed_and_ratio_gates() {
+    let mut state = estimator().state;
+    let obd_speed = f64::from(kani::any::<u8>()) / 4.0;
+    let gps_speed = f64::from(kani::any::<u8>()) / 4.0;
+    state.stable_vehicle_speed = Some(StableVehicleSpeed {
+        since_ms: 0,
+        latest_ms: 3000,
+        latest_mps: obd_speed,
+        min_mps: obd_speed,
+        max_mps: obd_speed,
+    });
+    let mut observation = calibration_observation(3000);
+    observation.speed_mps = Some(gps_speed);
+    let before = state.clone();
+    let learned = state.learn_vehicle_speed_scale(TravelMode::Car, observation, 0.0, (true, true));
+    if learned {
+        assert!(obd_speed >= 5.0 && gps_speed >= 5.0);
+        assert!((0.8..=1.2).contains(&(gps_speed / obd_speed)));
+        assert!(state.vehicle_speed_scale.is_finite());
+        assert!((0.8..=1.2).contains(&state.vehicle_speed_scale));
+        state.vehicle_speed_scale = before.vehicle_speed_scale;
+    } else if obd_speed >= 5.0 && gps_speed >= 5.0 {
+        assert!(!(0.8..=1.2).contains(&(gps_speed / obd_speed)));
+    }
+    assert!(state == before);
+    kani::cover!(
+        learned && gps_speed == 8.0 && obd_speed == 10.0,
+        "lower ratio"
+    );
+    kani::cover!(
+        learned && gps_speed == 12.0 && obd_speed == 10.0,
+        "upper ratio"
+    );
+    kani::cover!(!learned && obd_speed < 5.0, "low speed");
+    kani::cover!(
+        !learned && obd_speed >= 5.0 && gps_speed > 2.0 * obd_speed,
+        "outlier"
+    );
+}

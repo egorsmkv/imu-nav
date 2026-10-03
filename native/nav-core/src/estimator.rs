@@ -5,8 +5,10 @@ use crate::{Estimate, FilterError, RouteFilter};
 use std::collections::VecDeque;
 use std::sync::Arc;
 
+mod calibration;
 mod motion;
 mod state;
+mod timing;
 use motion::MotionControl;
 pub use motion::MotionObservation;
 mod network_position;
@@ -265,8 +267,11 @@ impl NavigationEstimator {
         if self.mode != TravelMode::Car
             || !speed_kmh.is_finite()
             || !(0.0..=MAX_VEHICLE_KMH).contains(&speed_kmh)
-            || elapsed_ms < self.state.elapsed_ms
-            || elapsed_ms <= self.last_vehicle_input_ms
+            || !timing::vehicle_time_is_eligible(
+                elapsed_ms,
+                self.state.elapsed_ms,
+                self.last_vehicle_input_ms,
+            )
         {
             return Ok(false);
         }
@@ -406,18 +411,19 @@ impl NavigationEstimator {
             });
         }
         if let Some(observation) = gps.filter(|observation| {
-            observation.elapsed_ms > self.last_gps_ms
-                && observation.elapsed_ms <= now_ms
-                && now_ms.saturating_sub(observation.elapsed_ms) <= GPS_HISTORY_MS
-                && self.history.front().is_some_and(|frame| {
-                    observation.elapsed_ms > frame.state.elapsed_ms
-                        || (observation.elapsed_ms == frame.state.elapsed_ms
-                            && frame.vehicle_speed_mps.is_none()
-                            && frame.motion.is_none()
-                            && frame.turn.is_none()
-                            && frame.walking.is_none()
-                            && frame.network.is_none())
-                })
+            self.history.front().is_some_and(|frame| {
+                timing::gps_time_is_eligible(
+                    observation.elapsed_ms,
+                    now_ms,
+                    self.last_gps_ms,
+                    frame.state.elapsed_ms,
+                    frame.vehicle_speed_mps.is_none()
+                        && frame.motion.is_none()
+                        && frame.turn.is_none()
+                        && frame.walking.is_none()
+                        && frame.network.is_none(),
+                )
+            })
         }) {
             self.last_gps_ms = observation.elapsed_ms;
             let original_state = self.state.clone();
@@ -563,44 +569,13 @@ impl NavigationEstimator {
                 }
             }
         }
-        if position_accepted && speed_accepted && observation.trust == ObservationTrust::Good {
-            self.learn_vehicle_speed_scale(observation, projected.offset_m);
-        }
+        self.state.learn_vehicle_speed_scale(
+            self.mode,
+            observation,
+            projected.offset_m,
+            (position_accepted, speed_accepted),
+        );
         Ok((Some(projected), position_accepted, speed_accepted))
-    }
-
-    /// Learns only from precise, accepted GOOD GNSS near the route and contemporaneous stable
-    /// OBD. The scale lives in checkpoints, so delayed GNSS calibrates before later OBD is replayed.
-    fn learn_vehicle_speed_scale(&mut self, observation: GpsObservation, offset_m: f64) {
-        let Some(stable) = self.state.stable_vehicle_speed else {
-            return;
-        };
-        let Some(gps_speed) = observation.speed_mps else {
-            return;
-        };
-        let precise_speed = observation.speed_accuracy_mps.is_some_and(|sigma| {
-            sigma.is_finite() && (0.0..=SCALE_MAX_GPS_SIGMA_MPS).contains(&sigma)
-        });
-        let precise_position = observation.position_accuracy_m.is_some_and(|sigma| {
-            sigma.is_finite() && (0.0..=SCALE_MAX_GPS_SIGMA_M).contains(&sigma)
-        });
-        if self.mode != TravelMode::Car
-            || !precise_speed
-            || !precise_position
-            || offset_m >= SCALE_MAX_OFFSET_M
-            || gps_speed < SCALE_MIN_SPEED_MPS
-            || stable.latest_mps < SCALE_MIN_SPEED_MPS
-            || stable.latest_ms.saturating_sub(stable.since_ms) < SCALE_STABLE_MS
-            || !(0..=SCALE_MAX_SAMPLE_AGE_MS)
-                .contains(&observation.elapsed_ms.saturating_sub(stable.latest_ms))
-        {
-            return;
-        }
-        let ratio = gps_speed / stable.latest_mps;
-        if (SCALE_MIN_RATIO..=SCALE_MAX_RATIO).contains(&ratio) {
-            self.state.vehicle_speed_scale +=
-                SCALE_BLEND * (ratio - self.state.vehicle_speed_scale);
-        }
     }
 
     /// Keeps bounded replay work and one checkpoint preceding the time window when available.

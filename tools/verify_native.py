@@ -13,6 +13,17 @@ RUSTC = 'rustc 1.100.0-nightly (8925ea358 2026-08-20)'
 OUTPUT = ROOT / 'build/native-verification'
 # Names and cover labels are intentional inventory, not discovery: deleting a proof must fail CI.
 REQUIRED = {
+    'estimator::kani_proofs::prediction_boundaries_advance_and_split_at_expiry': {'fresh', 'expired', 'motion boundary', 'walking boundary', 'integer limit'},
+    'estimator::kani_proofs::gps_time_gate_obeys_history_and_watermarks': {'accepted', 'future', 'duplicate', 'history boundary', 'initial checkpoint'},
+    'estimator::kani_proofs::vehicle_time_gate_rejects_stale_samples': {'duplicate', 'stale', 'same time accepted'},
+    'estimator::kani_proofs::calibration_blend_stays_in_valid_interval': {'increased', 'decreased'},
+    'estimator::kani_proofs::calibration_requires_accepted_precise_fresh_good_gps': {'learned', 'suspect', 'position rejected', 'speed rejected', 'freshness boundary'},
+    'estimator::kani_proofs::obd_plateau_restarts_after_gap_or_acceleration': {'gap', 'acceleration', 'stable boundary'},
+    'estimator::kani_proofs::walking_hint_expiry_cannot_refresh_itself': {'expires', 'rejected'},
+    'estimator::kani_proofs::motion_hint_expiry_cannot_refresh_itself': {'expires', 'rejected'},
+    'estimator::kani_proofs::prediction_drops_obd_allowance_at_expiry': {'crossed expiry'},
+    'estimator::kani_proofs::calibration_speed_and_ratio_gates': {'lower ratio', 'upper ratio', 'low speed', 'outlier'},
+
     'estimator::kani_proofs::failed_tick_transaction_preserves_state': {'rolled back'},
     'estimator::kani_proofs::successful_tick_transaction_commits_state': {'committed'},
     'estimator::kani_proofs::state_transactions_commit_only_success': {'committed', 'rolled back'},

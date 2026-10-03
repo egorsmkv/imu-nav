@@ -48,6 +48,13 @@ the authoritative list of required harnesses and named `kani::cover!` witnesses.
 
 | Area | Contract | Domain / limits |
 |---|---|---|
+| Prediction scheduling | Each step advances, stays within the target and 5 s cap, and stops at active hint/OBD expiry; expired OBD is not fresh | Arbitrary signed timestamps; target strictly later, OBD absent or nonnegative and no later than now, active hint deadlines strictly later than now. Includes `i64::MAX`; this proves step selection, not termination over an arbitrary duration |
+| GPS/OBD timestamp gates | Future, duplicate, too-old and pre-checkpoint GPS cannot rewind; stale/duplicate OBD cannot pass ingress | All `i64` bit patterns; expected GPS age computed in `i128` to independently check saturating arithmetic. Same-time GPS is allowed only at an initial checkpoint; same-time OBD requires a newer input watermark |
+| Hint expiry | Reapplying a hint never moves its deadline; an expired walking hint stops speed, an expired car stop restores cruise; no sensor freshness is invented | Nonnegative arbitrary current time and arbitrary deadline; initial speed 10 m/s, no GPS/OBD, walking speed 2 m/s or car stop factor 0. Full production setters/expiry handler; fixed position/covariance/drift remain unchanged |
+| OBD drift expiry | Prediction changes from OBD to estimated drift at the exact expiry boundary | Actual two-step prediction from 2,000 to 3,000 ms, OBD at 0, speed 10 m/s: total added drift 0.5 m |
+| Calibration eligibility | Only accepted position AND speed from GOOD GPS, in car mode, with precise, fresh measurements and stable OBD may learn; rejection changes no state | Optional OBD/GPS inputs, all trust/mode/acceptance combinations, optional uncertainty with all `f64` bit patterns, arbitrary ordered nonnegative plateau times and arbitrary GPS time; OBD/GPS speeds fixed at 15/16 m/s, offset integer 0–255 m |
+| Calibration arithmetic | Learning remains finite and inside 0.8–1.2, moving toward the measured ratio; low speeds/out-of-range ratios cannot learn | Blend: arbitrary `f64` values in 0.8–1.2 for prior and ratio. Production ratio gates: OBD/GPS speeds 0–63.75 m/s in quarter-m/s increments, prior scale 1, precise GOOD GPS and 3 s stable plateau; both ratio boundaries reachable |
+| OBD plateau | A gap over 1 s or speed range over 0.5 m/s restarts stability; exact limits remain eligible | One production transition from a flat 15 m/s plateau; arbitrary ordered nonnegative timestamps, next speed 0–63.75 m/s in quarter-m/s increments |
 | Finite numerical state | Successful construction, anchor/prior installation and numerical commits retain finite fields; errors preserve the old estimate | Constructor inputs and all six commit candidate fields use arbitrary `f64` bit patterns; anchor/prior value and sigma also unrestricted, against the original valid filter fixture |
 | Finite predictions and measurements | Successful updates retain finite state; errors and innovation rejection preserve it | Prediction: arbitrary finite position/speed/nonnegative drift, covariance `(100, 2, 4)`, dt 1 or 5 s, acceleration sigma/drift rate 1. Measurements: arbitrary measurement/sigma bit patterns, state `(position=10, speed=2, drift=5)`, covariance `(100, 2, 4)`, gate 9; coarse caps 5 m / 1 m/s. Accepted, gated and error witnesses required |
 | Radius and variance arithmetic | Successful diagonal covariance/radius results are finite | Arbitrary sigma for one diagonal (other sigma 1); arbitrary radius multiplier with position sigma 2 and drift 5 |
@@ -109,6 +116,22 @@ an earlier successful prediction step, and delayed-GPS failure after position fu
 also checks a valid retry against an untouched estimator with learned calibration and history.
 Old/future GPS tests compare the complete estimator against a no-observation tick, then verify
 that stale OBD still changes nothing.
+
+## Timestamp and calibration boundaries
+
+`estimator/timing.rs` contains the exact integer decisions used by prediction and GPS/OBD ingress.
+The scheduler contract assumes expired controls have already been released, as `predict_to` does,
+and that an OBD timestamp cannot be in the future relative to the current filter state. These
+preconditions describe reachable state; the proof does not treat arbitrary malformed private
+state as a valid estimator. At the representable timestamp limit, deadlines retain the existing
+saturating-add behavior. Regression tests also run real car/walking ticks through `i64::MAX`.
+
+`estimator/calibration.rs` receives the actual position/speed acceptance flags from `apply_gps`
+and checks them together with GOOD trust before learning. Projection and Kalman fusion remain
+separately tested: the eligibility proof does not assume or prove that a GPS fix deserves acceptance.
+Scale arithmetic is proved independently over the full valid scale/ratio interval. Plateaus and
+hint sequences have the explicit finite bounds above; these do not prove arbitrary event histories.
+Kotlin modem timestamp tracking is outside this Rust proof suite and retains its own JVM tests.
 
 ## CI and adding proofs
 
