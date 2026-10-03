@@ -368,3 +368,45 @@ fn acceleration_and_obd_dropout_restart_calibration_plateau() {
     dropout.tick(6_000, Some(observation)).unwrap();
     assert!((dropout.state.vehicle_speed_scale - 1.0).abs() < f64::EPSILON);
 }
+
+/// Rejection must restore every checkpoint even after replaying same-time OBD in a full deque.
+#[test]
+fn rejected_gps_restores_history_prefix_and_owned_suffix() {
+    for interval_ms in [20, 500] {
+        let mut navigation = estimator(20.0);
+        for time in 1..=160 {
+            navigation
+                .on_vehicle_speed(36.0, time * interval_ms)
+                .unwrap();
+            if time % 25 == 0 {
+                navigation.tick(time * interval_ms, None).unwrap();
+            }
+        }
+        if interval_ms == 20 {
+            assert_eq!(navigation.history.len(), MAX_HISTORY_FRAMES);
+        }
+        for age_ms in [0, 500, 2000] {
+            let now_ms = 160 * interval_ms;
+            let mut candidate = navigation.clone();
+            let mut reference = navigation.clone();
+            let mut observation = gps(now_ms - age_ms, 50.0001);
+            observation.trust = ObservationTrust::Suspect;
+            observation.point.longitude_deg = 30.002;
+            let outcome = candidate.tick(now_ms, Some(observation)).unwrap();
+            assert!(outcome.projection.is_some());
+            assert!(!outcome.position_accepted && !outcome.speed_accepted);
+            reference.tick(now_ms, None).unwrap();
+            reference.last_gps_ms = observation.elapsed_ms;
+            assert_eq!(format!("{candidate:?}"), format!("{reference:?}"));
+            let retry_ms = now_ms + 500;
+            let valid = gps(
+                retry_ms,
+                50.0 + f64::from(u32::try_from(retry_ms).unwrap()) * 0.01 / 111_195.0,
+            );
+            assert_eq!(
+                candidate.tick(retry_ms, Some(valid)).unwrap(),
+                reference.tick(retry_ms, Some(valid)).unwrap()
+            );
+        }
+    }
+}

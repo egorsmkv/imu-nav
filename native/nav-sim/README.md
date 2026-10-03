@@ -15,13 +15,15 @@ RUSTFLAGS="-C force-frame-pointers=yes" cargo build --manifest-path native/Cargo
 native/target/profiling/imu-nav-sim run --out captures/native-baseline
 ```
 
-The default is all seven scenarios, 30 simulated minutes, 10,000 polyline points, seed 1, and five
+The default is all twelve scenarios, 30 simulated minutes, 10,000 polyline points, seed 1, and five
 timing repetitions after a discarded warm-up. Simulated time advances without sleeping.
 The output directory must be new. Interrupted captures remain available but are not marked complete.
 
 ```bash
 # Smaller targeted run (duration is at least 120 s so jamming hysteresis can clear).
 native/target/profiling/imu-nav-sim run --scenario delayed --duration-s 120 --route-points 1000 --out captures/delayed
+# Curves, parallel returns, crossings, global reacquisition and dense sensor history.
+native/target/profiling/imu-nav-sim run --scenario advanced --duration-s 600 --out captures/advanced
 # Large route preset: at least 100,000 points, unchanged sensor rates.
 native/target/profiling/imu-nav-sim run --stress --out captures/native-stress
 # An individual pass for investigation; compare requires a complete four-pass run.
@@ -29,7 +31,7 @@ native/target/profiling/imu-nav-sim run --pass alloc --out captures/allocation-o
 ```
 
 The simulation exercises native trust classification/jamming, network gating and regression, speed
-fusion, route projection and estimation. Navigation ticks and OBD inputs use 500 ms intervals; GPS
+fusion, route projection and estimation. In app scenarios, navigation ticks and ordinary OBD inputs use 500 ms intervals; GPS
 arrives once per second and cell fixes every five seconds. These are explicit synthetic workloads,
 not a reproduction of every Android power profile. Straight northbound routes start inside Ukraine;
 the reroute adds a small lateral deviation. Observations are generated before measurement.
@@ -43,6 +45,17 @@ the reroute adds a small lateral deviation. Observations are generated before me
 | `reroute` | Install a changed route halfway through a trip and discard old route history |
 | `walking` | Pedestrian hints through a GPS outage, without car OBD |
 | `lifecycle` | Eight full start/drive/drop cycles with fresh state |
+| `winding` | Global coarse-fix projection onto a winding 20 km route |
+| `parallel` | 40 m separated out-and-back sections with precise and ambiguous coarse fixes |
+| `crossing` | Figure-eight intersections, with accepted and rejected coarse projections |
+| `reacquisition` | Fixes far outside a small local search window force a global scan |
+| `sensor-burst` | 50 Hz OBD stress stream with two-second-delayed GPS, filling the 128-frame history limit |
+
+`advanced` selects the five new cases; `all` includes every case. The four geometry cases call the
+public route APIs directly with one query per configured second. They measure route construction,
+projection and ambiguity handling, not full navigation or position accuracy. Their navigation-error
+fields are zero by construction. The sensor-burst case uses full navigation with an intentionally
+high OBD rate; it does not represent the normal Android sensor cadence.
 
 Motion and walking inputs represent the *outputs* of upstream detectors; this is not raw IMU
 processing. Ground truth drives sensor synthesis only; the estimator receives observations through
@@ -104,7 +117,9 @@ symbolization needs the matching binary plus `addr2line` or `llvm-addr2line` on 
 
 Reproduce either workload with its preserved executable and the same CLI options. To add harness
 instrumentation, capture both sides again with that instrumentation; changing the workload itself
-invalidates earlier comparisons. A performance claim needs a measured hotspot, matching outputs,
+invalidates earlier comparisons. Reports now use schema 2 for geometry counters and expanded scenario
+coverage. Capture fresh baselines with the same harness, or use the preserved schema-1 executable
+for older comparisons. A performance claim needs a measured hotspot, matching outputs,
 and repeatable timing/allocation evidence. Reduced churn need not reduce retained heap or RSS.
 
 ## Checks
@@ -172,9 +187,88 @@ Use the preserved executables to reproduce the workloads without changing the cu
 ```bash
 captures/native-sim-baseline-final/imu-nav-sim run --out captures/repeat-baseline
 captures/native-sim-optimized/imu-nav-sim run --out captures/repeat-optimized
-native/target/profiling/imu-nav-sim compare captures/repeat-baseline captures/repeat-optimized
+captures/native-sim-optimized/imu-nav-sim compare captures/repeat-baseline captures/repeat-optimized
 ```
 
 Core tests additionally check exact projection equivalence across crossings, repeated vertices,
 parallel returns and different latitudes, plus full estimator rollback after invalid delayed GPS.
 The existing Kotlin blind-drive regression remains `p95=20 max=25 rms=10 m`.
+
+
+## Additional scenarios and optimization (2026-10-03)
+
+A second investigation added winding routes, parallel returns, figure-eight crossings, global
+reacquisition and dense OBD history. CPU profiles put 93–97% of geometry-case samples under
+`project_range_scaled`; `hypot` accounted for 50–62%. The dense sensor case requested 450 MB of
+allocations over ten simulated minutes, although retained history is capped at 128 frames.
+
+Two changes address those costs:
+
+- Before computing a candidate's distance, reject it if either absolute coordinate component already
+  exceeds the current best distance or ambiguity corridor. The bound includes a rounding margin;
+  remaining candidates use the original distance calculation, order, tie-breaking and ambiguity
+  comparisons. Global projection is still an exhaustive segment scan, with cheaper distant candidates.
+- When attempting delayed GPS, reuse the owned history suffix for rejection rollback. The prefix
+  stays in place; only same-time OBD checkpoints can be appended before acceptance. Those checkpoints
+  cannot evict the prefix under either retention limit. The outer transactional copy remains, and
+  errors still leave the original estimator untouched.
+
+Measurements use the same host, compiler and build flags as above, with seed 1, 600 seconds,
+10,000 route points and five timing repetitions. These improvements are **additional to** the earlier
+optimization. Allocation MB below means requested bytes, including reallocations.
+
+| Scenario | Requested MB before → after | Median ms before → after | Time reduction |
+|---|---:|---:|---:|
+| `driving` | 101.22 → 82.38 | 36.332 → 30.502 | 16.0% |
+| `jam` | 33.28 → 25.41 | 31.385 → 27.041 | 13.8% |
+| `delayed` | 115.02 → 97.60 | 81.162 → 69.010 | 15.0% |
+| `stop` | 33.28 → 25.40 | 31.319 → 25.924 | 17.2% |
+| `reroute` | 100.84 → 82.07 | 50.534 → 35.992 | 28.8% |
+| `walking` | 33.28 → 25.40 | 9.191 → 7.840 | 14.7% |
+| `lifecycle` | 809.77 → 659.00 | 288.198 → 240.410 | 16.6% |
+| `winding` | 0.08 → 0.08 | 187.042 → 115.527 | 38.2% |
+| `parallel` | 0.08 → 0.08 | 126.936 → 81.826 | 35.5% |
+| `crossing` | 0.08 → 0.08 | 162.233 → 80.267 | 50.5% |
+| `reacquisition` | 0.08 → 0.08 | 73.352 → 63.372 | 13.6% |
+| `sensor-burst` | 450.18 → 360.90 | 100.732 → 86.645 | 14.0% |
+
+All deterministic outputs matched across every pass. Of 600 parallel queries, 299 remained ambiguous;
+of 600 crossing queries, 201 remained ambiguous. All 600 reacquisition queries required global
+fallback. The dense sensor case accepted 30,000 OBD samples and 596 delayed GPS updates on both sides.
+Timing ranges did not overlap. A second run with seed 42, 123 seconds and 100,000 route points
+also matched all outputs: median time fell 35.7% (winding), 30.7% (parallel), 46.8% (crossing),
+11.5% (reacquisition) and 19.0% (sensor burst), again with non-overlapping timing ranges.
+These are synthetic Linux host results, not Android latency or accuracy
+claims. Heap samples vary and do not establish an RSS reduction.
+
+The exhaustive reference test checks exact local/global projections and ambiguity decisions at
+corridor boundaries, including duplicate vertices, crossings and polar latitudes. Estimator tests
+compare complete history/state after rejected delayed GPS with same-time OBD and a full history deque.
+The subprocess test also captures all twelve cases with a duration not divisible by four, checking
+that each phase gets a unique snapshot.
+
+Local evidence:
+
+- [Twelve-scenario comparison](../../captures/native-round2-comparison.md).
+- [100,000-point comparison, seed 42](../../captures/native-round2-stress-comparison.md).
+- `captures/native-round2-baseline/` and `captures/native-round2-candidate/` contain profiles,
+  matching executables and core source snapshots (`90de6f2398a0a521` → `65646b616576b875`).
+
+```bash
+captures/native-round2-baseline/imu-nav-sim run --duration-s 600 --out captures/round2-repeat-before
+captures/native-round2-candidate/imu-nav-sim run --duration-s 600 --out captures/round2-repeat-after
+native/target/profiling/imu-nav-sim compare captures/round2-repeat-before captures/round2-repeat-after
+# Change both commands to the same options to explore another input distribution:
+# --scenario advanced --seed 42 --duration-s 123 --stress
+```
+
+Remaining opportunities suggested by the profiles, not implemented here:
+
+- **Spatial route indexing:** projection still takes roughly 88–96% of CPU samples in the geometry
+  cases. A conservative segment index could avoid scanning the whole route. It must preserve distant
+  rival detection, earliest-segment tie-breaking and the exact projection results; nearest-only
+  indexing would be insufficient for the ambiguity check.
+- **Reusable transaction storage:** dense input still requests 361 MB per ten simulated minutes.
+  Reusing capacity for the outer history copy or replay scratch storage may reduce churn further, but
+  must preserve error rollback and delayed-input ordering. The remaining copy is not a retained-memory
+  leak; live-heap sampling alone cannot quantify its short-lived cost.

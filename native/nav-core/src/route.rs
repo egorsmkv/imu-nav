@@ -162,12 +162,15 @@ impl RouteGeometry {
         // Every rival uses the same query latitude; recomputing its cosine per segment dominates
         // dense-route scans. Keep the same arithmetic and comparisons, just reuse the scale.
         let longitude_scale = longitude_scale(point);
-        let best = self.project_range_scaled(point, 0, self.points.len() - 2, longitude_scale);
+        let best =
+            self.project_range_scaled(point, 0, self.points.len() - 2, longitude_scale, f64::MAX);
+        let corridor_m = best.offset_m + 2.0 * accuracy_m;
         let distinct_distance_m = (4.0 * accuracy_m).max(100.0);
         for segment in 0..self.points.len() - 1 {
-            let rival = self.project_range_scaled(point, segment, segment, longitude_scale);
+            let rival =
+                self.project_range_scaled(point, segment, segment, longitude_scale, corridor_m);
             if (rival.position_m - best.position_m).abs() > distinct_distance_m
-                && rival.offset_m <= best.offset_m + 2.0 * accuracy_m
+                && rival.offset_m <= corridor_m
             {
                 return Ok(None);
             }
@@ -176,7 +179,7 @@ impl RouteGeometry {
     }
 
     fn project_range(&self, point: GeoPoint, from: usize, to: usize) -> Projection {
-        self.project_range_scaled(point, from, to, longitude_scale(point))
+        self.project_range_scaled(point, from, to, longitude_scale(point), f64::MAX)
     }
 
     /// The longitude scale belongs to the query point, so a multi-segment scan can share it.
@@ -186,6 +189,7 @@ impl RouteGeometry {
         from: usize,
         to: usize,
         metres_per_degree_longitude: f64,
+        max_offset_m: f64,
     ) -> Projection {
         let mut best = Projection {
             position_m: 0.0,
@@ -212,6 +216,13 @@ impl RouteGeometry {
             };
             let closest_x = start_x + direction_x * fraction;
             let closest_y = start_y + direction_y * fraction;
+            // Each component bounds the distance from below. Keep a rounding margin and the
+            // original hypot/comparisons for all contenders, including equal-distance ties.
+            // An empty bounded scan returns the MAX sentinel, outside any finite corridor.
+            let limit_m = best.offset_m.min(max_offset_m).next_up();
+            if closest_x.abs() > limit_m || closest_y.abs() > limit_m {
+                continue;
+            }
             let offset_m = closest_x.hypot(closest_y);
             if offset_m < best.offset_m {
                 best = Projection {
@@ -297,6 +308,110 @@ mod tests {
                     let distinct = (4.0 * accuracy).max(100.0);
                     let ambiguous = (0..route.points.len() - 1).any(|segment| {
                         let rival = route.project_range(query, segment, segment);
+                        (rival.position_m - best.position_m).abs() > distinct
+                            && rival.offset_m <= best.offset_m + 2.0 * accuracy
+                    });
+                    assert_eq!(
+                        route.project_unambiguous(query, accuracy).unwrap(),
+                        (!ambiguous).then_some(best)
+                    );
+                }
+            }
+        }
+    }
+
+    // Frozen exhaustive reference: evaluate every distance with the original arithmetic.
+    fn exhaustive_projection(
+        route: &RouteGeometry,
+        point: GeoPoint,
+        from: usize,
+        to: usize,
+    ) -> Projection {
+        let metres_per_degree_longitude = longitude_scale(point);
+        let mut best = Projection {
+            position_m: 0.0,
+            offset_m: f64::MAX,
+            segment: from,
+            point: route.points[from],
+        };
+        for index in from..=to.min(route.points.len() - 2) {
+            let start_x = (route.points[index].longitude_deg - point.longitude_deg)
+                * metres_per_degree_longitude;
+            let start_y = (route.points[index].latitude_deg - point.latitude_deg)
+                * METRES_PER_DEGREE_LATITUDE;
+            let direction_x = (route.points[index + 1].longitude_deg
+                - route.points[index].longitude_deg)
+                * metres_per_degree_longitude;
+            let direction_y = (route.points[index + 1].latitude_deg
+                - route.points[index].latitude_deg)
+                * METRES_PER_DEGREE_LATITUDE;
+            let length_squared = direction_x * direction_x + direction_y * direction_y;
+            let fraction = if length_squared < 1.0e-6 {
+                0.0
+            } else {
+                ((-start_x * direction_x - start_y * direction_y) / length_squared).clamp(0.0, 1.0)
+            };
+            let closest_x = start_x + direction_x * fraction;
+            let closest_y = start_y + direction_y * fraction;
+            let offset_m = closest_x.hypot(closest_y);
+            if offset_m < best.offset_m {
+                best = Projection {
+                    position_m: route.cumulative_m[index]
+                        + fraction * (route.cumulative_m[index + 1] - route.cumulative_m[index]),
+                    offset_m,
+                    segment: index,
+                    point: GeoPoint {
+                        latitude_deg: point.latitude_deg + closest_y / METRES_PER_DEGREE_LATITUDE,
+                        longitude_deg: point.longitude_deg
+                            + closest_x / metres_per_degree_longitude,
+                    },
+                };
+            }
+        }
+        best
+    }
+
+    #[test]
+    fn bounded_scans_match_exhaustive_search_and_ambiguity_at_corridor_edges() {
+        for latitude in [-89.9, 0.0, 50.0, 89.5] {
+            let points = (0..80)
+                .map(|index| {
+                    let angle = f64::from(index / 2) * 0.2; // Repeated vertices and crossings.
+                    GeoPoint {
+                        latitude_deg: latitude + angle.sin() * 0.02,
+                        longitude_deg: 30.0 + (angle * 2.0).sin() * 0.02,
+                    }
+                })
+                .collect();
+            let route = RouteGeometry::new(points).unwrap();
+            for index in 0..100 {
+                let angle = f64::from(index) * 0.07;
+                let query = GeoPoint {
+                    latitude_deg: latitude + angle.sin() * 0.025,
+                    longitude_deg: 30.0 + angle.cos() * 0.025,
+                };
+                let end = route.points.len() - 2;
+                let best = exhaustive_projection(&route, query, 0, end);
+                assert_eq!(route.project_range(query, 0, end), best);
+                assert_eq!(
+                    route.project_range(query, 17, 29),
+                    exhaustive_projection(&route, query, 17, 29)
+                );
+                let rival = exhaustive_projection(&route, query, 37, 37);
+                let edge = ((rival.offset_m - best.offset_m) / 2.0).max(0.001);
+                for accuracy in [
+                    0.001,
+                    2.0,
+                    40.0,
+                    1000.0,
+                    edge.next_down(),
+                    edge,
+                    edge.next_up(),
+                    f64::MAX,
+                ] {
+                    let distinct = (4.0 * accuracy).max(100.0);
+                    let ambiguous = (0..=end).any(|segment| {
+                        let rival = exhaustive_projection(&route, query, segment, segment);
                         (rival.position_m - best.position_m).abs() > distinct
                             && rival.offset_m <= best.offset_m + 2.0 * accuracy
                     });

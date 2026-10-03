@@ -29,7 +29,7 @@ pub struct Report {
 impl Report {
     pub fn new(config: Config, pass: Pass, runs: Vec<Run>) -> Result<Self> {
         Ok(Self {
-            schema: 1,
+            schema: 2,
             config,
             pass,
             core_hash: env!("SIM_CORE_HASH").into(),
@@ -68,7 +68,7 @@ fn load(root: &Path, pass: Pass) -> Result<Report> {
     let report: Report =
         serde_json::from_slice(&std::fs::read(root.join(pass.name()).join("report.json"))?)?;
     ensure!(
-        report.schema == 1 && report.pass == pass,
+        report.schema == 2 && report.pass == pass,
         "unexpected report schema or pass"
     );
     let cases = report.config.scenario.cases();

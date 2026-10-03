@@ -14,9 +14,9 @@ fn capture_outputs_are_readable_and_comparable() {
         .args([
             "run",
             "--scenario",
-            "driving",
+            "all",
             "--duration-s",
-            "120",
+            "123",
             "--route-points",
             "1000",
             "--repetitions",

@@ -403,7 +403,6 @@ impl NavigationEstimator {
         }) {
             self.last_gps_ms = observation.elapsed_ms;
             let original_state = self.state.clone();
-            let original_history = self.history.clone();
             let mut later = Vec::new();
             // Replay same-time hints too. OBD must precede GNSS (plateau calibration), then
             // GNSS precedes coarse positions and motion hints. Keep the initial checkpoint.
@@ -417,6 +416,7 @@ impl NavigationEstimator {
                     later.push(frame);
                 }
             }
+            let preserved_frames = self.history.len();
             if let Some(frame) = self.history.back() {
                 self.state = frame.state.clone();
             }
@@ -461,7 +461,11 @@ impl NavigationEstimator {
                 // A rejected observation must not change process-noise partitioning or cause
                 // later OBD gates to be re-evaluated with a different covariance.
                 self.state = original_state;
-                self.history = original_history;
+                // Only same-time OBD checkpoints were appended to the preserved prefix. They
+                // replace removed frames at an earlier timestamp, so neither retention limit
+                // can evict the prefix. Restore the owned suffix instead of cloning it upfront.
+                self.history.truncate(preserved_frames);
+                self.history.extend(later.into_iter().rev());
             }
         }
         self.predict_to(now_ms)?;

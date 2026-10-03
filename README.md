@@ -179,6 +179,8 @@ samples, satellite/AGC status, routes and the engine's own estimates (gzip text,
   On Linux, add `-PnativeHeapProfile` and `--native-heap-profile heap-profiles` to capture sampled Rust heap
   profiles during `--compare-native` replay; see [native profiling](native/README.md#native-heap-profiling-linux-host-replay).
   For deterministic app-like native workloads without recordings, use the [simulation and profiling crate](native/nav-sim/README.md).
+  Its twelve scenarios cover GPS loss/delay, walking, session lifecycles, dense OBD inputs, curved routes,
+  crossings, parallel returns and global reacquisition; `--scenario advanced` selects the five focused stress cases.
   Rust 1.99+ is required; `:replay:test` also builds the host library and runs synthetic JNI comparisons.
   Native car dead reckoning now uses the shared IMU stop/resume detector when fresh GPS/OBD speed
   and confident cell movement do not contradict it. Add `--no-native-motion` to disable these hints

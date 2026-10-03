@@ -20,6 +20,9 @@ use serde::{Deserialize, Serialize};
 use crate::cli::{Config, Pass};
 use crate::measurement::{self, Allocations, Region};
 
+mod geometry;
+use geometry::GeometryFixture;
+
 pub const TICK_MS: i64 = 500;
 const METRES_PER_DEGREE: f64 = 111_194.926_644_558_74;
 const WALL_ORIGIN_MS: i64 = 1_700_000_000_000;
@@ -36,11 +39,25 @@ pub enum Scenario {
     Reroute,
     Walking,
     Lifecycle,
+    Advanced,
+    Winding,
+    Parallel,
+    Crossing,
+    Reacquisition,
+    SensorBurst,
 }
 
 impl Scenario {
     pub fn cases(self) -> Vec<Self> {
-        if self == Self::All {
+        if self == Self::Advanced {
+            vec![
+                Self::Winding,
+                Self::Parallel,
+                Self::Crossing,
+                Self::Reacquisition,
+                Self::SensorBurst,
+            ]
+        } else if self == Self::All {
             vec![
                 Self::Driving,
                 Self::Jam,
@@ -49,10 +66,22 @@ impl Scenario {
                 Self::Reroute,
                 Self::Walking,
                 Self::Lifecycle,
+                Self::Winding,
+                Self::Parallel,
+                Self::Crossing,
+                Self::Reacquisition,
+                Self::SensorBurst,
             ]
         } else {
             vec![self]
         }
+    }
+
+    pub fn is_geometry(self) -> bool {
+        matches!(
+            self,
+            Self::Winding | Self::Parallel | Self::Crossing | Self::Reacquisition
+        )
     }
 
     pub fn name(self) -> &'static str {
@@ -65,6 +94,12 @@ impl Scenario {
             Self::Reroute => "reroute",
             Self::Walking => "walking",
             Self::Lifecycle => "lifecycle",
+            Self::Advanced => "advanced",
+            Self::Winding => "winding",
+            Self::Parallel => "parallel",
+            Self::Crossing => "crossing",
+            Self::Reacquisition => "reacquisition",
+            Self::SensorBurst => "sensor-burst",
         }
     }
 }
@@ -82,6 +117,7 @@ struct Input {
 
 /// Immutable inputs and raw polyline ownership are separate from the measured native session.
 pub struct Fixture {
+    geometry: Option<GeometryFixture>,
     points: Vec<GeoPoint>,
     replacement: Vec<GeoPoint>,
     inputs: Vec<Input>,
@@ -89,6 +125,14 @@ pub struct Fixture {
 
 impl Fixture {
     pub fn new(config: &Config, scenario: Scenario) -> Self {
+        if scenario.is_geometry() {
+            return Self {
+                geometry: Some(GeometryFixture::new(config, scenario)),
+                points: vec![],
+                replacement: vec![],
+                inputs: vec![],
+            };
+        }
         let ticks = config.duration_s * 2;
         let route_length = f64::from(config.duration_s) * 25.0 + 1000.0;
         let points: Vec<_> = (0..config.route_points)
@@ -131,13 +175,16 @@ impl Fixture {
             let jammed = scenario == Scenario::Jam && middle;
             let gps_hidden = matches!(scenario, Scenario::Stop | Scenario::Walking) && middle;
             let gps = if elapsed_ms % 1000 == 0 && !gps_hidden {
-                let (observation_ms, observation_m, observation_speed) =
-                    if scenario == Scenario::Delayed && index >= 4 {
-                        let old = inputs[index as usize - 4];
-                        (old.elapsed_ms, old.truth_m, old.speed_mps)
-                    } else {
-                        (elapsed_ms, position, speed)
-                    };
+                let (observation_ms, observation_m, observation_speed) = if matches!(
+                    scenario,
+                    Scenario::Delayed | Scenario::SensorBurst
+                ) && index >= 4
+                {
+                    let old = inputs[index as usize - 4];
+                    (old.elapsed_ms, old.truth_m, old.speed_mps)
+                } else {
+                    (elapsed_ms, position, speed)
+                };
                 Some(location(
                     observation_ms,
                     observation_m + noise * 2.0,
@@ -161,6 +208,7 @@ impl Fixture {
             });
         }
         Self {
+            geometry: None,
             points,
             replacement,
             inputs,
@@ -195,6 +243,10 @@ fn location(elapsed_ms: i64, position_m: f64, speed_mps: f64) -> LocationFix {
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
 pub struct Outcome {
     pub fingerprint: u64,
+    pub geometry_queries: u64,
+    pub ambiguous_queries: u64,
+    pub accepted_geometry: u64,
+    pub fallback_queries: u64,
     pub ticks: u64,
     pub gps_good: u64,
     pub gps_bad: u64,
@@ -223,6 +275,23 @@ impl Outcome {
     }
 
     pub fn validate(&self, scenario: Scenario) -> Result<()> {
+        if scenario.is_geometry() {
+            ensure!(
+                self.geometry_queries > 0 && self.sessions == 1,
+                "geometry workload did not execute"
+            );
+            match scenario {
+                Scenario::Parallel | Scenario::Crossing => ensure!(
+                    self.ambiguous_queries > 0 && self.accepted_geometry > 0,
+                    "ambiguous and unambiguous queries required"
+                ),
+                Scenario::Reacquisition => {
+                    ensure!(self.fallback_queries > 0, "global fallback required");
+                }
+                _ => ensure!(self.accepted_geometry > 0, "no accepted geometry"),
+            }
+            return Ok(());
+        }
         ensure!(
             self.gps_good > 0 && self.gps_accepted > 0 && self.network_accepted > 0,
             "missing normal navigation coverage: {scenario:?}"
@@ -236,7 +305,7 @@ impl Outcome {
                 self.gps_bad > 0 && self.jam_transitions >= 2 && self.gps_recovered > 0,
                 "jamming/recovery not exercised"
             ),
-            Scenario::Delayed => ensure!(
+            Scenario::Delayed | Scenario::SensorBurst => ensure!(
                 self.delayed_accepted > 0 && self.obd_accepted > 0,
                 "delayed OBD/GPS not exercised"
             ),
@@ -280,6 +349,9 @@ pub fn run(
     pass: Pass,
     output: Option<&Path>,
 ) -> Result<Run> {
+    if let Some(geometry) = &fixture.geometry {
+        return geometry.run(scenario, pass, output);
+    }
     let mut outcome = Outcome::default();
     let mut phases = Vec::with_capacity(64);
     let session_count = if scenario == Scenario::Lifecycle {
@@ -319,7 +391,6 @@ pub fn run(
         finish_phase(region, "route", session, &mut phases, output)?;
         drop(route); // Only the estimator owns geometry, as after the app installs a route handle.
         let mut replacement = Some(replacement);
-        let quarter = fixture.inputs.len() / 4;
         let mut region = Region::start(pass == Pass::Alloc);
         for (index, input) in fixture.inputs.iter().enumerate() {
             if scenario == Scenario::Reroute && index == fixture.inputs.len() / 2 {
@@ -347,8 +418,9 @@ pub fn run(
                 &mut network,
                 &mut outcome,
             )?;
-            if (index + 1) % quarter == 0 || index + 1 == fixture.inputs.len() {
-                let name = match (index + 1) / quarter {
+            let completed_quarters = (index + 1) * 4 / fixture.inputs.len();
+            if completed_quarters > index * 4 / fixture.inputs.len() {
+                let name = match completed_quarters {
                     1 => "steady",
                     2 => "middle",
                     3 => "recovery",
@@ -411,6 +483,15 @@ fn deliver(
     outcome: &mut Outcome,
 ) -> Result<()> {
     let now_ms = input.elapsed_ms;
+    if scenario == Scenario::SensorBurst {
+        // A 50 Hz stress stream fills the 128-frame cap; ordinary app cadence remains unchanged.
+        for sample in 1..=25 {
+            let accepted = estimator
+                .on_vehicle_speed(input.speed_mps * 3.6, now_ms - TICK_MS + sample * 20)
+                .map_err(|error| anyhow!("burst OBD: {error:?}"))?;
+            outcome.obd_accepted += u64::from(accepted);
+        }
+    }
     if matches!(
         scenario,
         Scenario::Driving | Scenario::Delayed | Scenario::Reroute | Scenario::Lifecycle
