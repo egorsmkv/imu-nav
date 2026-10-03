@@ -27,20 +27,24 @@ kotlin {
     }
 }
 
+val nativeHeapProfile = providers.gradleProperty("nativeHeapProfile").isPresent
+
 val buildHostNative = tasks.register<Exec>("buildHostNative") {
     group = "build"
     description = "Builds the navigation JNI library for host replay without an Android SDK"
     commandLine("cargo", "build", "--manifest-path", rootProject.file("native/Cargo.toml"), "--package", "imu-nav-jni")
+    if (nativeHeapProfile) args("--features", "heap-profile")
     environment("CARGO_TARGET_DIR", rootProject.file("native/target"))
 }
 
 tasks.named<JavaExec>("run") {
-    if (providers.gradleProperty("nativeReplay").isPresent) dependsOn(buildHostNative)
+    if (providers.gradleProperty("nativeReplay").isPresent || nativeHeapProfile) dependsOn(buildHostNative)
     systemProperty("java.library.path", rootProject.file("native/target/debug").absolutePath)
 }
 
 tasks.test {
     dependsOn(buildHostNative)
+    systemProperty("imunav.heapProfile", nativeHeapProfile)
     systemProperty("java.library.path", rootProject.file("native/target/debug").absolutePath)
     // Rust changes must invalidate the JNI integration tests even when Kotlin is unchanged.
     inputs.files(fileTree(rootProject.file("native/target/debug")) { include("libimu_nav_jni.*", "imu_nav_jni.dll") })

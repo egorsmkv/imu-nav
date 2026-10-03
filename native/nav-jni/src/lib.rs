@@ -4,6 +4,8 @@
 //! registry identifiers rather than native pointers, so stale and double-destroyed handles fail
 //! cleanly instead of dereferencing freed memory.
 
+mod profiling;
+
 use imu_nav_core::estimator::{
     GpsObservation, InitialEstimate, MotionObservation, NavigationEstimator, NetworkObservation,
     ObservationTrust, TravelMode as EstimatorTravelMode, TurnObservation, WalkingObservation,

@@ -87,8 +87,11 @@ class NativeComparison(
     private val nativeTurnsEnabled: Boolean = true,
     private val nativeNetworkSpeedEnabled: Boolean = false,
 ) {
-    /** Groups equal-time inputs before ticking and never uses a later GPS position to score a tick. */
-    fun replay(events: List<TripEvent>, hideGpsAfterS: Double? = null): ComparisonResult {
+    /**
+     * Groups equal-time inputs before ticking and never uses a later GPS position to score a tick.
+     * [onEvent] allows host diagnostics to inspect live native allocations before session cleanup.
+     */
+    fun replay(events: List<TripEvent>, hideGpsAfterS: Double? = null, onEvent: (Long) -> Unit = {}): ComparisonResult {
         require(hideGpsAfterS == null || (hideGpsAfterS.isFinite() && hideGpsAfterS >= 0.0))
         return Session(hideGpsAfterS).use { session ->
             val sorted = events.sortedBy { it.elapsedMs }
@@ -99,6 +102,7 @@ class NativeComparison(
                     nextTick += NavigationEngine.TICK_MS
                 }
                 session.apply(event)
+                onEvent(event.elapsedMs)
                 if (sorted.getOrNull(index + 1)?.elapsedMs != event.elapsedMs) {
                     // Score after all inputs with this timestamp, so neither estimator sees future data.
                     if (nextTick == event.elapsedMs || session.hasReferenceAt(event.elapsedMs)) session.tick(event.elapsedMs)

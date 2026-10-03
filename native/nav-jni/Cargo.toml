@@ -12,3 +12,11 @@ crate-type = ["cdylib"]
 [dependencies]
 imu-nav-core = { path = "../nav-core" }
 jni = { version = "0.21", default-features = false }
+
+[features]
+heap-profile = ["dep:tikv-jemallocator", "dep:jemalloc_pprof"]
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Keep malloc symbols prefixed: this library must not replace the JVM's allocator.
+tikv-jemallocator = { version = "0.7", features = ["profiling", "disable_initial_exec_tls"], optional = true }
+jemalloc_pprof = { version = "0.9", optional = true }

@@ -27,6 +27,8 @@ usage: replay <trip.rec.gz|dir> [options]
   --no-native-network      disable native cell/network position and speed corrections
   --native-network-speed   opt into experimental cell-derived speed (off by default; can lag speed changes)
   --no-native-turns        disable native turn-landmark corrections for an A/B comparison
+  --native-heap-profile DIR capture sampled Rust heap every 60 replay seconds (Linux only); requires
+                           --compare-native and -PnativeHeapProfile. Writes heap-*.pb.gz files.
   --out DIR                write summary.txt, errors-*.csv and compare-*.geojson per run
 """
 
@@ -49,6 +51,7 @@ fun main(args: Array<String>) {
     val files = recordingFiles(input)
     if (files.isEmpty()) error("no recordings in $input")
 
+    val heapProfiler = opts["native-heap-profile"]?.let { NativeHeapProfiler(File(it)) }
     val summary = StringBuilder()
     for (f in files) {
         val events = TripFormat.read(f)
@@ -74,7 +77,8 @@ fun main(args: Array<String>) {
                     nativeNetworkEnabled = networkEnabled,
                     nativeTurnsEnabled = turnsEnabled,
                     nativeNetworkSpeedEnabled = networkSpeedEnabled,
-                ).replay(events, hide)
+                ).replay(events, hide) { elapsedMs -> heapProfiler?.sample(elapsedMs) }
+                heapProfiler?.finish()
                 summary.appendLine("native motion hints: $motionEnabled")
                 summary.appendLine("native coarse-position corrections: $networkEnabled")
                 summary.appendLine("native cell-derived speed: $networkSpeedEnabled")
@@ -104,6 +108,9 @@ private fun recordingFiles(input: File): List<File> =
 
 /** Reject ambiguous A/B configurations rather than silently ignoring native experiment switches. */
 private fun validateComparisonOptions(options: Map<String, String?>) {
+    require("native-heap-profile" !in options || ("compare-native" in options && !options["native-heap-profile"].isNullOrBlank())) {
+        "--native-heap-profile requires a directory and --compare-native (build with -PnativeHeapProfile on Linux)"
+    }
     require("compare-eskf" !in options || options.keys.none { it == "compare-native" || it.startsWith("no-native-") || it == "native-network-speed" }) {
         "--compare-eskf uses default native comparison settings; do not combine it with native-only comparison flags"
     }

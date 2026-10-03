@@ -176,6 +176,8 @@ samples, satellite/AGC status, routes and the engine's own estimates (gzip text,
   coverage in `summary.txt` and `native-errors-*.csv`. Reference GPS is not survey ground truth;
   route projections can be ambiguous on repeated sections. This stricter comparison has different
   sampling/hidden-GPS semantics from the legacy replay, so their error figures are not interchangeable.
+  On Linux, add `-PnativeHeapProfile` and `--native-heap-profile heap-profiles` to capture sampled Rust heap
+  profiles during `--compare-native` replay; see [native profiling](native/README.md#native-heap-profiling-linux-host-replay).
   Rust 1.99+ is required; `:replay:test` also builds the host library and runs synthetic JNI comparisons.
   Native car dead reckoning now uses the shared IMU stop/resume detector when fresh GPS/OBD speed
   and confident cell movement do not contradict it. Add `--no-native-motion` to disable these hints
@@ -547,6 +549,8 @@ GraphHopper stack plus
 | Protocol Buffers (Java) | 3.12.2 | `.osm.pbf` decoding | BSD 3-Clause |
 | SQLite JDBC | 3.53.4.0 | writing the search index | Apache 2.0 |
 | Axum + Tokio | 0.8 / 1.x | cell server HTTP/WebSocket runtime | MIT |
+| tikv-jemallocator / jemalloc | 0.7 / 5.3.1 | optional Linux native replay heap allocator | MIT / Apache 2.0; jemalloc BSD 2-Clause |
+| jemalloc_pprof | 0.9 | optional Linux native heap export to pprof | Apache 2.0 |
 | Rusqlite + SQLite | 0.37 / bundled | persistent cell server database | MIT / public domain |
 
 The sharing server also uses Serde, CSV, Flate2, Clap and Tracing (MIT or MIT/Apache 2.0).
