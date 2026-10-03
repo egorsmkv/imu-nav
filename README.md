@@ -336,6 +336,10 @@ actions use separate files; older timestamp-only filenames remain readable.
   phone rotation while driving can still mimic a turn; this remains experimental, comparison-only.
 
 ### Cell tower database
+
+Cell positioning preserves negative dBm signal readings so stronger cells receive more weight;
+Android's unavailable signal values are treated as missing.
+
 Tower locations come from four sources, each in its own table and looked up in this order:
 
 | Source | How it gets there |

@@ -51,7 +51,7 @@ the authoritative list of required harnesses and named `kani::cover!` witnesses.
 | Finite numerical state | Successful construction, anchor/prior installation and numerical commits retain finite fields; errors preserve the old estimate | Constructor inputs and all six commit candidate fields use arbitrary `f64` bit patterns; anchor/prior value and sigma also unrestricted, against the original valid filter fixture |
 | Finite predictions and measurements | Successful updates retain finite state; errors and innovation rejection preserve it | Prediction: arbitrary finite position/speed/nonnegative drift, covariance `(100, 2, 4)`, dt 1 or 5 s, acceleration sigma/drift rate 1. Measurements: arbitrary measurement/sigma bit patterns, state `(position=10, speed=2, drift=5)`, covariance `(100, 2, 4)`, gate 9; coarse caps 5 m / 1 m/s. Accepted, gated and error witnesses required |
 | Radius and variance arithmetic | Successful diagonal covariance/radius results are finite | Arbitrary sigma for one diagonal (other sigma 1); arbitrary radius multiplier with position sigma 2 and drift 5 |
-| Tick/state transaction boundaries | Failed updates publish nothing; successful updates publish their pending values; fixed-state updates cannot touch history/watermarks | One tick transaction / two fixed-state transactions with symbolic success/error choices and positions 0–255; pending work changes filter, calibration, input ages, model hints, turn/network state and (for ticks) history/watermarks/mode. These exercise the actual generic transaction helpers, not the complete numerical replay body |
+| Tick/state transaction boundaries | Failed updates publish nothing; successful updates publish their pending position/timestamps; fixed-state updates cannot touch history/watermarks | Separate success/error tick transactions and two fixed-state transactions with symbolic success/error choices and positions 0–255; pending work changes filter, calibration, input ages, model hints, turn/network state and (for ticks) history/watermarks/mode. Initial state at 0 ms with one checkpoint. These exercise the actual generic transaction helpers, not the complete numerical replay body |
 | Checkpoint ownership | The pending tick initially contains the same complete logical state and immutable route identity | One retained checkpoint at 0 ms, current state at 500 ms with calibration 1.01; structural comparison excludes allocator spare capacity |
 | Filter validation | Constructor rejects invalid fields; non-finite measurements, negative/non-finite uncertainty, invalid gates, correction limits, prediction time/noise/drift reject without mutating state | Invalid scalar inputs use **all `f64` bit patterns**, including NaN, infinities and signed zero; operation selectors enumerate the applicable entry points |
 | Anchor and drift reset | Anchor retains speed and speed variance; reset changes only drift; successful anchor floors position variance | Symbolic finite position ±1,000,000 m, speed 0–60 m/s, drift 0–10,000 m; new sigma 0–1,000 |
@@ -92,8 +92,8 @@ copy-and-commit transaction for the entire estimator, including history.
 
 Verification is **compositional**: numerical finiteness, pending-state isolation, commit-on-success,
 and checkpoint ownership are checked separately. Public ingress sequences are regression-tested.
-Full inlined floating-point replay proofs
-exceeded practical memory limits; these are not claimed as verified end-to-end sequences. Complete
+Full inlined floating-point replay proofs exceeded practical memory limits; these are not claimed
+as verified end-to-end sequences. Complete
 multi-step prediction failures and valid-coordinate delayed-GPS failure/retry are Rust regression
 tests using real routes and the actual public APIs. No application operation is stubbed.
 
@@ -101,13 +101,14 @@ Estimator comparisons exist only in test/Kani builds and cover every nested fiel
 route identity. Proof-only equality for the eight-entry coordinate cache and seven-entry speed
 batch compares each array element explicitly, avoiding an eight-iteration bound for unrelated
 algorithm loops merely to inspect a snapshot. Exhaustive destructuring forces updates when fields
-are added. Transaction/copy harnesses use unwind 3, and all
-unwinding assertions remain enabled. The straight route is a precomputed two-point fixture;
+are added. Transaction/copy harnesses use unwind 3, and all unwinding assertions remain enabled. The straight route is a precomputed two-point fixture;
 construction/geodesic accuracy and concurrency are outside scope. `Arc` shares immutable geometry.
 
 Regression tests reproduce finite sigma overflow, position/drift/radius overflow, OBD failure after
 an earlier successful prediction step, and delayed-GPS failure after position fusion. The latter
 also checks a valid retry against an untouched estimator with learned calibration and history.
+Old/future GPS tests compare the complete estimator against a no-observation tick, then verify
+that stale OBD still changes nothing.
 
 ## CI and adding proofs
 

@@ -13,7 +13,8 @@ RUSTC = 'rustc 1.100.0-nightly (8925ea358 2026-08-20)'
 OUTPUT = ROOT / 'build/native-verification'
 # Names and cover labels are intentional inventory, not discovery: deleting a proof must fail CI.
 REQUIRED = {
-    'estimator::kani_proofs::tick_transactions_commit_only_success': {'committed', 'rolled back'},
+    'estimator::kani_proofs::failed_tick_transaction_preserves_state': {'rolled back'},
+    'estimator::kani_proofs::successful_tick_transaction_commits_state': {'committed'},
     'estimator::kani_proofs::state_transactions_commit_only_success': {'committed', 'rolled back'},
     'estimator::kani_proofs::checkpoint_copy_preserves_complete_state': {'copied'},
 

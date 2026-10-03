@@ -98,13 +98,10 @@ fn change_pending(state: &mut FilterState, elapsed_ms: i64, position: u8) {
 }
 
 /// The production tick transaction is independent of how its pending computation obtains Err.
-#[kani::proof]
-#[kani::unwind(3)]
-fn tick_transactions_commit_only_success() {
+fn tick_transaction(accepted: bool) {
     let mut navigation = estimator();
     let event = 1;
     let before = snapshot(&navigation);
-    let accepted: bool = kani::any();
     let position: u8 = kani::any();
     let result = navigation.try_tick(|pending| {
         change_pending(&mut pending.state, event, position);
@@ -127,8 +124,21 @@ fn tick_transactions_commit_only_success() {
         assert_eq!(navigation.last_vehicle_input_ms, event);
         assert_eq!(navigation.estimate().position_m, f64::from(position));
     }
-    kani::cover!(result.is_ok(), "committed");
-    kani::cover!(result.is_err(), "rolled back");
+    assert_eq!(result.is_ok(), accepted);
+}
+
+#[kani::proof]
+#[kani::unwind(3)]
+fn failed_tick_transaction_preserves_state() {
+    tick_transaction(false);
+    kani::cover!(true, "rolled back");
+}
+
+#[kani::proof]
+#[kani::unwind(3)]
+fn successful_tick_transaction_commits_state() {
+    tick_transaction(true);
+    kani::cover!(true, "committed");
 }
 
 /// OBD computation receives only pending FilterState; it cannot mutate history or watermarks.
