@@ -440,6 +440,10 @@ cargo test --manifest-path server/Cargo.toml # persistent HTTP/WebSocket cell se
 `python3 tools/rust_coverage.py` after installing the pinned coverage toolchain. CI gates
 production lines per crate; see [coverage setup, thresholds and report semantics](docs/RUST_COVERAGE.md).
 
+**Kotlin coverage.** Run `python3 tools/kotlin_coverage.py` for host coverage of core, routing,
+replay and app unit tests. CI enforces reviewed per-module baseline floors, with shared JNI
+wrapper sources counted once. See [setup, reports and baseline updates](docs/KOTLIN_COVERAGE.md).
+
 **Responsiveness.** Debug and benchmark builds enable StrictMode and a main-thread watchdog
 (`MainThreadWatchdog`): any UI-thread task longer than 200 ms is logged with its stack under the
 `MainThreadWatchdog` Logcat tag. Benchmark builds are R8-shrunk, so read their stacks with R8 retrace

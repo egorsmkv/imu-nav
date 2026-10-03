@@ -1,3 +1,5 @@
+import com.android.build.api.artifact.ScopedArtifact
+import com.android.build.api.variant.ScopedArtifacts
 import java.util.Properties
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
@@ -68,6 +70,7 @@ android {
 
     buildTypes {
         debug {
+            enableUnitTestCoverage = providers.gradleProperty("kotlinCoverage").isPresent
             // Installs next to the release app (own data), so both can be compared on one device.
             applicationIdSuffix = ".debug"
             buildConfigField("boolean", "DIAGNOSTICS", "true")
@@ -99,6 +102,8 @@ android {
         // GraphHopper is a Java 17 library; desugaring rewrites its newer JDK calls for old Android versions.
         isCoreLibraryDesugaringEnabled = true
     }
+
+    testCoverage { jacocoVersion = libs.versions.jacoco.get() }
 
     buildFeatures {
         buildConfig = true
@@ -267,4 +272,47 @@ val verifyFdroidDependencies = tasks.register("verifyFdroidDependencies") {
 
 tasks.matching { it.name == "assembleFdroidRelease" }.configureEach {
     dependsOn(verifyFdroidDependencies)
+}
+
+/** Reads original variant bytecode through AGP, before dexing, shrinking or APK transforms. */
+abstract class AppKotlinCoverageReport : JacocoReport() {
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val classJars: ListProperty<RegularFile>
+
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val classFolders: ListProperty<Directory>
+}
+
+androidComponents.onVariants(androidComponents.selector().withName("fdroidDebug")) { variant ->
+    val coverageOutput = providers.gradleProperty("kotlinCoverageOutput").orElse(rootProject.layout.buildDirectory.dir("kotlin-coverage").map { it.asFile.absolutePath })
+    val coverage = tasks.register<AppKotlinCoverageReport>("kotlinCoverageReport") {
+        dependsOn("testFdroidDebugUnitTest")
+        fun productionClasses(classes: FileTree): FileTree = classes.matching {
+            include("org/imunav/**/*.class")
+            exclude("**/BuildConfig.class", "**/R.class", "**/R$*.class")
+        }
+        classDirectories.from(classFolders.map { folders -> folders.map { productionClasses(fileTree(it.asFile)) } })
+        classDirectories.from(classJars.map { jars -> jars.map { productionClasses(zipTree(it.asFile)) } })
+        sourceDirectories.from(file("src/main/kotlin"))
+        // AGP owns the unit-test agent destination; read it instead of guessing its output layout.
+        executionData.from(tasks.named<Test>("testFdroidDebugUnitTest").map { it.extensions.getByType<JacocoTaskExtension>().destinationFile })
+        reports {
+            xml.required = true
+            xml.outputLocation = file("${coverageOutput.get()}/app/report.xml")
+            html.required = true
+            html.outputLocation = file("${coverageOutput.get()}/app/html")
+        }
+        doFirst {
+            check(classDirectories.files.isNotEmpty()) { "Missing app production classes" }
+            executionData.files.forEach { check(it.isFile && it.length() > 0) { "Missing execution data: $it" } }
+            val executionCopy = file("${coverageOutput.get()}/execution/app-testFdroidDebugUnitTest.exec")
+            executionCopy.parentFile.mkdirs()
+            executionData.singleFile.copyTo(executionCopy, overwrite = true)
+            file("${coverageOutput.get()}/app").mkdirs()
+            file("${coverageOutput.get()}/app/classes.txt").writeText(classDirectories.asFileTree.files.sorted().joinToString("\n") { it.absolutePath } + "\n")
+        }
+    }
+    variant.artifacts.forScope(ScopedArtifacts.Scope.PROJECT).use(coverage).toGet(ScopedArtifact.CLASSES, AppKotlinCoverageReport::classJars, AppKotlinCoverageReport::classFolders)
 }

@@ -83,3 +83,59 @@ val serverRustClippy = tasks.register<Exec>("serverRustClippy") {
 tasks.named("check") {
     dependsOn(serverRustFmtCheck, serverRustTest, serverRustClippy)
 }
+
+// Coverage is opt-in: ordinary tests and performance measurements run without a Java agent.
+val kotlinCoverageEnabled = providers.gradleProperty("kotlinCoverage").isPresent
+val kotlinCoverageOutput = providers.gradleProperty("kotlinCoverageOutput").orElse(layout.buildDirectory.dir("kotlin-coverage").map { it.asFile.absolutePath })
+val kotlinCoverageTests = listOf(":core:test", ":routing:test", ":replay:test", ":app:testFdroidDebugUnitTest")
+val kotlinCoverageReports = tasks.register("kotlinCoverageReport") {
+    group = "verification"
+    description = "Collects host Kotlin coverage; use tools/kotlin_coverage.py to merge and verify it"
+    doFirst { check(kotlinCoverageEnabled) { "Coverage requires -PkotlinCoverage" } }
+}
+
+subprojects {
+    apply(plugin = "jacoco")
+    extensions.configure<JacocoPluginExtension> { toolVersion = rootProject.libs.versions.jacoco.get() }
+    tasks.withType<Test>().configureEach {
+        extensions.configure<JacocoTaskExtension> {
+            isEnabled = kotlinCoverageEnabled
+            destinationFile = file("${kotlinCoverageOutput.get()}/execution/${project.name}-$name.exec")
+            includes = listOf("org.imunav.*")
+        }
+        if (kotlinCoverageEnabled) {
+            outputs.upToDateWhen { false }
+            outputs.cacheIf { false }
+        }
+    }
+    if (name != "app") {
+        val moduleName = name
+        val report = tasks.register<JacocoReport>("kotlinCoverageReport") {
+            dependsOn(kotlinCoverageTests)
+            val main = project.extensions.getByType<SourceSetContainer>().named("main")
+            classDirectories.from(main.map { it.output.classesDirs.asFileTree.matching { include("org/imunav/**") } })
+            sourceDirectories.from(file("src/main/kotlin"))
+            if (moduleName == "replay") sourceDirectories.from(rootProject.file("app/src/main/kotlin"))
+            val executions = if (moduleName == "replay") listOf("replay-test") else listOf("core-test", "routing-test", "replay-test", "app-testFdroidDebugUnitTest")
+            executionData.from(executions.filter { it != "app-testFdroidDebugUnitTest" }.map { file("${kotlinCoverageOutput.get()}/execution/$it.exec") })
+            if (moduleName != "replay") {
+                executionData.from(project(":app").tasks.named<Test>("testFdroidDebugUnitTest").map { it.extensions.getByType<JacocoTaskExtension>().destinationFile })
+            }
+            reports {
+                xml.required = true
+                xml.outputLocation = file("${kotlinCoverageOutput.get()}/$moduleName/report.xml")
+                html.required = true
+                html.outputLocation = file("${kotlinCoverageOutput.get()}/$moduleName/html")
+            }
+            doFirst {
+                check(classDirectories.files.isNotEmpty()) { "Missing $moduleName production classes" }
+                executionData.files.forEach { check(it.isFile && it.length() > 0) { "Missing execution data: $it" } }
+                file("${kotlinCoverageOutput.get()}/$moduleName").mkdirs()
+                file("${kotlinCoverageOutput.get()}/$moduleName/classes.txt").writeText(classDirectories.asFileTree.files.sorted().joinToString("\n") { it.absolutePath } + "\n")
+            }
+        }
+        kotlinCoverageReports.configure { dependsOn(report) }
+    }
+}
+
+kotlinCoverageReports.configure { dependsOn(":app:kotlinCoverageReport") }

@@ -1,4 +1,5 @@
 [versions]
+jacoco = "0.8.14"
 agp = "9.2.0"
 kotlin = "2.3.21"
 coroutines = "1.11.0"

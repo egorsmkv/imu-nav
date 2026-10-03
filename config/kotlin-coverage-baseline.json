@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "jacoco": "0.8.14",
+  "modules": {
+    "core": {
+      "covered": 2882,
+      "lines": 3267
+    },
+    "routing": {
+      "covered": 390,
+      "lines": 433
+    },
+    "replay": {
+      "covered": 308,
+      "lines": 362
+    },
+    "app": {
+      "covered": 444,
+      "lines": 7407
+    }
+  }
+}
