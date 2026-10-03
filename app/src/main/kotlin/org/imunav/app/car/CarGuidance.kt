@@ -62,11 +62,19 @@ class CarGuidance(private val context: Context) {
 
             step?.type == "depart" -> Maneuver.TYPE_DEPART
 
-            step?.type in listOf("roundabout", "rotary") -> Maneuver.TYPE_ROUNDABOUT_ENTER_AND_EXIT_CCW
+            step?.type in listOf("roundabout", "rotary", "roundabout turn") -> {
+                if ((step?.roundaboutExit ?: 0) > 0) Maneuver.TYPE_ROUNDABOUT_ENTER_AND_EXIT_CCW else Maneuver.TYPE_ROUNDABOUT_ENTER_CCW
+            }
+
+            step?.type in listOf("exit roundabout", "exit rotary") -> Maneuver.TYPE_ROUNDABOUT_EXIT_CCW
 
             step?.type == "merge" -> Maneuver.TYPE_MERGE_SIDE_UNSPECIFIED
 
-            step?.type == "fork" -> if (step.modifier == "left") Maneuver.TYPE_FORK_LEFT else Maneuver.TYPE_FORK_RIGHT
+            step?.type == "fork" -> when (step.modifier) {
+                "left", "slight left" -> Maneuver.TYPE_FORK_LEFT
+                "right", "slight right" -> Maneuver.TYPE_FORK_RIGHT
+                else -> Maneuver.TYPE_UNKNOWN
+            }
 
             else -> when (step?.modifier) {
                 "left" -> Maneuver.TYPE_TURN_NORMAL_LEFT

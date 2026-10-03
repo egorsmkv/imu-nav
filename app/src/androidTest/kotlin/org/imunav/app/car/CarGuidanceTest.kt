@@ -30,5 +30,8 @@ class CarGuidanceTest {
         assertTrue(adapter.trip(state.copy(rerouting = true), "Kyiv", "DR").isLoading)
         assertEquals(Maneuver.TYPE_DESTINATION, adapter.routing(state.copy(arrived = true)).currentStep?.maneuver?.type)
         assertEquals(1, adapter.trip(state, "Kyiv", "DR").destinations.size)
+        assertEquals(Maneuver.TYPE_ROUNDABOUT_ENTER_CCW, adapter.routing(state.copy(nextStep = Step("roundabout"))).currentStep?.maneuver?.type)
+        assertEquals(3, adapter.routing(state.copy(nextStep = Step("roundabout", roundaboutExit = 3))).currentStep?.maneuver?.roundaboutExitNumber)
+        assertEquals(Maneuver.TYPE_UNKNOWN, adapter.routing(state.copy(nextStep = Step("fork"))).currentStep?.maneuver?.type)
     }
 }
