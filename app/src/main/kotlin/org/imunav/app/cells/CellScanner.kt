@@ -26,6 +26,9 @@ import org.imunav.core.gnss.RawFix
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 
+/** Signal power is normally negative in dBm; only Android's unavailable sentinel means missing. */
+internal fun cellSignalDbm(value: Int): Int? = value.takeUnless { it == Int.MAX_VALUE }
+
 /**
  * Polls the modem for visible cells every [intervalMs], locates them in the offline [db] and
  * delivers a [FixSource.CELL] fix on the main thread. Needs ACCESS_FINE_LOCATION and Location on.
@@ -203,7 +206,7 @@ class CellScanner(
         val signal = cell.cellSignalStrength
         return CellObservation(
             CellKey(Radio.LTE, mcc, mnc, id.tac, id.ci.toLong()),
-            dbm = signal.rsrp.takeIf(::valid) ?: signal.dbm.takeIf(::valid),
+            dbm = cellSignalDbm(signal.rsrp) ?: cellSignalDbm(signal.dbm),
             serving = cell.isRegistered,
             timingAdvance = signal.timingAdvance.takeIf(::valid),
         )
@@ -212,13 +215,13 @@ class CellScanner(
     private fun gsm(cell: CellInfoGsm, mcc: Int, mnc: Int): CellObservation? {
         val id = cell.cellIdentity
         if (!valid(id.cid) || !valid(id.lac)) return null
-        return CellObservation(CellKey(Radio.GSM, mcc, mnc, id.lac, id.cid.toLong()), cell.cellSignalStrength.dbm.takeIf(::valid), cell.isRegistered)
+        return CellObservation(CellKey(Radio.GSM, mcc, mnc, id.lac, id.cid.toLong()), cellSignalDbm(cell.cellSignalStrength.dbm), cell.isRegistered)
     }
 
     private fun umts(cell: CellInfoWcdma, mcc: Int, mnc: Int): CellObservation? {
         val id = cell.cellIdentity
         if (!valid(id.cid) || !valid(id.lac)) return null
-        return CellObservation(CellKey(Radio.UMTS, mcc, mnc, id.lac, id.cid.toLong()), cell.cellSignalStrength.dbm.takeIf(::valid), cell.isRegistered)
+        return CellObservation(CellKey(Radio.UMTS, mcc, mnc, id.lac, id.cid.toLong()), cellSignalDbm(cell.cellSignalStrength.dbm), cell.isRegistered)
     }
 
     /**
@@ -253,7 +256,7 @@ class CellScanner(
         else -> null to null
     }
 
-    /** Android reports "unknown" as UNAVAILABLE / Int.MAX_VALUE; we treat those and negatives as missing. */
+    /** Cell identities and timing advance must be non-negative and not Android's unavailable sentinel. */
     private fun valid(value: Int) = value != Int.MAX_VALUE && value >= 0
 
     private companion object {
@@ -304,7 +307,7 @@ private object Android10CellApi {
         val id = cell.cellIdentity as android.telephony.CellIdentityNr
         if (id.nci == Long.MAX_VALUE || !valid(id.tac)) return null
         val signal = cell.cellSignalStrength as android.telephony.CellSignalStrengthNr
-        return CellObservation(CellKey(Radio.NR, mcc, mnc, id.tac, id.nci), signal.ssRsrp.takeIf(::valid) ?: signal.dbm.takeIf(::valid), cell.isRegistered)
+        return CellObservation(CellKey(Radio.NR, mcc, mnc, id.tac, id.nci), cellSignalDbm(signal.ssRsrp) ?: cellSignalDbm(signal.dbm), cell.isRegistered)
     }
 
     /** Read the operator codes from a 5G NR cell, or return null for another radio type. */
@@ -314,6 +317,6 @@ private object Android10CellApi {
         return id.mccString?.toIntOrNull() to id.mncString?.toIntOrNull()
     }
 
-    /** Android reports unavailable signal and identity integers as [Int.MAX_VALUE]. */
+    /** Cell identities must be non-negative and not Android's unavailable sentinel. */
     private fun valid(value: Int) = value != Int.MAX_VALUE && value >= 0
 }
