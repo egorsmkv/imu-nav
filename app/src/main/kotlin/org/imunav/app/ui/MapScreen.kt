@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.content.res.Configuration
 import android.os.Build
 import android.os.PowerManager
 import android.os.SystemClock
@@ -85,7 +84,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -97,7 +95,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -124,7 +121,6 @@ import org.imunav.app.R
 import org.imunav.app.UiState
 import org.imunav.app.bookmarks.Bookmarks
 import org.imunav.app.cells.TowerLayer
-import org.imunav.app.service.NavService
 import org.imunav.core.cells.Radio
 import org.imunav.core.geo.GeoPoint
 import org.imunav.core.gnss.GpsState
@@ -140,8 +136,6 @@ private val GoodGreen = Color(0xFF1E8E3E)
 private val WarnAmber = Color(0xFFE37400)
 private val BadRed = Color(0xFFD93025)
 private val InfoBlue = Color(0xFF1A73E8)
-private const val LANDSCAPE_PANEL_MAX_WIDTH_DP = 600
-private const val LANDSCAPE_TOOLBAR_WIDTH_DP = 300
 private const val ROUTE_FIELDS_MIN_WIDTH_DP = 480
 private const val MAP_HEADER_HEIGHT_FRACTION = 0.4f
 private const val MAP_CONTROLS_HEIGHT_FRACTION = 0.45f
@@ -169,12 +163,12 @@ fun MapScreen(
     onOpenHistory: () -> Unit,
     onOpenBookmarks: () -> Unit,
     mapActive: Boolean = true,
+    controlsVisible: Boolean = true,
+    overlayStartPx: Int = 0,
 ) {
     val context = LocalContext.current
     // Short taps of the vibrator confirm the actions that matter while driving (follows the phone's touch-feedback setting).
     val haptic = LocalHapticFeedback.current
-    val configuration = LocalConfiguration.current
-    val landscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     val res = LocalResources.current
     val nav = ui.guidance
     val controller = remember { MapController() }
@@ -190,6 +184,8 @@ fun MapScreen(
     var following by remember { mutableStateOf(true) }
     var showDiagnostics by remember { mutableStateOf(false) }
     var searchTarget by remember { mutableStateOf<RoutePoint?>(null) }
+    var searchWidth by remember { mutableIntStateOf(0) }
+    var expanded by remember { mutableStateOf(false) }
     // Opening view: the last known GPS / trusted position, or the fixed place from Settings.
     val startView = remember { app.mapStart.initialView() }
     val startMode by app.mapStartMode.collectAsStateWithLifecycle()
@@ -236,8 +232,8 @@ fun MapScreen(
             }
         }
     }
-    LaunchedEffect(ui.error) {
-        ui.error?.let {
+    LaunchedEffect(ui.error, mapActive) {
+        ui.error?.takeIf { mapActive }?.let {
             snackbar.showSnackbar(it)
             app.clearError()
         }
@@ -247,198 +243,268 @@ fun MapScreen(
     }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
+        val paneWidth = drivingPaneWidth(maxWidth, maxHeight)
+        val landscape = paneWidth != null
+        val shortWindow = maxWidth > maxHeight
+        val showControls = controlsVisible && searchTarget == null
+        val overlayWidth = if (searchTarget != null) searchWidth else overlayStartPx
+        val cameraTop = if (showControls && !landscape) topInsetPx else 0
+        val cameraBottom = if (showControls && !landscape) bottomInsetPx else 0
+        val cameraStart = if (showControls && landscape) bottomInsetWidthPx else overlayWidth
         val showRecenter = ui.currentPosition != null && !(nav.active && following)
         val mapButtonCount = if (showRecenter) 5 else 4
         val controlsHeight = MapButtonSize * mapButtonCount + MapButtonSpacing * (mapButtonCount - 1)
-        val topInset = with(LocalDensity.current) { topInsetPx.toDp() }
+        val topInset = with(LocalDensity.current) { cameraTop.toDp() }
         val bottomInset = with(LocalDensity.current) { bottomInsetPx.toDp() }
         val availableHeight = (maxHeight - topInset).coerceAtLeast(0.dp)
         // In short windows both the control rail and the panel can scroll; neither may consume the other.
         val reservedControlsHeight = minOf(controlsHeight + MapOverlayPadding * 2, availableHeight * MAP_CONTROLS_HEIGHT_FRACTION)
         val panelMaxHeight = if (landscape) availableHeight else availableHeight - reservedControlsHeight
         val controlsMaxHeight = if (landscape) availableHeight else (availableHeight - bottomInset).coerceAtLeast(0.dp)
-        val panelMaxWidth = (maxWidth - LANDSCAPE_TOOLBAR_WIDTH_DP.dp - MapOverlayPadding * 2).coerceIn(0.dp, LANDSCAPE_PANEL_MAX_WIDTH_DP.dp)
+        val panelMaxWidth = paneWidth ?: maxWidth
         val dark = isSystemInDarkTheme()
-        key(dark) {
-            NavMap(
-                controller = controller,
-                dark = dark,
-                route = nav.route ?: ui.previewRoute,
-                position = ui.currentPosition,
-                accuracyM = accuracy,
-                bearingDeg = nav.bearingDeg,
-                destination = ui.destination ?: nav.destination,
-                following = nav.active && following,
-                towers = if (ui.cells.showTowers) towerLayer else null,
-                onLongPress = {
-                    if (!nav.active) {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        app.setDestination(it)
-                    }
-                },
-                onCenterChanged = {
-                    mapCenter = it
-                    app.lastMapCenter = it
-                },
-                onViewport = { s, w, n, e, z -> app.cells.onViewport(s, w, n, e, z) },
-                onUserPan = { if (nav.active) following = false },
-                modifier = Modifier.fillMaxSize(),
-                insetTopPx = topInsetPx,
-                insetBottomPx = bottomInsetPx,
-                cameraInsetStartPx = if (landscape) bottomInsetWidthPx else 0,
-                cameraInsetBottomPx = if (landscape) 0 else bottomInsetPx,
-                maxFps = power.mapMaxFps,
-                animateCamera = power.animateCamera,
-                initialCenter = startView.point,
-                initialZoom = startView.zoom,
-                followZoomDefault = if (nav.travelMode == TravelMode.FOOT) 17.5 else 16.0,
-                offlineStyleJson = if (offlineMapStatus.offlineInUse) app.offlineMap.styleJson(dark) else null,
-                active = mapActive,
-            )
-        }
-
-        if (pickStart) {
-            val crosshairModifier = if (landscape) {
-                Modifier.align(Alignment.Center).offset { IntOffset(bottomInsetWidthPx / 2, topInsetPx / 2) }
-            } else {
-                Modifier.align(Alignment.Center).offset { IntOffset(0, (topInsetPx - bottomInsetPx) / 2) }
-            }
-            Crosshair(crosshairModifier)
-        }
-
-        // ---- Top: maneuver banner, warnings, status pill
-        Column(
-            Modifier.align(if (landscape) Alignment.TopEnd else Alignment.TopCenter)
-                .onGloballyPositioned { topInsetPx = it.positionInRoot().y.toInt() + it.size.height }
-                .heightIn(max = maxHeight * MAP_HEADER_HEIGHT_FRACTION)
-                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
-                .statusBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp)
-                .then(if (landscape) Modifier.widthIn(max = LANDSCAPE_TOOLBAR_WIDTH_DP.dp).fillMaxWidth() else Modifier.fillMaxWidth()),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.weight(1f)) {
-                    StatusPill(ui) { showDiagnostics = true }
-                }
+        NavMap(
+            controller = controller,
+            dark = dark,
+            route = nav.route ?: ui.previewRoute,
+            position = ui.currentPosition,
+            accuracyM = accuracy,
+            bearingDeg = nav.bearingDeg,
+            destination = ui.destination ?: nav.destination,
+            following = nav.active && following,
+            towers = if (ui.cells.showTowers) towerLayer else null,
+            onLongPress = {
                 if (!nav.active) {
-                    FilledTonalIconButton(onClick = onOpenHistory) {
-                        Icon(Icons.Filled.History, contentDescription = stringResource(R.string.cd_history))
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    app.setDestination(it)
+                }
+            },
+            onCenterChanged = {
+                mapCenter = it
+                app.lastMapCenter = it
+            },
+            onViewport = { s, w, n, e, z -> app.cells.onViewport(s, w, n, e, z) },
+            onUserPan = { if (nav.active) following = false },
+            modifier = Modifier.fillMaxSize(),
+            insetTopPx = cameraTop,
+            insetBottomPx = cameraBottom,
+            cameraInsetStartPx = cameraStart,
+            cameraInsetBottomPx = cameraBottom,
+            maxFps = power.mapMaxFps,
+            animateCamera = power.animateCamera,
+            initialCenter = startView.point,
+            initialZoom = startView.zoom,
+            followZoomDefault = if (nav.travelMode == TravelMode.FOOT) 17.5 else 16.0,
+            offlineStyleJson = if (offlineMapStatus.offlineInUse) app.offlineMap.styleJson(dark) else null,
+            active = mapActive && (searchTarget == null || landscape),
+        )
+
+        if (showControls) {
+            if (pickStart) {
+                val crosshairModifier = if (landscape) {
+                    Modifier.align(Alignment.Center).offset { IntOffset(cameraStart / 2, cameraTop / 2) }
+                } else {
+                    Modifier.align(Alignment.Center).offset { IntOffset(0, (topInsetPx - bottomInsetPx) / 2) }
+                }
+                Crosshair(crosshairModifier)
+            }
+
+            // ---- Top: maneuver banner, warnings, status pill
+            if (!landscape) {
+                Column(
+                    Modifier.align(Alignment.TopCenter)
+                        .onGloballyPositioned { topInsetPx = it.positionInRoot().y.toInt() + it.size.height }
+                        .heightIn(max = maxHeight * MAP_HEADER_HEIGHT_FRACTION)
+                        .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+                        .statusBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp)
+                        .fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.weight(1f)) {
+                            StatusPill(ui) { showDiagnostics = true }
+                        }
+                        if (!nav.active) {
+                            FilledTonalIconButton(onClick = onOpenHistory) {
+                                Icon(Icons.Filled.History, contentDescription = stringResource(R.string.cd_history))
+                            }
+                            FilledTonalIconButton(onClick = onOpenSettings) {
+                                Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.cd_settings))
+                            }
+                        }
                     }
-                    FilledTonalIconButton(onClick = onOpenSettings) {
-                        Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.cd_settings))
+                    Column(Modifier.weight(1f, fill = false).verticalScroll(headerScroll), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (nav.active && !nav.arrived) {
+                            if (shortWindow) {
+                                nav.nextStep?.let { step ->
+                                    Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                                        Text(
+                                            formatDistance(res, nav.distToNextM) + " · " + instructionLine(res, step),
+                                            Modifier.padding(8.dp),
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
+                            } else {
+                                ManeuverBanner(nav)
+                            }
+                        }
+                        when {
+                            !hasLocation -> WarningBanner(
+                                Icons.Filled.LocationOff,
+                                stringResource(R.string.permission_title),
+                                stringResource(R.string.permission_text),
+                                stringResource(R.string.action_allow),
+                                onRequestPermission,
+                            )
+
+                            !ui.locationEnabled -> WarningBanner(
+                                Icons.Filled.LocationOff,
+                                stringResource(R.string.location_off_title),
+                                stringResource(R.string.location_off_text),
+                                stringResource(R.string.action_turn_on),
+                            ) {
+                                context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                            }
+                        }
                     }
                 }
             }
-            Column(Modifier.weight(1f, fill = false).verticalScroll(headerScroll), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (nav.active && !nav.arrived) ManeuverBanner(nav)
-                when {
-                    !hasLocation -> WarningBanner(
-                        Icons.Filled.LocationOff,
-                        stringResource(R.string.permission_title),
-                        stringResource(R.string.permission_text),
-                        stringResource(R.string.action_allow),
-                        onRequestPermission,
-                    )
 
-                    !ui.locationEnabled -> WarningBanner(
-                        Icons.Filled.LocationOff,
-                        stringResource(R.string.location_off_title),
-                        stringResource(R.string.location_off_text),
-                        stringResource(R.string.action_turn_on),
-                    ) {
-                        context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
-                    }
-                }
-            }
-        }
-
-        // ---- Right: map controls
-        val mapControlsModifier = if (landscape) {
-            Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 12.dp, bottom = 12.dp)
-        } else {
-            Modifier.align(Alignment.CenterEnd).offset { IntOffset(0, (topInsetPx - bottomInsetPx) / 2) }.padding(end = 12.dp)
-        }
-        Column(
-            Modifier.heightIn(
-                max = controlsMaxHeight,
-            ).windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)).then(mapControlsModifier).verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(MapButtonSpacing),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            MapButton(Icons.Filled.Bookmark, stringResource(R.string.bookmarks), onClick = onOpenBookmarks)
-            MapButton(Icons.Filled.CellTower, stringResource(R.string.cd_towers), selected = ui.cells.showTowers) {
-                app.cells.setShowTowers(!ui.cells.showTowers)
-            }
-            MapButton(Icons.Filled.Add, stringResource(R.string.cd_zoom_in)) { controller.zoomBy(1.0) }
-            MapButton(Icons.Filled.Remove, stringResource(R.string.cd_zoom_out)) { controller.zoomBy(-1.0) }
-            val pos = ui.currentPosition
-            if (pos != null && showRecenter) {
-                MapButton(Icons.Filled.MyLocation, stringResource(R.string.cd_recenter)) {
-                    if (nav.active) following = true else controller.moveTo(pos)
-                }
-            }
-        }
-
-        // ---- Bottom: legend, snackbars, panel
-        Column(
-            Modifier.align(if (landscape) Alignment.BottomStart else Alignment.BottomCenter).onGloballyPositioned {
-                bottomInsetPx = it.size.height
-                bottomInsetWidthPx = it.size.width
-            }
-                .heightIn(max = panelMaxHeight)
-                .then(if (landscape) Modifier.widthIn(max = panelMaxWidth) else Modifier)
-                .windowInsetsPadding(
-                    WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
-                ).navigationBarsPadding().padding(MapOverlayPadding).fillMaxWidth().verticalScroll(panelScroll),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            if (ui.cells.showTowers) TowerLegend(towerLayer, ui.cells.radios)
-            SnackbarHost(snackbar)
-            if (nav.active) {
-                NavigationPanel(nav, onStop = {
-                    haptic.performHapticFeedback(HapticFeedbackType.Confirm)
-                    app.stopNavigation()
-                    NavService.stop(context)
-                }, onReroute = { app.engine.requestManualReroute() })
+            // ---- Right: map controls
+            val mapControlsModifier = if (landscape) {
+                Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 12.dp, bottom = 12.dp)
             } else {
-                IdlePanel(
-                    ui = ui,
-                    bookmarks = app.bookmarks,
-                    mode = travelMode,
-                    walkingAvailable = routing.walking,
-                    onModeChange = { mode ->
-                        haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                        app.setTravelMode(mode)
-                        // The step counter needs the "physical activity" permission; without it walking still works at a fixed pace.
-                        if (mode == TravelMode.FOOT && Build.VERSION.SDK_INT >= 29 && !hasActivityPermission(context)) {
-                            activityPermission.launch(Manifest.permission.ACTIVITY_RECOGNITION)
+                Modifier.align(Alignment.CenterEnd).offset { IntOffset(0, (topInsetPx - bottomInsetPx) / 2) }.padding(end = 12.dp)
+            }
+            Column(
+                Modifier.heightIn(
+                    max = controlsMaxHeight,
+                ).windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)).then(mapControlsModifier).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(MapButtonSpacing),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                MapButton(Icons.Filled.Bookmark, stringResource(R.string.bookmarks), onClick = onOpenBookmarks)
+                MapButton(Icons.Filled.CellTower, stringResource(R.string.cd_towers), selected = ui.cells.showTowers) {
+                    app.cells.setShowTowers(!ui.cells.showTowers)
+                }
+                MapButton(Icons.Filled.Add, stringResource(R.string.cd_zoom_in)) { controller.zoomBy(1.0) }
+                MapButton(Icons.Filled.Remove, stringResource(R.string.cd_zoom_out)) { controller.zoomBy(-1.0) }
+                val pos = ui.currentPosition
+                if (pos != null && showRecenter) {
+                    MapButton(Icons.Filled.MyLocation, stringResource(R.string.cd_recenter)) {
+                        if (nav.active) following = true else controller.moveTo(pos)
+                    }
+                }
+            }
+
+            // ---- Bottom: legend, snackbars, panel
+            Column(
+                Modifier.align(if (landscape) Alignment.BottomStart else Alignment.BottomCenter).onGloballyPositioned {
+                    bottomInsetPx = it.size.height
+                    bottomInsetWidthPx = it.size.width
+                }
+                    .heightIn(max = panelMaxHeight)
+                    .then(if (landscape) Modifier.widthIn(max = panelMaxWidth) else Modifier)
+                    .windowInsetsPadding(
+                        WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
+                    ).navigationBarsPadding().then(if (landscape) Modifier.statusBarsPadding() else Modifier).padding(MapOverlayPadding).fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (shortWindow) {
+                    if (nav.active) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                                app.stopNavigation()
+                            }) { Text(stringResource(R.string.action_stop)) }
+                            OutlinedButton(onClick = { app.engine.requestManualReroute() }, enabled = !nav.rerouting) { Text(stringResource(R.string.action_reroute)) }
                         }
-                    },
-                    routingBusy = routing.busy,
-                    compact = landscape,
-                    pickStart = pickStart,
-                    canStart = hasLocation && ui.destination != null && !ui.planning && (ui.hasTrustedPosition || ui.manualStart != null),
-                    onSetStart = {
-                        mapCenter?.let {
+                    } else if (landscape) {
+                        Button(onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.Confirm)
-                            app.setManualStart(it)
+                            requestBatteryExemptionOnce(context)
+                            app.startNavigation()
+                        }, enabled = hasLocation && ui.destination != null && !ui.planning && (ui.hasTrustedPosition || ui.manualStart != null)) {
+                            Text(stringResource(R.string.action_start))
                         }
-                    },
-                    onSearchStart = { searchTarget = RoutePoint.START },
-                    onSearchDestination = { searchTarget = RoutePoint.DESTINATION },
-                    onClearStart = { app.setManualStart(null) },
-                    onStart = {
-                        haptic.performHapticFeedback(HapticFeedbackType.Confirm)
-                        requestBatteryExemptionOnce(context)
-                        app.startNavigation { NavService.start(context) }
-                    },
-                    onClearDestination = { app.setDestination(null) },
-                )
+                    }
+                    if (!landscape) {
+                        TextButton(onClick = { expanded = !expanded }) {
+                            Text(stringResource(if (expanded) R.string.driving_collapse else R.string.driving_expand))
+                        }
+                    }
+                }
+                Column(Modifier.weight(1f, fill = false).verticalScroll(panelScroll), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (landscape) {
+                        StatusPill(ui) { showDiagnostics = true }
+                        if (nav.active && !nav.arrived) ManeuverBanner(nav)
+                        if (!nav.active) {
+                            Row {
+                                IconButton(onClick = onOpenSettings) { Icon(Icons.Filled.Settings, stringResource(R.string.cd_settings)) }
+                                IconButton(onClick = onOpenHistory) { Icon(Icons.Filled.History, stringResource(R.string.cd_history)) }
+                                if (!hasLocation) {
+                                    TextButton(onClick = onRequestPermission) { Text(stringResource(R.string.action_allow)) }
+                                } else if (!ui.locationEnabled) {
+                                    TextButton(onClick = { context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)) }) {
+                                        Text(stringResource(R.string.action_turn_on))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (ui.cells.showTowers) TowerLegend(towerLayer, ui.cells.radios)
+                    SnackbarHost(snackbar)
+                    if (!shortWindow || landscape || expanded) {
+                        if (nav.active) {
+                            NavigationPanel(nav, showActions = !shortWindow, onStop = {
+                                haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                                app.stopNavigation()
+                            }, onReroute = { app.engine.requestManualReroute() })
+                        } else {
+                            IdlePanel(
+                                ui = ui,
+                                bookmarks = app.bookmarks,
+                                mode = travelMode,
+                                walkingAvailable = routing.walking,
+                                onModeChange = { mode ->
+                                    haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                    app.setTravelMode(mode)
+                                    // The step counter needs the "physical activity" permission; without it walking still works at a fixed pace.
+                                    if (mode == TravelMode.FOOT && Build.VERSION.SDK_INT >= 29 && !hasActivityPermission(context)) {
+                                        activityPermission.launch(Manifest.permission.ACTIVITY_RECOGNITION)
+                                    }
+                                },
+                                routingBusy = routing.busy,
+                                compact = landscape,
+                                showStart = !landscape,
+                                pickStart = pickStart,
+                                canStart = hasLocation && ui.destination != null && !ui.planning && (ui.hasTrustedPosition || ui.manualStart != null),
+                                onSetStart = {
+                                    mapCenter?.let {
+                                        haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                                        app.setManualStart(it)
+                                    }
+                                },
+                                onSearchStart = { searchTarget = RoutePoint.START },
+                                onSearchDestination = { searchTarget = RoutePoint.DESTINATION },
+                                onClearStart = { app.setManualStart(null) },
+                                onStart = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                                    requestBatteryExemptionOnce(context)
+                                    app.startNavigation()
+                                },
+                                onClearDestination = { app.setDestination(null) },
+                            )
+                        }
+                    }
+                }
             }
         }
     }
 
-    if (nav.blindDeviation) {
+    if (nav.blindDeviation && mapActive) {
         AlertDialog(
             onDismissRequest = {},
             icon = { Icon(Icons.AutoMirrored.Filled.AltRoute, null) },
@@ -450,26 +516,28 @@ fun MapScreen(
     }
 
     searchTarget?.let { target ->
-        SearchScreen(
-            search = app.search,
-            bookmarks = app.bookmarks,
-            onBookmarkPick = { place ->
-                if (app.useBookmark(place, target == RoutePoint.START)) searchTarget = null
-            },
-            near = if (target == RoutePoint.DESTINATION) ui.manualStart ?: ui.currentPosition ?: mapCenter else ui.currentPosition ?: mapCenter,
-            hint = stringResource(if (target == RoutePoint.START) R.string.search_from_hint else R.string.search_to_hint),
-            onPick = { r ->
-                haptic.performHapticFeedback(HapticFeedbackType.Confirm)
-                app.search.remember(r)
-                when (target) {
-                    RoutePoint.START -> app.setManualStart(r.point, r.routePointLabel())
-                    RoutePoint.DESTINATION -> app.setDestination(r.point, r.routePointLabel())
-                }
-                controller.moveTo(r.point, 16.0)
-                searchTarget = null
-            },
-            onClose = { searchTarget = null },
-        )
+        DrivingOverlay(onWidth = { searchWidth = it }) {
+            SearchScreen(
+                search = app.search,
+                bookmarks = app.bookmarks,
+                onBookmarkPick = { place ->
+                    if (app.useBookmark(place, target == RoutePoint.START)) searchTarget = null
+                },
+                near = if (target == RoutePoint.DESTINATION) ui.manualStart ?: ui.currentPosition ?: mapCenter else ui.currentPosition ?: mapCenter,
+                hint = stringResource(if (target == RoutePoint.START) R.string.search_from_hint else R.string.search_to_hint),
+                onPick = { r ->
+                    haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                    app.search.remember(r)
+                    when (target) {
+                        RoutePoint.START -> app.setManualStart(r.point, r.routePointLabel())
+                        RoutePoint.DESTINATION -> app.setDestination(r.point, r.routePointLabel())
+                    }
+                    controller.moveTo(r.point, 16.0)
+                    searchTarget = null
+                },
+                onClose = { searchTarget = null },
+            )
+        }
     }
 
     if (showDiagnostics) {
@@ -679,6 +747,7 @@ private fun IdlePanel(
     onModeChange: (TravelMode) -> Unit,
     routingBusy: String?,
     compact: Boolean,
+    showStart: Boolean,
     pickStart: Boolean,
     canStart: Boolean,
     onSetStart: () -> Unit,
@@ -718,7 +787,9 @@ private fun IdlePanel(
             onClearStart = onClearStart.takeIf { ui.manualStart != null },
             onClearDestination = onClearDestination.takeIf { ui.destination != null },
         )
-        BookmarkSaveActions(ui, mode, bookmarks)
+        var more by remember { mutableStateOf(false) }
+        if (!compact || more) BookmarkSaveActions(ui, mode, bookmarks)
+        if (compact) TextButton(onClick = { more = !more }) { Text(stringResource(R.string.driving_more)) }
         val positionLine = when {
             ui.manualStart != null -> stringResource(R.string.idle_position_manual)
             ui.hasTrustedPosition && ui.trustedFromGps -> stringResource(R.string.idle_position_gps, formatAccuracy(res, ui.trustedAccuracyM ?: 0.0))
@@ -755,10 +826,12 @@ private fun IdlePanel(
                     Text(stringResource(if (ui.manualStart == null) R.string.action_set_start else R.string.action_move_start))
                 }
             }
-            Button(onClick = onStart, enabled = canStart) {
-                Icon(Icons.Filled.Navigation, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.action_start))
+            if (showStart) {
+                Button(onClick = onStart, enabled = canStart) {
+                    Icon(Icons.Filled.Navigation, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.action_start))
+                }
             }
         }
     }
@@ -886,7 +959,7 @@ private fun IconLine(icon: ImageVector, text: String) {
 
 /** Bottom panel during navigation: time and distance left, speed, Reroute and Stop. */
 @Composable
-private fun NavigationPanel(nav: GuidanceState, onStop: () -> Unit, onReroute: () -> Unit) {
+private fun NavigationPanel(nav: GuidanceState, showActions: Boolean, onStop: () -> Unit, onReroute: () -> Unit) {
     val context = LocalContext.current
     val res = LocalResources.current
     PanelSurface {
@@ -915,22 +988,24 @@ private fun NavigationPanel(nav: GuidanceState, onStop: () -> Unit, onReroute: (
             }
             SpeedBadge(nav.speedKmh.toInt(), nav.speedLimitKmh)
         }
-        Spacer(Modifier.size(14.dp))
-        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(
-                onClick = onReroute,
-                enabled = !nav.rerouting,
-                contentPadding = PaddingValues(horizontal = 12.dp),
-            ) {
-                Text(stringResource(R.string.action_reroute))
-            }
-            Button(
-                onClick = onStop,
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError),
-            ) {
-                Icon(Icons.Filled.Close, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.action_stop))
+        if (showActions) {
+            Spacer(Modifier.size(14.dp))
+            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = onReroute,
+                    enabled = !nav.rerouting,
+                    contentPadding = PaddingValues(horizontal = 12.dp),
+                ) {
+                    Text(stringResource(R.string.action_reroute))
+                }
+                Button(
+                    onClick = onStop,
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError),
+                ) {
+                    Icon(Icons.Filled.Close, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.action_stop))
+                }
             }
         }
     }

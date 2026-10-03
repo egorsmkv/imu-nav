@@ -1,5 +1,6 @@
 package org.imunav.app.ui
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,7 +12,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -29,6 +33,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -169,31 +174,43 @@ fun BookmarksScreen(app: AppGraph, onBack: () -> Unit) {
                     item { Text(stringResource(if (query.isBlank()) R.string.bookmark_empty else R.string.search_no_results), Modifier.padding(16.dp)) }
                 }
                 items(items, key = { it.id }) { bookmark ->
-                    Column {
-                        ListItem(
-                            headlineContent = { Text(bookmark.name) },
-                            supportingContent = { Text(bookmarkDescription(bookmark)) },
-                            leadingContent = { Icon(Icons.Filled.Bookmark, contentDescription = null) },
-                        )
-                        FlowRow(Modifier.padding(horizontal = 16.dp)) {
-                            when (bookmark) {
-                                is SavedPlace -> {
-                                    TextButton(enabled = !ui.guidance.active, onClick = {
-                                        if (app.useBookmark(bookmark, true)) onBack()
-                                    }) { Text(stringResource(R.string.bookmark_use_start)) }
-                                    TextButton(enabled = !ui.guidance.active, onClick = {
-                                        if (app.useBookmark(bookmark, false)) onBack()
-                                    }) { Text(stringResource(R.string.bookmark_use_destination)) }
+                    var menu by remember { mutableStateOf(false) }
+                    ListItem(
+                        headlineContent = { Text(bookmark.name) },
+                        supportingContent = { Text(bookmarkDescription(bookmark)) },
+                        leadingContent = { Icon(Icons.Filled.Bookmark, contentDescription = null) },
+                        trailingContent = {
+                            Box {
+                                IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, stringResource(R.string.driving_more)) }
+                                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                                    val editable = !ui.guidance.active && !ui.startingNavigation
+                                    if (bookmark is SavedPlace) {
+                                        DropdownMenuItem(text = { Text(stringResource(R.string.bookmark_use_start)) }, enabled = editable, onClick = {
+                                            menu = false
+                                            if (app.useBookmark(bookmark, true)) onBack()
+                                        })
+                                        DropdownMenuItem(text = { Text(stringResource(R.string.bookmark_use_destination)) }, enabled = editable, onClick = {
+                                            menu = false
+                                            if (app.useBookmark(bookmark, false)) onBack()
+                                        })
+                                    } else if (bookmark is SavedRoute) {
+                                        DropdownMenuItem(text = { Text(stringResource(R.string.bookmark_open)) }, enabled = editable, onClick = {
+                                            menu = false
+                                            if (app.openBookmark(bookmark)) onBack()
+                                        })
+                                    }
+                                    DropdownMenuItem(text = { Text(stringResource(R.string.bookmark_rename)) }, enabled = !state.busy, onClick = {
+                                        menu = false
+                                        app.bookmarks.edit(bookmark)
+                                    })
+                                    DropdownMenuItem(text = { Text(stringResource(R.string.action_delete)) }, enabled = !state.busy, onClick = {
+                                        menu = false
+                                        app.bookmarks.requestDelete(bookmark)
+                                    })
                                 }
-
-                                is SavedRoute -> TextButton(enabled = !ui.guidance.active, onClick = {
-                                    if (app.openBookmark(bookmark)) onBack()
-                                }) { Text(stringResource(R.string.bookmark_open)) }
                             }
-                            TextButton(enabled = !state.busy, onClick = { app.bookmarks.edit(bookmark) }) { Text(stringResource(R.string.bookmark_rename)) }
-                            TextButton(enabled = !state.busy, onClick = { app.bookmarks.requestDelete(bookmark) }) { Text(stringResource(R.string.action_delete)) }
-                        }
-                    }
+                        },
+                    )
                 }
             }
         }

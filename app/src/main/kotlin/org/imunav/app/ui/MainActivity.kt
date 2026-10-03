@@ -11,13 +11,14 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -27,11 +28,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.repeatOnLifecycle
-import kotlinx.coroutines.delay
 import org.imunav.app.AppGraph
 import org.imunav.app.AppLanguage
 import org.imunav.app.UiState
@@ -115,14 +112,14 @@ class MainActivity : ComponentActivity() {
     /** The app became visible: start sensors (they run without navigation only while visible). */
     override fun onStart() {
         super.onStart()
-        graph.uiVisible = true
+        graph.setPhoneVisible(true)
         if (hasLocation) graph.startSensing()
     }
 
     /** The app went to the background: save battery unless a trip is running. */
     override fun onStop() {
         super.onStop()
-        graph.uiVisible = false
+        graph.setPhoneVisible(false)
         if (!graph.engine.state.active) graph.stopSensing()
     }
 }
@@ -138,17 +135,6 @@ private fun AppRoot(app: AppGraph, hasLocation: Boolean, requestPermission: () -
     val setupPreferences = remember(context) { context.getSharedPreferences("setup", Context.MODE_PRIVATE) }
     var showSetup by rememberSaveable { mutableStateOf(!setupPreferences.getBoolean("completed", false)) }
 
-    // While no navigation runs, keep position and diagnostics fresh (the service drives it otherwise).
-    // Only while the app is visible: a hidden composition must not keep waking the CPU.
-    val lifecycleOwner = LocalLifecycleOwner.current
-    LaunchedEffect(lifecycleOwner) {
-        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            while (true) {
-                if (!app.engine.state.active) app.refresh()
-                delay(1000)
-            }
-        }
-    }
     val history by app.trips.history.collectAsStateWithLifecycle()
     val screenOnSetting by app.keepScreenOn.collectAsStateWithLifecycle()
     LaunchedEffect(ui.guidance.active, screenOnSetting) { keepScreenOn(ui.guidance.active && screenOnSetting) }
@@ -160,7 +146,9 @@ private fun AppRoot(app: AppGraph, hasLocation: Boolean, requestPermission: () -
             else -> Screen.MAP
         }
     }
-    Box(Modifier.fillMaxSize()) {
+    var overlayWidth by remember { mutableIntStateOf(0) }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val besideMap = screen == Screen.BOOKMARKS && drivingPaneWidth(maxWidth, maxHeight) != null
         // The map screen stays composed under every other screen. Rebuilding it cost ~0.5 s (a new
         // MapView, style and tiles) each time the user came back; while covered it only stops drawing.
         MapScreen(
@@ -172,9 +160,15 @@ private fun AppRoot(app: AppGraph, hasLocation: Boolean, requestPermission: () -
             onOpenLog = { screen = Screen.LOG },
             onOpenHistory = { screen = Screen.HISTORY },
             onOpenBookmarks = { screen = Screen.BOOKMARKS },
-            mapActive = screen == Screen.MAP && !showSetup,
+            mapActive = (screen == Screen.MAP || besideMap) && !showSetup,
+            controlsVisible = screen == Screen.MAP,
+            overlayStartPx = if (besideMap) overlayWidth else 0,
         )
-        if (screen != Screen.MAP) {
+        if (screen == Screen.BOOKMARKS) {
+            DrivingOverlay(onWidth = { overlayWidth = it }) {
+                BookmarksScreen(app) { screen = Screen.MAP }
+            }
+        } else if (screen != Screen.MAP) {
             Surface(Modifier.fillMaxSize().blockTouchesBelow(), color = MaterialTheme.colorScheme.background) {
                 OtherScreen(app, ui, screen, tripId, history, onScreen = { screen = it }, onTrip = { tripId = it }, onSetup = { showSetup = true })
             }
@@ -242,7 +236,7 @@ private fun OtherScreen(
  * A pointer-input target makes this overlay win hit testing over its map sibling. Do not consume
  * events: even consumption in the final pass cancels the child scroll detector before a drag starts.
  */
-private fun Modifier.blockTouchesBelow(): Modifier = pointerInput(Unit) {
+internal fun Modifier.blockTouchesBelow(): Modifier = pointerInput(Unit) {
     awaitPointerEventScope {
         while (true) awaitPointerEvent()
     }

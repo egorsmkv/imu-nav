@@ -158,6 +158,9 @@ dependencies {
     implementation(project(":core"))
     implementation(project(":routing"))
 
+    implementation(libs.androidx.car.app)
+    implementation(libs.androidx.car.projected)
+    androidTestImplementation(libs.androidx.car.testing)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)

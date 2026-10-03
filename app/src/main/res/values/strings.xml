@@ -527,4 +527,20 @@
     <string name="bookmark_filter">Search bookmarks</string>
     <string name="bookmark_empty">No bookmarks yet. Save a place from search or save places and routes in the route editor.</string>
     <string name="bookmark_active">Stop navigation to change the route.</string>
+    <string name="car_setup">Open IMU Nav on your phone to allow precise location, enable location and finish setup. Then retry Start.</string>
+    <string name="car_phone">Open on phone</string>
+    <string name="car_map_error">Could not open the car map. Reconnect Android Auto.</string>
+    <string name="car_invalid_destination">Unsupported destination. Choose a place using search or bookmarks.</string>
+    <string name="car_demo">DEMO • Simulated drive</string>
+    <string name="car_uncertainty">No trusted GPS • uncertainty ±%1$d m</string>
+    <string name="car_choose_start">Choose a starting point</string>
+    <string name="car_ready">Ready</string>
+    <string name="car_walking">Walking navigation is running on the phone. Stop it before planning a car trip.</string>
+    <string name="car_dismiss">Dismiss</string>
+    <string name="car_edit_route">Edit route</string>
+    <string name="car_destination">Destination</string>
+    <string name="car_fixed_start">Saved starting point</string>
+    <string name="driving_more">More options</string>
+    <string name="driving_expand">Show route controls</string>
+    <string name="driving_collapse">Collapse</string>
 </resources>

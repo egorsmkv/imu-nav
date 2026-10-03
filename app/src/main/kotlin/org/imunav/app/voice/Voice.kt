@@ -69,6 +69,12 @@ class Voice(context: Context, private var locale: Locale = Locale.forLanguageTag
         tts.speak(text, queueMode, null, text.hashCode().toString())
     }
 
+    /** End a trip without leaving queued instructions speaking over another navigation app. */
+    fun stop() = worker.execute {
+        pending.clear()
+        if (ready) tts.stop()
+    }
+
     /** Release the text-to-speech engine. */
     fun shutdown() = worker.execute { tts.shutdown() }
 }

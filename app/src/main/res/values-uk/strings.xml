@@ -537,4 +537,20 @@
     <string name="bookmark_filter">Пошук закладок</string>
     <string name="bookmark_empty">Закладок ще немає. Збережіть місце з пошуку або місця й маршрути в редакторі маршруту.</string>
     <string name="bookmark_active">Зупиніть навігацію, щоб змінити маршрут.</string>
+    <string name="car_setup">Відкрийте IMU Nav на телефоні, дозвольте точне місцезнаходження, увімкніть геолокацію та завершіть налаштування. Потім повторіть старт.</string>
+    <string name="car_phone">Відкрити на телефоні</string>
+    <string name="car_map_error">Не вдалося відкрити карту. Підключіть Android Auto повторно.</string>
+    <string name="car_invalid_destination">Непідтримувана ціль. Виберіть місце в пошуку або закладках.</string>
+    <string name="car_demo">ДЕМО • Імітація поїздки</string>
+    <string name="car_uncertainty">Немає надійного GPS • похибка ±%1$d м</string>
+    <string name="car_choose_start">Виберіть початкову точку</string>
+    <string name="car_ready">Готово</string>
+    <string name="car_walking">На телефоні працює пішохідна навігація. Зупиніть її перед плануванням автомобільного маршруту.</string>
+    <string name="car_dismiss">Закрити</string>
+    <string name="car_edit_route">Змінити маршрут</string>
+    <string name="car_destination">Місце призначення</string>
+    <string name="car_fixed_start">Збережена початкова точка</string>
+    <string name="driving_more">Інші дії</string>
+    <string name="driving_expand">Показати керування маршрутом</string>
+    <string name="driving_collapse">Згорнути</string>
 </resources>

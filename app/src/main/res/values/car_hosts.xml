@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android Auto host certificate fingerprints from AndroidX Car App 1.7.0
+     (Copyright The Android Open Source Project, Apache License 2.0).
+     https://www.apache.org/licenses/LICENSE-2.0
+     Keep these in sync when upgrading Car App; never accept arbitrary release hosts. -->
+<resources>
+<string-array name="car_hosts" translatable="false">
+        
+
+        
+        <item>fdb00c43dbde8b51cb312aa81d3b5fa17713adb94b28f598d77f8eb89daceedf,
+            com.google.android.projection.gearhead</item>
+        
+        <item>70811a3eacfd2e83e18da9bfede52df16ce91f2e69a44d21f18ab66991130771,
+            com.google.android.projection.gearhead</item>
+        
+        <item>1975b2f17177bc89a5dff31f9e64a6cae281a53dc1d1d59b1d147fe1c82afa00,
+            com.google.android.projection.gearhead</item>
+
+        
+        </string-array>
+    
+</resources>

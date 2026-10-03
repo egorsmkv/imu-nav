@@ -52,7 +52,17 @@ class NavService : LifecycleService() {
         }
         // Must be called within a few seconds of startForegroundService(), or Android kills the app.
         val serviceType = if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0
-        ServiceCompat.startForeground(this, NOTIFICATION_ID, notification("…"), serviceType)
+        try {
+            ServiceCompat.startForeground(this, NOTIFICATION_ID, notification("…"), serviceType)
+        } catch (_: SecurityException) {
+            graph.onNavigationServiceFailure()
+            stopSelf()
+            return START_NOT_STICKY
+        } catch (_: IllegalStateException) {
+            graph.onNavigationServiceFailure()
+            stopSelf()
+            return START_NOT_STICKY
+        }
         if (wakeLock == null) {
             wakeLock = getSystemService(PowerManager::class.java)
                 .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "blinddriver:nav")
@@ -127,6 +137,6 @@ class NavService : LifecycleService() {
         fun start(context: Context) = context.startForegroundService(Intent(context, NavService::class.java))
 
         /** Ask the service to stop. */
-        fun stop(context: Context) = context.startService(Intent(context, NavService::class.java).setAction(ACTION_STOP))
+        fun stop(context: Context) = context.stopService(Intent(context, NavService::class.java))
     }
 }

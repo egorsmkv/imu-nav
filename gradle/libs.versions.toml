@@ -2,6 +2,7 @@
 agp = "9.2.0"
 kotlin = "2.3.21"
 coroutines = "1.11.0"
+carApp = "1.7.0"
 composeBom = "2026.06.01"
 activityCompose = "1.13.0"
 lifecycle = "2.10.0"
@@ -20,6 +21,9 @@ ktlint = "1.8.0"
 desugarJdkLibs = "2.1.5"
 
 [libraries]
+androidx-car-app = { module = "androidx.car.app:app", version.ref = "carApp" }
+androidx-car-projected = { module = "androidx.car.app:app-projected", version.ref = "carApp" }
+androidx-car-testing = { module = "androidx.car.app:app-testing", version.ref = "carApp" }
 # Newer JDK APIs (e.g. Stream.toList used by GraphHopper) for Android versions that lack them.
 desugar-jdk-libs = { module = "com.android.tools:desugar_jdk_libs", version.ref = "desugarJdkLibs" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }

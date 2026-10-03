@@ -1,16 +1,22 @@
 package org.imunav.app
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.os.SystemClock
+import androidx.core.content.ContextCompat
 import androidx.core.content.edit
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.imunav.app.bookmarks.BookmarkDatabase
@@ -43,6 +49,7 @@ import org.imunav.core.Tuning
 import org.imunav.core.bookmarks.BookmarkOrigin
 import org.imunav.core.bookmarks.SavedPlace
 import org.imunav.core.bookmarks.SavedRoute
+import org.imunav.core.car.DisplayOwnership
 import org.imunav.core.geo.GeoPoint
 import org.imunav.core.geo.ServiceArea
 import org.imunav.core.gnss.GnssSnapshot
@@ -99,6 +106,8 @@ data class UiState(
     val gpsRejectReasons: List<String> = emptyList(),
     /** A route is being computed. */
     val planning: Boolean = false,
+    /** A start transaction owns the editor until navigation is installed or fails. */
+    val startingNavigation: Boolean = false,
     /** Route shown before navigation starts, so the user can review the proposed way. */
     val previewRoute: Route? = null,
     /** A message to show once in a snackbar (then cleared with [AppGraph.clearError]). */
@@ -202,6 +211,7 @@ class AppGraph(private val context: Context) {
     val travelMode = MutableStateFlow(TravelMode.entries.firstOrNull { it.name == modePrefs.getString("mode", null) } ?: TravelMode.CAR)
 
     fun setTravelMode(mode: TravelMode) {
+        if (engine.state.active || _ui.value.startingNavigation) return
         modePrefs.edit { putString("mode", mode.name) }
         travelMode.value = mode
         tripLog.write("travel_mode $mode")
@@ -350,6 +360,8 @@ class AppGraph(private val context: Context) {
 
     /** The latest preview calculation; replacing it prevents an old result winning a race. */
     private var previewJob: Job? = null
+    private var navigationStartJob: Job? = null
+    private var navigationStartGeneration = 0L
     private var previewGeneration = 0L
     private var previewRequest: RoutePreviewRequest? = null
 
@@ -372,8 +384,41 @@ class AppGraph(private val context: Context) {
     val powerMode = MutableStateFlow(power.mode)
     val keepScreenOn = MutableStateFlow(power.keepScreenOn)
 
-    /** True while an activity shows the app; UI state is not rebuilt for an invisible screen. */
-    @Volatile var uiVisible = false
+    /** Connected car hosts still need guidance updates while their map surface is hidden. */
+    private val displays = DisplayOwnership()
+    val uiVisible: Boolean get() = displays.hasConsumer
+    private var idleRefresh: Job? = null
+
+    /** Update display ownership without giving either display a second engine loop. */
+    fun setPhoneVisible(visible: Boolean) {
+        displays.phone(visible)
+        updateDisplays()
+    }
+
+    fun setCarVisible(id: String, visible: Boolean) {
+        displays.car(id, visible)
+        updateDisplays()
+    }
+
+    fun disconnectCar(id: String) {
+        displays.disconnect(id)
+        updateDisplays()
+    }
+
+    private fun updateDisplays() {
+        if (displays.needsSensing(engine.state.active)) startSensing() else stopSensing()
+        if (displays.visible && idleRefresh == null) {
+            idleRefresh = scope.launch {
+                while (isActive) {
+                    if (!engine.state.active) refresh()
+                    delay(NavigationEngine.TICK_MS * powerProfile.value.uiEveryTicks)
+                }
+            }
+        } else if (!displays.visible) {
+            idleRefresh?.cancel()
+            idleRefresh = null
+        }
+    }
     private var tickCount = 0L
 
     init {
@@ -419,6 +464,7 @@ class AppGraph(private val context: Context) {
 
     /** Start GPS, sensors and cell scans (when the app is visible or navigating). */
     fun startSensing() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) return
         applyPower()
         sensors.start()
         cells.scanner.start()
@@ -426,6 +472,11 @@ class AppGraph(private val context: Context) {
 
     /** Stop them again to save battery. */
     fun stopSensing() {
+        if (displays.needsSensing(engine.state.active) &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
         sensors.stop()
         cells.scanner.stop()
     }
@@ -440,6 +491,7 @@ class AppGraph(private val context: Context) {
 
     /** Use [p] as the route origin instead of the trusted position; [label] is from address search. */
     fun setManualStart(p: GeoPoint?, label: String? = null) {
+        if (engine.state.active || _ui.value.startingNavigation) return
         tripLog.write("manual_start ${p?.let { "%.5f %.5f".format(Locale.US, it.lat, it.lon) }}")
         _ui.value = _ui.value.copy(manualStart = p, manualStartLabel = label.takeIf { p != null }, error = null)
         planRoutePreview()
@@ -452,13 +504,14 @@ class AppGraph(private val context: Context) {
 
     /** Destination picked on the map or in search; [label] is shown for a search result. */
     fun setDestination(p: GeoPoint?, label: String? = null) {
+        if (engine.state.active || _ui.value.startingNavigation) return
         _ui.value = _ui.value.copy(destination = p, destinationLabel = label.takeIf { p != null }, error = null)
         planRoutePreview()
     }
 
     /** Apply both endpoints before calculating, avoiding previews with half of a saved route. */
     fun openBookmark(route: SavedRoute): Boolean {
-        if (engine.state.active) return false
+        if (engine.state.active || _ui.value.startingNavigation) return false
         val start = (route.origin as? BookmarkOrigin.Fixed)?.endpoint
         modePrefs.edit { putString("mode", route.mode.name) }
         travelMode.value = route.mode
@@ -477,7 +530,7 @@ class AppGraph(private val context: Context) {
 
     /** A library selection never replaces the endpoints of an active trip. */
     fun useBookmark(place: SavedPlace, asStart: Boolean): Boolean {
-        if (engine.state.active) return false
+        if (engine.state.active || _ui.value.startingNavigation) return false
         if (asStart) setManualStart(place.endpoint.point, place.name) else setDestination(place.endpoint.point, place.name)
         _ui.value = _ui.value.copy(mapFocusRequest = place.endpoint.point)
         return true
@@ -490,7 +543,7 @@ class AppGraph(private val context: Context) {
 
     /** Calculate the route as soon as both endpoints are known, without starting navigation. */
     private fun planRoutePreview() {
-        if (engine.state.active) return
+        if (engine.state.active || _ui.value.startingNavigation) return
         val destination = _ui.value.destination
         val from = _ui.value.manualStart ?: currentPosition()
         previewJob?.cancel()
@@ -518,9 +571,14 @@ class AppGraph(private val context: Context) {
 
     /**
      * Plan a route from the best known start to the chosen destination and start navigating.
-     * Routing runs in the background; [onStarted] is called on success (the UI then starts [NavService]).
+     * Routing runs in the background; the shared transaction starts [NavService] before publishing success.
      */
-    fun startNavigation(onStarted: () -> Unit) {
+    fun startNavigation(onStarted: () -> Unit = {}) {
+        if (engine.state.active || _ui.value.startingNavigation) return
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            _ui.value = _ui.value.copy(error = context.getString(R.string.car_setup))
+            return
+        }
         val dest = _ui.value.destination ?: return
         if (!sensors.locationEnabled) {
             _ui.value = _ui.value.copy(error = context.getString(R.string.error_location_off))
@@ -537,17 +595,33 @@ class AppGraph(private val context: Context) {
             hub.lastGood != null -> hub.lastGood?.accuracyM?.toDouble() ?: 20.0
             else -> hub.lastNet?.accuracyM?.toDouble() ?: 500.0
         }
-        _ui.value = _ui.value.copy(planning = true, error = null)
-        scope.launch {
-            val mode = travelMode.value
+        previewJob?.cancel()
+        previewGeneration++
+        val mode = travelMode.value
+        _ui.value = _ui.value.copy(planning = true, startingNavigation = true, error = null)
+        val startGeneration = ++navigationStartGeneration
+        navigationStartJob = scope.launch {
+            var pendingGeometry: NativeRouteGeometry? = null
             val request = RoutePreviewRequest(from, dest, mode)
             runCatching {
                 val route = _ui.value.previewRoute.takeIf { previewRequest == request } ?: router.route(from, dest, mode = mode)
-                route to withContext(Dispatchers.Default) { NativeRouteGeometry.create(route) }
+                route to withContext(Dispatchers.Default) { NativeRouteGeometry.create(route).also { pendingGeometry = it } }
             }.onSuccess { (route, nativeRoute) ->
+                try {
+                    NavService.start(context)
+                } catch (_: IllegalStateException) {
+                    nativeRoute.close()
+                    _ui.value = _ui.value.copy(planning = false, startingNavigation = false, error = context.getString(R.string.car_setup))
+                    return@onSuccess
+                } catch (_: SecurityException) {
+                    nativeRoute.close()
+                    _ui.value = _ui.value.copy(planning = false, startingNavigation = false, error = context.getString(R.string.car_setup))
+                    return@onSuccess
+                }
                 tripLog.startTrip()
                 tripLog.write("start_accuracy=${startAccuracy.toInt()}")
                 nativeRouteProjector.install(route, nativeRoute)
+                pendingGeometry = null
                 val now = SystemClock.elapsedRealtime()
                 val initialSpeed = hub.lastGood?.takeIf { _ui.value.manualStart == null && now - it.elapsedMs in 0..START_SPEED_MAX_AGE_MS }?.speedMps?.toDouble() ?: 0.0
                 nativeEstimator.start(nativeRoute, 0.0, initialSpeed, startAccuracy, mode, now)
@@ -558,22 +632,42 @@ class AppGraph(private val context: Context) {
                 applyPower()
                 previewJob?.cancel()
                 previewRequest = null
-                _ui.value = _ui.value.copy(planning = false, previewRoute = null)
+                _ui.value = _ui.value.copy(planning = false, startingNavigation = false, previewRoute = null)
+                refresh()
                 onStarted()
-            }.onFailure { _ui.value = _ui.value.copy(planning = false, error = it.message) }
+            }.onFailure {
+                pendingGeometry?.close()
+                if (startGeneration == navigationStartGeneration) {
+                    _ui.value = _ui.value.copy(planning = false, startingNavigation = false, error = if (it is CancellationException) null else it.message)
+                }
+                if (it is CancellationException) throw it
+            }
         }
+    }
+
+    /** Foreground location can be rejected after the asynchronous service launch on recent Android. */
+    fun onNavigationServiceFailure() {
+        stopNavigation()
+        _ui.value = _ui.value.copy(error = context.getString(R.string.car_setup))
     }
 
     /** End the trip: save it to the history and stop the engine. */
     fun stopNavigation() {
+        navigationStartJob?.cancel()
+        navigationStartJob = null
+        if (_ui.value.startingNavigation) _ui.value = _ui.value.copy(startingNavigation = false, planning = false)
+        if (!engine.state.active) return
         trips.end(arrived = engine.state.arrived)
         engine.stop()
+        voice.stop()
         nativeEstimator.close()
         nativeRouteProjector.close()
         obd.stop()
         applyPower()
         tripLog.endTrip()
         cells.maybeAutoSync()
+        NavService.stop(context)
+        updateDisplays()
         refresh()
     }
 
