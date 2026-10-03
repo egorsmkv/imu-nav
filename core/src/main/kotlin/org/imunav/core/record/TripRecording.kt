@@ -59,6 +59,13 @@ sealed class TripEvent {
     /** A route became active (at start and after each reroute). */
     class RouteSet(override val elapsedMs: Long, val route: Route) : TripEvent()
 
+    /** Restored progress after RouteSet; the preceding Start contains the restored uncertainty. */
+    data class Resume(override val elapsedMs: Long, val s: Double) : TripEvent() {
+        init {
+            require(s.isFinite() && s >= 0.0)
+        }
+    }
+
     data class Stop(override val elapsedMs: Long) : TripEvent()
 
     /** The engine's own estimate at a tick (for trip history; ignored by replay). */
@@ -82,7 +89,7 @@ sealed class TripEvent {
 
 /**
  * Line-oriented trip recording (`*.rec.gz`). One event per line, comma-separated, first field is
- * the type: F fix, I imu, S satellites, A agc, D start, M travel mode, R route, P step, X stop,
+ * the type: F fix, I imu, S satellites, A agc, D start, M travel mode, R route, Q restored progress, P step, X stop,
  * E engine estimate, V vehicle (OBD-II) speed, B barometer, K estimator selection, U raw inertial sensor. Empty fields = null. Readers skip
  * types they do not know, so new event types keep old app versions able to read recordings.
  */
@@ -129,6 +136,8 @@ object TripFormat {
             ).joinToString(",")
 
         is TripEvent.RouteSet -> "R,${e.elapsedMs},${RouteCodec.encode(e.route)}"
+
+        is TripEvent.Resume -> "Q,${e.elapsedMs},${n(e.s)}"
 
         is TripEvent.Stop -> "X,${e.elapsedMs}"
 
@@ -200,6 +209,8 @@ object TripFormat {
                 )
 
                 "R" -> TripEvent.RouteSet(time, RouteCodec.decode(fields[2]))
+
+                "Q" -> TripEvent.Resume(time, fields[2].toDouble())
 
                 "X" -> TripEvent.Stop(time)
 

@@ -92,7 +92,12 @@ class AndroidSearchDb(file: File) :
  *
  * It also remembers the last places the user picked ("recent").
  */
-class PlaceSearch(context: Context, private val offlineDb: () -> SearchDb?, private val allowOnline: () -> Boolean) {
+class PlaceSearch(
+    context: Context,
+    private val offlineSearch: (String, GeoPoint?) -> List<SearchResult>,
+    private val offlineAvailable: () -> Boolean,
+    private val allowOnline: () -> Boolean,
+) {
     private val prefs = context.getSharedPreferences("search", Context.MODE_PRIVATE)
 
     private val _photonUrl = MutableStateFlow(prefs.getString(KEY_PHOTON_URL, null) ?: PhotonServer.DEFAULT_URL)
@@ -127,7 +132,7 @@ class PlaceSearch(context: Context, private val offlineDb: () -> SearchDb?, priv
     }
 
     /** Is an offline index installed? */
-    val hasOffline: Boolean get() = offlineDb() != null
+    val hasOffline: Boolean get() = offlineAvailable()
 
     /** Search for [query]; results near [near] rank first. Safe to call from the main thread. */
     suspend fun search(query: String, near: GeoPoint?): List<SearchResult> = withContext(Dispatchers.IO) {
@@ -138,15 +143,12 @@ class PlaceSearch(context: Context, private val offlineDb: () -> SearchDb?, priv
     }
 
     /** Search the pack's index; empty on errors. */
-    private fun searchOffline(query: String, near: GeoPoint?): List<SearchResult> {
-        val db = offlineDb() ?: return emptyList()
-        return try {
-            AddressSearch.search(db, query, near)
-        } catch (e: SQLException) {
-            // A malformed query (e.g. unusual characters) must not crash the search screen.
-            Log.w(TAG, "offline search failed for '$query'", e)
-            emptyList()
-        }
+    private fun searchOffline(query: String, near: GeoPoint?): List<SearchResult> = try {
+        offlineSearch(query, near)
+    } catch (e: SQLException) {
+        // A malformed query (e.g. unusual characters) must not crash the search screen.
+        Log.w(TAG, "offline search failed for '$query'", e)
+        emptyList()
     }
 
     /** Ask Photon; empty when offline or the server fails. */

@@ -178,8 +178,8 @@ class PositioningHub(
 
     /** Recompute [gpsState] for time [nowMs] (logs changes). */
     fun updateGpsState(nowMs: Long): GpsState {
-        val goodAge = lastGood?.let { nowMs - it.elapsedMs } ?: Long.MAX_VALUE
-        val anyAge = lastJudged?.let { nowMs - it.fix.elapsedMs } ?: Long.MAX_VALUE
+        val goodAge = lastGood?.let { nowMs - it.elapsedMs }?.takeIf { it >= 0 } ?: Long.MAX_VALUE
+        val anyAge = lastJudged?.let { nowMs - it.fix.elapsedMs }?.takeIf { it >= 0 } ?: Long.MAX_VALUE
         val state = when {
             goodAge <= 5_000 -> GpsState.OK
             goodAge > 30_000 && (anyAge > 5_000 || lastJudged?.verdict?.level != TrustLevel.SUSPECT) -> GpsState.LOST

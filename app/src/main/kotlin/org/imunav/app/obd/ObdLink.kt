@@ -15,9 +15,12 @@ import androidx.core.content.edit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import org.imunav.core.obd.ConnectionSession
 import org.imunav.core.obd.Elm327
+import java.io.Closeable
 import java.io.IOException
 import java.util.UUID
+import java.util.concurrent.Executors
 
 /** A paired Bluetooth device the user can pick as the OBD-II adapter. */
 data class ObdDevice(val address: String, val name: String)
@@ -55,19 +58,22 @@ class ObdLink(private val context: Context, private val log: (String) -> Unit, p
     private val _status = MutableStateFlow(ObdStatus())
     val status: StateFlow<ObdStatus> = _status.asStateFlow()
 
-    /** Set by [start]/[stop]; the worker thread runs while this is true. */
-    @Volatile private var wanted = false
-
-    /** Bumped by every [start]: threads of an older connection see the change and quit without touching the new one. */
-    @Volatile private var generation = 0
-
-    private fun current(gen: Int) = wanted && generation == gen
-
-    @Volatile private var socket: BluetoothSocket? = null
-
-    /** The watchdog closes the socket if no answer arrived by this time (elapsedRealtime, 0 = not waiting). */
-    @Volatile private var deadlineMs = 0L
+    @Volatile private var session: ConnectionSession<Connection>? = null
     private var worker: Thread? = null
+    private val closer = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "obd-close").apply { isDaemon = true } }
+
+    /** Each watchdog deadline belongs to exactly one socket, including failed connection attempts. */
+    private class Connection(val socket: BluetoothSocket) : Closeable {
+        @Volatile var deadlineMs = 0L
+        override fun close() {
+            runCatching { socket.close() }
+        }
+    }
+
+    /** Queued status updates from a stopped session must not overwrite the next connection's UI. */
+    private fun publish(owner: ConnectionSession<Connection>, status: ObdStatus) {
+        main.post { if (owner.active) _status.value = status }
+    }
 
     fun setEnabled(on: Boolean) {
         prefs.edit { putBoolean("enabled", on) }
@@ -82,7 +88,7 @@ class ObdLink(private val context: Context, private val log: (String) -> Unit, p
         }
         _device.value = device
         // Switch adapters immediately if a connection is running.
-        if (wanted) {
+        if (session != null) {
             stop()
             start()
         }
@@ -110,18 +116,18 @@ class ObdLink(private val context: Context, private val log: (String) -> Unit, p
 
     /** Connect (in the background) if the feature is on and an adapter is chosen. */
     fun start() {
-        if (!_enabled.value || _device.value == null || wanted) return
+        if (!_enabled.value || _device.value == null || session != null) return
         if (!hasPermission()) {
             _status.value = ObdStatus(ObdStatus.State.ERROR, message = "no Bluetooth permission")
             return
         }
-        wanted = true
-        val gen = ++generation
-        worker = Thread({ run(gen) }, "obd").apply {
+        val owner = ConnectionSession<Connection>()
+        session = owner
+        worker = Thread({ run(owner) }, "obd").apply {
             isDaemon = true
             start()
         }
-        Thread({ watch(gen) }, "obd-watchdog").apply {
+        Thread({ watch(owner) }, "obd-watchdog").apply {
             isDaemon = true
             start()
         }
@@ -129,105 +135,118 @@ class ObdLink(private val context: Context, private val log: (String) -> Unit, p
 
     /** Close the connection. */
     fun stop() {
-        if (!wanted) return
-        wanted = false
-        closeSocket()
+        val owner = session ?: return
+        session = null
+        val connection = owner.invalidate()
         worker?.interrupt()
         worker = null
+        closer.execute { connection?.close() }
         _status.value = ObdStatus()
     }
 
-    /** Worker thread: connect, initialise, then poll the speed until [stop]; reconnect on errors. */
-    private fun run(gen: Int) {
+    /** Interruption during either polling or backoff is normal shutdown; socket cleanup belongs to the attempt. */
+    private fun run(owner: ConnectionSession<Connection>) {
         var failures = 0
-        while (current(gen)) {
-            try {
-                connectAndPoll(gen)
-                failures = 0
-            } catch (e: IOException) {
-                if (!current(gen)) break
-                closeSocket()
-                failures++
-                val message = e.message ?: e.javaClass.simpleName
-                _status.value = ObdStatus(ObdStatus.State.ERROR, message = message)
-                log("obd_error $message retry=$failures")
-                val pauseMs = RETRY_MS[(failures - 1).coerceAtMost(RETRY_MS.lastIndex)]
+        try {
+            while (owner.active) {
                 try {
-                    Thread.sleep(pauseMs)
-                } catch (_: InterruptedException) {
-                    break
+                    connectAndPoll(owner)
+                    failures = 0
+                } catch (e: IOException) {
+                    if (!owner.active) break
+                    failures++
+                    val message = e.message ?: e.javaClass.simpleName
+                    publish(owner, ObdStatus(ObdStatus.State.ERROR, message = message))
+                    log("obd_error $message retry=$failures")
+                    Thread.sleep(RETRY_MS[(failures - 1).coerceAtMost(RETRY_MS.lastIndex)])
                 }
             }
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+        } finally {
+            owner.invalidate()?.close()
         }
-        if (generation == gen) closeSocket()
     }
 
     @SuppressLint("MissingPermission") // start() only runs with the permission
-    private fun connectAndPoll(gen: Int) {
+    private fun connectAndPoll(owner: ConnectionSession<Connection>) {
         val chosen = _device.value ?: throw IOException("no adapter chosen")
         val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter ?: throw IOException("no Bluetooth")
         if (!adapter.isEnabled) throw IOException("Bluetooth is off")
-        _status.value = ObdStatus(ObdStatus.State.CONNECTING)
+        publish(owner, ObdStatus(ObdStatus.State.CONNECTING))
         val remote = adapter.getRemoteDevice(chosen.address)
-        deadlineMs = SystemClock.elapsedRealtime() + CONNECT_TIMEOUT_MS
-        // Some cheap clones only accept the "insecure" variant of the serial-port connection.
-        val s = try {
-            remote.createRfcommSocketToServiceRecord(SPP).also {
-                socket = it
-                it.connect()
-            }
+        // Some clones only accept insecure SPP. Both attempts retain their own cleanup ownership.
+        val connection = try {
+            connect(owner, remote.createRfcommSocketToServiceRecord(SPP))
         } catch (_: IOException) {
-            closeSocket()
-            if (!current(gen)) throw IOException("stopped")
-            remote.createInsecureRfcommSocketToServiceRecord(SPP).also {
-                socket = it
-                it.connect()
-            }
+            if (!owner.active) throw InterruptedException("stopped")
+            connect(owner, remote.createInsecureRfcommSocketToServiceRecord(SPP))
         }
-        val elm = Elm327(s.inputStream, s.outputStream)
-        deadlineMs = SystemClock.elapsedRealtime() + INIT_TIMEOUT_MS
-        elm.initialize()
-        log("obd_connected ${chosen.name} ${elm.version}")
-        _status.value = ObdStatus(ObdStatus.State.CONNECTED)
+        try {
+            val elm = Elm327(connection.socket.inputStream, connection.socket.outputStream)
+            connection.deadlineMs = SystemClock.elapsedRealtime() + INIT_TIMEOUT_MS
+            elm.initialize()
+            log("obd_connected ${chosen.name} ${elm.version}")
+            publish(owner, ObdStatus(ObdStatus.State.CONNECTED))
+            poll(owner, connection, elm)
+        } finally {
+            owner.release(connection)
+        }
+    }
+
+    /** Register before the blocking binder call, and release this exact socket on any failure. */
+    @SuppressLint("MissingPermission") // start() checked the permission
+    private fun connect(owner: ConnectionSession<Connection>, socket: BluetoothSocket): Connection {
+        val connection = Connection(socket)
+        owner.attach(connection)
+        var connected = false
+        try {
+            connection.deadlineMs = SystemClock.elapsedRealtime() + CONNECT_TIMEOUT_MS
+            socket.connect()
+            connected = true
+            return connection
+        } finally {
+            if (!connected) owner.release(connection)
+        }
+    }
+
+    /** Read-only speed polling; callbacks are checked again when the main thread delivers them. */
+    private fun poll(owner: ConnectionSession<Connection>, connection: Connection, elm: Elm327) {
         var lastShownKmh: Int? = null
-        while (current(gen)) {
+        while (owner.active) {
             val askedAt = SystemClock.elapsedRealtime()
-            deadlineMs = askedAt + READ_TIMEOUT_MS
+            connection.deadlineMs = askedAt + READ_TIMEOUT_MS
             val kmh = elm.readSpeedKmh()
             val at = SystemClock.elapsedRealtime()
             if (kmh != null) {
-                main.post { onSpeed(kmh, at) }
+                main.post { if (owner.active) onSpeed(kmh, at) }
                 if (kmh != lastShownKmh) {
                     lastShownKmh = kmh
-                    _status.value = ObdStatus(ObdStatus.State.CONNECTED, kmh)
+                    publish(owner, ObdStatus(ObdStatus.State.CONNECTED, kmh))
                 }
             }
+            connection.deadlineMs = 0L
             val pause = POLL_MS - (at - askedAt)
             if (pause > 0) Thread.sleep(pause)
         }
-        deadlineMs = 0L
     }
 
-    /** Watchdog thread: unblocks a read that has waited too long by closing the socket. */
-    private fun watch(gen: Int) {
-        while (current(gen)) {
+    /** A timeout closes the captured attempt, even if a reconnect installed another socket meanwhile. */
+    private fun watch(owner: ConnectionSession<Connection>) {
+        while (owner.active) {
             try {
                 Thread.sleep(WATCHDOG_MS)
             } catch (_: InterruptedException) {
                 return
             }
-            val deadline = deadlineMs
-            if (deadline > 0 && SystemClock.elapsedRealtime() > deadline && current(gen)) {
-                deadlineMs = 0L
+            val connection = owner.connection ?: continue
+            val deadline = connection.deadlineMs
+            if (deadline > 0 && SystemClock.elapsedRealtime() > deadline && owner.active) {
+                connection.deadlineMs = 0L
                 log("obd_timeout")
-                closeSocket()
+                connection.close()
             }
         }
-    }
-
-    private fun closeSocket() {
-        socket?.let { runCatching { it.close() } }
-        socket = null
     }
 
     private companion object {

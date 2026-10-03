@@ -200,8 +200,10 @@ any route. There is no synchronization, file import/export or backup; existing A
 exclusions apply. This remains a research prototype, not a safety system.
 
 ### Trips: history, recording, restore and replay
-Every navigation is recorded to `files/trips/trip-<time>.rec.gz` in app storage — all fixes, IMU
+Every navigation is recorded to `files/trips/trip-<time>-<uuid>.rec.gz` in app storage — all fixes, IMU
 samples, satellite/AGC status, routes and the engine's own estimates (gzip text, flushed every 2 s).
+Opening, repairing, writing, closing and discarding recordings share one worker. Rapid stop/start
+actions use separate files; older timestamp-only filenames remain readable.
 
 - **History** (clock icon on the map) lists trips with totals; a trip shows its trusted-GPS track and
   the engine's estimate on a map, distance, duration, moving time, time/distance without GPS and the
@@ -213,7 +215,11 @@ samples, satellite/AGC status, routes and the engine's own estimates (gzip text,
 - **Surviving the app being killed:** the active trip is saved every 10 s. If Android or the user kills
   the app mid-trip, the next start (within 3 h) restores the route and position — widening the
   uncertainty for the time lost — restarts the foreground service and keeps recording into the same
-  file (a recording cut off by the kill is salvaged first). Accept the battery-optimisation exemption
+  file (a recording cut off by the kill is salvaged first). A `Q` event records the restored distance
+  along the route after the new start and route events. Kotlin and native comparison replay reset
+  transient sensor state and use that distance and the restored uncertainty. Kotlin also marks
+  already passed route turns as consumed. Older recordings without `Q` retain their existing replay
+  behavior. Accept the battery-optimisation exemption
   when offered (**Settings → Everyday settings → Battery**) so this is rare.
 - **Replay tool:** re-runs recordings through the engine on a computer, optionally hiding GPS after
   N seconds, and compares the engine against the real (trusted GPS) track:
@@ -517,7 +523,9 @@ assumed while the phone is moving. Walk recordings contain the steps, so the rep
 Usage: search for the **From** and **To** addresses in the route panel, or long-press the map to
 choose a destination. The proposed route is drawn on the map as soon as its start and destination
 are known; review it, then tap **Start**. The current trusted position is used when **From** is not
-changed. If GPS is untrusted and there is no cell fix, search for the starting address or pan the
+changed. Planning uses GOOD GPS up to 5 seconds old, otherwise network/cell location up to 30 seconds
+old; expired or future-dated fixes cannot supply an automatic start. A manual start takes precedence.
+If there is no fresh automatic position, search for the starting address or pan the
 crosshair onto your position and tap **Start here** first. Tap the status pill for
 positioning diagnostics (satellites, spoofing reasons, cells, *Simulate GPS loss*, trip log); the gear
 opens **Settings**. Its four expandable groups keep common controls separate from maps, cell-tower
@@ -525,7 +533,10 @@ data and advanced tools. **Everyday settings → Navigation without GPS** select
 positions only (held between scans), or the recommended hybrid that dead-reckons continuously and
 uses cell/network fixes to constrain drift. Trusted GPS remains preferred in all three modes.
 Each group starts with a short explanation; the map group also distinguishes routing packs (which
-calculate routes) from map packs (which draw streets).
+calculate routes) from map packs (which draw streets). Pack imports can be cancelled during extraction
+and validation. Once replacement starts, it finishes or rolls back to the previous pack, and reports
+the actual result. A new import waits until cleanup finishes. Routing, map matching and address
+search retain their pack resources until each operation completes, before replacement can close them.
 The map opens at the phone's last GPS position (spoofed or out-of-area fixes are ignored) or, if set in
 **Settings → Everyday settings → Map start**, at a fixed place (typed coordinates, your position or the map centre).
 **Settings → Everyday settings → Navigation without GPS → Haptic feedback** disables both navigation

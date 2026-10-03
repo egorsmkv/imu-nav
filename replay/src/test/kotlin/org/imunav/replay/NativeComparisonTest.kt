@@ -8,6 +8,7 @@ import org.imunav.core.record.TripEvent
 import org.imunav.core.record.TripRecorder
 import org.imunav.core.route.Route
 import org.imunav.core.route.Step
+import org.imunav.core.route.TravelMode
 import java.io.File
 import java.nio.file.Files
 import kotlin.test.Test
@@ -62,6 +63,35 @@ class NativeComparisonTest {
     fun absentReferenceDoesNotCreateAccuracySamples() {
         val events = drive(obdScale = 1.0).filterNot { it is TripEvent.Fix }
         assertTrue(NativeComparison().replay(events, 0.0).samples.isEmpty())
+    }
+
+    @Test
+    fun restoredProgressAndUncertaintyInitializeBothEstimatorsWithoutGps() {
+        val route = drive(1.0).filterIsInstance<TripEvent.RouteSet>().first().route
+        val point = route.pointAt(850.0).point
+        for (mode in TravelMode.entries) {
+            val events = buildList {
+                add(TripEvent.Start(START_MS, route.geometry.last(), emptyList(), 5.0))
+                add(TripEvent.RouteSet(START_MS, route))
+                add(TripEvent.VehicleSpeed(START_MS + 100, 120f))
+                val restoredAt = START_MS + 500
+                add(TripEvent.Start(restoredAt, route.geometry.last(), emptyList(), 100.0))
+                add(TripEvent.Mode(restoredAt, mode))
+                add(TripEvent.RouteSet(restoredAt, route))
+                add(TripEvent.Resume(restoredAt, 850.0))
+                for (offset in 0L..3000L step 500) {
+                    val time = restoredAt + offset
+                    // Reference-only: hidden from both estimators for the entire restored segment.
+                    add(TripEvent.Fix(RawFix(FixSource.GPS, WALL_MS + time - START_MS, time, point.lat, point.lon, accuracyM = 4f, speedMps = 0f)))
+                }
+            }
+            val result = NativeComparison().replay(events, 0.0)
+            assertTrue(result.samples.isNotEmpty())
+            val first = result.samples.first()
+            assertEquals(850.0, first.kotlinS, 0.01)
+            assertEquals(850.0, first.nativeS, 0.01)
+            assertTrue(first.nativeSigmaM >= 100.0)
+        }
     }
 
     @Test

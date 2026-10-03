@@ -2,21 +2,24 @@ package org.imunav.app.maps
 
 import android.content.Context
 import androidx.core.content.edit
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.imunav.app.R
+import org.imunav.app.packs.PackTasks
 import org.imunav.core.cells.ResumableHttpInputStream
 import org.imunav.core.route.Route
 import org.imunav.core.route.RouteCorridor
+import org.imunav.core.util.PackFiles
+import org.imunav.core.util.ResourceAccess
 import org.json.JSONException
 import org.json.JSONObject
 import org.maplibre.android.maps.Style
@@ -30,7 +33,6 @@ import org.maplibre.geojson.Point
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
-import java.util.zip.ZipInputStream
 import kotlin.coroutines.coroutineContext
 
 /** The online map styles (OpenFreeMap). Used when no offline map pack is installed. */
@@ -91,7 +93,8 @@ class OfflineMap(private val context: Context, private val scope: CoroutineScope
     private val prefs = context.getSharedPreferences("offline_map", Context.MODE_PRIVATE)
     private val root = File(context.filesDir, "map")
     private val current = File(root, "current")
-    private var task: Job? = null
+    private val tasks = PackTasks(scope)
+    private val resources = ResourceAccess()
 
     /** The pack's two styles with real paths filled in, read once when the pack loads. */
     @Volatile private var styles: Pair<String, String>? = null
@@ -112,7 +115,7 @@ class OfflineMap(private val context: Context, private val scope: CoroutineScope
     private fun str(id: Int, vararg args: Any) = context.getString(id, *args)
 
     /** Read the installed pack's description and styles (IO thread). */
-    private fun loadInfo() {
+    private fun loadInfo() = resources.write {
         val info = File(current, PACK_JSON).takeIf { it.exists() }?.let { MapPackInfo.parse(it.readText()) }
         styles = info?.let {
             val packUri = "file://${current.absolutePath}"
@@ -174,14 +177,17 @@ class OfflineMap(private val context: Context, private val scope: CoroutineScope
     /** Delete the installed pack (the online map is used again). */
     fun remove() = runTask(str(R.string.routing_removing)) {
         withContext(Dispatchers.IO) {
-            current.deleteRecursively()
-            loadInfo()
+            resources.write {
+                tasks.current.beginCommit()
+                current.deleteRecursively()
+                loadInfo()
+            }
         }
         str(R.string.offline_map_removed)
     }
 
     fun cancel() {
-        task?.cancel()
+        tasks.cancel()
     }
 
     /**
@@ -194,44 +200,38 @@ class OfflineMap(private val context: Context, private val scope: CoroutineScope
             deleteRecursively()
             mkdirs()
         }
-        val stagingPath = staging.canonicalPath + File.separator
+        val operation = tasks.current
+        fun checkCancellation() {
+            job.ensureActive()
+            operation.checkCancelled()
+        }
         var bytes = 0L
         var lastReport = 0L
-        ZipInputStream(input.buffered(BUFFER_BYTES)).use { zip ->
-            val buffer = ByteArray(BUFFER_BYTES)
-            while (true) {
-                val entry = zip.nextEntry ?: break
-                if (!job.isActive) throw InterruptedException()
-                val target = File(staging, entry.name)
-                if (!target.canonicalPath.startsWith(stagingPath)) throw IOException("bad path in pack: ${entry.name}")
-                if (entry.isDirectory) {
-                    target.mkdirs()
-                    continue
-                }
-                target.parentFile?.mkdirs()
-                target.outputStream().use { out ->
-                    while (true) {
-                        val n = zip.read(buffer)
-                        if (n < 0) break
-                        out.write(buffer, 0, n)
-                        bytes += n
-                        if (bytes - lastReport >= PROGRESS_STEP_BYTES) {
-                            lastReport = bytes
-                            progress(str(R.string.routing_installing, (bytes / MB).toInt()))
-                        }
-                    }
-                }
+        PackFiles.extract(input, staging, flat = false, check = ::checkCancellation) { copied ->
+            bytes = copied
+            if (bytes - lastReport >= PROGRESS_STEP_BYTES) {
+                lastReport = bytes
+                progress(str(R.string.routing_installing, (bytes / MB).toInt()))
             }
         }
+        checkCancellation()
         val info = File(staging, PACK_JSON).takeIf { it.exists() }?.let { MapPackInfo.parse(it.readText()) }
         val complete = REQUIRED_FILES.all { File(staging, it).exists() }
         if (info == null || !complete) {
             staging.deleteRecursively()
             throw IOException(str(R.string.offline_map_not_a_pack))
         }
-        current.deleteRecursively()
-        if (!staging.renameTo(current)) throw IOException("cannot install map pack")
-        loadInfo()
+        // Parse both styles before the working pack is touched.
+        JSONObject(File(staging, "style-light.json").readText())
+        JSONObject(File(staging, "style-dark.json").readText())
+        withContext(NonCancellable + Dispatchers.IO) {
+            resources.write {
+                checkCancellation()
+                operation.beginCommit()
+                PackFiles.replace(staging, current, close = {}, activate = ::loadInfo)
+                operation.result = str(R.string.offline_map_installed, info.name)
+            }
+        }
         log("offline_map_installed ${info.name} ${bytes / MB}MB")
         return str(R.string.offline_map_installed, info.name)
     }
@@ -242,22 +242,27 @@ class OfflineMap(private val context: Context, private val scope: CoroutineScope
 
     /** One install / download at a time; the returned text is shown when it finishes. */
     private fun runTask(start: String, block: suspend () -> String) {
-        if (task?.isActive == true) return
-        task = scope.launch {
+        if (tasks.running) return
+        tasks.launch { operation ->
             _status.update { it.copy(busy = start, message = null) }
-            val message = try {
-                block()
-            } catch (_: kotlinx.coroutines.CancellationException) {
-                str(R.string.task_cancelled)
-            } catch (_: InterruptedException) {
-                str(R.string.task_cancelled)
-            } catch (e: IOException) {
-                log("offline_map_task_failed ${e.message}")
-                str(R.string.task_failed, e.message ?: e.javaClass.simpleName)
-            }
-            withContext(NonCancellable) {
-                File(root, "staging").takeIf { it.exists() }?.deleteRecursively()
-                _status.update { it.copy(busy = null, message = message) }
+            var message: String? = null
+            try {
+                message = try {
+                    block()
+                } catch (_: CancellationException) {
+                    operation.result ?: str(R.string.task_cancelled)
+                } catch (_: InterruptedException) {
+                    str(R.string.task_cancelled)
+                } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
+                    // Invalid JSON and I/O failures both leave the previous pack installed.
+                    log("offline_map_task_failed ${e.message}")
+                    str(R.string.task_failed, e.message ?: e.javaClass.simpleName)
+                }
+            } finally {
+                withContext(NonCancellable) {
+                    withContext(Dispatchers.IO) { File(root, "staging").takeIf { it.exists() }?.deleteRecursively() }
+                    _status.update { it.copy(busy = null, message = message) }
+                }
             }
         }
     }
@@ -396,7 +401,6 @@ class OfflineMap(private val context: Context, private val scope: CoroutineScope
         const val KEY_CORRIDOR = "corridor"
         const val KEY_URL = "pack_url"
         const val MB = 1_048_576L
-        const val BUFFER_BYTES = 1 shl 16
         const val PROGRESS_STEP_BYTES = 4L * MB
 
         /** Map this far either side of the route. */

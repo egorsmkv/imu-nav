@@ -44,9 +44,14 @@ fun carMapContent(ui: UiState, following: Boolean, maximumFps: Int): CarMapConte
     val point = ui.currentPosition ?: ui.manualStart ?: ui.destination
     val camera = point?.takeIf { following && (ui.guidance.active || route == null) }
         ?.let { it to if (ui.guidance.active) ui.guidance.bearingDeg.toDouble() else 0.0 }
+    val accuracy = when {
+        ui.guidance.active -> ui.guidance.uncertaintyM
+        ui.manualStart != null -> null
+        else -> ui.trustedAccuracyM
+    }
     return CarMapContent(
         ui.destination ?: ui.guidance.destination,
-        ui.currentPosition to if (ui.guidance.active) ui.guidance.uncertaintyM else ui.trustedAccuracyM,
+        ui.currentPosition to accuracy,
         camera,
         maximumFps,
     )

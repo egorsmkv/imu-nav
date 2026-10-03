@@ -12,6 +12,7 @@ import org.imunav.core.record.TripRecorder
 import org.imunav.core.record.TripReplayer
 import org.imunav.core.route.Route
 import org.imunav.core.route.Step
+import org.imunav.core.route.TravelMode
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -19,6 +20,7 @@ import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ReplayTest {
@@ -89,6 +91,61 @@ class ReplayTest {
         assertTrue(blind.blind.p95M < 120, "dead reckoning along-track error: ${blind.blind}")
         assertTrue(blind.log.any { it.startsWith("turn_snap") }, "turn snapped during replay")
         println(blind.summary())
+    }
+
+    @Test
+    fun resumeEventRoundTripsAndRejectsInvalidProgress() {
+        val event = TripEvent.Resume(1234, 850.25)
+        assertEquals("Q,1234,850.25", TripFormat.encode(event))
+        assertEquals(event, TripFormat.decode(TripFormat.encode(event)))
+        assertNull(TripFormat.decode("Q,1234,NaN"))
+        assertNull(TripFormat.decode("Q,1234,-5"))
+    }
+
+    @Test
+    fun restoredTripsWithoutGpsConsumeAlreadyPassedTurns() {
+        val route = route()
+        for (mode in TravelMode.entries) {
+            val events = buildList {
+                add(TripEvent.Start(1000, route.geometry.last(), emptyList(), 75.0))
+                add(TripEvent.Mode(1000, mode))
+                add(TripEvent.RouteSet(1000, route))
+                add(TripEvent.Resume(1000, 850.0))
+                // A second right turn near the already-driven route turn must not snap backwards.
+                for (time in 1020L..4020L step 20) {
+                    add(TripEvent.Imu(ImuSample(time, null, 30f, floatArrayOf(1f, 0f, 0f), floatArrayOf(0f, 0f, 0.5f))))
+                }
+                add(TripEvent.Stop(4500))
+            }
+            val result = TripReplayer().replay(events)
+            assertTrue(result.log.contains("nav_resume s=850"), result.log.toString())
+            assertTrue(result.log.any { it.contains("mode=$mode") })
+            assertTrue(result.log.none { it.startsWith("turn_snap step=1 ") }, result.log.toString())
+            assertTrue(result.samples.isEmpty(), "No GPS means no invented accuracy samples")
+        }
+    }
+
+    @Test
+    fun restorationDropsPreKillVehicleSpeedAndRestoresProgress() {
+        val route = route()
+        val point = route.pointAt(850.0).point
+        val events = buildList {
+            add(TripEvent.Start(1000, route.geometry.last(), emptyList(), 5.0))
+            add(TripEvent.RouteSet(1000, route))
+            add(TripEvent.VehicleSpeed(1100, 120f))
+            add(TripEvent.Start(1500, route.geometry.last(), emptyList(), 100.0))
+            add(TripEvent.RouteSet(1500, route))
+            add(TripEvent.Resume(1500, 850.0))
+            for (time in 1600L..3600L step 500) {
+                add(TripEvent.Fix(RawFix(FixSource.GPS, 1_700_000_000_000L + time, time, point.lat, point.lon, accuracyM = 4f, speedMps = 0f)))
+            }
+        }
+        val result = TripReplayer().replay(events, hideGpsAfterS = 0.0)
+        assertTrue(result.samples.isNotEmpty())
+        assertEquals(850.0, result.samples.first().engineS, 0.01)
+        val fresh = TripReplayer().replay(events.dropWhile { it.elapsedMs < 1500 }, hideGpsAfterS = 0.0)
+        assertEquals(fresh.samples, result.samples, "restoration must not retain the old vehicle speed")
+        assertTrue(result.samples.all { it.uncertaintyM >= 100.0 })
     }
 
     @Test

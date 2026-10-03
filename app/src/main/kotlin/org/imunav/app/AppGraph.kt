@@ -54,8 +54,10 @@ import org.imunav.core.bookmarks.SavedRoute
 import org.imunav.core.car.DisplayOwnership
 import org.imunav.core.geo.GeoPoint
 import org.imunav.core.geo.ServiceArea
+import org.imunav.core.gnss.FixSource
 import org.imunav.core.gnss.GnssSnapshot
 import org.imunav.core.gnss.GpsState
+import org.imunav.core.gnss.PlanningPosition
 import org.imunav.core.gnss.PositioningHub
 import org.imunav.core.gnss.TrustLevel
 import org.imunav.core.gnss.Verdict
@@ -88,7 +90,7 @@ data class UiState(
     val lastVerdict: Verdict? = null,
     val gnss: GnssSnapshot = GnssSnapshot(),
     val jammed: Boolean = false,
-    /** Where to draw the position dot (engine estimate, else best trusted fix, else the manual start). */
+    /** Where to draw the position dot (active engine estimate, else manual start or fresh automatic fix). */
     val currentPosition: GeoPoint? = null,
     /** Destination picked on the map or in search, before navigation starts. */
     val destination: GeoPoint? = null,
@@ -197,7 +199,7 @@ class AppGraph(private val context: Context) {
     private fun darkTheme(): Boolean = (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
 
     /** Address search: the pack's offline index, Photon online when allowed. */
-    val search = PlaceSearch(context, { offlineRouting.searchDb }, { offlineRouting.status.value.allowOnline })
+    val search = PlaceSearch(context, offlineRouting::search, { offlineRouting.status.value.searchAvailable }, { offlineRouting.status.value.allowOnline })
     private val router: Router = SmartRouter(
         offlineRouting,
         OsrmRouter(),
@@ -437,7 +439,8 @@ class AppGraph(private val context: Context) {
         cells.scanner.intervalMs = {
             val p = _powerProfile.value
             when {
-                !engine.state.active -> if (hub.lastGood != null) p.cellScanIdleMs else p.cellScanNoGpsMs
+                !engine.state.active && PlanningPosition.select(SystemClock.elapsedRealtime(), hub.lastGood, hub.lastNet)?.source == FixSource.GPS -> p.cellScanIdleMs
+                !engine.state.active -> p.cellScanNoGpsMs
                 hub.gpsState == GpsState.OK -> p.cellScanGoodGpsMs
                 else -> p.cellScanNoGpsMs
             }
@@ -497,7 +500,7 @@ class AppGraph(private val context: Context) {
      * Best trusted position for planning: a GOOD GPS fix, else a network/cell fix. The fused provider is
      * deliberately ignored — Android builds it largely from GPS, so it inherits spoofed positions.
      */
-    fun currentPosition(): GeoPoint? = hub.lastGood?.point ?: hub.lastNet?.point
+    fun currentPosition(): GeoPoint? = PlanningPosition.select(SystemClock.elapsedRealtime(), hub.lastGood, hub.lastNet)?.point
 
     /** Use [p] as the route origin instead of the trusted position; [label] is from address search. */
     fun setManualStart(p: GeoPoint?, label: String? = null) {
@@ -591,15 +594,16 @@ class AppGraph(private val context: Context) {
         }
         val dest = _ui.value.destination ?: return
         // A start the user placed by hand wins over a coarse automatic fix.
-        val from = _ui.value.manualStart ?: currentPosition() ?: run {
+        val planningFix = PlanningPosition.select(SystemClock.elapsedRealtime(), hub.lastGood, hub.lastNet)
+        val from = _ui.value.manualStart ?: planningFix?.point ?: run {
             _ui.value = _ui.value.copy(error = context.getString(R.string.error_no_position))
             return
         }
         // How far the start could be off: hand-placed crosshair ~100 m, else the fix's own accuracy.
         val startAccuracy = when {
             _ui.value.manualStart != null -> MANUAL_START_ACCURACY_M
-            hub.lastGood != null -> hub.lastGood?.accuracyM?.toDouble() ?: 20.0
-            else -> hub.lastNet?.accuracyM?.toDouble() ?: 500.0
+            planningFix?.source == FixSource.GPS -> planningFix.accuracyM?.toDouble() ?: 20.0
+            else -> planningFix?.accuracyM?.toDouble() ?: 500.0
         }
         previewJob?.cancel()
         previewGeneration++
@@ -638,7 +642,9 @@ class AppGraph(private val context: Context) {
                         prepared.transfer()
                     }
                     val now = SystemClock.elapsedRealtime()
-                    val initialSpeed = hub.lastGood?.takeIf { _ui.value.manualStart == null && now - it.elapsedMs in 0..START_SPEED_MAX_AGE_MS }?.speedMps?.toDouble() ?: 0.0
+                    val initialSpeed =
+                        planningFix?.takeIf { it.source == FixSource.GPS && _ui.value.manualStart == null && now - it.elapsedMs in 0..START_SPEED_MAX_AGE_MS }?.speedMps?.toDouble()
+                            ?: 0.0
                     transaction.acquire(nativeEstimator::close) { nativeEstimator.start(prepared.value, 0.0, initialSpeed, startAccuracy, mode, now) }
                     transaction.acquire(voice::stop) {}
                     transaction.acquire(engine::stop) {
@@ -725,6 +731,9 @@ class AppGraph(private val context: Context) {
     fun refresh() {
         val hadTrustedPosition = _ui.value.hasTrustedPosition
         cells.refresh()
+        val now = SystemClock.elapsedRealtime()
+        hub.updateGpsState(now)
+        val planningFix = PlanningPosition.select(now, hub.lastGood, hub.lastNet)
         hub.lastGood?.let { mapStart.rememberTrusted(it.point) }
         if (!uiVisible) {
             _ui.value = _ui.value.copy(guidance = engine.state)
@@ -737,10 +746,10 @@ class AppGraph(private val context: Context) {
             lastVerdict = hub.lastJudged?.verdict,
             gnss = hub.gnss,
             jammed = hub.jammed,
-            currentPosition = engine.state.position ?: currentPosition() ?: _ui.value.manualStart,
-            hasTrustedPosition = currentPosition() != null,
-            trustedAccuracyM = (hub.lastGood ?: hub.lastNet)?.accuracyM?.toDouble(),
-            trustedFromGps = hub.lastGood != null,
+            currentPosition = if (engine.state.active) engine.state.position else _ui.value.manualStart ?: planningFix?.point,
+            hasTrustedPosition = planningFix != null,
+            trustedAccuracyM = planningFix?.accuracyM?.toDouble(),
+            trustedFromGps = planningFix?.source == FixSource.GPS,
             gpsRejectReasons = hub.lastJudged?.takeIf { it.verdict.level == TrustLevel.BAD }?.verdict?.reasons.orEmpty(),
             simulateGpsLoss = engine.simulateGpsLoss,
             sensorWarning = sensors.sensorWarning,

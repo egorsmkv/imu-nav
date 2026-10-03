@@ -6,16 +6,16 @@ import androidx.core.content.edit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.imunav.app.R
+import org.imunav.app.packs.PackTasks
 import org.imunav.app.search.AndroidSearchDb
 import org.imunav.app.setup.Preparation
 import org.imunav.app.setup.bundledRoutingPreparation
@@ -23,13 +23,17 @@ import org.imunav.core.cells.ResumableHttpInputStream
 import org.imunav.core.geo.GeoPoint
 import org.imunav.core.route.Route
 import org.imunav.core.route.TravelMode
+import org.imunav.core.search.AddressSearch
+import org.imunav.core.search.SearchResult
+import org.imunav.core.util.PackFiles
+import org.imunav.core.util.ResourceAccess
+import org.imunav.routing.GraphCoverage
 import org.imunav.routing.MatchedTrack
 import org.imunav.routing.OfflineGraph
 import org.imunav.routing.PackInfo
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
-import java.util.zip.ZipInputStream
 import kotlin.coroutines.coroutineContext
 
 /** State of the offline routing pack, for the Settings screen. */
@@ -41,6 +45,9 @@ data class OfflineRoutingStatus(
     val bundled: PackInfo? = null,
     /** The installed pack was loaded successfully and can route. */
     val loaded: Boolean = false,
+    val searchAvailable: Boolean = false,
+    val coverage: GraphCoverage? = null,
+    val modes: Set<TravelMode> = emptySet(),
     /** The loaded pack has walking data (packs built before walking support do not). */
     val walking: Boolean = false,
     /** Use OSRM online when the offline pack cannot answer. */
@@ -61,11 +68,11 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
     private val root = File(context.filesDir, "routing")
     private val current = File(root, "current")
     private var graph: OfflineGraph? = null
-    private var task: Job? = null
+    private val tasks = PackTasks(scope)
+    private val resources = ResourceAccess()
 
     /** Address search index shipped inside the pack (`search.db`), if present. */
-    @Volatile var searchDb: AndroidSearchDb? = null
-        private set
+    private var searchDb: AndroidSearchDb? = null
 
     private val _status = MutableStateFlow(
         OfflineRoutingStatus(allowOnline = prefs.getBoolean("allow_online", true), packUrl = prefs.getString("pack_url", "").orEmpty()),
@@ -104,7 +111,7 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
 
     /** Opt in to the bundled pack, or retry its discovery and install, without overlapping a task. */
     fun retryBundled() {
-        if (task?.isActive == true || _status.value.preparation in setOf(Preparation.CHECKING, Preparation.PREPARING)) return
+        if (tasks.running || _status.value.preparation in setOf(Preparation.CHECKING, Preparation.PREPARING)) return
         prefs.edit { putBoolean("bundled_enabled", true) }
         _status.update { it.copy(preparation = Preparation.CHECKING) }
         scope.launch { prepareBundled() }
@@ -154,7 +161,7 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
     /** Unpack the pack shipped with the app (also offered in Settings after it was removed). */
     fun installBundled() {
         val bundled = bundledInfo ?: return
-        if (task?.isActive == true) return
+        if (tasks.running) return
         prefs.edit {
             putBoolean("bundled_enabled", true)
             remove("bundled_declined")
@@ -171,44 +178,65 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
     private fun str(id: Int, vararg args: Any) = context.getString(id, *args)
 
     /** Open the installed pack (graph + search index); runs in the background. */
-    @Synchronized
-    private fun load() {
-        _status.update { it.copy(loaded = false, walking = false) }
-        graph?.close()
-        graph = null
-        searchDb?.close()
+    private fun load(strict: Boolean = false) = resources.write {
+        closeResources()
         searchDb = File(current, "search.db").takeIf { it.exists() }?.let { f ->
-            runCatching { AndroidSearchDb(f) }.onFailure { log("search_db_open_failed ${it.message}") }.getOrNull()
+            runCatching { AndroidSearchDb(f) }.onFailure {
+                log("search_db_open_failed ${it.message}")
+                if (strict) throw it
+            }.getOrNull()
         }
         val info = File(current, PackInfo.FILE).takeIf { it.exists() }?.let { PackInfo.parse(it.readText()) }
         if (info == null) {
-            _status.update { it.copy(pack = null, loaded = false, walking = false) }
-            return
+            _status.update { it.copy(pack = null, loaded = false, walking = false, searchAvailable = searchDb != null) }
+            return@write
         }
         val g = runCatching { OfflineGraph.load(current) }
-            .onFailure { log("offline_routing_load_failed ${it.message}") }
-            .getOrNull()
+            .onFailure {
+                log("offline_routing_load_failed ${it.message}")
+                if (strict) throw it
+            }.getOrNull()
         graph = g
-        _status.update { it.copy(pack = info, loaded = g != null, walking = g?.supports(TravelMode.FOOT) == true) }
+        _status.update {
+            it.copy(
+                pack = info,
+                loaded = g != null,
+                walking = g?.supports(TravelMode.FOOT) == true,
+                searchAvailable = searchDb != null,
+                coverage = g?.coverage,
+                modes = TravelMode.entries.filter { mode -> g?.supports(mode) == true }.toSet(),
+            )
+        }
         if (g != null) log("offline_routing_loaded ${info.name}")
     }
 
-    /** True if the loaded pack covers every point. */
-    fun covers(points: List<GeoPoint>): Boolean = graph?.let { g -> points.all { g.covers(it) } } == true
-
-    /** Route offline (CPU-bound, run off the main thread). */
-    suspend fun route(points: List<GeoPoint>, mode: TravelMode = TravelMode.CAR): Route = withContext(Dispatchers.Default) {
-        val g = synchronized(this@OfflineRouting) { graph } ?: throw IOException("no offline routing pack")
-        g.route(points, mode)
+    /** Close only under exclusive worker ownership, after every route/search reader has finished. */
+    private fun closeResources() {
+        _status.update { it.copy(loaded = false, walking = false, searchAvailable = false, coverage = null, modes = emptySet()) }
+        graph?.close()
+        graph = null
+        searchDb?.close()
+        searchDb = null
     }
 
-    /** Can the loaded pack route [mode]? */
-    fun supports(mode: TravelMode): Boolean = synchronized(this) { graph }?.supports(mode) == true
+    /** Main-thread availability checks use immutable metadata and never wait for a worker lock. */
+    fun covers(points: List<GeoPoint>): Boolean = _status.value.coverage?.let { coverage -> points.all(coverage::covers) } == true
 
-    /** Snap a recorded drive onto the roads of the loaded pack (null if no pack is loaded). */
+    /** Route holds read ownership throughout GraphHopper access. */
+    suspend fun route(points: List<GeoPoint>, mode: TravelMode = TravelMode.CAR): Route = withContext(Dispatchers.Default) {
+        resources.read { (graph ?: throw IOException("no offline routing pack")).route(points, mode) }
+    }
+
+    fun supports(mode: TravelMode): Boolean = mode in _status.value.modes
+
+    /** Snapping and address search cannot outlive the graph/index they use. */
     suspend fun mapMatch(points: List<GeoPoint>, mode: TravelMode = TravelMode.CAR): MatchedTrack? = withContext(Dispatchers.Default) {
-        val g = synchronized(this@OfflineRouting) { graph } ?: return@withContext null
-        g.mapMatch(points, mode = mode)
+        resources.read { graph?.mapMatch(points, mode = mode) }
+    }
+
+    /** Called by PlaceSearch on its I/O dispatcher; the database reference never escapes. */
+    fun search(query: String, near: GeoPoint?): List<SearchResult> = resources.read {
+        searchDb?.let { AddressSearch.search(it, query, near) }.orEmpty()
     }
 
     /** Allow or forbid the online OSRM fallback. */
@@ -225,7 +253,7 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
 
     /** Cancel a running install / download. */
     fun cancel() {
-        task?.cancel()
+        tasks.cancel()
     }
 
     /** Import a pack .zip picked by the user. */
@@ -258,14 +286,12 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
             bundledInfo?.let { putString("bundled_declined", it.builtAt) }
         }
         withContext(Dispatchers.IO) {
-            synchronized(this@OfflineRouting) {
-                graph?.close()
-                graph = null
-                searchDb?.close()
-                searchDb = null
+            resources.write {
+                tasks.current.beginCommit()
+                closeResources()
+                current.deleteRecursively()
+                load()
             }
-            current.deleteRecursively()
-            load()
         }
         _status.update { it.copy(preparation = Preparation.REMOVED) }
         str(R.string.routing_removed)
@@ -278,22 +304,17 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
             deleteRecursively()
             mkdirs()
         }
+        val operation = tasks.current
+        fun checkCancellation() {
+            job.ensureActive()
+            operation.checkCancelled()
+        }
         var bytes = 0L
-        ZipInputStream(input.buffered(1 shl 16)).use { zip ->
-            val buffer = ByteArray(1 shl 16)
-            while (true) {
-                val entry = zip.nextEntry ?: break
-                if (!job.isActive) throw InterruptedException()
-                val name = File(entry.name).name // flat pack; ignore any folder structure (and "../" tricks)
-                if (entry.isDirectory || name.isBlank()) continue
-                File(staging, name).outputStream().use { out ->
-                    while (true) {
-                        val n = zip.read(buffer)
-                        if (n < 0) break
-                        out.write(buffer, 0, n)
-                        bytes += n
-                    }
-                }
+        var lastReport = 0L
+        PackFiles.extract(input, staging, flat = true, check = ::checkCancellation) { copied ->
+            bytes = copied
+            if (bytes - lastReport >= 4L * 1_048_576) {
+                lastReport = bytes
                 progress(
                     if (totalBytes > 0) {
                         str(R.string.routing_preparing_builtin, (bytes / 1_048_576).toInt(), (totalBytes / 1_048_576).toInt())
@@ -303,6 +324,7 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
                 )
             }
         }
+        checkCancellation()
         val info = File(staging, PackInfo.FILE).takeIf { it.exists() }?.let { PackInfo.parse(it.readText()) }
         if (info == null || !File(staging, "properties").exists()) {
             staging.deleteRecursively()
@@ -310,15 +332,16 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
         }
         // Validate by loading before replacing the working pack.
         OfflineGraph.load(staging).close()
-        synchronized(this) {
-            graph?.close()
-            graph = null
-            searchDb?.close()
-            searchDb = null
-            current.deleteRecursively()
-            if (!staging.renameTo(current)) throw IOException("cannot install pack")
+        checkCancellation()
+        File(staging, "search.db").takeIf { it.exists() }?.let { AndroidSearchDb(it).use { /* Verify the index opens before replacing the pack. */ } }
+        withContext(NonCancellable + Dispatchers.IO) {
+            resources.write {
+                checkCancellation()
+                operation.beginCommit()
+                PackFiles.replace(staging, current, ::closeResources) { load(strict = true) }
+                operation.result = str(R.string.routing_installed, info.name)
+            }
         }
-        load()
         log("offline_routing_installed ${info.name} ${bytes / 1_048_576}MB")
         return str(R.string.routing_installed, info.name)
     }
@@ -330,14 +353,14 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
 
     /** Run one install / download at a time; the returned text is shown when it finishes. */
     private fun runTask(start: String, bundled: Boolean = false, block: suspend () -> String) {
-        if (task?.isActive == true) return
-        task = scope.launch {
+        if (tasks.running) return
+        tasks.launch { operation ->
             _status.update { it.copy(busy = start, message = null) }
             var succeeded = false
             val msg = try {
                 block().also { succeeded = true }
             } catch (_: CancellationException) {
-                str(R.string.task_cancelled)
+                operation.result?.also { succeeded = true } ?: str(R.string.task_cancelled)
             } catch (_: InterruptedException) {
                 str(R.string.task_cancelled)
             } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
@@ -350,17 +373,19 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
                 Log.e("OfflineRouting", "task error", e)
                 str(R.string.task_failed, e.javaClass.simpleName)
             }
-            withContext(NonCancellable + Dispatchers.IO) { File(root, "staging").takeIf { it.exists() }?.deleteRecursively() }
-            _status.update {
-                it.copy(
-                    busy = null,
-                    message = msg,
-                    preparation = if (bundled) {
-                        if (succeeded && it.loaded) Preparation.READY else Preparation.FAILED
-                    } else {
-                        if (it.loaded) Preparation.READY else it.preparation
-                    },
-                )
+            withContext(NonCancellable) {
+                withContext(Dispatchers.IO) { File(root, "staging").takeIf { it.exists() }?.deleteRecursively() }
+                _status.update {
+                    it.copy(
+                        busy = null,
+                        message = msg,
+                        preparation = if (bundled) {
+                            if (succeeded && it.loaded) Preparation.READY else Preparation.FAILED
+                        } else {
+                            if (it.loaded) Preparation.READY else it.preparation
+                        },
+                    )
+                }
             }
         }
     }
@@ -387,6 +412,7 @@ class SmartRouter(
             try {
                 return offline.route(points, mode).also { log("route_via offline len=${it.length.toInt()} mode=$mode") }
             } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
+                if (e is CancellationException) throw e
                 // GraphHopper throws plain RuntimeExceptions (no path, point not found, …).
                 log("offline_route_failed ${e.message}")
                 if (!allowOnline) throw e

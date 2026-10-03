@@ -201,6 +201,7 @@ fun MapScreen(
     val pickStart = !nav.active && (!ui.hasTrustedPosition || (ui.trustedAccuracyM ?: 0.0) > 500.0)
     val accuracy = when {
         nav.active -> nav.uncertaintyM
+        ui.manualStart != null -> null
         ui.hasTrustedPosition -> ui.trustedAccuracyM
         else -> null
     }
@@ -639,11 +640,11 @@ private fun StatusPill(ui: UiState, onClick: () -> Unit) {
             else -> InfoBlue
         }
 
+        ui.manualStart != null -> stringResource(R.string.idle_position_manual) to InfoBlue
+
         ui.hasTrustedPosition && ui.trustedFromGps -> stringResource(R.string.src_gps) + " · " + formatAccuracy(res, ui.trustedAccuracyM ?: 0.0) to GoodGreen
 
         ui.hasTrustedPosition -> stringResource(R.string.src_cells) + " · " + formatAccuracy(res, ui.trustedAccuracyM ?: 0.0) to InfoBlue
-
-        ui.manualStart != null -> stringResource(R.string.idle_position_manual) to InfoBlue
 
         else -> stringResource(R.string.src_none) to Color.Gray
     }

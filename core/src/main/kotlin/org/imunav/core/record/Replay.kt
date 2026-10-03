@@ -114,8 +114,10 @@ class TripReplayer(private val tuning: Tuning = Tuning.DEFAULT, private val area
         private var clockOffset = 0L
         private var nowElapsed = startElapsedMs
         private val log = ArrayList<String>()
-        private val hub = PositioningHub(area = area, wallClock = { nowElapsed + clockOffset })
-        private val engine = NavigationEngine(
+        private var hub = PositioningHub(area = area, wallClock = { nowElapsed + clockOffset })
+        private var engine = newEngine()
+
+        private fun newEngine() = NavigationEngine(
             tuning = { tuning },
             speedProfile = SpeedProfile(),
             listener = object : NavListener {
@@ -187,6 +189,8 @@ class TripReplayer(private val tuning: Tuning = Tuning.DEFAULT, private val area
 
                 is TripEvent.RouteSet -> onRoute(e)
 
+                is TripEvent.Resume -> onResume(e)
+
                 is TripEvent.Stop -> engine.stop()
 
                 is TripEvent.Estimate -> Unit
@@ -208,6 +212,18 @@ class TripReplayer(private val tuning: Tuning = Tuning.DEFAULT, private val area
             } else {
                 engine.setRoute(e.route, e.elapsedMs)
             }
+        }
+
+        /** Process restoration starts with fresh transient state and marks earlier turns consumed. */
+        private fun onResume(event: TripEvent.Resume) {
+            val route = engine.route ?: return
+            val start = pendingStart ?: return
+            engine = newEngine()
+            hub = PositioningHub(area = area, wallClock = { nowElapsed + clockOffset })
+            lastTruth = null
+            engine.start(route, start.destination, start.waypoints, event.elapsedMs, start.startAccuracyM, pendingMode)
+            engine.resumeAt(event.s)
+            navStartMs = event.elapsedMs
         }
 
         fun result(sorted: List<TripEvent>): ReplayResult {

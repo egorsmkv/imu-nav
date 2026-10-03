@@ -14,18 +14,15 @@ import org.imunav.core.gnss.TrustLevel
 import org.imunav.core.imu.ImuSample
 import org.imunav.core.nav.NavigationEngine
 import org.imunav.core.nav.NavigationEstimator
+import org.imunav.core.record.RecordingSession
 import org.imunav.core.record.RouteCodec
 import org.imunav.core.record.TripEvent
 import org.imunav.core.record.TripFormat
-import org.imunav.core.record.TripRecorder
 import org.imunav.core.route.Route
 import org.imunav.core.route.TravelMode
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import java.util.concurrent.Executors
 import kotlin.math.max
 
@@ -100,7 +97,7 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
     private val index = File(dir, "index.jsonl")
     private val activeFile = File(dir, "active.json")
 
-    private var recorder: TripRecorder? = null
+    private var recorder: RecordingSession? = null
 
     /** Recording and state files are written here, never on the main thread; one thread keeps event order. */
     private val io = Executors.newSingleThreadExecutor()
@@ -141,9 +138,9 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
 
     /** Navigation started: open a new recording and reset the statistics. */
     fun begin(route: Route, destination: GeoPoint, waypoints: List<GeoPoint>, startAccuracyM: Double, mode: TravelMode = TravelMode.CAR) {
-        this.mode = mode
         end(arrived = false) // close anything left open
-        val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
+        this.mode = mode
+        val stamp = RecordingSession.newId()
         id = stamp
         recordingName = "trip-$stamp.rec.gz"
         startWall = System.currentTimeMillis()
@@ -223,7 +220,7 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
     fun end(arrived: Boolean) {
         val tripId = id ?: return
         record(TripEvent.Stop(SystemClock.elapsedRealtime()))
-        recorder?.let { r -> io.execute { r.close() } }
+        val finished = recorder
         recorder = null
         hub.recorder = null
         io.execute { activeFile.delete() }
@@ -235,11 +232,11 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
         id = null
         // Skip accidental starts (no movement at all) to keep the history meaningful.
         if (summary.drivenM < 50 && summary.durationS < 120) {
-            val name = recordingName
-            io.execute { File(dir, name).delete() }
+            finished?.finish(discard = true)
             log("trip_discarded $tripId")
             return
         }
+        finished?.finish()
         io.execute {
             index.appendText(summary.toJson().toString() + "\n")
             _history.value = loadHistory()
@@ -286,13 +283,12 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
         val estimator = NavigationEstimator.entries.firstOrNull { it.name == o.optString("estimator") } ?: NavigationEstimator.KOTLIN
         engine.start(restoredRoute, restoredDestination, waypoints, now, startAccuracyM = uncertainty, mode = mode, estimator = estimator)
         engine.resumeAt(o.optDouble("s"))
-        // The killed process left the gzip stream unterminated: salvage it before appending.
-        runCatching { TripFormat.repair(File(dir, recordingName)) }.onFailure { log("trip_repair_failed ${it.message}") }
         openRecorder(append = true)
         record(TripEvent.Start(now, restoredDestination, waypoints, uncertainty))
         record(TripEvent.Mode(now, mode))
         record(TripEvent.Estimator(now, engine.estimator))
         record(TripEvent.RouteSet(now, restoredRoute))
+        record(TripEvent.Resume(now, engine.progressS))
         log("trip_restored $id gap=${gapS.toInt()}s s=${o.optDouble("s").toInt()} unc=${uncertainty.toInt()}")
         persist(force = true)
         return true
@@ -332,15 +328,15 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
 
     /** Open the recording file and route the positioning hub's raw inputs into it. */
     private fun openRecorder(append: Boolean) {
-        recorder?.close()
-        recorder = runCatching { TripRecorder.open(File(dir, recordingName), append) }.onFailure { log("trip_record_failed ${it.message}") }.getOrNull()
-        hub.recorder = { e -> record(e) }
+        recorder?.finish()
+        val next = RecordingSession(File(dir, recordingName), io, append) { log("trip_record_failed ${it.message}") }
+        recorder = next
+        hub.recorder = next::record
     }
 
     /** Write one event, on the background I/O thread. */
     private fun record(e: TripEvent) {
-        val r = recorder ?: return
-        io.execute { r.record(e) }
+        recorder?.record(e)
     }
 
     /** The recording (.rec.gz) of trip [t]. */

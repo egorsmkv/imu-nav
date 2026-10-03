@@ -117,9 +117,9 @@ class NativeComparison(
     private inner class Session(private val hideGpsAfterS: Double?) : Closeable {
         private var nowMs = 0L
         private var clockOffsetMs: Long? = null
-        private val hub = PositioningHub(area = area, wallClock = { nowMs + (clockOffsetMs ?: 0L) })
+        private var hub = PositioningHub(area = area, wallClock = { nowMs + (clockOffsetMs ?: 0L) })
         private val reference = PositioningHub(area = area, wallClock = { nowMs + (clockOffsetMs ?: 0L) })
-        private val engine = NavigationEngine(tuning = { tuning }, listener = object : NavListener {})
+        private var engine = NavigationEngine(tuning = { tuning }, listener = object : NavListener {})
         private var native: NativeNavigationEstimator? = null
         private var start: TripEvent.Start? = null
         private var navStartMs: Long? = null
@@ -148,6 +148,8 @@ class NativeComparison(
                 is TripEvent.Estimator, is TripEvent.Inertial -> Unit
 
                 is TripEvent.RouteSet -> installRoute(event)
+
+                is TripEvent.Resume -> resume(event)
 
                 is TripEvent.Stop -> {
                     close()
@@ -209,6 +211,24 @@ class NativeComparison(
                     engine.setRoute(event.route, event.elapsedMs)
                     native?.replaceRoute(geometry, engine.progressS, engine.state.uncertaintyM)
                 }
+            }
+        }
+
+        /** Restart both estimators exactly as process restoration does, without pre-kill sensor state. */
+        private fun resume(event: TripEvent.Resume) {
+            val route = engine.route ?: return
+            val pending = start ?: return
+            close()
+            hub = PositioningHub(area = area, wallClock = { nowMs + (clockOffsetMs ?: 0L) })
+            engine = NavigationEngine(tuning = { tuning }, listener = object : NavListener {})
+            navStartMs = event.elapsedMs
+            engine.start(route, pending.destination, pending.waypoints, event.elapsedMs, pending.startAccuracyM, mode)
+            engine.resumeAt(event.s)
+            NativeRouteGeometry.create(route).use { geometry ->
+                native = NativeNavigationEstimator.create(
+                    geometry, engine.progressS, 0.0, pending.startAccuracyM, 6.0, 0.0, mode, event.elapsedMs,
+                    networkSpeedEnabled = nativeNetworkSpeedEnabled,
+                )
             }
         }
 

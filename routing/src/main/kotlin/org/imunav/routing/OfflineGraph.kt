@@ -161,6 +161,15 @@ class OfflineRoutingException(message: String) : Exception(message)
 /** A recorded drive snapped onto the road network. */
 data class MatchedTrack(val geometry: List<GeoPoint>, val lengthM: Double, val rawLengthM: Double)
 
+/** Immutable coverage metadata, safe to consult after the graph itself has been closed. */
+data class GraphCoverage(val minLat: Double, val maxLat: Double, val minLon: Double, val maxLon: Double) {
+    fun covers(point: GeoPoint): Boolean = point.lat in minLat - MARGIN_DEG..maxLat + MARGIN_DEG && point.lon in minLon - MARGIN_DEG..maxLon + MARGIN_DEG
+
+    private companion object {
+        const val MARGIN_DEG = 0.02
+    }
+}
+
 /** A loaded offline routing pack (a GraphHopper graph folder built by [buildGraph]). */
 class OfflineGraph private constructor(private val hopper: GraphHopper, val dir: File, val profiles: List<String>) : AutoCloseable {
 
@@ -173,8 +182,10 @@ class OfflineGraph private constructor(private val hopper: GraphHopper, val dir:
     /** Bounding box of the road network: minLat, maxLat, minLon, maxLon. */
     val bounds: DoubleArray = hopper.baseGraph.bounds.let { doubleArrayOf(it.minLat, it.maxLat, it.minLon, it.maxLon) }
 
+    val coverage = GraphCoverage(bounds[0], bounds[1], bounds[2], bounds[3])
+
     /** Inside the network's bounding box, with a ~2 km margin (off-road points snap to the nearest road). */
-    fun covers(p: GeoPoint): Boolean = p.lat in bounds[0] - MARGIN_DEG..bounds[1] + MARGIN_DEG && p.lon in bounds[2] - MARGIN_DEG..bounds[3] + MARGIN_DEG
+    fun covers(p: GeoPoint): Boolean = coverage.covers(p)
 
     /** Route through [points] (start, optional vias, destination) for [mode]. Thread-safe. */
     fun route(points: List<GeoPoint>, mode: TravelMode = TravelMode.CAR, locale: Locale = Locale.getDefault()): Route {
@@ -216,7 +227,6 @@ class OfflineGraph private constructor(private val hopper: GraphHopper, val dir:
     }
 
     companion object {
-        private const val MARGIN_DEG = 0.02
 
         /** Load a pack from [dir]; memory-maps the graph so large regions do not need a large heap. */
         fun load(dir: File, memoryMapped: Boolean = true): OfflineGraph {
