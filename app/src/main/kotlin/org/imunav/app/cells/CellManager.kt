@@ -1,6 +1,7 @@
 package org.imunav.app.cells
 
 import android.content.Context
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.content.edit
 import kotlinx.coroutines.CancellationException
@@ -23,6 +24,7 @@ import org.imunav.core.cells.CellSyncClient
 import org.imunav.core.cells.CellTower
 import org.imunav.core.cells.Radio
 import org.imunav.core.cells.ResumableHttpInputStream
+import org.imunav.core.cells.cellLearningKeys
 import org.imunav.core.gnss.PositioningHub
 import java.io.File
 import java.io.IOException
@@ -535,12 +537,12 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
         val good = hub.lastGood ?: return
         if (good.elapsedMs == lastLearnedFixMs) return
         val acc = good.accuracyM ?: return
-        val obs = scanner.lastObservations
-        if (acc > 30f || obs.isEmpty() || abs(scanner.lastScanMs - good.elapsedMs) > 10_000) return
+        val keys = cellLearningKeys(scanner.lastMeasurements, good.elapsedMs, SystemClock.elapsedRealtime())
+        if (acc > 30f || keys.isEmpty()) return
         if (lastLearnedFixMs > 0 && good.elapsedMs - lastLearnedFixMs < 20_000) return
         lastLearnedFixMs = good.elapsedMs
         scope.launch {
-            withContext(Dispatchers.IO) { db.learn(obs.map { it.key }, good.lat, good.lon, acc.toDouble()) }
+            withContext(Dispatchers.IO) { db.learn(keys, good.lat, good.lon, acc.toDouble()) }
             reloadCounts()
         }
     }

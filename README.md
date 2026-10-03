@@ -339,6 +339,10 @@ actions use separate files; older timestamp-only filenames remain readable.
 
 Cell positioning preserves negative dBm signal readings so stronger cells receive more weight;
 Android's unavailable signal values are treated as missing.
+Cells with missing, future or more than 10-second-old modem timestamps are excluded from positioning
+and tower learning. Multi-SIM scans keep the newest measurement for each cell. Fix timestamps reflect
+the oldest contributing measurement, and repeated cached measurements do not create new fixes or
+usage-history entries. Scan frequency still follows the selected power profile.
 
 Tower locations come from four sources, each in its own table and looked up in this order:
 

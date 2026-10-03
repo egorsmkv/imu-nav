@@ -129,6 +129,9 @@ data class Tuning(
     )
 
     companion object {
+        /** Older modem measurements can describe a different stretch of road, even in a new callback. */
+        const val CELL_MAX_AGE_MS = 10_000L
+
         val DEFAULT = Tuning()
 
         val SPECS: List<Spec> = listOf(

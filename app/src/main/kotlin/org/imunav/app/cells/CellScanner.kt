@@ -18,13 +18,16 @@ import android.telephony.TelephonyManager
 import androidx.annotation.RequiresApi
 import org.imunav.core.cells.CellFix
 import org.imunav.core.cells.CellKey
+import org.imunav.core.cells.CellMeasurement
+import org.imunav.core.cells.CellMeasurementTracker
 import org.imunav.core.cells.CellObservation
 import org.imunav.core.cells.CellPositioner
 import org.imunav.core.cells.Radio
+import org.imunav.core.cells.isFreshCellMeasurement
 import org.imunav.core.gnss.FixSource
 import org.imunav.core.gnss.RawFix
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /** Signal power is normally negative in dBm; only Android's unavailable sentinel means missing. */
 internal fun cellSignalDbm(value: Int): Int? = value.takeUnless { it == Int.MAX_VALUE }
@@ -48,8 +51,7 @@ class CellScanner(
     private val telephony = context.getSystemService(TelephonyManager::class.java)
     private val subscriptions = context.getSystemService(SubscriptionManager::class.java)
 
-    /** Latest cell list per SIM subscription (dual-SIM phones see both operators' cells). */
-    private val perSim = ConcurrentHashMap<Int, Pair<Long, List<CellInfo>>>()
+    private val measurements = CellMeasurementTracker()
     private var lastScanLogMs = 0L
     private val worker = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
@@ -59,11 +61,8 @@ class CellScanner(
     @Volatile var lastUsable: List<CellObservation> = emptyList()
         private set
 
-    /** All cells seen in the latest scan and when; used for learning tower positions. */
-    @Volatile var lastObservations: List<CellObservation> = emptyList()
-        private set
-
-    @Volatile var lastScanMs = 0L
+    /** Immutable measurement snapshot; learning rechecks each cell's age against the current clock. */
+    @Volatile var lastMeasurements: List<CellMeasurement> = emptyList()
         private set
 
     @Volatile var lastFix: CellFix? = null
@@ -131,17 +130,14 @@ class CellScanner(
     /** Runs on the worker thread: merge this SIM's cells with other SIMs' recent ones. */
     private fun onSimCells(subId: Int, cells: List<CellInfo>) {
         val now = SystemClock.elapsedRealtime()
-        perSim[subId] = now to cells
-        perSim.entries.removeAll { now - it.value.first > 15_000 }
-        process(perSim.values.flatMap { it.second })
+        process(measurements.update(subId, toMeasurements(cells, now), now))
     }
 
     /** Runs on the worker thread: turn modem data into observations, a position fix and (sometimes) a log line. */
-    private fun process(cells: List<CellInfo>) {
-        val observations = toObservations(cells).distinctBy { it.key }
+    private fun process(cells: List<CellMeasurement>) {
+        val observations = cells.map { it.observation }
         val now = SystemClock.elapsedRealtime()
-        lastObservations = observations
-        lastScanMs = now
+        lastMeasurements = cells
         val radios = enabledRadios()
         val usable = observations.filter { it.key.radio in radios }
         lastUsable = usable
@@ -152,14 +148,7 @@ class CellScanner(
             logScan(observations, radios)
         }
         if (fix == null) return
-        val raw = RawFix(
-            source = FixSource.CELL,
-            timeMs = System.currentTimeMillis(),
-            elapsedMs = now,
-            lat = fix.lat,
-            lon = fix.lon,
-            accuracyM = fix.accuracyM.toFloat(),
-        )
+        val raw = measurements.positionFix(fix, cells, SystemClock.elapsedRealtime(), System.currentTimeMillis()) ?: return
         main.post { onFix(raw, fix) } // consumers expect the main thread
         onUsage(raw, fix)
     }
@@ -183,21 +172,33 @@ class CellScanner(
         main.post { log("cell_scan seen=${observations.size} known=$known $cellsText") }
     }
 
-    /** Android's cell objects → our [CellObservation]s (cells with incomplete ids are skipped). */
-    private fun toObservations(cells: List<CellInfo>): List<CellObservation> {
+    /** Check modem ages before conversion, including the serving cell used to infer neighbour operators. */
+    private fun toMeasurements(cells: List<CellInfo>, nowMs: Long): List<CellMeasurement> {
+        val recent = cells.map { it to measurementElapsedMs(it) }.filter { isFreshCellMeasurement(it.second, nowMs) }
         // Neighbour cells often omit MCC/MNC; they belong to the operator of the serving cell.
-        val home = cells.filter { it.isRegistered }.map { operator(it) }.firstOrNull { (mcc, mnc) -> mcc != null && mnc != null }
-        return cells.mapNotNull { cell ->
+        val home = recent.map { it.first }.filter { it.isRegistered }.map { operator(it) }.firstOrNull { (mcc, mnc) -> mcc != null && mnc != null }
+        return recent.mapNotNull { (cell, elapsedMs) ->
             val (ownMcc, ownMnc) = operator(cell)
             val mcc = ownMcc ?: home?.first ?: return@mapNotNull null
             val mnc = ownMnc ?: home?.second ?: return@mapNotNull null
-            when (cell) {
+            val observation = when (cell) {
                 is CellInfoLte -> lte(cell, mcc, mnc)
                 is CellInfoGsm -> gsm(cell, mcc, mnc)
                 is CellInfoWcdma -> umts(cell, mcc, mnc)
                 else -> if (Build.VERSION.SDK_INT >= 29) Android10CellApi.nrObservation(cell, mcc, mnc) else null // CDMA/TD-SCDMA: not used in Ukraine
             }
+            observation?.let { CellMeasurement(it, elapsedMs) }
         }
+    }
+
+    /** Android 8–10 exposes nanoseconds; Android 11+ exposes the same elapsed clock in milliseconds. */
+    private fun measurementElapsedMs(cell: CellInfo): Long = if (Build.VERSION.SDK_INT >= 30) {
+        cell.timestampMillis
+    } else {
+        // The replacement API starts at Android 11; keep the legacy accessor for supported older phones.
+        @Suppress("DEPRECATION")
+        val timestampNs = cell.timeStamp
+        if (timestampNs == Long.MAX_VALUE) 0L else TimeUnit.NANOSECONDS.toMillis(timestampNs)
     }
 
     private fun lte(cell: CellInfoLte, mcc: Int, mnc: Int): CellObservation? {
