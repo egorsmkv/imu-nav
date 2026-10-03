@@ -272,10 +272,15 @@ impl TrustClassifier {
                 reasons: Vec::new(),
             }
         };
-        if verdict.level == TrustLevel::Good {
+        self.commit_trusted_anchor(fix, verdict.level);
+        verdict
+    }
+
+    /// Keep anchor promotion separate so every verdict shares the same trust boundary.
+    fn commit_trusted_anchor(&mut self, fix: LocationFix, level: TrustLevel) {
+        if level == TrustLevel::Good {
             self.last_good = Some(fix);
         }
-        verdict
     }
 
     fn check_fix(&self, input: &TrustInput, hard: &mut Vec<Reason>) {
@@ -575,3 +580,6 @@ fn exactly_equal(first: f64, second: f64) -> bool {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(kani)]
+mod kani_proofs;

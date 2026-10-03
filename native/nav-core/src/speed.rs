@@ -230,3 +230,6 @@ fn fit(samples: &[Sample]) -> Option<Line> {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(kani)]
+pub(crate) mod kani_proofs;

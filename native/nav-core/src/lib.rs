@@ -489,3 +489,6 @@ fn validate_sigma(value: f64) -> Result<(), FilterError> {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(kani)]
+mod kani_proofs;

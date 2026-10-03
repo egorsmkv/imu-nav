@@ -451,3 +451,10 @@ The first [measured optimization example](nav-sim/README.md#measured-optimizatio
 reduced transactional history reallocations and reused the query latitude scale during route scans,
 with identical simulated outputs and unchanged rollback/ambiguity gates. The linked report separates
 allocation churn, sampled live heap and CPU/timing measurements.
+
+## Bounded formal verification
+
+The native core has a pinned Kani proof suite for input rejection, state preservation, conservative
+corrections, trust anchors, jamming hysteresis and network resets. Run `python3 tools/verify_native.py`
+from the repository root. See [setup, exact bounds and CI checks](../docs/NATIVE_VERIFICATION.md);
+these bounded contracts complement replay/testing and do not certify the whole navigator.

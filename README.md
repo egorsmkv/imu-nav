@@ -435,6 +435,10 @@ cargo test --manifest-path native/Cargo.toml # native estimator and covariance t
 cargo test --manifest-path server/Cargo.toml # persistent HTTP/WebSocket cell server tests
 ```
 
+**Native formal verification.** Run `python3 tools/verify_native.py` after installing pinned Kani 0.68.0.
+The PR check verifies bounded filter, trust, jamming and network contracts; see
+[proof scope, setup and counterexample reproduction](docs/NATIVE_VERIFICATION.md).
+
 **Rust coverage.** Linux host coverage combines Rust tests, actual JVM JNI calls (default and
 `heap-profile` builds), simulator subprocesses and server CLI/HTTP/WebSocket tests. Run
 `python3 tools/rust_coverage.py` after installing the pinned coverage toolchain. CI gates

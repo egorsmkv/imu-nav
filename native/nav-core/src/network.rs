@@ -197,3 +197,6 @@ fn slope(points: &[Anchor]) -> f64 {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(kani)]
+mod kani_proofs;

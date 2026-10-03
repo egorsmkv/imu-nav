@@ -30,7 +30,7 @@ def production_file(filename):
         relative = path.relative_to(ROOT)
     except ValueError:
         return None
-    if ('tests' in relative.parts or path.stem == 'tests' or
+    if ('tests' in relative.parts or path.stem in ('tests', 'kani_proofs') or
             path.stem.endswith('_tests') or path.stem.startswith('test_')):
         return None
     return next((name for name, root in CRATES.items()
@@ -223,7 +223,7 @@ def run(args):
         common = ['--debuginfod=false', f'-instr-profile={merged}']
         for obj in objects:
             common += ['-object', obj]
-        exclusion = r'(/tests/|/tests\.rs$|_tests\.rs$|/\.cargo/|/rustc/|/\.rustup/|/build/|/target/)'
+        exclusion = r'(/tests/|/tests\.rs$|_tests\.rs$|/kani_proofs\.rs$|/\.cargo/|/rustc/|/\.rustup/|/build/|/target/)'
         report = checked([cov, 'export', '-format=lcov', *common, f'-ignore-filename-regex={exclusion}'],
                          env, directory / 'coverage.lcov')
         reports.append(report)
