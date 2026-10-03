@@ -446,3 +446,8 @@ cargo clippy --manifest-path native/Cargo.toml --all-targets --features heap-pro
 with separate heap, allocation-counting, CPU and timing passes. It preserves baseline executables and
 checks identical navigation outputs before comparing performance. See its README for capture, inspection
 and before/after commands. These synthetic host measurements do not establish Android performance.
+
+The first [measured optimization example](nav-sim/README.md#measured-optimization-example-2026-10-03)
+reduced transactional history reallocations and reused the query latitude scale during route scans,
+with identical simulated outputs and unchanged rollback/ambiguity gates. The linked report separates
+allocation churn, sampled live heap and CPU/timing measurements.

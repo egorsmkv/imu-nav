@@ -556,6 +556,8 @@ GraphHopper stack plus
 | Rusqlite + SQLite | 0.37 / bundled | persistent cell server database | MIT / public domain |
 
 The sharing server also uses Serde, CSV, Flate2, Clap and Tracing (MIT or MIT/Apache 2.0).
+The desktop simulation uses Clap, Serde/serde_json, Anyhow, Flate2 and tikv-jemalloc-ctl
+(MIT or MIT/Apache 2.0); these dependencies are not packaged in the APK.
 
 **Build and development tools** (not distributed)
 

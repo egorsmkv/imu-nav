@@ -32,6 +32,8 @@ const OBD_SYSTEMATIC_DRIFT_PER_M: f64 = 0.02;
 const MAX_PREDICTION_MS: i64 = 5_000;
 const GPS_HISTORY_MS: i64 = 5_000;
 const MAX_HISTORY_FRAMES: usize = 128;
+// A tick can append a GNSS anchor and its final prediction checkpoint before pruning history.
+const TICK_HISTORY_HEADROOM: usize = 2;
 const MAX_VEHICLE_KMH: f64 = 250.0;
 const OBD_MAX_AGE_MS: i64 = 2_500;
 const GPS_SEARCH_BEHIND_M: f64 = 250.0;
@@ -341,10 +343,27 @@ impl NavigationEstimator {
         turn: Option<TurnObservation>,
         walking: Option<WalkingObservation>,
     ) -> Result<TickOutcome, FilterError> {
-        let mut pending = self.clone();
+        let mut pending = self.copy_for_tick();
         let outcome = pending.tick_inner(now_ms, gps, motion, network, turn, walking)?;
         *self = pending;
         Ok(outcome)
+    }
+
+    /// Preserve transactional rollback without cloning a full deque only to grow it immediately.
+    /// `VecDeque::clone` copies the length, not spare capacity; reserving the two possible new
+    /// checkpoints up front avoids repeated reallocations while keeping all mutations isolated.
+    fn copy_for_tick(&self) -> Self {
+        let mut history = VecDeque::with_capacity(self.history.len() + TICK_HISTORY_HEADROOM);
+        history.extend(self.history.iter().cloned());
+        Self {
+            state: self.state.clone(),
+            route: Arc::clone(&self.route),
+            mode: self.mode,
+            last_gps_ms: self.last_gps_ms,
+            last_vehicle_input_ms: self.last_vehicle_input_ms,
+            network_speed_enabled: self.network_speed_enabled,
+            history,
+        }
     }
 
     /// Rewinds only when the measurement still belongs to the current route and history.

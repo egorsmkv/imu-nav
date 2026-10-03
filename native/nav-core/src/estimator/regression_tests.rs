@@ -214,12 +214,16 @@ fn invalid_delayed_fix_leaves_history_and_watermarks_usable() {
     let mut navigation = estimator(20.0);
     navigation.tick(1_000, None).unwrap();
     let mut reference = navigation.clone();
+    let before = format!("{navigation:?}");
     let mut invalid = gps(500, f64::NAN);
     assert!(navigation.tick(2_000, Some(invalid)).is_err());
+    assert_eq!(format!("{navigation:?}"), before);
     assert_eq!(navigation.estimate(), reference.estimate());
     invalid.point.latitude_deg = 50.00005;
-    navigation.tick(2_000, Some(invalid)).unwrap();
-    reference.tick(2_000, Some(invalid)).unwrap();
+    assert_eq!(
+        navigation.tick(2_000, Some(invalid)).unwrap(),
+        reference.tick(2_000, Some(invalid)).unwrap()
+    );
     assert_eq!(navigation.estimate(), reference.estimate());
 }
 

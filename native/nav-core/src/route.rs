@@ -159,10 +159,13 @@ impl RouteGeometry {
         {
             return Err(RouteError::InvalidSearch);
         }
-        let best = self.project_range(point, 0, self.points.len() - 2);
+        // Every rival uses the same query latitude; recomputing its cosine per segment dominates
+        // dense-route scans. Keep the same arithmetic and comparisons, just reuse the scale.
+        let longitude_scale = longitude_scale(point);
+        let best = self.project_range_scaled(point, 0, self.points.len() - 2, longitude_scale);
         let distinct_distance_m = (4.0 * accuracy_m).max(100.0);
         for segment in 0..self.points.len() - 1 {
-            let rival = self.project_range(point, segment, segment);
+            let rival = self.project_range_scaled(point, segment, segment, longitude_scale);
             if (rival.position_m - best.position_m).abs() > distinct_distance_m
                 && rival.offset_m <= best.offset_m + 2.0 * accuracy_m
             {
@@ -173,8 +176,17 @@ impl RouteGeometry {
     }
 
     fn project_range(&self, point: GeoPoint, from: usize, to: usize) -> Projection {
-        let metres_per_degree_longitude =
-            METRES_PER_DEGREE_LONGITUDE_EQUATOR * (point.latitude_deg * PI / 180.0).cos();
+        self.project_range_scaled(point, from, to, longitude_scale(point))
+    }
+
+    /// The longitude scale belongs to the query point, so a multi-segment scan can share it.
+    fn project_range_scaled(
+        &self,
+        point: GeoPoint,
+        from: usize,
+        to: usize,
+        metres_per_degree_longitude: f64,
+    ) -> Projection {
         let mut best = Projection {
             position_m: 0.0,
             offset_m: f64::MAX,
@@ -219,6 +231,11 @@ impl RouteGeometry {
     }
 }
 
+/// Local tangent-plane scale at the observation latitude, identical for every candidate segment.
+fn longitude_scale(point: GeoPoint) -> f64 {
+    METRES_PER_DEGREE_LONGITUDE_EQUATOR * (point.latitude_deg * PI / 180.0).cos()
+}
+
 fn distance_m(first: GeoPoint, second: GeoPoint) -> f64 {
     let half_delta_latitude = (second.latitude_deg - first.latitude_deg) * PI / 360.0;
     let half_delta_longitude = (second.longitude_deg - first.longitude_deg) * PI / 360.0;
@@ -249,6 +266,47 @@ mod tests {
             },
         ])
         .unwrap()
+    }
+
+    #[test]
+    fn shared_scale_matches_independent_segment_projection_exactly() {
+        for latitude in [0.0, 50.0, 89.5] {
+            // Includes a crossing, repeated vertex, parallel return and a straight continuation.
+            let points: Vec<_> = [
+                (0.0, 0.0),
+                (0.01, 0.01),
+                (0.01, 0.01),
+                (0.0, 0.01),
+                (0.01, 0.0),
+                (0.02, 0.0),
+            ]
+            .into_iter()
+            .map(|(north, east)| GeoPoint {
+                latitude_deg: latitude + north,
+                longitude_deg: 30.0 + east,
+            })
+            .collect();
+            let route = RouteGeometry::new(points).unwrap();
+            for north in [0.0, 0.005, 0.015, 0.025] {
+                let query = GeoPoint {
+                    latitude_deg: latitude + north,
+                    longitude_deg: 30.004,
+                };
+                for accuracy in [1.0_f64, 30.0, 200.0] {
+                    let best = route.project_range(query, 0, route.points.len() - 2);
+                    let distinct = (4.0 * accuracy).max(100.0);
+                    let ambiguous = (0..route.points.len() - 1).any(|segment| {
+                        let rival = route.project_range(query, segment, segment);
+                        (rival.position_m - best.position_m).abs() > distinct
+                            && rival.offset_m <= best.offset_m + 2.0 * accuracy
+                    });
+                    assert_eq!(
+                        route.project_unambiguous(query, accuracy).unwrap(),
+                        (!ambiguous).then_some(best)
+                    );
+                }
+            }
+        }
     }
 
     #[test]

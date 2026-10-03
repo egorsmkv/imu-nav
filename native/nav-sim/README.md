@@ -57,7 +57,8 @@ are checked during execution. Existing core tests enforce estimator history boun
 
 - **Heap:** jemalloc samples live Rust allocations at a mean interval of 64 KiB. Snapshots cover
   route construction, each quarter of navigation (including delayed fixes and rerouting), and
-  teardown. Fixtures are generated before sampling starts. Small profiles may be empty; individual
+  teardown. Profiles include resolved Rust symbols. Sampling pauses during capture/serialization so
+  symbolization caches do not contaminate later snapshots. Fixtures are generated before sampling starts. Small profiles may be empty; individual
   before/after sample totals are stochastic and are not strict regression thresholds.
 - **Alloc:** a thread-local counting allocator records successful allocation/reallocation calls and
   requested bytes inside workload regions. A reallocation contributes its entire new size, not just
@@ -119,3 +120,61 @@ CLI settings, overwrite refusal, subprocess capture, heap/CPU protobuf decoding 
 The simulator is a workspace member, so existing Rust Gradle checks include it. Linux integration
 tests use the in-process CPU sampler and do not require perf privileges. Android builds still select
 only `imu-nav-jni`; neither this executable nor its profiling dependencies enter the APK.
+
+## Measured optimization example (2026-10-03)
+
+The captured baseline identified two costs:
+
+1. Heap stacks included `VecDeque<HistoryFrame>::grow` under estimator checkpoints. Exact counters
+   showed 401 MB of allocation requests in the normal drive despite a small retained heap. Each
+   transactional tick cloned a deque with no spare capacity, then appended checkpoints. The core
+   now reserves room for the two possible new checkpoints while copying. Rollback still uses a
+   separate candidate; no trust gates, history windows or numeric operations were removed.
+2. CPU samples concentrated in `RouteGeometry::project_range` / `project_unambiguous`, including
+   trigonometric work. Every rival segment used the same query latitude but recalculated its
+   longitude scale. The scan now computes that scale once and reuses it, preserving candidate
+   ordering, tie-breaking and ambiguity checks. Projection remains a linear scan.
+
+Results below are from this Linux x86-64 host using Rust `1.100.0-nightly (f7575a9da 2026-09-24)`,
+`--profile profiling`, `-C force-frame-pointers=yes`, seed 1, 1,800 seconds and 10,000 route points.
+Timing is the median of five repetitions after warm-up. MB means decimal **requested allocation
+bytes**, including reallocations; it is not resident or retained memory.
+
+| Scenario | Requested MB before → after | Median ms before → after | Time reduction |
+|---|---:|---:|---:|
+| Driving | 401.04 → 304.43 | 131.380 → 92.427 | 29.6% |
+| Jamming/recovery | 223.18 → 100.07 | 123.990 → 79.515 | 35.9% |
+| Delayed GPS | 434.55 → 346.26 | 348.419 → 225.588 | 35.3% |
+| Stop/resume | 223.17 → 100.07 | 122.307 → 78.864 | 35.5% |
+| Reroute | 400.55 → 304.05 | 159.288 → 116.053 | 27.1% |
+| Walking | 223.17 → 100.07 | 14.200 → 11.598 | 18.3% |
+| Eight session lifecycles | 3208.29 → 2435.47 | 1036.134 → 704.398 | 32.0% |
+
+Every deterministic outcome matched across all four passes. Before/after timing ranges did not
+intersect in these runs. A separate 120-second, 100,000-point driving stress run also matched outputs:
+median 157.385 → 133.523 ms (15.2% lower), requests 26.99 → 20.65 MB. These results support the two
+changes on these workloads; they do not establish on-device gains or improved navigation accuracy.
+Sampled live bytes varied in both directions and are not evidence of an RSS reduction.
+Across eight optimized lifecycle sessions, the allocator-wide post-teardown gauge rose only 440 bytes
+while retaining small phase-report records; route ownership checks passed after every teardown.
+This supports bounded session storage on this workload, not a general leak-proof claim.
+
+Local, gitignored evidence from this session:
+
+- [Full comparison](../../captures/native-sim-comparison.md), including timing ranges and sampled heap totals.
+- [Stress comparison](../../captures/native-sim-stress-comparison.md).
+- `captures/native-sim-baseline-final/` and `captures/native-sim-optimized/`: complete profiles, metrics,
+  matching executables and copies of core sources. Core fingerprints are `2e3f5f60c8a40377` and
+  `90de6f2398a0a521`. Intermediate exploratory captures are not used for the table above.
+
+Use the preserved executables to reproduce the workloads without changing the current checkout:
+
+```bash
+captures/native-sim-baseline-final/imu-nav-sim run --out captures/repeat-baseline
+captures/native-sim-optimized/imu-nav-sim run --out captures/repeat-optimized
+native/target/profiling/imu-nav-sim compare captures/repeat-baseline captures/repeat-optimized
+```
+
+Core tests additionally check exact projection equivalence across crossings, repeated vertices,
+parallel returns and different latitudes, plus full estimator rollback after invalid delayed GPS.
+The existing Kotlin blind-drive regression remains `p95=20 max=25 rms=10 m`.

@@ -123,9 +123,21 @@ pub fn snapshot(path: &Path) -> Result<()> {
         .ok_or_else(|| anyhow!("jemalloc prof must be enabled"))?;
     let mut control = control.blocking_lock();
     ensure!(control.activated(), "heap sampling is inactive");
-    let bytes = control.dump_pprof()?;
-    std::fs::write(path, bytes)?;
-    Ok(())
+    // SAFETY: prof.active is a documented boolean mallctl. Unlike controller.deactivate(),
+    // toggling it does not reset existing live samples. Symbolization caches must not become
+    // the dominant allocation in later profiles of this small native core.
+    unsafe { tikv_jemalloc_ctl::raw::write(b"prof.active\0", false) }
+        .map_err(|error| anyhow!("pause sampling: {error}"))?;
+    let result = (|| {
+        let bytes = control.dump_pprof()?;
+        std::fs::write(path, bytes)?;
+        Ok(())
+    })();
+    // Restore sampling even when capture or file output failed.
+    // SAFETY: same documented boolean control, while holding the singleton controller lock.
+    unsafe { tikv_jemalloc_ctl::raw::write(b"prof.active\0", true) }
+        .map_err(|error| anyhow!("resume sampling: {error}"))?;
+    result
 }
 
 /// Prevent environment overrides from silently contaminating CPU/timing runs with heap sampling.
