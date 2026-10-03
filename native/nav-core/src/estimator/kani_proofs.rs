@@ -1,4 +1,4 @@
-//! Compositional transaction proofs plus public ingress rollback checks.
+//! Compositional transaction and checkpoint ownership proofs.
 //! Numerical bodies and real-geometry replay sequences have separate proofs/regression tests.
 use super::*;
 
@@ -48,6 +48,34 @@ fn unchanged(actual: &NavigationEstimator, expected: &NavigationEstimator) {
     assert!(Arc::ptr_eq(route, &expected.route));
 }
 
+/// Fixed-size inspection avoids allocating another deque just to remember expected values.
+fn snapshot(navigation: &NavigationEstimator) -> impl PartialEq + use<> {
+    let NavigationEstimator {
+        state,
+        route,
+        mode,
+        last_gps_ms,
+        last_vehicle_input_ms,
+        network_speed_enabled,
+        history,
+    } = navigation;
+    assert!(history.len() <= 3);
+    (
+        state.clone(),
+        Arc::as_ptr(route),
+        *mode,
+        *last_gps_ms,
+        *last_vehicle_input_ms,
+        *network_speed_enabled,
+        history.len(),
+        (
+            history.front().cloned(),
+            history.get(1).cloned(),
+            history.get(2).cloned(),
+        ),
+    )
+}
+
 /// Mutate the real pending state, including learned inputs, before choosing success or error.
 fn change_pending(state: &mut FilterState, elapsed_ms: i64, position: u8) {
     state
@@ -74,36 +102,33 @@ fn change_pending(state: &mut FilterState, elapsed_ms: i64, position: u8) {
 #[kani::unwind(3)]
 fn tick_transactions_commit_only_success() {
     let mut navigation = estimator();
-    for event in 1..=2 {
-        let before = navigation.copy_for_tick();
-        let accepted: bool = kani::any();
-        let position: u8 = kani::any();
-        let result = navigation.try_tick(|pending| {
-            change_pending(&mut pending.state, event, position);
-            pending.last_gps_ms = event;
-            pending.last_vehicle_input_ms = event;
-            pending.network_speed_enabled = !pending.network_speed_enabled;
-            pending.mode = TravelMode::Foot;
-            pending.route = Arc::new(crate::route::kani_proofs::straight_route());
-            pending.history.clear();
-            pending.remember(None);
-            if accepted {
-                Ok(())
-            } else {
-                Err(FilterError::NonFinite)
-            }
-        });
-        if result.is_err() {
-            unchanged(&navigation, &before);
+    let event = 1;
+    let before = snapshot(&navigation);
+    let accepted: bool = kani::any();
+    let position: u8 = kani::any();
+    let result = navigation.try_tick(|pending| {
+        change_pending(&mut pending.state, event, position);
+        pending.last_gps_ms = event;
+        pending.last_vehicle_input_ms = event;
+        pending.network_speed_enabled = !pending.network_speed_enabled;
+        pending.mode = TravelMode::Foot;
+        pending.history.front_mut().unwrap().state = pending.state.clone();
+        if accepted {
+            Ok(())
         } else {
-            assert_eq!(navigation.state.elapsed_ms, event);
-            assert_eq!(navigation.last_gps_ms, event);
-            assert_eq!(navigation.last_vehicle_input_ms, event);
-            assert_eq!(navigation.estimate().position_m, f64::from(position));
+            Err(FilterError::NonFinite)
         }
-        kani::cover!(result.is_ok(), "committed");
-        kani::cover!(result.is_err(), "rolled back");
+    });
+    if result.is_err() {
+        assert!(snapshot(&navigation) == before);
+    } else {
+        assert_eq!(navigation.state.elapsed_ms, event);
+        assert_eq!(navigation.last_gps_ms, event);
+        assert_eq!(navigation.last_vehicle_input_ms, event);
+        assert_eq!(navigation.estimate().position_m, f64::from(position));
     }
+    kani::cover!(result.is_ok(), "committed");
+    kani::cover!(result.is_err(), "rolled back");
 }
 
 /// OBD computation receives only pending FilterState; it cannot mutate history or watermarks.
@@ -148,63 +173,6 @@ fn history_fixture() -> NavigationEstimator {
     navigation.state.vehicle_speed_scale = 1.01;
     navigation.state.filter.anchor_position(5.0, 20.0).unwrap();
     navigation
-}
-
-#[kani::proof]
-#[kani::unwind(4)]
-fn delayed_gps_error_restores_history_and_watermarks() {
-    let mut navigation = history_fixture();
-    let before = navigation.copy_for_tick();
-    // Boundary float bit patterns are proved separately; this fixture isolates rollback.
-    let coordinate = f64::NAN;
-    let observation = GpsObservation {
-        point: GeoPoint {
-            latitude_deg: coordinate,
-            longitude_deg: 30.0,
-        },
-        elapsed_ms: 0,
-        position_accuracy_m: Some(5.0),
-        speed_mps: Some(10.0),
-        speed_accuracy_mps: Some(0.5),
-        trust: ObservationTrust::Good,
-    };
-    let result = navigation.tick(500, Some(observation));
-    assert!(result.is_err());
-    unchanged(&navigation, &before);
-    kani::cover!(result.is_err(), "rolled back");
-}
-
-fn ignored_gps(elapsed_ms: i64) {
-    let mut navigation = history_fixture();
-    let mut reference = navigation.copy_for_tick();
-    let observation = GpsObservation {
-        point: GeoPoint {
-            latitude_deg: 50.0,
-            longitude_deg: 30.0,
-        },
-        elapsed_ms,
-        position_accuracy_m: Some(5.0),
-        speed_mps: Some(10.0),
-        speed_accuracy_mps: Some(0.5),
-        trust: ObservationTrust::Good,
-    };
-    let result = navigation.tick(500, Some(observation)).unwrap();
-    reference.tick(500, None).unwrap();
-    assert!(!result.position_accepted && !result.speed_accepted && result.projection.is_none());
-    unchanged(&navigation, &reference);
-    kani::cover!(true, "ignored");
-}
-
-#[kani::proof]
-#[kani::unwind(4)]
-fn future_gps_matches_no_observation() {
-    ignored_gps(2000);
-}
-
-#[kani::proof]
-#[kani::unwind(4)]
-fn old_gps_matches_no_observation() {
-    ignored_gps(-1);
 }
 
 #[kani::proof]

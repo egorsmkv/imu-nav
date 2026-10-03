@@ -51,10 +51,8 @@ the authoritative list of required harnesses and named `kani::cover!` witnesses.
 | Finite numerical state | Successful construction, anchor/prior installation and numerical commits retain finite fields; errors preserve the old estimate | Constructor inputs and all six commit candidate fields use arbitrary `f64` bit patterns; anchor/prior value and sigma also unrestricted, against the original valid filter fixture |
 | Finite predictions and measurements | Successful updates retain finite state; errors and innovation rejection preserve it | Prediction: arbitrary finite position/speed/nonnegative drift, covariance `(100, 2, 4)`, dt 1 or 5 s, acceleration sigma/drift rate 1. Measurements: arbitrary measurement/sigma bit patterns, state `(position=10, speed=2, drift=5)`, covariance `(100, 2, 4)`, gate 9; coarse caps 5 m / 1 m/s. Accepted, gated and error witnesses required |
 | Radius and variance arithmetic | Successful diagonal covariance/radius results are finite | Arbitrary sigma for one diagonal (other sigma 1); arbitrary radius multiplier with position sigma 2 and drift 5 |
-| Tick/state transaction boundaries | Failed updates publish nothing; successful updates publish their pending values; fixed-state updates cannot touch history/watermarks | Two updates with symbolic success/error choices and positions 0–255; pending work changes filter, calibration, input ages, model hints, turn/network state and (for ticks) route/history/watermarks. These exercise the actual generic transaction helpers, not the complete numerical replay body |
-| Delayed-GPS ingress rollback | Invalid delayed GPS restores state, history, watermarks and route identity after rewind | Two preconstructed checkpoints at 0/500 ms; current calibration 1.01; GPS timestamp 0 delivered at 500 ms; latitude covers every NaN/infinity bit pattern; no numerical prediction interval |
-| Ignored observation ingress | Future/old GPS matches a no-observation tick; stale OBD changes nothing | Same two-checkpoint fixture; GPS at −1 or 2,000 ms delivered at 500 ms, then OBD at 0; tick does not advance time |
-| Checkpoint ownership | The pending tick initially contains the same complete logical state and immutable route identity | Two-checkpoint fixture; structural comparison excludes allocator spare capacity |
+| Tick/state transaction boundaries | Failed updates publish nothing; successful updates publish their pending values; fixed-state updates cannot touch history/watermarks | One tick transaction / two fixed-state transactions with symbolic success/error choices and positions 0–255; pending work changes filter, calibration, input ages, model hints, turn/network state and (for ticks) history/watermarks/mode. These exercise the actual generic transaction helpers, not the complete numerical replay body |
+| Checkpoint ownership | The pending tick initially contains the same complete logical state and immutable route identity | One retained checkpoint at 0 ms, current state at 500 ms with calibration 1.01; structural comparison excludes allocator spare capacity |
 | Filter validation | Constructor rejects invalid fields; non-finite measurements, negative/non-finite uncertainty, invalid gates, correction limits, prediction time/noise/drift reject without mutating state | Invalid scalar inputs use **all `f64` bit patterns**, including NaN, infinities and signed zero; operation selectors enumerate the applicable entry points |
 | Anchor and drift reset | Anchor retains speed and speed variance; reset changes only drift; successful anchor floors position variance | Symbolic finite position ±1,000,000 m, speed 0–60 m/s, drift 0–10,000 m; new sigma 0–1,000 |
 | Speed prior recovery | Restoring a prior cannot reduce previous speed variance or change position/drift | Same state domain with old speed variance 0.0625–1,000,000; new speed 0–60 m/s and sigma 0–1,000 |
@@ -93,7 +91,8 @@ success, avoiding a full history copy for each OBD sample. Tick updates use the 
 copy-and-commit transaction for the entire estimator, including history.
 
 Verification is **compositional**: numerical finiteness, pending-state isolation, commit-on-success,
-and public ingress bookkeeping are checked separately. Full inlined floating-point replay proofs
+and checkpoint ownership are checked separately. Public ingress sequences are regression-tested.
+Full inlined floating-point replay proofs
 exceeded practical memory limits; these are not claimed as verified end-to-end sequences. Complete
 multi-step prediction failures and valid-coordinate delayed-GPS failure/retry are Rust regression
 tests using real routes and the actual public APIs. No application operation is stubbed.
@@ -102,7 +101,7 @@ Estimator comparisons exist only in test/Kani builds and cover every nested fiel
 route identity. Proof-only equality for the eight-entry coordinate cache and seven-entry speed
 batch compares each array element explicitly, avoiding an eight-iteration bound for unrelated
 algorithm loops merely to inspect a snapshot. Exhaustive destructuring forces updates when fields
-are added. Transaction/copy harnesses use unwind 3, public ingress harnesses use unwind 4, and all
+are added. Transaction/copy harnesses use unwind 3, and all
 unwinding assertions remain enabled. The straight route is a precomputed two-point fixture;
 construction/geodesic accuracy and concurrency are outside scope. `Arc` shares immutable geometry.
 

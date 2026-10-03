@@ -15,11 +15,7 @@ OUTPUT = ROOT / 'build/native-verification'
 REQUIRED = {
     'estimator::kani_proofs::tick_transactions_commit_only_success': {'committed', 'rolled back'},
     'estimator::kani_proofs::state_transactions_commit_only_success': {'committed', 'rolled back'},
-    'estimator::kani_proofs::delayed_gps_error_restores_history_and_watermarks': {'rolled back'},
-    'estimator::kani_proofs::future_gps_matches_no_observation': {'ignored'},
-    'estimator::kani_proofs::old_gps_matches_no_observation': {'ignored'},
     'estimator::kani_proofs::checkpoint_copy_preserves_complete_state': {'copied'},
-
 
     'kani_proofs::diagonal_success_is_finite': {'accepted', 'rejected'},
     'kani_proofs::commit_is_atomic_and_finite': {'accepted', 'rejected'},

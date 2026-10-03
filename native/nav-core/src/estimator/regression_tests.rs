@@ -452,3 +452,23 @@ fn delayed_gps_error_after_position_update_restores_calibration_and_history() {
         assert_eq!(navigation, reference);
     }
 }
+
+#[test]
+fn ignored_gps_matches_no_observation_with_complete_history() {
+    for observation_ms in [-1, 2000] {
+        let mut navigation = estimator(20.0);
+        navigation.on_vehicle_speed(36.0, 250).unwrap();
+        navigation.tick(500, None).unwrap();
+        let mut reference = navigation.clone();
+        let outcome = navigation
+            .tick(750, Some(gps(observation_ms, 50.0)))
+            .unwrap();
+        reference.tick(750, None).unwrap();
+        assert!(!outcome.position_accepted && !outcome.speed_accepted);
+        assert!(outcome.projection.is_none());
+        assert_eq!(navigation, reference);
+        // Ignoring GPS must not move OBD's input watermark or permit a stale sample.
+        assert!(!navigation.on_vehicle_speed(36.0, 0).unwrap());
+        assert_eq!(navigation, reference);
+    }
+}
