@@ -29,6 +29,9 @@ jobs:
           java-version: '17'
       - uses: android-actions/setup-android@v3
         if: matrix.suite == 'native'
+        with:
+          # Override the action's default, which includes the retired SDK 'tools' package.
+          packages: platform-tools
       - name: Install Android platform for Gradle project configuration
         if: matrix.suite == 'native'
         run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
