@@ -1,6 +1,20 @@
 use super::*;
 
 #[test]
+fn app_like_group_uses_only_normal_driving_inputs() {
+    assert_eq!(
+        Scenario::AppLike.cases(),
+        vec![
+            Scenario::Driving,
+            Scenario::Jam,
+            Scenario::Delayed,
+            Scenario::Stop,
+            Scenario::Reroute,
+        ]
+    );
+}
+
+#[test]
 fn every_case_is_deterministic_and_exercises_its_paths() {
     let config = Config {
         duration_s: 120,

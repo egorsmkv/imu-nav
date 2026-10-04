@@ -6,8 +6,12 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
+[features]
+profiling = ["imu-nav-core/profiling", "dep:hotpath", "hotpath/hotpath"]
+
 [target.'cfg(target_os = "linux")'.dependencies]
 imu-nav-core = { path = "../nav-core" }
+hotpath = { version = "=0.28.4", default-features = false, optional = true }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }

@@ -687,6 +687,7 @@ GraphHopper stack plus
 | Axum + Tokio | 0.8 / 1.x | cell server HTTP/WebSocket runtime | MIT |
 | tikv-jemallocator / jemalloc | 0.7 / 5.3.1 | optional Linux native replay heap allocator | MIT / Apache 2.0; jemalloc BSD 2-Clause |
 | pprof-rs | 0.15 | native simulation CPU profiles and flamegraphs (desktop only) | Apache 2.0 |
+| hotpath-rs | 0.28.4 | optional native-core function timing in the Linux simulator | MIT |
 | jemalloc_pprof | 0.9 | optional Linux native heap export to pprof | Apache 2.0 |
 | Rusqlite + SQLite | 0.37 / bundled | persistent cell server database | MIT / public domain |
 

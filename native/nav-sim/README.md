@@ -19,6 +19,21 @@ The default is all twelve scenarios, 30 simulated minutes, 10,000 polyline point
 timing repetitions after a discarded warm-up. Simulated time advances without sleeping.
 The output directory must be new. Interrupted captures remain available but are not marked complete.
 
+The `app-like` group runs ordinary driving, jamming, delayed GPS, stop/resume and rerouting with
+the normal simulated input rates. A separate `hotpath` pass instruments selected core functions and
+writes one JSON timing report per scenario. It does not overlap the four comparison passes:
+
+```bash
+RUSTFLAGS="-C force-frame-pointers=yes" cargo build --manifest-path native/Cargo.toml -p imu-nav-sim --profile profiling --features profiling
+HOTPATH_METRICS_SERVER_OFF=true native/target/profiling/imu-nav-sim run --scenario app-like --pass hotpath --out captures/hotpath-app
+# Rebuild without --features profiling before the four-pass baseline/candidate comparison.
+```
+
+The reports are under `captures/hotpath-app/<scenario>/hotpath.json`. This feature uses hotpath
+function timing only; the simulator's existing allocator owns heap and allocation measurements.
+Normal core and Android builds do not include hotpath. `HOTPATH_METRICS_SERVER_OFF=true` disables
+the optional local metrics listener; no report is uploaded.
+
 ```bash
 # Smaller targeted run (duration is at least 120 s so jamming hysteresis can clear).
 native/target/profiling/imu-nav-sim run --scenario delayed --duration-s 120 --route-points 1000 --out captures/delayed
@@ -261,6 +276,31 @@ native/target/profiling/imu-nav-sim compare captures/round2-repeat-before captur
 # Change both commands to the same options to explore another input distribution:
 # --scenario advanced --seed 42 --duration-s 123 --stress
 ```
+
+## App-like hotpath pass and route-scan optimization (2026-10-04)
+
+With seed 1, 1,800 simulated seconds, 10,000 route points and five timing repetitions, hotpath
+attributed 74–88% of app-like scenario time to `RouteGeometry::project_unambiguous`. Its rival
+search projected every segment after finding the best point, including segments wholly outside the
+ambiguity corridor. The search now skips a segment only when both endpoints are safely beyond the
+same latitude bound. Candidates near the corridor still use the original projection and comparison.
+
+Uninstrumented before/after captures use the same Rust nightly, profiling build flags and host.
+All five deterministic outcomes matched; allocation calls and requested bytes were identical.
+
+| Scenario | Median before → after | Time reduction |
+|---|---:|---:|
+| Driving | 71.285 → 44.230 ms | 38.0% |
+| Jamming/recovery | 64.869 → 37.381 ms | 42.4% |
+| Delayed GPS | 177.638 → 98.312 ms | 44.7% |
+| Stop/resume | 62.554 → 35.543 ms | 43.2% |
+| Reroute | 80.572 → 51.857 ms | 35.6% |
+
+The five-repetition timing ranges did not overlap. These are synthetic host results, not Android
+latency or navigation-accuracy claims. The existing exhaustive projection test covers loops,
+crossings, repeated vertices, extreme latitudes and corridor boundaries. Local gitignored evidence:
+`captures/hotpath-app-baseline/`, `captures/hotpath-app-uninstrumented-before/`,
+`captures/hotpath-app-uninstrumented-after/` and `captures/hotpath-app-comparison.md`.
 
 Remaining opportunities suggested by the profiles, not implemented here:
 

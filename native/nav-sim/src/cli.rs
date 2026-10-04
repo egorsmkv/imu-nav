@@ -49,6 +49,7 @@ impl Default for Config {
 #[serde(rename_all = "kebab-case")]
 pub enum Pass {
     All,
+    Hotpath,
     Heap,
     Alloc,
     Cpu,
@@ -59,6 +60,7 @@ impl Pass {
     pub fn name(self) -> &'static str {
         match self {
             Self::All => "all",
+            Self::Hotpath => "hotpath",
             Self::Heap => "heap",
             Self::Alloc => "alloc",
             Self::Cpu => "cpu",
@@ -130,6 +132,11 @@ fn create_output(out: &Path) -> Result<()> {
 }
 
 fn run(config: &Config, out: &Path, pass: Pass) -> Result<()> {
+    #[cfg(not(feature = "profiling"))]
+    ensure!(
+        pass != Pass::Hotpath,
+        "hotpath pass requires --features imu-nav-sim/profiling"
+    );
     create_output(out)?;
     measurement::require_sampling_disabled()?;
     if pass == Pass::All {
@@ -150,7 +157,18 @@ fn run(config: &Config, out: &Path, pass: Pass) -> Result<()> {
     for (scenario, fixture) in &fixtures {
         let directory = out.join(scenario.name());
         std::fs::create_dir(&directory)?;
-        if pass == Pass::Timing {
+        if pass == Pass::Hotpath {
+            #[cfg(feature = "profiling")]
+            {
+                let guard = hotpath::HotpathGuardBuilder::new("imu-nav-sim")
+                    .format(hotpath::Format::JsonPretty)
+                    .output_path(directory.join("hotpath.json"))
+                    .build();
+                let result = workload::run(fixture, *scenario, pass, None);
+                drop(guard);
+                runs.push(result?);
+            }
+        } else if pass == Pass::Timing {
             std::hint::black_box(workload::run(fixture, *scenario, pass, None)?); // warm-up excluded
             for _ in 0..config.repetitions {
                 runs.push(workload::run(fixture, *scenario, pass, None)?);

@@ -6,6 +6,44 @@ use std::process::Command;
 
 use pprof::protos::{Message, Profile};
 
+#[cfg(feature = "profiling")]
+#[test]
+fn hotpath_pass_writes_core_function_timings() {
+    let root = std::env::temp_dir().join(format!("imu-sim-hotpath-{}", std::process::id()));
+    let output = Command::new(env!("CARGO_BIN_EXE_imu-nav-sim"))
+        .env("HOTPATH_METRICS_SERVER_OFF", "true")
+        .args([
+            "run",
+            "--scenario",
+            "driving",
+            "--duration-s",
+            "120",
+            "--route-points",
+            "100",
+            "--pass",
+            "hotpath",
+            "--out",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(root.join("driving/hotpath.json")).unwrap()).unwrap();
+    let timings = report["functions_timing"]["data"].as_array().unwrap();
+    assert!(timings.iter().any(|row| {
+        row["name"]
+            .as_str()
+            .is_some_and(|name| name.contains("RouteGeometry::project_unambiguous"))
+    }));
+    assert!(root.join("report.json").is_file());
+    std::fs::remove_dir_all(root).unwrap();
+}
+
 #[test]
 fn capture_outputs_are_readable_and_comparable() {
     let root = std::env::temp_dir().join(format!("imu-sim-capture-{}", std::process::id()));

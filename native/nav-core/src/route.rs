@@ -7,6 +7,8 @@ pub use turns::RouteTurn;
 const EARTH_DIAMETER_M: f64 = 12_742_000.0;
 const METRES_PER_DEGREE_LATITUDE: f64 = 110_540.0;
 const METRES_PER_DEGREE_LONGITUDE_EQUATOR: f64 = 111_320.0;
+// Endpoint bounds skip only segments safely outside an ambiguity corridor.
+const RIVAL_PREFILTER_ROUNDING_MARGIN_M: f64 = 1.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GeoPoint {
@@ -44,6 +46,7 @@ impl RouteGeometry {
     ///
     /// Returns [`RouteError::TooShort`] for fewer than two points and
     /// [`RouteError::InvalidCoordinate`] for an invalid coordinate.
+    #[cfg_attr(feature = "profiling", hotpath::measure(impl_type = "RouteGeometry"))]
     pub fn new(points: Vec<GeoPoint>) -> Result<Self, RouteError> {
         if points.len() < 2 {
             return Err(RouteError::TooShort);
@@ -88,6 +91,7 @@ impl RouteGeometry {
     ///
     /// Returns [`RouteError::InvalidSearch`] when a coordinate, search distance, or threshold is
     /// invalid.
+    #[cfg_attr(feature = "profiling", hotpath::measure(impl_type = "RouteGeometry"))]
     pub fn project(
         &self,
         point: GeoPoint,
@@ -148,6 +152,7 @@ impl RouteGeometry {
     ///
     /// # Errors
     /// Returns [`RouteError::InvalidSearch`] for invalid coordinates or uncertainty.
+    #[cfg_attr(feature = "profiling", hotpath::measure(impl_type = "RouteGeometry"))]
     pub fn project_unambiguous(
         &self,
         point: GeoPoint,
@@ -167,7 +172,20 @@ impl RouteGeometry {
             self.project_range_scaled(point, 0, self.points.len() - 2, longitude_scale, f64::MAX);
         let corridor_m = best.offset_m + 2.0 * accuracy_m;
         let distinct_distance_m = (4.0 * accuracy_m).max(100.0);
+        let latitude_limit_m = corridor_m + RIVAL_PREFILTER_ROUNDING_MARGIN_M;
         for segment in 0..self.points.len() - 1 {
+            // A segment whose endpoints are both beyond the same latitude bound cannot
+            // intersect the corridor. Keep the original projection for every candidate that
+            // might matter, preserving its rounding, ordering and ambiguity decision.
+            let start_y = (self.points[segment].latitude_deg - point.latitude_deg)
+                * METRES_PER_DEGREE_LATITUDE;
+            let end_y = (self.points[segment + 1].latitude_deg - point.latitude_deg)
+                * METRES_PER_DEGREE_LATITUDE;
+            if (start_y > latitude_limit_m && end_y > latitude_limit_m)
+                || (start_y < -latitude_limit_m && end_y < -latitude_limit_m)
+            {
+                continue;
+            }
             let rival =
                 self.project_range_scaled(point, segment, segment, longitude_scale, corridor_m);
             if (rival.position_m - best.position_m).abs() > distinct_distance_m

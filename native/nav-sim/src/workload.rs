@@ -32,6 +32,7 @@ const WALL_ORIGIN_MS: i64 = 1_700_000_000_000;
 #[serde(rename_all = "kebab-case")]
 pub enum Scenario {
     All,
+    AppLike,
     Driving,
     Jam,
     Delayed,
@@ -49,7 +50,15 @@ pub enum Scenario {
 
 impl Scenario {
     pub fn cases(self) -> Vec<Self> {
-        if self == Self::Advanced {
+        if self == Self::AppLike {
+            vec![
+                Self::Driving,
+                Self::Jam,
+                Self::Delayed,
+                Self::Stop,
+                Self::Reroute,
+            ]
+        } else if self == Self::Advanced {
             vec![
                 Self::Winding,
                 Self::Parallel,
@@ -87,6 +96,7 @@ impl Scenario {
     pub fn name(self) -> &'static str {
         match self {
             Self::All => "all",
+            Self::AppLike => "app-like",
             Self::Driving => "driving",
             Self::Jam => "jam",
             Self::Delayed => "delayed",

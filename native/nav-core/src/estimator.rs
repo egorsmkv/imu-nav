@@ -259,6 +259,10 @@ impl NavigationEstimator {
     ///
     /// Returns [`FilterError`] for an invalid prediction or measurement update, without changing
     /// the filter, calibration, history or timestamp watermarks.
+    #[cfg_attr(
+        feature = "profiling",
+        hotpath::measure(impl_type = "NavigationEstimator")
+    )]
     pub fn on_vehicle_speed(
         &mut self,
         speed_kmh: f64,
@@ -375,6 +379,10 @@ impl NavigationEstimator {
     /// Preserve transactional rollback without cloning a full deque only to grow it immediately.
     /// `VecDeque::clone` copies the length, not spare capacity; reserving the two possible new
     /// checkpoints up front avoids repeated reallocations while keeping all mutations isolated.
+    #[cfg_attr(
+        feature = "profiling",
+        hotpath::measure(impl_type = "NavigationEstimator")
+    )]
     fn copy_for_tick(&self) -> Self {
         let mut history = VecDeque::with_capacity(self.history.len() + TICK_HISTORY_HEADROOM);
         history.extend(self.history.iter().cloned());
@@ -390,6 +398,10 @@ impl NavigationEstimator {
     }
 
     /// Rewinds only when the measurement still belongs to the current route and history.
+    #[cfg_attr(
+        feature = "profiling",
+        hotpath::measure(impl_type = "NavigationEstimator")
+    )]
     fn tick_inner(
         &mut self,
         now_ms: i64,
@@ -507,6 +519,10 @@ impl NavigationEstimator {
     }
 
     /// Checks route consistency independently of covariance before either GNSS update.
+    #[cfg_attr(
+        feature = "profiling",
+        hotpath::measure(impl_type = "NavigationEstimator")
+    )]
     fn apply_gps(
         &mut self,
         observation: GpsObservation,
