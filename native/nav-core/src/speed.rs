@@ -10,6 +10,7 @@ const MIN_NETWORK_SIGMA_MPS: f64 = 0.3;
 const MAX_NETWORK_SIGMA_MPS: f64 = 4.0;
 const MAX_SAMPLES: usize = 60;
 const MIN_POINTS: usize = 4;
+const REGRESSION_SIGMA_INFLATION: f64 = 1.5;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SpeedEstimate {
@@ -117,6 +118,14 @@ struct Line {
 }
 
 impl Line {
+    /// Non-finite fits and zero uncertainty cannot provide evidence about movement.
+    fn is_valid(self) -> bool {
+        self.intercept_m.is_finite()
+            && self.slope_mps.is_finite()
+            && self.slope_sigma_mps.is_finite()
+            && self.slope_sigma_mps > 0.0
+    }
+
     fn position_at(self, elapsed_ms: i64) -> f64 {
         self.intercept_m
             + self.slope_mps * milliseconds_to_seconds(elapsed_ms.saturating_sub(self.origin_ms))
@@ -173,48 +182,83 @@ impl NetworkSpeedEstimator {
         window_ms: i64,
         minimum_span_s: f64,
     ) -> Option<SpeedEstimate> {
-        let mut samples: Vec<Sample> = self
-            .samples
-            .iter()
-            .copied()
-            .filter(|sample| now_ms.saturating_sub(sample.elapsed_ms) <= window_ms)
-            .collect();
+        let mut samples = self.samples_in_window(now_ms, window_ms);
         if samples.len() < MIN_POINTS {
             return None;
         }
         let mut line = fit(&samples)?;
-        let inliers: Vec<Sample> = samples
-            .iter()
-            .copied()
-            .filter(|sample| {
-                (sample.position_m - line.position_at(sample.elapsed_ms)).abs()
-                    <= 250.0_f64.max(weight_accuracy(*sample) * 3.0)
-            })
-            .collect();
-        if inliers.len() < samples.len() && inliers.len() >= MIN_POINTS {
+        let inliers = select_inliers(&samples, line);
+        // Insufficient surviving evidence must not restore the contaminated original fit.
+        if inliers.len() < MIN_POINTS {
+            return None;
+        }
+        if inliers.len() < samples.len() {
             line = fit(&inliers)?;
             samples = inliers;
         }
-        let span_s = milliseconds_to_seconds(
-            samples
-                .last()?
-                .elapsed_ms
-                .saturating_sub(samples.first()?.elapsed_ms),
-        );
-        if span_s < minimum_span_s {
-            return None;
-        }
-        let sigma_mps = line.slope_sigma_mps * 1.5;
-        if sigma_mps > MAX_NETWORK_SIGMA_MPS {
-            return None;
-        }
-        Some(SpeedEstimate {
-            speed_mps: line.slope_mps.max(0.0),
-            sigma_mps,
-            samples: samples.len(),
-            span_s,
-        })
+        finish_network_estimate(line, &samples, minimum_span_s)
     }
+
+    /// Selection is read-only so a historical query cannot consume later observations.
+    fn samples_in_window(&self, now_ms: i64, window_ms: i64) -> Vec<Sample> {
+        self.samples
+            .iter()
+            .copied()
+            .filter(|sample| sample_in_window(sample.elapsed_ms, now_ms, window_ms))
+            .collect()
+    }
+}
+
+/// Inclusive expiry applies only to past/current observations; overflow cannot look fresh.
+fn sample_in_window(elapsed_ms: i64, now_ms: i64, window_ms: i64) -> bool {
+    now_ms
+        .checked_sub(elapsed_ms)
+        .is_some_and(|age| (0..=window_ms).contains(&age))
+}
+
+/// Keep only observations supported by the initial fit before recomputing its evidence span.
+fn select_inliers(samples: &[Sample], line: Line) -> Vec<Sample> {
+    samples
+        .iter()
+        .copied()
+        .filter(|sample| {
+            let residual = (sample.position_m - line.position_at(sample.elapsed_ms)).abs();
+            residual.is_finite() && residual <= 250.0_f64.max(weight_accuracy(*sample) * 3.0)
+        })
+        .collect()
+}
+
+/// Publish only a finite fit supported by enough surviving observations over the required span.
+fn finish_network_estimate(
+    line: Line,
+    samples: &[Sample],
+    minimum_span_s: f64,
+) -> Option<SpeedEstimate> {
+    if samples.len() < MIN_POINTS
+        || !line.is_valid()
+        || !minimum_span_s.is_finite()
+        || minimum_span_s <= 0.0
+    {
+        return None;
+    }
+    let duration_ms = samples
+        .last()?
+        .elapsed_ms
+        .checked_sub(samples.first()?.elapsed_ms)?;
+    let span_s = milliseconds_to_seconds(duration_ms);
+    if span_s < minimum_span_s {
+        return None;
+    }
+    let sigma_mps = line.slope_sigma_mps * REGRESSION_SIGMA_INFLATION;
+    if !sigma_mps.is_finite() || sigma_mps > MAX_NETWORK_SIGMA_MPS {
+        return None;
+    }
+    Some(SpeedEstimate {
+        speed_mps: line.slope_mps.max(0.0),
+        sigma_mps,
+        samples: samples.len(),
+        span_s,
+    })
 }
 
 fn weight_accuracy(sample: Sample) -> f64 {
@@ -257,12 +301,13 @@ fn fit(samples: &[Sample]) -> Option<Line> {
         })
         .sum::<f64>();
     let slope_mps = covariance / time_variance;
-    Some(Line {
+    let line = Line {
         intercept_m: mean_position - mean_time * slope_mps,
         slope_mps,
         slope_sigma_mps: (1.0 / time_variance).sqrt(),
         origin_ms,
-    })
+    };
+    line.is_valid().then_some(line)
 }
 
 #[cfg(test)]

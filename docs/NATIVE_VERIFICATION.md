@@ -172,6 +172,44 @@ that growth without omitting occupancies. A 125-insertion Rust regression exerci
 growth and repeated eviction. These proofs do not establish regression-fitting accuracy or
 arbitrary-history behavior.
 
+## Network-speed window and surviving evidence
+
+Window selection requires `0 <= now - sample_time <= window`, inclusive at expiry. Checked
+subtraction rejects unrepresentable ages. A query never removes stored observations, so future
+samples remain available for a later query. Outlier trimming must leave at least four observations;
+otherwise the window rejects instead of reusing the unfiltered fit. Finalization recomputes span
+from surviving endpoints, requires the configured minimum span, and publishes only finite fit
+fields and positive uncertainty no greater than 4 m/s after inflation. Degenerate fits reject
+before outlier selection. The 30/40/90 s windows, 15/20/30 s minimum spans, weighting and fallback
+order are unchanged.
+
+Six additional harnesses are registered for CI:
+
+- Membership compares every signed sample/current/window timestamp against independent `i128`
+  arithmetic; witnesses include each standard expiry boundary, future/current samples, an expired
+  sample, subtraction overflow and a negative window (unwind 2).
+- Selection checks three arbitrary timestamps and floating-point payload bit patterns, arbitrary
+  signed current time/window, original order and bitwise preservation of stored/copied values
+  (unwind 8). Invalid numeric payloads are deliberately included to isolate selection from ingress.
+- Complete `estimate`/`strict_estimate` calls reject four future observations at 1/11/21/31 s for
+  every current time <1 s and preserve storage (unwind 8). These paths reject before fitting.
+- Inlier selection and finalization cover all 32 masks of five observations at 0/1/2/3/20 s,
+  accuracy 20 m, position 0 or 1,000 m, and a supplied stationary fit with sigma 1 m/s. They check
+  surviving count, shortened span and successful publication when sufficient evidence remains
+  (unwind 8). The numerical fitting operation is outside this harness.
+- Publication checks arbitrary fit-field/minimum-span floating-point bits against four fixed
+  timestamps 0/5/10/15 s. Only finite nonnegative speed, positive finite sigma <=4 m/s and a
+  sufficient span can be returned (unwind 2).
+- Endpoint arithmetic covers every signed first/last timestamp, minimum spans 15/20/30 s and a
+  supplied finite fit, using a four-element endpoint fixture. An independent `i128` duration checks
+  exact acceptance, reversed endpoints and overflow (unwind 2). Timestamp uniqueness is an ingress
+  responsibility and is not claimed by this endpoint-only fixture.
+
+No fitter is stubbed. Numerical regression accuracy remains tested with ordinary Rust tests;
+the new helper proofs establish selection/publication contracts at actual production boundaries.
+Regression tests reproduce future evidence leakage, insufficient-inlier fallback and non-finite
+results from extreme finite uncertainty, and check expiry, post-trim span and precision thresholds.
+
 ## Network reanchoring and duplicate evidence
 
 These five harnesses call production `gate` and `record`, without stubs or changes to their

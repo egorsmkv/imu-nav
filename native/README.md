@@ -493,3 +493,9 @@ non-finite weighted results before publishing a capped speed. Proofs check those
 combinations and sample storage through the 60-entry capacity. Network proofs check coarse-fix
 anchor preservation, bounded reanchoring sequences, candidate-chain restart and duplicate evidence.
 The verification scope lists the fixed fixtures and numerical/geographic exclusions.
+
+Network-speed windows exclude future observations and include the exact expiry boundary. Queries
+retain stored samples for later use. Outlier removal must leave at least four observations over the
+required span; insufficient evidence and non-finite fits now reject instead of publishing the
+unfiltered result. Window selection and final publication have separate Kani harnesses; numerical
+regression fitting remains covered by Rust tests.

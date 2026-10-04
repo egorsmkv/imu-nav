@@ -13,6 +13,13 @@ RUSTC = 'rustc 1.100.0-nightly (8925ea358 2026-08-20)'
 OUTPUT = ROOT / 'build/native-verification'
 # Names and cover labels are intentional inventory, not discovery: deleting a proof must fail CI.
 REQUIRED = {
+    'speed::kani_proofs::window_membership_rejects_future_and_overflowing_ages': {'30 second boundary', '40 second boundary', '90 second boundary', 'expired', 'future', 'overflowing age', 'invalid window', 'current'},
+    'speed::kani_proofs::window_selection_preserves_order_payloads_and_storage': {'none selected', 'all selected', 'partial selection'},
+    'speed::kani_proofs::future_only_queries_reject_without_consuming_observations': {'next millisecond is future', 'extreme clock'},
+    'speed::kani_proofs::surviving_inliers_control_count_and_span_eligibility': {'insufficient count', 'short surviving span', 'all retained', 'minimum surviving count'},
+    'speed::kani_proofs::network_estimate_publication_requires_finite_fit_and_uncertainty': {'span boundary', 'span too short', 'invalid uncertainty', 'imprecise fit'},
+    'speed::kani_proofs::surviving_span_rejects_reversed_and_overflowing_timestamps': {'minimum span', 'reversed endpoints', 'overflowing span'},
+
     'network::kani_proofs::coarse_observations_preserve_an_established_anchor_and_candidates': {'confirmed', 'unreachable'},
     'network::kani_proofs::reanchoring_requires_span_reachability_and_direction': {'before span', 'span and direction boundary', 'backward veto', 'unreachable restart'},
     'network::kani_proofs::a_broken_candidate_chain_restarts_its_confirmation_span': {'new span boundary', 'old span cannot count'},

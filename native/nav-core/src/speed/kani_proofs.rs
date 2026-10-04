@@ -370,3 +370,235 @@ fn insertion_with_spare_capacity_from_55() {
     check_spare_capacity(59);
     kani::cover!(true, "inserted");
 }
+
+#[kani::proof]
+#[kani::unwind(2)]
+fn window_membership_rejects_future_and_overflowing_ages() {
+    let elapsed_ms: i64 = kani::any();
+    let now_ms: i64 = kani::any();
+    let window_ms: i64 = kani::any();
+    let age = i128::from(now_ms) - i128::from(elapsed_ms);
+    let selected = sample_in_window(elapsed_ms, now_ms, window_ms);
+    assert_eq!(selected, age >= 0 && age <= i128::from(window_ms));
+    kani::cover!(
+        window_ms == 30_000 && age == 30_000 && selected,
+        "30 second boundary"
+    );
+    kani::cover!(
+        window_ms == 40_000 && age == 40_000 && selected,
+        "40 second boundary"
+    );
+    kani::cover!(
+        window_ms == 90_000 && age == 90_000 && selected,
+        "90 second boundary"
+    );
+    kani::cover!(window_ms == 30_000 && age == 30_001 && !selected, "expired");
+    kani::cover!(window_ms == 30_000 && age == -1 && !selected, "future");
+    kani::cover!(age > i128::from(i64::MAX) && !selected, "overflowing age");
+    kani::cover!(window_ms < 0 && !selected, "invalid window");
+    kani::cover!(age == 0 && selected, "current");
+}
+
+#[kani::proof]
+#[kani::unwind(8)]
+fn window_selection_preserves_order_payloads_and_storage() {
+    let mut estimator = NetworkSpeedEstimator::default();
+    for _ in 0..3 {
+        estimator.samples.push(Sample {
+            elapsed_ms: kani::any(),
+            position_m: f64::from_bits(kani::any()),
+            accuracy_m: f64::from_bits(kani::any()),
+        });
+    }
+    let before = estimator.clone();
+    let now_ms: i64 = kani::any();
+    let window_ms: i64 = kani::any();
+    let selected = estimator.samples_in_window(now_ms, window_ms);
+    let mut selected_index = 0;
+    for sample in &before.samples {
+        let age = i128::from(now_ms) - i128::from(sample.elapsed_ms);
+        if age >= 0 && age <= i128::from(window_ms) {
+            let actual = selected[selected_index];
+            assert_eq!(actual.elapsed_ms, sample.elapsed_ms);
+            assert_eq!(actual.position_m.to_bits(), sample.position_m.to_bits());
+            assert_eq!(actual.accuracy_m.to_bits(), sample.accuracy_m.to_bits());
+            selected_index += 1;
+        }
+    }
+    assert_eq!(selected.len(), selected_index);
+    assert_same_samples(&estimator, &before);
+    kani::cover!(selected.is_empty(), "none selected");
+    kani::cover!(selected.len() == 3, "all selected");
+    kani::cover!(selected.len() == 1, "partial selection");
+}
+
+#[kani::proof]
+#[kani::unwind(8)]
+fn future_only_queries_reject_without_consuming_observations() {
+    let mut estimator = NetworkSpeedEstimator::default();
+    for index in 0..4 {
+        estimator.add(
+            f64::from(index) * 100.0,
+            20.0,
+            i64::from(index) * 10_000 + 1000,
+        );
+    }
+    let before = estimator.clone();
+    let now_ms: i64 = kani::any();
+    kani::assume(now_ms < 1000);
+    assert!(estimator.estimate(now_ms).is_none());
+    assert!(estimator.strict_estimate(now_ms).is_none());
+    assert_same_samples(&estimator, &before);
+    kani::cover!(now_ms == 999, "next millisecond is future");
+    kani::cover!(now_ms == i64::MIN, "extreme clock");
+}
+
+#[kani::proof]
+#[kani::unwind(8)]
+fn surviving_inliers_control_count_and_span_eligibility() {
+    let mask: u8 = kani::any();
+    kani::assume(mask < 32);
+    let line = Line {
+        intercept_m: 0.0,
+        slope_mps: 0.0,
+        slope_sigma_mps: 1.0,
+        origin_ms: 0,
+    };
+    let mut samples = Vec::with_capacity(5);
+    for (index, elapsed_ms) in [0, 1000, 2000, 3000, 20_000].into_iter().enumerate() {
+        samples.push(Sample {
+            elapsed_ms,
+            position_m: if mask & (1 << index) == 0 {
+                1000.0
+            } else {
+                0.0
+            },
+            accuracy_m: 20.0,
+        });
+    }
+    let retained = select_inliers(&samples, line);
+    let result = finish_network_estimate(line, &retained, 15.0);
+    let count = usize::try_from(mask.count_ones()).unwrap();
+    assert_eq!(retained.len(), count);
+    assert_eq!(result.is_some(), count >= 4 && mask & 16 != 0);
+    if let Some(estimate) = result {
+        assert_eq!(estimate.samples, count);
+        assert!(estimate.span_s >= 15.0);
+        assert_eq!(estimate.speed_mps, 0.0);
+        assert_eq!(estimate.sigma_mps, 1.5);
+    }
+    kani::cover!(count == 3 && result.is_none(), "insufficient count");
+    kani::cover!(mask == 15 && result.is_none(), "short surviving span");
+    kani::cover!(mask == 31 && result.is_some(), "all retained");
+    kani::cover!(count == 4 && result.is_some(), "minimum surviving count");
+}
+
+#[kani::proof]
+#[kani::unwind(2)]
+fn network_estimate_publication_requires_finite_fit_and_uncertainty() {
+    let line = Line {
+        intercept_m: f64::from_bits(kani::any()),
+        slope_mps: f64::from_bits(kani::any()),
+        slope_sigma_mps: f64::from_bits(kani::any()),
+        origin_ms: kani::any(),
+    };
+    let minimum_span_s = f64::from_bits(kani::any());
+    let first = Sample {
+        elapsed_ms: 0,
+        position_m: 0.0,
+        accuracy_m: 20.0,
+    };
+    let samples = [
+        first,
+        Sample {
+            elapsed_ms: 5000,
+            ..first
+        },
+        Sample {
+            elapsed_ms: 10_000,
+            ..first
+        },
+        Sample {
+            elapsed_ms: 15_000,
+            ..first
+        },
+    ];
+    let result = finish_network_estimate(line, &samples, minimum_span_s);
+    if !line.intercept_m.is_finite()
+        || !line.slope_mps.is_finite()
+        || !line.slope_sigma_mps.is_finite()
+        || line.slope_sigma_mps <= 0.0
+        || !minimum_span_s.is_finite()
+        || minimum_span_s <= 0.0
+    {
+        assert!(result.is_none());
+    }
+    if line.slope_sigma_mps.is_finite()
+        && line.slope_sigma_mps > 0.0
+        && line.slope_sigma_mps * 1.5 > 4.0
+    {
+        assert!(result.is_none());
+    }
+    if let Some(estimate) = result {
+        assert_eq!(estimate.speed_mps, line.slope_mps.max(0.0));
+        assert_eq!(estimate.sigma_mps, line.slope_sigma_mps * 1.5);
+        assert!(estimate.speed_mps.is_finite() && estimate.speed_mps >= 0.0);
+        assert!(
+            estimate.sigma_mps.is_finite() && estimate.sigma_mps > 0.0 && estimate.sigma_mps <= 4.0
+        );
+        assert_eq!(estimate.span_s, 15.0);
+        assert!(estimate.span_s >= minimum_span_s);
+        assert_eq!(estimate.samples, 4);
+    }
+    kani::cover!(result.is_some() && minimum_span_s == 15.0, "span boundary");
+    kani::cover!(result.is_none() && minimum_span_s > 15.0, "span too short");
+    kani::cover!(
+        result.is_none() && line.slope_sigma_mps.is_nan(),
+        "invalid uncertainty"
+    );
+    kani::cover!(
+        result.is_none() && line.slope_sigma_mps == 3.0,
+        "imprecise fit"
+    );
+}
+
+#[kani::proof]
+#[kani::unwind(2)]
+fn surviving_span_rejects_reversed_and_overflowing_timestamps() {
+    let first = Sample {
+        elapsed_ms: kani::any(),
+        position_m: 0.0,
+        accuracy_m: 20.0,
+    };
+    let last = Sample {
+        elapsed_ms: kani::any(),
+        ..first
+    };
+    let samples = [first, first, last, last];
+    let minimum_ms = match kani::any::<u8>() % 3 {
+        0 => 15_000,
+        1 => 20_000,
+        _ => 30_000,
+    };
+    let line = Line {
+        intercept_m: 0.0,
+        slope_mps: 10.0,
+        slope_sigma_mps: 1.0,
+        origin_ms: first.elapsed_ms,
+    };
+    let result = finish_network_estimate(line, &samples, milliseconds_to_seconds(minimum_ms));
+    let duration = i128::from(last.elapsed_ms) - i128::from(first.elapsed_ms);
+    assert_eq!(
+        result.is_some(),
+        duration >= i128::from(minimum_ms) && duration <= i128::from(i64::MAX)
+    );
+    kani::cover!(
+        duration == i128::from(minimum_ms) && result.is_some(),
+        "minimum span"
+    );
+    kani::cover!(duration < 0 && result.is_none(), "reversed endpoints");
+    kani::cover!(
+        duration > i128::from(i64::MAX) && result.is_none(),
+        "overflowing span"
+    );
+}
