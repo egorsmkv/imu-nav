@@ -107,3 +107,19 @@ fn duplicate_and_invalid_samples_do_not_teach_speed_and_clear_removes_estimates(
     }; 2];
     assert_eq!(slope(&same_time), 0.0);
 }
+
+#[test]
+fn reanchor_span_and_reverse_direction_boundaries() {
+    for (time, delta, expected) in [
+        (12_999, 0.0, GateResult::Rejected),
+        (13_000, -72.0, GateResult::Reanchored),
+        (13_000, -100.0, GateResult::Rejected),
+        (13_000, 100.0, GateResult::Reanchored),
+        (14_000, -100.0, GateResult::Rejected),
+    ] {
+        let mut tracker = NetworkTracker::default();
+        assert_eq!(tracker.gate(0, 0.0, 30.0), GateResult::Accepted);
+        assert_eq!(tracker.gate(1000, 2000.0, 30.0), GateResult::Rejected);
+        assert_eq!(tracker.gate(time, 2000.0 + delta, 30.0), expected);
+    }
+}

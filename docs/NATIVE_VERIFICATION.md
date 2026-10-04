@@ -22,10 +22,11 @@ toolchain. Do not substitute another compiler, CBMC or solver. Kani is a develop
 or Android runtime dependency. The core remains dependency-free.
 
 The runner checks the tool version, selects only `imu-nav-core`, uses two solver workers, allows
-five minutes per harness, and imposes a 25-minute overall verification deadline. It retains Kani's
+five minutes per harness, and imposes a 35-minute overall verification deadline. It retains Kani's
 default overflow, pointer, assertion reachability and unwinding checks. A proof's `#[kani::unwind]`
 is an explicit loop bound; exceeding it fails verification rather than assuming the loop terminates.
-No production function is stubbed.
+No production function is stubbed. The larger speed-storage inventory increases the overall
+budget; the five-minute per-harness deadline and two-worker memory limit are unchanged.
 
 Results go to `build/native-verification/`:
 
@@ -140,6 +141,63 @@ age, frozen duration, receiver freshness and strong-jam chain age. Duration comp
 saturating subtraction; freshness/chain gates reject subtraction overflow. Ordinary timestamps
 retain their previous behavior. The full timestamp domains above prove the sequence/freshness/
 chain decisions; the geodesic trusted-anchor path is regression-tested.
+
+## Speed fusion and sample storage
+
+Fusion guards reject negative/non-finite source speeds and malformed network uncertainty/span
+before applying the network uncertainty floor. Non-finite weighted arithmetic or final speed/sigma
+returns no estimate; rejected network metadata cannot leak into a GPS-only result. Normal valid
+fusion retains the same weights, arithmetic order and final speed cap.
+
+The finalization proof covers all floating-point bit patterns for weighted sum, weight sum and
+span, with source count 2. Successful output has finite speed in 0–150/3.6 m/s, finite positive
+sigma and finite nonnegative span. This is a numerical publication contract, not a proof of
+statistical calibration. Separate public-fusion proofs cover arbitrary invalid network fields and
+source speeds, GPS-only fallback, and every subset of fixed GPS/route/network speeds 10/20/12 m/s
+with arbitrary signed GPS age, split by source combination. The three-source case is further split into adjacent GPS-age
+ranges ≤0, 1–60,000 ms, 60,001–3,600,000 ms, and >3,600,000 ms; their union retains every signed
+age. The unsplit three-source proof exceeded five minutes. They check source
+counts, span ownership and the weighted-average
+range with a 0.001 m/s rounding tolerance. Fusion harnesses use unwind 2.
+
+Storage proofs call production `add`/`clear`: invalid numeric fields or non-increasing signed
+timestamps preserve a one-sample fixture bit-for-bit (unwind 4). Twelve harnesses enumerate fixed
+occupancies 0–59 (five independent fixtures each), checking one insertion's length, newest sample
+and every retained payload/timestamp. Fixtures have times 0…count−1 ms, position 10 m, accuracy
+20 m and capacity 61; insertion uses time 1,000 ms, position 30 m and accuracy 40 m. A separate
+exact-capacity fixture checks eviction with arbitrary finite position and nonnegative finite
+accuracy, then clear. Storage harnesses use unwind 62. Symbolic occupancy and multi-insertion
+formulations exceeded five minutes or 27 GB of memory; independent fixed-size fixtures avoid
+that growth without omitting occupancies. A 125-insertion Rust regression exercises allocation
+growth and repeated eviction. These proofs do not establish regression-fitting accuracy or
+arbitrary-history behavior.
+
+## Network reanchoring and duplicate evidence
+
+These five harnesses call production `gate` and `record`, without stubs or changes to their
+decision rules. The slope variance square uses explicit multiplication: Kani overapproximates
+`powi` (see [intrinsic support](https://model-checking.github.io/kani/rust-feature-support/intrinsics.html)),
+which produced spurious NaN/direction failures in ordinary-size fixtures. Concrete counterexample
+inputs pass in Rust regression tests. The formula is unchanged and no operation is stubbed.
+Coarse observations use every signed timestamp and finite position/accuracy bit
+pattern with accuracy >300 m, from an established anchor and one stored candidate/sample.
+Both accepted and rejected coarse observations preserve the anchor, candidates, recent/history,
+coordinate cache and speed samples; they cannot reanchor.
+
+Reanchoring starts at position 0 m/time 0, then rejects a candidate at 2,000 m/time 1 s (accuracy
+30 m throughout). The next observation uses times 3/12.999/13/14 s and offsets −100/−72/0/100/10,000 m
+from that candidate. All 20 combinations check the 12 s span, −6 m/s backward limit, reachability,
+anchor publication and candidate cleanup, with explicit exact-boundary witnesses. A broken-chain
+proof replaces that candidate with position 10,000 m/time 2 s, then checks 10,100 m at 13.999/14 s:
+the discarded candidate's time cannot count toward the new span. Recovery to the original anchor
+uses time 2 s and every integer position 0–100 m, checking that abandoned candidates clear.
+These are bounded scenarios, not proofs of arbitrary-length regression slopes or all route positions.
+
+Duplicate recording uses a one-sample fixture at (50°, 30°), arbitrary signed new time, finite
+position and nonnegative finite accuracy. A repeated coordinate may update recent observations,
+but cannot add history or speed samples or change anchor/candidates. Speed storage is compared
+directly, rather than inferring preservation from an unavailable speed estimate. Harness unwind
+bounds are 4 or 8; regression tests remain the longer-sequence integration checks.
 
 ## Numerical guards and rollback
 
@@ -297,7 +355,7 @@ road turn. Existing real-route/delayed-GPS regression tests remain the integrati
 without an Android SDK or JNI build. The failing check is **Native core bounded proofs**. Repository
 branch protection/rulesets must list that check as required to enforce it at merge time; a workflow
 file alone cannot configure repository rules. Reports/logs are uploaded even on failure, retained
-for 14 days; the job deadline is 30 minutes.
+for 14 days; the job deadline is 40 minutes.
 
 Add a harness beside its production module, declare the assumptions and explicit unwind bound,
 include named reachability witnesses, and add it to `REQUIRED`. Do not assume an accepted/rejected

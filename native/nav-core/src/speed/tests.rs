@@ -50,3 +50,45 @@ fn regression_rejects_short_or_imprecise_windows() {
     }
     assert_eq!(estimator.estimate(3_000), None);
 }
+
+#[test]
+fn invalid_network_metadata_cannot_contaminate_fusion() {
+    for (sigma_mps, span_s) in [(f64::NAN, 30.0), (-1.0, 30.0), (1.0, f64::NAN), (1.0, -1.0)] {
+        let network = SpeedEstimate {
+            speed_mps: 12.0,
+            sigma_mps,
+            samples: 5,
+            span_s,
+        };
+        assert_eq!(fuse_speed(None, 0, None, Some(network)), None);
+        assert_eq!(
+            fuse_speed(Some(10.0), 0, None, Some(network)),
+            fuse_speed(Some(10.0), 0, None, None)
+        );
+    }
+}
+
+#[test]
+fn overflowing_fusion_is_rejected_and_negative_speed_is_ignored() {
+    assert!(fuse_speed(Some(-1.0), 0, None, None).is_none());
+    let network = SpeedEstimate {
+        speed_mps: f64::MAX,
+        sigma_mps: 0.3,
+        samples: 5,
+        span_s: 30.0,
+    };
+    assert!(fuse_speed(None, 0, None, Some(network)).is_none());
+}
+
+#[test]
+fn repeated_insertion_keeps_only_the_latest_sixty_observations() {
+    let mut estimator = NetworkSpeedEstimator::default();
+    for time in 0..125 {
+        estimator.add(10.0, 20.0, time);
+        assert!(estimator.samples.len() <= 60);
+    }
+    assert_eq!(estimator.samples.first().unwrap().elapsed_ms, 65);
+    assert_eq!(estimator.samples.last().unwrap().elapsed_ms, 124);
+    estimator.clear();
+    assert!(estimator.samples.is_empty());
+}

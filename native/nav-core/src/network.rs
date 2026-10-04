@@ -183,7 +183,11 @@ fn slope(points: &[Anchor]) -> f64 {
     let mean_position = points.iter().map(|point| point.position_m).sum::<f64>() / count;
     let time_variance = points
         .iter()
-        .map(|point| (point.time_s - mean_time).powi(2))
+        .map(|point| {
+            // An explicit square has precise multiplication semantics for the verifier.
+            let centered_time = point.time_s - mean_time;
+            centered_time * centered_time
+        })
         .sum::<f64>();
     if time_variance < 1.0e-9 {
         return 0.0;

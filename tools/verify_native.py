@@ -13,6 +13,38 @@ RUSTC = 'rustc 1.100.0-nightly (8925ea358 2026-08-20)'
 OUTPUT = ROOT / 'build/native-verification'
 # Names and cover labels are intentional inventory, not discovery: deleting a proof must fail CI.
 REQUIRED = {
+    'network::kani_proofs::coarse_observations_preserve_an_established_anchor_and_candidates': {'confirmed', 'unreachable'},
+    'network::kani_proofs::reanchoring_requires_span_reachability_and_direction': {'before span', 'span and direction boundary', 'backward veto', 'unreachable restart'},
+    'network::kani_proofs::a_broken_candidate_chain_restarts_its_confirmation_span': {'new span boundary', 'old span cannot count'},
+    'network::kani_proofs::reachable_precise_fixes_clear_abandoned_candidates': {'recovered'},
+    'network::kani_proofs::duplicate_coordinates_cannot_add_speed_or_history_evidence': {'new timestamp same coordinate', 'old timestamp same coordinate'},
+
+    'speed::kani_proofs::insertion_with_spare_capacity_from_0': {'inserted'},
+    'speed::kani_proofs::insertion_with_spare_capacity_from_5': {'inserted'},
+    'speed::kani_proofs::insertion_with_spare_capacity_from_10': {'inserted'},
+    'speed::kani_proofs::insertion_with_spare_capacity_from_15': {'inserted'},
+    'speed::kani_proofs::insertion_with_spare_capacity_from_20': {'inserted'},
+    'speed::kani_proofs::insertion_with_spare_capacity_from_25': {'inserted'},
+    'speed::kani_proofs::insertion_with_spare_capacity_from_30': {'inserted'},
+    'speed::kani_proofs::insertion_with_spare_capacity_from_35': {'inserted'},
+    'speed::kani_proofs::insertion_with_spare_capacity_from_40': {'inserted'},
+    'speed::kani_proofs::insertion_with_spare_capacity_from_45': {'inserted'},
+    'speed::kani_proofs::insertion_with_spare_capacity_from_50': {'inserted'},
+    'speed::kani_proofs::insertion_with_spare_capacity_from_55': {'inserted'},
+    'speed::kani_proofs::fusion_finalization_never_publishes_nonfinite_values': {'accepted', 'rejected', 'capped'},
+    'speed::kani_proofs::malformed_network_metadata_is_ignored': {'nan uncertainty', 'negative span'},
+    'speed::kani_proofs::invalid_measured_speeds_cannot_add_weight': {'negative', 'nan'},
+    'speed::kani_proofs::ordinary_fusion_gps_only': {'sources'},
+    'speed::kani_proofs::ordinary_fusion_gps_route': {'sources'},
+    'speed::kani_proofs::ordinary_fusion_gps_network': {'sources'},
+    'speed::kani_proofs::ordinary_fusion_all_nonpositive': {'sources'},
+    'speed::kani_proofs::ordinary_fusion_all_recent': {'sources'},
+    'speed::kani_proofs::ordinary_fusion_all_old': {'sources'},
+    'speed::kani_proofs::ordinary_fusion_all_ancient': {'sources'},
+    'speed::kani_proofs::ordinary_fusion_without_gps': {'sources'},
+    'speed::kani_proofs::invalid_or_nonincreasing_samples_preserve_storage': {'duplicate', 'backward', 'invalid'},
+    'speed::kani_proofs::insertion_retains_the_newest_sixty_samples': {'eviction'},
+
     'estimator::turn::kani_proofs::landmark_isolation_accepts_the_exact_distance_boundary': {'inside isolation', 'isolation boundary'},
     'estimator::turn::kani_proofs::invalid_turn_ingress_preserves_all_state': {'duplicate', 'future', 'stale', 'old route', 'invalid angle'},
     'estimator::turn::kani_proofs::measured_position_motion_and_quality_gates_block_turns': {'gps boundary', 'motion control', 'walking', 'stationary', 'fast', 'uncertain'},
@@ -210,7 +242,7 @@ def main():
         run_logged(['cargo', 'kani', '-p', 'imu-nav-core', '--lib', '--target-dir', str(OUTPUT / 'target'),
                     '-Z', 'unstable-options', '--export-json', str(report_path),
                     '--harness-timeout', '5m', '-j', '2', '--output-format', 'terse'],
-                   env, OUTPUT / 'verification.log', 25 * 60)
+                   env, OUTPUT / 'verification.log', 35 * 60)
         summary = validate_report(json.loads(report_path.read_text()))
     except (OSError, ValueError, RuntimeError) as error:
         summary_path.write_text(json.dumps({'passed': False, 'error': str(error)}, indent=2) + '\n')

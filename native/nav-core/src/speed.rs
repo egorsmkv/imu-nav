@@ -31,7 +31,7 @@ pub fn fuse_speed(
     let mut weight_sum = 0.0;
     let mut count = 0;
     let mut add = |speed: f64, sigma: f64| {
-        if speed.is_finite() && sigma.is_finite() && sigma > 0.0 {
+        if speed.is_finite() && speed >= 0.0 && sigma.is_finite() && sigma > 0.0 {
             let weight = 1.0 / (sigma * sigma);
             weighted_sum += speed * weight;
             weight_sum += weight;
@@ -47,20 +47,57 @@ pub fn fuse_speed(
     if let Some(speed) = route_prior_mps {
         add(speed, ROUTE_PRIOR_SIGMA_MPS);
     }
+    let network = network.filter(valid_network_estimate);
     if let Some(estimate) = network {
         add(
             estimate.speed_mps,
             estimate.sigma_mps.max(MIN_NETWORK_SIGMA_MPS),
         );
     }
-    if weight_sum == 0.0 {
+    finish_fusion(
+        weighted_sum,
+        weight_sum,
+        count,
+        network.map_or(0.0, |estimate| estimate.span_s),
+    )
+}
+
+/// Reject malformed network metadata before applying the uncertainty floor.
+fn valid_network_estimate(estimate: &SpeedEstimate) -> bool {
+    estimate.speed_mps.is_finite()
+        && estimate.speed_mps >= 0.0
+        && estimate.sigma_mps.is_finite()
+        && estimate.sigma_mps >= 0.0
+        && estimate.span_s.is_finite()
+        && estimate.span_s >= 0.0
+}
+
+/// Do not publish overflowed weighted arithmetic as a capped, apparently precise speed.
+fn finish_fusion(
+    weighted_sum: f64,
+    weight_sum: f64,
+    count: usize,
+    span_s: f64,
+) -> Option<SpeedEstimate> {
+    if !weighted_sum.is_finite()
+        || weighted_sum < 0.0
+        || !weight_sum.is_finite()
+        || weight_sum <= 0.0
+        || !span_s.is_finite()
+        || span_s < 0.0
+    {
+        return None;
+    }
+    let speed_mps = weighted_sum / weight_sum;
+    let sigma_mps = (1.0 / weight_sum).sqrt();
+    if !speed_mps.is_finite() || !sigma_mps.is_finite() || sigma_mps <= 0.0 {
         return None;
     }
     Some(SpeedEstimate {
-        speed_mps: (weighted_sum / weight_sum).clamp(0.0, MAX_SPEED_MPS),
-        sigma_mps: (1.0 / weight_sum).sqrt(),
+        speed_mps: speed_mps.clamp(0.0, MAX_SPEED_MPS),
+        sigma_mps,
         samples: count,
-        span_s: network.map_or(0.0, |estimate| estimate.span_s),
+        span_s,
     })
 }
 

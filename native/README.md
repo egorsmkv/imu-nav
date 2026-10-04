@@ -487,3 +487,9 @@ quality thresholds, and bounded strong-jam confirmation chains. Only GOOD verdic
 trusted anchor. Extreme timestamp differences now saturate for duration comparisons or reject
 freshness/chain eligibility instead of overflowing. Geographic network agreement and complete
 classifier integration remain regression-tested; the proof scope documents the helper boundaries.
+
+Speed fusion ignores malformed network metadata and negative/non-finite speeds, and rejects
+non-finite weighted results before publishing a capped speed. Proofs check those guards, source
+combinations and sample storage through the 60-entry capacity. Network proofs check coarse-fix
+anchor preservation, bounded reanchoring sequences, candidate-chain restart and duplicate evidence.
+The verification scope lists the fixed fixtures and numerical/geographic exclusions.
