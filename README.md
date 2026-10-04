@@ -444,6 +444,9 @@ cargo test --manifest-path server/Cargo.toml # persistent HTTP/WebSocket cell se
 ```
 
 **Native formal verification.** Run `python3 tools/verify_native.py` after installing pinned Kani 0.68.0.
+Future-only speed queries return before allocating a window; bounded proofs check both query APIs
+and unchanged stored observations.
+
 The PR check verifies speed-fusion guards, sample storage, network-speed windows and surviving
 evidence, network reanchoring,
 trust timestamp/frozen-position and receiver/jamming policies, turn correction

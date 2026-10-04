@@ -183,7 +183,7 @@ fields and positive uncertainty no greater than 4 m/s after inflation. Degenerat
 before outlier selection. The 30/40/90 s windows, 15/20/30 s minimum spans, weighting and fallback
 order are unchanged.
 
-Six additional harnesses are registered for CI:
+Six window/publication harnesses are registered for CI:
 
 - Membership compares every signed sample/current/window timestamp against independent `i128`
   arithmetic; witnesses include each standard expiry boundary, future/current samples, an expired
@@ -192,7 +192,12 @@ Six additional harnesses are registered for CI:
   signed current time/window, original order and bitwise preservation of stored/copied values
   (unwind 8). Invalid numeric payloads are deliberately included to isolate selection from ingress.
 - Complete `estimate`/`strict_estimate` calls reject four future observations at 1/11/21/31 s for
-  every current time <1 s and preserve storage (unwind 8). These paths reject before fitting.
+  every current time <1 s and preserve storage (unwind 1). Ingress keeps timestamps increasing,
+  so production rejects before allocating or iterating when the query precedes the first sample.
+  The fixture initializes four samples directly and checks each stored value explicitly; ingress
+  remains covered by the storage harnesses. Unwinding assertions enforce that no longer loop is
+  reached. The original combined iterator/fit expansion exceeded the five-minute limit; neither
+  the signed timestamp domain nor the public calls, safety checks or witnesses were removed.
 - Inlier selection and finalization cover all 32 masks of five observations at 0/1/2/3/20 s,
   accuracy 20 m, position 0 or 1,000 m, and a supplied stationary fit with sigma 1 m/s. They check
   surviving count, shortened span and successful publication when sufficient evidence remains
@@ -209,6 +214,8 @@ No fitter is stubbed. Numerical regression accuracy remains tested with ordinary
 the new helper proofs establish selection/publication contracts at actual production boundaries.
 Regression tests reproduce future evidence leakage, insufficient-inlier fallback and non-finite
 results from extreme finite uncertainty, and check expiry, post-trim span and precision thresholds.
+Timestamp-shift regressions also retain usable estimates near both signed clock limits after earlier
+queries reject.
 
 ## Network reanchoring and duplicate evidence
 

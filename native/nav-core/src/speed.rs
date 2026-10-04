@@ -182,6 +182,11 @@ impl NetworkSpeedEstimator {
         window_ms: i64,
         minimum_span_s: f64,
     ) -> Option<SpeedEstimate> {
+        // Ingress keeps timestamps increasing, so no sample is eligible before the first.
+        let first = self.samples.first()?;
+        if now_ms < first.elapsed_ms {
+            return None;
+        }
         let mut samples = self.samples_in_window(now_ms, window_ms);
         if samples.len() < MIN_POINTS {
             return None;

@@ -132,6 +132,41 @@ fn future_samples_cannot_supply_a_current_speed_estimate() {
 }
 
 #[test]
+fn future_query_fast_path_preserves_estimates_at_timestamp_extremes() {
+    assert!(
+        NetworkSpeedEstimator::default()
+            .estimate(i64::MIN)
+            .is_none()
+    );
+    for first_ms in [i64::MIN, i64::MIN + 1, -30_000, 1000, i64::MAX - 30_000] {
+        let mut estimator = NetworkSpeedEstimator::default();
+        for index in 0..4 {
+            estimator.add(
+                f64::from(index) * 100.0,
+                20.0,
+                first_ms + i64::from(index) * 10_000,
+            );
+        }
+        if let Some(before_first_ms) = first_ms.checked_sub(1) {
+            assert!(estimator.estimate(before_first_ms).is_none());
+            assert!(estimator.strict_estimate(before_first_ms).is_none());
+        }
+        assert!(estimator.estimate(first_ms).is_none());
+        assert!(estimator.strict_estimate(first_ms).is_none());
+        let last_ms = first_ms + 30_000;
+        for estimate in [
+            estimator.estimate(last_ms),
+            estimator.strict_estimate(last_ms),
+        ] {
+            let estimate = estimate.expect("historical queries must retain later usable evidence");
+            assert!((estimate.speed_mps - 10.0).abs() < 1.0e-9);
+            assert_eq!(estimate.samples, 4);
+            assert_eq!(estimate.span_s, 30.0);
+        }
+    }
+}
+
+#[test]
 fn future_observations_do_not_change_an_existing_estimate() {
     for interval_ms in [5000, 10_000] {
         let mut estimator = NetworkSpeedEstimator::default();

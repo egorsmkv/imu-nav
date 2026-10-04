@@ -210,6 +210,7 @@ fn ordinary_fusion_all_nonpositive() {
 }
 
 #[kani::proof]
+#[kani::solver(kissat)]
 #[kani::unwind(2)]
 fn ordinary_fusion_all_recent() {
     let age: i64 = kani::any();
@@ -218,6 +219,7 @@ fn ordinary_fusion_all_recent() {
 }
 
 #[kani::proof]
+#[kani::solver(kissat)]
 #[kani::unwind(2)]
 fn ordinary_fusion_all_old() {
     let age: i64 = kani::any();
@@ -433,24 +435,51 @@ fn window_selection_preserves_order_payloads_and_storage() {
 }
 
 #[kani::proof]
-#[kani::unwind(8)]
+#[kani::unwind(1)]
 fn future_only_queries_reject_without_consuming_observations() {
-    let mut estimator = NetworkSpeedEstimator::default();
-    for index in 0..4 {
-        estimator.add(
-            f64::from(index) * 100.0,
-            20.0,
-            i64::from(index) * 10_000 + 1000,
-        );
-    }
-    let before = estimator.clone();
+    // Direct construction and explicit checks avoid loops in the fixture. The future-only
+    // production path must reject before iterating; unwinding assertions enforce that boundary.
+    let first = Sample {
+        elapsed_ms: 1000,
+        position_m: 0.0,
+        accuracy_m: 20.0,
+    };
+    let second = Sample {
+        elapsed_ms: 11_000,
+        position_m: 100.0,
+        accuracy_m: 20.0,
+    };
+    let third = Sample {
+        elapsed_ms: 21_000,
+        position_m: 200.0,
+        accuracy_m: 20.0,
+    };
+    let fourth = Sample {
+        elapsed_ms: 31_000,
+        position_m: 300.0,
+        accuracy_m: 20.0,
+    };
+    let estimator = NetworkSpeedEstimator {
+        samples: vec![first, second, third, fourth],
+    };
     let now_ms: i64 = kani::any();
     kani::assume(now_ms < 1000);
     assert!(estimator.estimate(now_ms).is_none());
     assert!(estimator.strict_estimate(now_ms).is_none());
-    assert_same_samples(&estimator, &before);
+    assert_eq!(estimator.samples.len(), 4);
+    assert_sample_bits(estimator.samples[0], first);
+    assert_sample_bits(estimator.samples[1], second);
+    assert_sample_bits(estimator.samples[2], third);
+    assert_sample_bits(estimator.samples[3], fourth);
     kani::cover!(now_ms == 999, "next millisecond is future");
     kani::cover!(now_ms == i64::MIN, "extreme clock");
+}
+
+/// Fixed-index checks keep query proofs independent of iterator unwinding.
+fn assert_sample_bits(actual: Sample, expected: Sample) {
+    assert_eq!(actual.elapsed_ms, expected.elapsed_ms);
+    assert_eq!(actual.position_m.to_bits(), expected.position_m.to_bits());
+    assert_eq!(actual.accuracy_m.to_bits(), expected.accuracy_m.to_bits());
 }
 
 #[kani::proof]
