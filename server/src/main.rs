@@ -1,6 +1,9 @@
 use anyhow::{Context, Result};
 use clap::Parser;
-use imu_nav_cell_server::{AppState, CellStore, Policy, ServerConfig, router};
+use imu_nav_cell_server::{
+    AppState, CellStore, MailConfig, Policy, ServerConfig, create_admin, router,
+};
+use std::io::Read;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -17,8 +20,19 @@ struct Options {
     port: u16,
     #[arg(long, default_value = "cells.sqlite3")]
     data: PathBuf,
-    #[arg(long, env = "CELLS_API_KEY")]
-    api_key: Option<String>,
+    /// Create an admin locally; read its password from standard input, then exit.
+    #[arg(long)]
+    create_admin: Option<String>,
+    #[arg(long, env = "CELLS_PUBLIC_URL")]
+    public_url: Option<String>,
+    #[arg(long, env = "CELLS_SMTP_HOST")]
+    smtp_host: Option<String>,
+    #[arg(long, env = "CELLS_SMTP_USERNAME")]
+    smtp_username: Option<String>,
+    #[arg(long, env = "CELLS_SMTP_PASSWORD")]
+    smtp_password: Option<String>,
+    #[arg(long, env = "CELLS_SMTP_FROM")]
+    smtp_from: Option<String>,
     /// Trust X-Forwarded-For from the reverse proxy connected to this process.
     #[arg(long)]
     trust_proxy: bool,
@@ -60,6 +74,43 @@ async fn main() -> Result<()> {
         ..Policy::default()
     };
     let store = CellStore::open(&options.data)?;
+    if let Some(email) = options.create_admin.as_deref() {
+        let mut password = String::new();
+        std::io::stdin().read_to_string(&mut password)?;
+        create_admin(&store, email, password.trim_end_matches(['\n', '\r']))?;
+        return Ok(());
+    }
+    let mail = match (
+        options.public_url,
+        options.smtp_host,
+        options.smtp_username,
+        options.smtp_password,
+        options.smtp_from,
+    ) {
+        (
+            Some(public_url),
+            Some(smtp_host),
+            Some(smtp_username),
+            Some(smtp_password),
+            Some(smtp_from),
+        ) => {
+            anyhow::ensure!(
+                public_url.starts_with("https://"),
+                "CELLS_PUBLIC_URL must use HTTPS"
+            );
+            Some(MailConfig {
+                public_url,
+                smtp_host,
+                smtp_username,
+                smtp_password,
+                smtp_from,
+            })
+        }
+        (None, None, None, None, None) => None,
+        _ => anyhow::bail!(
+            "all CELLS_PUBLIC_URL and CELLS_SMTP_* settings must be provided together"
+        ),
+    };
     if let Some(path) = options.import {
         let mut towers = imu_nav_cell_server::read_import(&path, usize::MAX)?;
         if !options.mcc.is_empty() {
@@ -73,7 +124,7 @@ async fn main() -> Result<()> {
     let state = AppState::new(
         store,
         ServerConfig {
-            api_key: options.api_key,
+            mail,
             policy: policy.clone(),
             trust_proxy: options.trust_proxy,
         },

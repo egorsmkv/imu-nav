@@ -1,15 +1,15 @@
 use crate::api::{ApiError, AppState, path_key, run_db};
+use crate::auth;
 use crate::{Consensus, StoreCounts};
 use askama::Template;
 use axum::Router;
-use axum::extract::{Path, Query, State};
+use axum::extract::{ConnectInfo, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::get;
-use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD;
 use serde::Deserialize;
 use std::collections::HashSet;
+use std::net::SocketAddr;
 
 const DEFAULT_LIMIT: usize = 100;
 const MAX_LIMIT: usize = 1_000;
@@ -143,10 +143,13 @@ struct TowerTemplate {
 /// Render summary cards and the newest consensus rows without exposing mutation controls.
 async fn dashboard(
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     Query(query): Query<AdminQuery>,
 ) -> Result<Response, AdminError> {
-    authorize(&headers, state.config.api_key.as_deref())?;
+    auth::admin_account(&state, &headers, peer)
+        .await
+        .map_err(|_| AdminError::unauthorized())?;
     let mccs = query.mccs()?;
     let limit = query.limit();
     let store = state.store.clone();
@@ -177,10 +180,13 @@ async fn dashboard(
 /// Render one tower and its publication metadata without edit or delete actions.
 async fn tower_detail(
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     Path(path): Path<(String, i64, i64, i64, i64)>,
 ) -> Result<Response, AdminError> {
-    authorize(&headers, state.config.api_key.as_deref())?;
+    auth::admin_account(&state, &headers, peer)
+        .await
+        .map_err(|_| AdminError::unauthorized())?;
     let key = path_key(path)?;
     let store = state.store.clone();
     let consensus = run_db(move || store.consensus(&key))
@@ -191,34 +197,6 @@ async fn tower_detail(
         tower: TowerRow::new(&consensus, minimum_devices),
         minimum_devices,
     })
-}
-
-/// Accept existing bearer credentials or browser-native Basic authentication.
-fn authorize(headers: &HeaderMap, api_key: Option<&str>) -> Result<(), AdminError> {
-    let Some(api_key) = api_key.filter(|value| !value.is_empty()) else {
-        return Ok(());
-    };
-    let Some(value) = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-    else {
-        return Err(AdminError::unauthorized());
-    };
-    if value.strip_prefix("Bearer ") == Some(api_key) {
-        return Ok(());
-    }
-    let valid_basic = value
-        .strip_prefix("Basic ")
-        .and_then(|encoded| STANDARD.decode(encoded).ok())
-        .and_then(|decoded| String::from_utf8(decoded).ok())
-        .and_then(|credentials| {
-            let (username, password) = credentials.split_once(':')?;
-            Some(username == "admin" && password == api_key)
-        })
-        .unwrap_or(false);
-    valid_basic
-        .then_some(())
-        .ok_or_else(AdminError::unauthorized)
 }
 
 /// Render an Askama page and attach restrictive browser security headers.

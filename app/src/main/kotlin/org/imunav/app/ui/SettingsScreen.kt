@@ -94,12 +94,15 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
     var mccs by remember { mutableStateOf(c.mccs) }
     var token by remember { mutableStateOf(mgr.savedToken()) }
     var syncUrl by remember { mutableStateOf(c.syncUrl) }
-    var syncKey by remember { mutableStateOf(mgr.savedSyncKey()) }
+    var accountEmail by remember { mutableStateOf(c.accountEmail.orEmpty()) }
+    var accountPassword by remember { mutableStateOf("") }
     var autoSync by remember { mutableStateOf(c.autoSync) }
     var confirmReset by remember { mutableStateOf(false) }
+    val accountUrlAllowed = syncUrl.trim().startsWith("https://") || syncUrl.trim().startsWith("http://localhost:") ||
+        syncUrl.trim().startsWith("http://127.0.0.1:") || syncUrl.trim().startsWith("http://10.0.2.2:")
 
     /** Store the typed server settings. */
-    fun save() = mgr.saveSettings(syncUrl, syncKey, autoSync, mccs)
+    fun save() = mgr.saveSettings(syncUrl, autoSync, mccs)
 
     /** Save every editable field before either back affordance returns to the map. */
     fun leaveSettings() {
@@ -261,15 +264,42 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                         syncUrl = it
                         save()
                     }, stringResource(R.string.sync_url), "https://cells.example.org", keyboard = KeyboardType.Uri)
-                    Field(syncKey, {
-                        syncKey = it
-                        save()
-                    }, stringResource(R.string.sync_key), null, secret = true)
-                    if (syncUrl.trim().startsWith("http://") && syncKey.isNotBlank()) {
+                    if (syncUrl.trim().startsWith("http://") && !accountUrlAllowed) {
                         Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Filled.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.size(8.dp))
                             Text(stringResource(R.string.sync_http_warning), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                    if (c.accountEmail == null) {
+                        Field(accountEmail, { accountEmail = it }, stringResource(R.string.auth_email), null, keyboard = KeyboardType.Email)
+                        Field(accountPassword, { accountPassword = it }, stringResource(R.string.auth_password), null, secret = true)
+                        FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Button(onClick = {
+                                save()
+                                mgr.authenticate(accountEmail, accountPassword, register = false)
+                                accountPassword = ""
+                            }, enabled = accountUrlAllowed && accountEmail.isNotBlank() && accountPassword.isNotBlank() && !busy) {
+                                Text(stringResource(R.string.auth_sign_in))
+                            }
+                            OutlinedButton(onClick = {
+                                save()
+                                mgr.authenticate(accountEmail, accountPassword, register = true)
+                                accountPassword = ""
+                            }, enabled = accountUrlAllowed && accountEmail.isNotBlank() && accountPassword.isNotBlank() && !busy) {
+                                Text(stringResource(R.string.auth_register))
+                            }
+                            TextButton(onClick = {
+                                save()
+                                mgr.requestPasswordReset(accountEmail)
+                            }, enabled = accountUrlAllowed && accountEmail.isNotBlank() && !busy) {
+                                Text(stringResource(R.string.auth_forgot_password))
+                            }
+                        }
+                    } else {
+                        ListItem(headlineContent = { Text(stringResource(R.string.auth_account, c.accountEmail)) })
+                        TextButton(onClick = { mgr.signOut() }, enabled = !busy, modifier = Modifier.padding(horizontal = 16.dp)) {
+                            Text(stringResource(R.string.auth_sign_out))
                         }
                     }
                     SwitchItem(stringResource(R.string.sync_auto), stringResource(R.string.sync_auto_summary), autoSync) {

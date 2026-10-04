@@ -1,8 +1,8 @@
 use anyhow::Result;
 use futures_util::StreamExt;
 use imu_nav_cell_server::{
-    AppState, CellKey, CellStore, CellTower, Consensus, Policy, Radio, ServerConfig, decode_towers,
-    encode_towers, router,
+    AppState, CellKey, CellStore, CellTower, Consensus, Policy, Radio, ServerConfig, create_admin,
+    decode_towers, encode_towers, router,
 };
 use reqwest::StatusCode;
 use std::net::{Ipv4Addr, SocketAddr};
@@ -14,6 +14,7 @@ struct TestServer {
     base_url: String,
     task: tokio::task::JoinHandle<()>,
     _database: NamedTempFile,
+    token: String,
 }
 
 impl Drop for TestServer {
@@ -29,10 +30,11 @@ async fn start_server() -> Result<TestServer> {
 async fn start_server_with_policy(policy: Policy) -> Result<TestServer> {
     let database = NamedTempFile::new()?;
     let store = CellStore::open(database.path())?;
+    create_admin(&store, "admin@example.org", "correct horse battery staple")?;
     let state = AppState::new(
         store,
         ServerConfig {
-            api_key: Some("secret".to_owned()),
+            mail: None,
             policy,
             trust_proxy: false,
         },
@@ -47,8 +49,16 @@ async fn start_server_with_policy(policy: Policy) -> Result<TestServer> {
         .await
         .expect("test server");
     });
+    let base_url = format!("http://{address}");
+    let login = reqwest::Client::new().post(format!("{base_url}/v1/auth/login"))
+        .json(&serde_json::json!({"email":"admin@example.org","password":"correct horse battery staple"})).send().await?;
+    let token = login.json::<serde_json::Value>().await?["access_token"]
+        .as_str()
+        .unwrap()
+        .to_owned();
     Ok(TestServer {
-        base_url: format!("http://{address}"),
+        base_url,
+        token,
         task,
         _database: database,
     })
@@ -79,15 +89,134 @@ fn upload_body(tower: CellTower) -> Result<Vec<u8>> {
     }])?)
 }
 
+async fn assert_account_rejections(server: &TestServer, client: &reqwest::Client) -> Result<()> {
+    assert_eq!(
+        client
+            .post(format!("{}/v1/auth/login", server.base_url))
+            .json(&serde_json::json!({"email":"user@example.org","password":"wrong password"}))
+            .send()
+            .await?
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        client
+            .post(format!(
+                "{}/v1/auth/password-reset/request",
+                server.base_url
+            ))
+            .json(&serde_json::json!({"email":"user@example.org"}))
+            .send()
+            .await?
+            .status(),
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn account_registration_refresh_and_logout_gate_uploads() -> Result<()> {
+    let server = start_server().await?;
+    let client = reqwest::Client::new();
+    let register = || {
+        client
+            .post(format!("{}/v1/auth/register", server.base_url))
+            .json(&serde_json::json!({"email":"user@example.org","password":"long safe password"}))
+    };
+    let response = register().send().await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let session: serde_json::Value = response.json().await?;
+    let access = session["access_token"].as_str().unwrap();
+    let refresh = session["refresh_token"].as_str().unwrap();
+    assert_eq!(register().send().await?.status(), StatusCode::CONFLICT);
+    assert_account_rejections(&server, &client).await?;
+    assert_eq!(
+        client
+            .get(format!("{}/v1/auth/me", server.base_url))
+            .bearer_auth(access)
+            .send()
+            .await?
+            .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        client
+            .get(format!("{}/v1/towers", server.base_url))
+            .bearer_auth(access)
+            .send()
+            .await?
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        client
+            .post(format!("{}/v1/cells", server.base_url))
+            .bearer_auth("secret")
+            .header("x-device-id", "device-aaaa")
+            .body(upload_body(tower(50.4))?)
+            .send()
+            .await?
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        client
+            .post(format!("{}/v1/cells", server.base_url))
+            .bearer_auth(access)
+            .header("x-device-id", "device-aaaa")
+            .body(upload_body(tower(50.4))?)
+            .send()
+            .await?
+            .status(),
+        StatusCode::OK
+    );
+    let rotated: serde_json::Value = client
+        .post(format!("{}/v1/auth/refresh", server.base_url))
+        .json(&serde_json::json!({"refresh_token":refresh}))
+        .send()
+        .await?
+        .json()
+        .await?;
+    assert_eq!(
+        client
+            .post(format!("{}/v1/auth/refresh", server.base_url))
+            .json(&serde_json::json!({"refresh_token":refresh}))
+            .send()
+            .await?
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        client
+            .post(format!("{}/v1/auth/logout", server.base_url))
+            .json(&serde_json::json!({"refresh_token":rotated["refresh_token"]}))
+            .send()
+            .await?
+            .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        client
+            .get(format!("{}/v1/auth/me", server.base_url))
+            .bearer_auth(rotated["access_token"].as_str().unwrap())
+            .send()
+            .await?
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    Ok(())
+}
+
 #[tokio::test]
 async fn android_protocol_and_websocket_events_stay_compatible() -> Result<()> {
     let server = start_server().await?;
     let client = reqwest::Client::new();
     let ws_url = server.base_url.replace("http://", "ws://") + "/v1/events";
     let mut request = ws_url.into_client_request()?;
-    request
-        .headers_mut()
-        .insert("authorization", HeaderValue::from_static("Bearer secret"));
+    request.headers_mut().insert(
+        "authorization",
+        HeaderValue::from_str(&format!("Bearer {}", server.token))?,
+    );
     let (mut websocket, _) = tokio_tungstenite::connect_async(request).await?;
     let ready = websocket.next().await.expect("ready event")?;
     assert!(ready.to_text()?.contains("\"type\":\"ready\""));
@@ -99,7 +228,7 @@ async fn android_protocol_and_websocket_events_stay_compatible() -> Result<()> {
     {
         let response = client
             .post(format!("{}/v1/cells", server.base_url))
-            .bearer_auth("secret")
+            .bearer_auth(&server.token)
             .header("x-device-id", device)
             .header("content-encoding", "gzip")
             .body(upload_body(tower(lat))?)
@@ -119,7 +248,7 @@ async fn android_protocol_and_websocket_events_stay_compatible() -> Result<()> {
 
             let response = client
                 .get(format!("{}/v1/towers?mcc=255", server.base_url))
-                .bearer_auth("secret")
+                .bearer_auth(&server.token)
                 .send()
                 .await?;
             assert_eq!(
@@ -174,20 +303,20 @@ async fn management_api_is_authenticated_and_broadcasts_deletes() -> Result<()> 
 
     let response = client
         .put(format!("{}{}", server.base_url, path))
-        .bearer_auth("secret")
+        .bearer_auth(&server.token)
         .json(&serde_json::json!({"lat": 50.45, "lon": 30.52, "range_m": 700.0, "samples": 20}))
         .send()
         .await?;
     assert_eq!(response.status(), StatusCode::OK);
     let response = client
         .get(format!("{}{}", server.base_url, path))
-        .bearer_auth("secret")
+        .bearer_auth(&server.token)
         .send()
         .await?;
     assert_eq!(response.status(), StatusCode::OK);
     let response = client
         .get(format!("{}/v1/towers", server.base_url))
-        .bearer_auth("secret")
+        .bearer_auth(&server.token)
         .send()
         .await?;
     assert_eq!(
@@ -199,13 +328,13 @@ async fn management_api_is_authenticated_and_broadcasts_deletes() -> Result<()> 
 
     let response = client
         .delete(format!("{}{}", server.base_url, path))
-        .bearer_auth("secret")
+        .bearer_auth(&server.token)
         .send()
         .await?;
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
     let response = client
         .get(format!("{}/v1/towers", server.base_url))
-        .bearer_auth("secret")
+        .bearer_auth(&server.token)
         .send()
         .await?;
     assert_eq!(
@@ -238,7 +367,7 @@ async fn read_only_admin_pages_use_browser_auth_and_render_towers() -> Result<()
     let path = "/v1/towers/LTE/255/1/1864/99";
     let response = client
         .put(format!("{}{}", server.base_url, path))
-        .bearer_auth("secret")
+        .bearer_auth(&server.token)
         .json(&serde_json::json!({"lat": 50.45, "lon": 30.52, "range_m": 700.0, "samples": 20}))
         .send()
         .await?;
@@ -246,7 +375,7 @@ async fn read_only_admin_pages_use_browser_auth_and_render_towers() -> Result<()
 
     let dashboard = client
         .get(format!("{}/admin?mcc=255&limit=10", server.base_url))
-        .basic_auth("admin", Some("secret"))
+        .basic_auth("admin@example.org", Some("correct horse battery staple"))
         .send()
         .await?;
     assert_eq!(dashboard.status(), StatusCode::OK);
@@ -271,7 +400,7 @@ async fn read_only_admin_pages_use_browser_auth_and_render_towers() -> Result<()
             "{}/admin/towers/LTE/255/1/1864/99",
             server.base_url
         ))
-        .basic_auth("admin", Some("secret"))
+        .basic_auth("admin@example.org", Some("correct horse battery staple"))
         .send()
         .await?;
     assert_eq!(detail.status(), StatusCode::OK);
@@ -282,7 +411,7 @@ async fn read_only_admin_pages_use_browser_auth_and_render_towers() -> Result<()
 
     let invalid_filter = client
         .get(format!("{}/admin?mcc=invalid", server.base_url))
-        .basic_auth("admin", Some("secret"))
+        .basic_auth("admin@example.org", Some("correct horse battery staple"))
         .send()
         .await?;
     assert_eq!(invalid_filter.status(), StatusCode::BAD_REQUEST);
@@ -300,14 +429,14 @@ async fn invalid_filters_keys_and_oversized_uploads_are_rejected() -> Result<()>
 
     let response = client
         .get(format!("{}/v1/towers?mcc=not-a-number", server.base_url))
-        .bearer_auth("secret")
+        .bearer_auth(&server.token)
         .send()
         .await?;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
     let response = client
         .put(format!("{}/v1/towers/LTE/-1/1/1864/99", server.base_url))
-        .bearer_auth("secret")
+        .bearer_auth(&server.token)
         .json(&serde_json::json!({"lat": 50.45, "lon": 30.52, "range_m": 700.0, "samples": 20}))
         .send()
         .await?;
@@ -331,7 +460,7 @@ async fn invalid_filters_keys_and_oversized_uploads_are_rejected() -> Result<()>
     ])?;
     let response = client
         .post(format!("{}/v1/cells", server.base_url))
-        .bearer_auth("secret")
+        .bearer_auth(&server.token)
         .header("x-device-id", "device-aaaa-1111")
         .body(body)
         .send()
@@ -357,7 +486,7 @@ async fn repeated_device_uploads_are_rate_limited() -> Result<()> {
     ] {
         let response = client
             .post(format!("{}/v1/cells", server.base_url))
-            .bearer_auth("secret")
+            .bearer_auth(&server.token)
             .header("x-device-id", "device-aaaa-1111")
             .body(body.clone())
             .send()
@@ -382,7 +511,7 @@ async fn health_bad_uploads_and_management_validation() -> Result<()> {
     );
     let response = client
         .post(format!("{}/v1/cells", server.base_url))
-        .bearer_auth("secret")
+        .bearer_auth(&server.token)
         .body(vec![0x1f, 0x8b, 0])
         .send()
         .await?;
@@ -401,7 +530,7 @@ async fn health_bad_uploads_and_management_validation() -> Result<()> {
         assert_eq!(
             client
                 .get(format!("{}{path}", server.base_url))
-                .bearer_auth("secret")
+                .bearer_auth(&server.token)
                 .send()
                 .await?
                 .status(),
@@ -412,7 +541,7 @@ async fn health_bad_uploads_and_management_validation() -> Result<()> {
     assert_eq!(
         client
             .get(&url)
-            .bearer_auth("secret")
+            .bearer_auth(&server.token)
             .send()
             .await?
             .status(),
@@ -421,7 +550,7 @@ async fn health_bad_uploads_and_management_validation() -> Result<()> {
     assert_eq!(
         client
             .delete(&url)
-            .bearer_auth("secret")
+            .bearer_auth(&server.token)
             .send()
             .await?
             .status(),
@@ -430,7 +559,7 @@ async fn health_bad_uploads_and_management_validation() -> Result<()> {
     assert_eq!(
         client
             .put(&url)
-            .bearer_auth("secret")
+            .bearer_auth(&server.token)
             .json(&serde_json::json!({"lat": 500, "lon": 30, "range_m": 100, "samples": 1}))
             .send()
             .await?

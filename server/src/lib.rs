@@ -2,11 +2,13 @@
 
 mod admin;
 mod api;
+mod auth;
 mod csv_format;
 mod model;
 mod store;
 
 pub use api::{AppState, ServerConfig, router};
+pub use auth::{MailConfig, create_admin};
 pub use csv_format::{
     CsvDecodeError, CsvEncodeError, ImportError, decode_towers, encode_towers, read_import,
 };

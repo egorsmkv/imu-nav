@@ -24,6 +24,7 @@ import org.imunav.core.cells.CellTower
 import org.imunav.core.cells.Radio
 import org.imunav.core.cells.cellLearningKeys
 import org.imunav.core.gnss.PositioningHub
+import org.imunav.core.net.HttpException
 import java.io.IOException
 import java.io.InputStream
 import java.text.DateFormat
@@ -39,11 +40,12 @@ import kotlin.math.abs
  */
 class CellManager(private val context: Context, private val scope: CoroutineScope, private val hub: PositioningHub, private val log: (String) -> Unit) {
     private val prefs = context.getSharedPreferences("cells", Context.MODE_PRIVATE)
+    private val auth = CellAuth(context)
 
     /** A string resource in the current app language. */
     private fun str(id: Int, vararg args: Any): String = context.getString(id, *args)
     val db = CellDatabase(context)
-    private val transfers = CellTransfers(context, db, prefs, ::progress)
+    private val transfers = CellTransfers(context, db, prefs, auth, ::progress)
     private var lastCellLogMs = 0L
     private var lastLearnedFixMs = -1L
     private var task: Job? = null
@@ -72,6 +74,7 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
     val towerLayer: StateFlow<TowerLayer> = towerDisplay.layer
 
     init {
+        if (prefs.contains("sync_key")) prefs.edit { remove("sync_key") }
         scope.launch {
             runCatching {
                 reloadCounts()
@@ -116,7 +119,7 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
                 hasToken = prefs.getString("token", "").orEmpty().isNotBlank(),
                 mccs = mccText(),
                 syncUrl = prefs.getString("sync_url", "").orEmpty(),
-                hasSyncKey = prefs.getString("sync_key", "").orEmpty().isNotBlank(),
+                accountEmail = auth.email,
                 autoSync = prefs.getBoolean("auto_sync", false),
                 lastSync = prefs.getString("last_sync_msg", null),
             )
@@ -137,9 +140,8 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
         prefs.edit { putString("device_id", it) }
     }
 
-    /** The saved OpenCellID token / sync key, for pre-filling Settings fields. */
+    /** The saved OpenCellID token, for pre-filling Settings fields. */
     fun savedToken(): String = prefs.getString("token", "").orEmpty()
-    fun savedSyncKey(): String = prefs.getString("sync_key", "").orEmpty()
 
     /** Enable or disable learning tower positions from GPS. */
     fun setLearning(on: Boolean) = prefs.edit { putBoolean("learning", on) }
@@ -155,14 +157,60 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
     fun onViewport(south: Double, west: Double, north: Double, east: Double, zoom: Double) = towerDisplay.onViewport(south, west, north, east, zoom)
 
     /** Save the sharing-server and country settings from the Settings screen. */
-    fun saveSettings(syncUrl: String, syncKey: String, autoSync: Boolean, mccs: String) {
+    fun saveSettings(syncUrl: String, autoSync: Boolean, mccs: String) {
+        val serverChanged = prefs.getString("sync_url", "").orEmpty().trimEnd('/') != syncUrl.trim().trimEnd('/')
+        if (serverChanged) auth.clear()
         prefs.edit {
             putString("sync_url", syncUrl.trim())
-            putString("sync_key", syncKey.trim())
             putBoolean("auto_sync", autoSync)
             putString("mccs", mccs.trim().ifEmpty { "255" })
+            if (serverChanged) {
+                putLong("last_upload_ms", 0)
+                putLong("last_download_s", 0)
+            }
         }
         refresh()
+    }
+
+    /** Authenticate with the selected sharing server without storing the password. */
+    fun authenticate(email: String, password: String, register: Boolean) = runTask(str(R.string.task_authenticating)) {
+        try {
+            withContext(Dispatchers.IO) { auth.authenticate(prefs.getString("sync_url", "").orEmpty(), email, password, register) }
+        } catch (error: HttpException) {
+            throw IOException(str(authError(error.code)), error)
+        }
+        prefs.edit { putLong("last_upload_ms", 0) }
+        refresh()
+        str(R.string.auth_signed_in)
+    }
+
+    /** Ask the server to send a one-use recovery link. */
+    fun requestPasswordReset(email: String) = runTask(str(R.string.task_authenticating)) {
+        try {
+            withContext(Dispatchers.IO) { auth.requestReset(prefs.getString("sync_url", "").orEmpty(), email) }
+        } catch (error: HttpException) {
+            throw IOException(str(authError(error.code)), error)
+        }
+        str(R.string.auth_reset_sent)
+    }
+
+    /** Turn expected account errors into localizable UI messages. */
+    private fun authError(code: Int): Int = when (code) {
+        400 -> R.string.auth_invalid_input
+        401 -> R.string.auth_invalid_credentials
+        409 -> R.string.auth_email_exists
+        503 -> R.string.auth_mail_unavailable
+        else -> R.string.auth_server_error
+    }
+
+    /** Revoke the active sharing session and clear its local credentials. */
+    fun signOut() = runTask(str(R.string.task_authenticating)) {
+        try {
+            withContext(Dispatchers.IO) { auth.signOut(prefs.getString("sync_url", "").orEmpty()) }
+        } finally {
+            refresh()
+        }
+        str(R.string.auth_signed_out)
     }
 
     // ------------------------------------------------------------------ long-running tasks
@@ -343,7 +391,7 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
         }
         runTask(str(R.string.task_syncing)) {
             val started = System.currentTimeMillis()
-            val (uploaded, downloaded) = transfers.sync(url, savedSyncKey(), deviceId(), mccSet(), started)
+            val (uploaded, downloaded) = transfers.sync(url, deviceId(), mccSet(), started)
             val msg = str(R.string.task_sync_done, uploaded, downloaded)
             prefs.edit {
                 putLong("last_sync_ms", started)

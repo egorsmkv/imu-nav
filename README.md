@@ -384,7 +384,7 @@ The compiled file contains OpenCellID data and is therefore distributed under CC
 Phones upload towers they learned from trusted GPS — tower positions only, never the device track —
 and download everyone's merged data. Protocol (gzip CSV in OpenCellID columns):
 
-- `POST /v1/cells` — upload; `Authorization: Bearer <key>` if the server has an API key
+- `POST /v1/cells` — upload; requires a signed-in account's bearer access token
 - `GET /v1/cells.csv.gz?mcc=255&since=<epoch seconds>` — incremental download
 - `GET /v1/towers` plus `PUT` / `DELETE /v1/towers/{radio}/{mcc}/{mnc}/{area}/{cid}` — JSON management API
 - `GET /v1/events` — WebSocket stream of tower upserts and deletions for realtime management tools
@@ -395,7 +395,7 @@ The Rust reference server in `server/` persists per-device contributions and mat
 in SQLite (WAL mode), so state survives restarts and reads continue during uploads. It is built to
 resist **poisoning** (a phone or a script uploading fake tower positions):
 
-- Every upload carries an `X-Device-Id`; contributions are stored per device (at most 50 samples each).
+- Every upload carries an `X-Device-Id`; contributions are stored per account and device (at most 50 samples each).
 - A tower's position is a **one-device-one-vote weighted median**, so one device cannot outvote others
   by uploading many samples; positions far from the consensus (MAD-based) are dropped as outliers.
 - A new tower is published only after `--min-devices` (default 2) independent devices agree, or if it
@@ -405,18 +405,23 @@ resist **poisoning** (a phone or a script uploading fake tower positions):
 
 ```bash
 cargo build --release --manifest-path server/Cargo.toml
-server/target/release/imu-nav-cell-server --port 8080 --data cells.sqlite3 [--api-key KEY] \
+server/target/release/imu-nav-cell-server --port 8080 --data cells.sqlite3 \
     [--min-devices 2] [--max-samples 50] [--area ukraine|any] [--trust-proxy]
 # optionally seed it once from an export, e.g. OpenCellID/Mozilla filtered to Ukraine:
 server/target/release/imu-nav-cell-server --data cells.sqlite3 --import 255.csv.gz --mcc 255
 ```
 
-Put it behind a TLS reverse proxy for use outside your own network. The app warns when an API key
-would travel over plain `http://`. The old Kotlin server's internal contribution gzip is not a
+Create the first admin with `--data cells.sqlite3 --create-admin admin@example.org` (password from
+standard input). Put the server behind a TLS reverse proxy for use outside your own network;
+account sign-in in the app requires HTTPS outside local loopback development (including the
+emulator's `10.0.2.2` host alias). Public downloads still work without signing in.
+The old Kotlin server's internal contribution gzip is not a
 SQLite migration source; re-import the original seed export when moving to this server. See
 [`server/README.md`](server/README.md) for the complete HTTP, management, and WebSocket API,
 including opt-in profiling and a loopback traffic simulator.
-In the app: **Cells → Sharing server**, enter the URL (and key), then *Sync now* or enable automatic sync (every 6 h and after trips).
+In the app: **Cells → Sharing server**, enter the URL, register or sign in with email and password,
+then *Sync now* or enable automatic sync (every 6 h and after trips). Signing out still allows
+public downloads. Password-reset email needs SMTP configuration; see the server README.
 
 Main navigation thresholds live in `core/.../Tuning.kt` (defaults = factory preset) and `TrustConfig`.
 The separate inertial experiment keeps its provisional noise densities in `InertialTuning`.
@@ -691,6 +696,8 @@ GraphHopper stack plus
 | hotpath-rs | 0.28.4 | optional native-core and cell-server function timing | MIT |
 | jemalloc_pprof | 0.9 | optional Linux native heap export to pprof | Apache 2.0 |
 | Rusqlite + SQLite | 0.40 / bundled | persistent cell server database | MIT / public domain |
+| Argon2, Rand, SHA-2 | 0.5 / 0.9 / 0.10 | password hashes and opaque account tokens | MIT or MIT/Apache 2.0 |
+| Lettre | 0.11 | password-reset email over SMTP | MIT |
 
 The sharing server also uses Serde, CSV, Flate2, Clap and Tracing (MIT or MIT/Apache 2.0).
 The desktop simulation uses Clap, Serde/serde_json, Anyhow, Flate2 and tikv-jemalloc-ctl

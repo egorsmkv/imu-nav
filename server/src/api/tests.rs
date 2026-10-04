@@ -6,7 +6,7 @@ fn rate_and_identity_limits_expire_only_after_their_windows() {
     let state = AppState::new(
         CellStore::open(file.path()).unwrap(),
         ServerConfig {
-            api_key: None,
+            mail: None,
             trust_proxy: false,
             policy: Policy {
                 max_uploads_per_hour_per_device: 1,
@@ -59,7 +59,7 @@ fn rate_and_identity_limits_expire_only_after_their_windows() {
 }
 
 #[test]
-fn proxy_headers_and_credentials_are_explicitly_trusted() {
+fn proxy_headers_and_device_ids_are_validated() {
     let peer = "127.0.0.1:1234".parse().unwrap();
     let mut headers = HeaderMap::new();
     headers.insert("x-forwarded-for", "192.0.2.1, 192.0.2.2".parse().unwrap());
@@ -67,14 +67,6 @@ fn proxy_headers_and_credentials_are_explicitly_trusted() {
     assert_eq!(client_ip(peer, &headers, true), "192.0.2.1");
     headers.insert("x-forwarded-for", "garbage, 192.0.2.1".parse().unwrap());
     assert_eq!(client_ip(peer, &headers, true), "127.0.0.1");
-    assert!(authorize(&headers, None).is_ok());
-    assert!(authorize(&headers, Some("")).is_ok());
-    assert_eq!(
-        authorize(&headers, Some("secret")).unwrap_err().0,
-        StatusCode::UNAUTHORIZED
-    );
-    headers.insert(header::AUTHORIZATION, "Bearer secret".parse().unwrap());
-    assert!(authorize(&headers, Some("secret")).is_ok());
     for device in ["short", "1234567_", "1234567é", &"a".repeat(65)] {
         assert!(!valid_device_id(device));
     }
@@ -103,10 +95,12 @@ async fn slow_websocket_consumers_receive_resync_then_live_events() {
     use futures_util::SinkExt;
     use tokio_tungstenite::tungstenite::Message as ClientMessage;
     let file = tempfile::NamedTempFile::new().unwrap();
+    let store = CellStore::open(file.path()).unwrap();
+    crate::auth::create_admin(&store, "admin@example.org", "correct horse battery staple").unwrap();
     let state = AppState::new(
-        CellStore::open(file.path()).unwrap(),
+        store,
         ServerConfig {
-            api_key: None,
+            mail: None,
             policy: Policy::default(),
             trust_proxy: false,
         },
@@ -118,9 +112,22 @@ async fn slow_websocket_consumers_receive_resync_then_live_events() {
     let task = tokio::spawn(async move {
         axum::serve(listener, application).await.unwrap();
     });
-    let (mut socket, _) = tokio_tungstenite::connect_async(format!("ws://{address}/v1/events"))
-        .await
+    let response = reqwest::Client::new().post(format!("http://{address}/v1/auth/login"))
+        .json(&serde_json::json!({"email":"admin@example.org","password":"correct horse battery staple"}))
+        .send().await.unwrap();
+    let token = response.json::<serde_json::Value>().await.unwrap()["access_token"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut request =
+        tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request(format!(
+            "ws://{address}/v1/events"
+        ))
         .unwrap();
+    request
+        .headers_mut()
+        .insert("authorization", format!("Bearer {token}").parse().unwrap());
+    let (mut socket, _) = tokio_tungstenite::connect_async(request).await.unwrap();
     let ready = socket.next().await.unwrap().unwrap();
     assert!(ready.to_text().unwrap().contains("\"ready\""));
     // This is a current-thread runtime: the receiver cannot run until we next await.

@@ -37,7 +37,7 @@ data class CellStatus(
     val mccs: String = "255",
     /** Cell-sharing server settings. */
     val syncUrl: String = "",
-    val hasSyncKey: Boolean = false,
+    val accountEmail: String? = null,
     val autoSync: Boolean = false,
     val lastSync: String? = null,
     /** Long-running task message (import / download / sync), null when idle. */

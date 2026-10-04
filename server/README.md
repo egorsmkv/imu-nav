@@ -7,12 +7,19 @@ and management reads can continue during uploads. Building the server requires R
 ```bash
 cargo build --release --manifest-path server/Cargo.toml
 server/target/release/imu-nav-cell-server --port 8080 --data cells.sqlite3 \
-    --api-key "$CELLS_API_KEY" --min-devices 2 --area ukraine --trust-proxy
+    --min-devices 2 --area ukraine --trust-proxy
 ```
 
-Put the server behind a TLS reverse proxy for public deployments. `CELLS_API_KEY` may replace
-`--api-key`; when set, the same bearer token protects uploads, management calls, and WebSocket
-connections. `--trust-proxy` honors the first `X-Forwarded-For` address for per-IP limits and must
+Create the first administrator locally (the password is read from standard input):
+
+```bash
+server/target/release/imu-nav-cell-server --data cells.sqlite3 --create-admin admin@example.org
+```
+
+Put the server behind a TLS reverse proxy for public deployments. Accounts replace the former
+shared API key: users register with email and password in the Android app, and only signed-in
+users can upload. Existing apps can continue downloading published towers but cannot upload.
+`--trust-proxy` honors the first `X-Forwarded-For` address for per-IP limits and must
 only be enabled when direct access to the server port is blocked. Run with `RUST_LOG=debug` for more
 detailed operational logs.
 `--bind 127.0.0.1` restricts the listener to loopback for local testing; the default remains
@@ -24,11 +31,9 @@ Open `/admin` for a server-rendered dashboard with database totals, MCC filterin
 consensuses, and individual tower details. The pages use Askama templates and Bootstrap 5.3.8 from
 the jsDelivr CDN. They contain no create, edit, or delete controls.
 
-When an API key is configured, the browser prompts for HTTP Basic credentials: use `admin` as the
-username and the API key as the password. The dashboard also accepts the existing
-`Authorization: Bearer <key>` header for reverse-proxy and scripted access. Serve it over HTTPS so
-credentials are encrypted in transit. If no API key is configured, the dashboard follows the
-existing management API behavior and is public.
+The browser prompts for HTTP Basic credentials: enter the administrator's email and password.
+The dashboard also accepts an administrator access token in the
+`Authorization: Bearer <token>` header. Serve it over HTTPS so credentials are encrypted in transit.
 
 ## API
 
@@ -44,8 +49,20 @@ existing management API behavior and is public.
   list because the client fell behind the bounded event queue.
 - `GET /health` reports readiness and the number of published towers.
 
-The management list, mutations, and WebSocket use `Authorization: Bearer <key>` when an API key is
-configured. WebSocket clients must send the header during the HTTP upgrade.
+Register and sign in with `POST /v1/auth/register` or `/v1/auth/login`, sending JSON
+`{"email":"user@example.org","password":"..."}`. Both return `access_token`, `refresh_token`,
+`expires_in` (seconds), and `account`. Send the access token as `Authorization: Bearer <token>` for
+uploads and, for administrators, management calls and WebSocket upgrades. Use
+`POST /v1/auth/refresh` with `{"refresh_token":"..."}` to rotate a refresh token; send the same body
+to `/v1/auth/logout` to revoke the session. `GET /v1/auth/me` returns the signed-in account.
+Access tokens last 15 minutes and refresh tokens last 30 days.
+
+Password recovery needs all five environment variables: `CELLS_PUBLIC_URL` (an HTTPS base URL),
+`CELLS_SMTP_HOST`, `CELLS_SMTP_USERNAME`, `CELLS_SMTP_PASSWORD`, and `CELLS_SMTP_FROM`. The app
+calls `POST /v1/auth/password-reset/request` with an email. The one-use email link opens a
+server-hosted form and expires after 30 minutes. A successful reset revokes every session for
+that account. Registration does not verify email ownership. If SMTP is unconfigured, recovery
+requests return `503 MAIL_UNAVAILABLE`.
 
 ## Seed import and checks
 

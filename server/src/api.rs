@@ -7,6 +7,7 @@ use limits::{Limits, enforce_limits};
 use std::time::{Duration, Instant};
 
 use crate::admin;
+use crate::auth::{self, AuthRateLimits, MailConfig, SharedAuthLimits};
 use crate::{
     CellKey, CellStore, CellTower, Consensus, CsvDecodeError, Policy, PolicyError, Radio,
     ServerEvent, decode_towers, encode_towers,
@@ -32,7 +33,7 @@ const MAX_UPLOAD_BYTES: usize = 20 * 1024 * 1024;
 /// Runtime server settings not stored in SQLite.
 #[derive(Clone)]
 pub struct ServerConfig {
-    pub api_key: Option<String>,
+    pub mail: Option<MailConfig>,
     pub policy: Policy,
     /// Honor the first `X-Forwarded-For` address. Enable only behind a trusted reverse proxy.
     pub trust_proxy: bool,
@@ -45,6 +46,7 @@ pub struct AppState {
     pub(crate) config: ServerConfig,
     events: broadcast::Sender<ServerEvent>,
     limits: Arc<Mutex<Limits>>,
+    pub(crate) auth_limits: SharedAuthLimits,
 }
 
 impl AppState {
@@ -61,6 +63,7 @@ impl AppState {
             config,
             events,
             limits: Arc::new(Mutex::new(Limits::default())),
+            auth_limits: Arc::new(Mutex::new(AuthRateLimits::default())),
         })
     }
 }
@@ -69,6 +72,7 @@ impl AppState {
 pub fn router(state: AppState) -> Router {
     Router::new()
         .merge(admin::router())
+        .merge(auth::router())
         .route("/health", get(health))
         .route("/v1/cells", post(upload_cells))
         .route("/v1/cells.csv.gz", get(download_cells))
@@ -128,13 +132,14 @@ async fn upload_cells(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<UploadResponse>, ApiError> {
-    authorize(&headers, state.config.api_key.as_deref())?;
+    let account = auth::bearer_account(&state, &headers).await?;
     let ip = client_ip(peer, &headers, state.config.trust_proxy);
     let device = headers
         .get("x-device-id")
         .and_then(|value| value.to_str().ok())
         .filter(|value| valid_device_id(value))
         .map_or_else(|| format!("ip:{ip}"), str::to_owned);
+    let device = format!("account:{}:{device}", account.id);
     if device == "seed" {
         return Err(ApiError(StatusCode::BAD_REQUEST, "BAD_DEVICE"));
     }
@@ -223,10 +228,11 @@ struct TowerList {
 
 async fn list_towers(
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     Query(query): Query<TowerQuery>,
 ) -> Result<Json<TowerList>, ApiError> {
-    authorize(&headers, state.config.api_key.as_deref())?;
+    auth::admin_account(&state, &headers, peer).await?;
     let limit = query.limit.unwrap_or(500).clamp(1, 5_000);
     let store = state.store.clone();
     let mccs = query.mccs()?;
@@ -245,10 +251,11 @@ struct TowerUpdate {
 
 async fn get_tower(
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     Path(path): Path<(String, i64, i64, i64, i64)>,
 ) -> Result<Json<Consensus>, ApiError> {
-    authorize(&headers, state.config.api_key.as_deref())?;
+    auth::admin_account(&state, &headers, peer).await?;
     let key = path_key(path)?;
     let store = state.store.clone();
     let tower = run_db(move || store.consensus(&key))
@@ -259,11 +266,12 @@ async fn get_tower(
 
 async fn put_tower(
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     Path(path): Path<(String, i64, i64, i64, i64)>,
     Json(update): Json<TowerUpdate>,
 ) -> Result<Json<Consensus>, ApiError> {
-    authorize(&headers, state.config.api_key.as_deref())?;
+    auth::admin_account(&state, &headers, peer).await?;
     let key = path_key(path)?;
     let tower = CellTower {
         key,
@@ -287,10 +295,11 @@ async fn put_tower(
 
 async fn delete_tower(
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     Path(path): Path<(String, i64, i64, i64, i64)>,
 ) -> Result<StatusCode, ApiError> {
-    authorize(&headers, state.config.api_key.as_deref())?;
+    auth::admin_account(&state, &headers, peer).await?;
     let key = path_key(path)?;
     let store = state.store.clone();
     let deleted = run_db({
@@ -307,10 +316,11 @@ async fn delete_tower(
 
 async fn websocket_events(
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     websocket: WebSocketUpgrade,
 ) -> Result<Response, ApiError> {
-    authorize(&headers, state.config.api_key.as_deref())?;
+    auth::admin_account(&state, &headers, peer).await?;
     Ok(websocket
         .on_upgrade(move |socket| stream_events(socket, state))
         .into_response())
@@ -356,19 +366,6 @@ async fn send_event(socket: &mut WebSocket, event: &ServerEvent) -> anyhow::Resu
     Ok(())
 }
 
-fn authorize(headers: &HeaderMap, api_key: Option<&str>) -> Result<(), ApiError> {
-    let Some(api_key) = api_key.filter(|value| !value.is_empty()) else {
-        return Ok(());
-    };
-    let expected = format!("Bearer {api_key}");
-    let actual = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok());
-    (actual == Some(expected.as_str()))
-        .then_some(())
-        .ok_or(ApiError(StatusCode::UNAUTHORIZED, "UNAUTHORIZED"))
-}
-
 pub(crate) fn path_key(
     (radio, mcc, mnc, area, cid): (String, i64, i64, i64, i64),
 ) -> Result<CellKey, ApiError> {
@@ -401,7 +398,7 @@ fn valid_device_id(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
 }
 
-fn client_ip(peer: SocketAddr, headers: &HeaderMap, trust_proxy: bool) -> String {
+pub(crate) fn client_ip(peer: SocketAddr, headers: &HeaderMap, trust_proxy: bool) -> String {
     if trust_proxy {
         let forwarded = headers
             .get("x-forwarded-for")

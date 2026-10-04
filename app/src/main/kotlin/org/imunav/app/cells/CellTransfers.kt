@@ -16,7 +16,13 @@ import java.security.MessageDigest
 import kotlin.coroutines.coroutineContext
 
 /** Performs cell imports, exports, and sync I/O while the manager owns task lifetime and UI state. */
-internal class CellTransfers(private val context: Context, private val db: CellDatabase, private val prefs: SharedPreferences, private val progress: (String) -> Unit) {
+internal class CellTransfers(
+    private val context: Context,
+    private val db: CellDatabase,
+    private val prefs: SharedPreferences,
+    private val auth: CellAuth,
+    private val progress: (String) -> Unit,
+) {
     /** Import a user-selected CSV, stopping promptly when its owning task is cancelled. */
     suspend fun importFile(open: () -> InputStream?, mccs: Set<Int>): Long {
         val owner = coroutineContext
@@ -100,12 +106,16 @@ internal class CellTransfers(private val context: Context, private val db: CellD
     }
 
     /** Upload learned towers and then import the shared snapshot into its own source. */
-    suspend fun sync(url: String, key: String, deviceId: String, mccs: Set<Int>, startedMs: Long): Pair<Int, Int> = withContext(Dispatchers.IO) {
-        val client = CellSyncClient(url, key, deviceId)
+    suspend fun sync(url: String, deviceId: String, mccs: Set<Int>, startedMs: Long): Pair<Int, Int> = withContext(Dispatchers.IO) {
+        val accessToken = if (auth.email != null) auth.accessToken(url) else null
+        val client = CellSyncClient(url, accessToken, deviceId)
         val pending = db.learnedSince(prefs.getLong("last_upload_ms", 0))
-        progress(context.getString(R.string.task_uploading, pending.size))
-        val uploaded = client.upload(pending)
-        prefs.edit { putLong("last_upload_ms", startedMs) }
+        val uploaded = if (accessToken != null) {
+            progress(context.getString(R.string.task_uploading, pending.size))
+            client.upload(pending).also { prefs.edit { putLong("last_upload_ms", startedMs) } }
+        } else {
+            0
+        }
 
         progress(context.getString(R.string.task_downloading_shared))
         val batch = ArrayList<CellTower>()

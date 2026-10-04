@@ -37,8 +37,12 @@ def upload_body(device: int, round_number: int, rows: int) -> bytes:
 
 
 def request(base: str, path: str, method: str = "GET", body: bytes | None = None,
-            device: int | None = None) -> tuple[bytes, float]:
+            device: int | None = None, token: str | None = None) -> tuple[bytes, float]:
     headers = {}
+    if token is not None:
+        headers["Authorization"] = f"Bearer {token}"
+    if body is not None and device is None:
+        headers["Content-Type"] = "application/json"
     if device is not None:
         headers["X-Device-Id"] = f"sim-phone-{device:04d}"
         headers["Content-Encoding"] = "gzip"
@@ -51,11 +55,12 @@ def request(base: str, path: str, method: str = "GET", body: bytes | None = None
 
 
 def start_server(binary: Path, database: Path, profile: Path | None) -> tuple[subprocess.Popen[str], str]:
+    subprocess.run([str(binary), "--data", str(database), "--create-admin", "admin@example.org"],
+                   input="correct horse battery staple\n", text=True, check=True, stdout=subprocess.DEVNULL)
     command = [str(binary), "--bind", "127.0.0.1", "--port", "0", "--data", str(database)]
     if profile is not None:
         command.extend(["--profile-output", str(profile)])
     environment = os.environ.copy()
-    environment.pop("CELLS_API_KEY", None)
     environment.pop("CELLS_PROFILE_OUTPUT", None)
     environment.update({"RUST_LOG": "info", "NO_COLOR": "1", "HOTPATH_METRICS_SERVER_OFF": "true"})
     server = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -109,11 +114,17 @@ def run_once(binary: Path, directory: Path, rounds: int, rows: int,
     accepted = rejected = downloaded = 0
     try:
         request(base, "/health")  # Exclude process startup and the first SQLite open.
+        admin_token = json.loads(request(base, "/v1/auth/login", "POST", json.dumps({
+            "email": "admin@example.org", "password": "correct horse battery staple"
+        }).encode())[0])["access_token"]
+        tokens = [json.loads(request(base, "/v1/auth/register", "POST", json.dumps({
+            "email": f"phone-{device}@example.org", "password": "correct horse battery staple"
+        }).encode())[0])["access_token"] for device in range(4)]
         started = time.perf_counter()
         with ThreadPoolExecutor(max_workers=4) as pool:
             for round_number in range(rounds):
                 jobs = [pool.submit(request, base, "/v1/cells", "POST",
-                                    bodies[round_number][device], device)
+                                    bodies[round_number][device], device, tokens[device])
                         for device in range(4)]
                 for job in jobs:
                     payload, elapsed = job.result()
@@ -125,13 +136,13 @@ def run_once(binary: Path, directory: Path, rounds: int, rows: int,
                 payload, elapsed = request(base, f"/v1/cells.csv.gz?mcc=255,256&since={since}")
                 downloaded += len(gzip.decompress(payload).splitlines()) - 1
                 timings["download"].append(elapsed)
-                payload, elapsed = request(base, "/v1/towers?mcc=255&limit=500")
+                payload, elapsed = request(base, "/v1/towers?mcc=255&limit=500", token=admin_token)
                 assert len(json.loads(payload)["towers"]) <= 500
                 timings["management"].append(elapsed)
                 payload, elapsed = request(base, "/health")
                 assert payload.startswith(b"ok ")
                 timings["health"].append(elapsed)
-        payload, elapsed = request(base, "/admin?mcc=255&limit=100")
+        payload, elapsed = request(base, "/admin?mcc=255&limit=100", token=admin_token)
         assert b"<html" in payload.lower()
         timings["management"].append(elapsed)
         wall_ms = (time.perf_counter() - started) * 1000
