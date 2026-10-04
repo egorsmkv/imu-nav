@@ -255,6 +255,16 @@ impl TrustClassifier {
         self.check_receiver(&input, &mut hard, &mut soft);
         self.check_heading(fix, input.compass_deg, &mut soft);
 
+        self.finish_verdict(fix, hard, soft)
+    }
+
+    /// Hard reasons always dominate; only the final GOOD verdict may publish a trusted anchor.
+    fn finish_verdict(
+        &mut self,
+        fix: LocationFix,
+        mut hard: Vec<Reason>,
+        soft: Vec<Reason>,
+    ) -> Verdict {
         let verdict = if !hard.is_empty() {
             hard.extend(soft);
             Verdict {
@@ -362,7 +372,7 @@ impl TrustClassifier {
         if fix.elapsed_ms <= last.elapsed_ms {
             return;
         }
-        let dt_s = milliseconds_to_seconds(fix.elapsed_ms - last.elapsed_ms);
+        let dt_s = milliseconds_to_seconds(fix.elapsed_ms.saturating_sub(last.elapsed_ms));
         let distance = distance_m(last, fix);
         let reachable = self.config.max_plausible_speed_mps * dt_s
             + fix.horizontal_accuracy_m.unwrap_or(0.0)
@@ -408,7 +418,8 @@ impl TrustClassifier {
             return;
         }
         let since = *self.frozen_since_ms.get_or_insert(previous.elapsed_ms);
-        let duration = fix.elapsed_ms - since;
+        // Very distant or reversed timestamps still classify without overflowing before rejection.
+        let duration = fix.elapsed_ms.saturating_sub(since);
         if duration >= self.config.frozen_bad_ms {
             hard.push(Reason::Frozen);
         } else if duration >= self.config.frozen_suspect_ms {
@@ -451,6 +462,25 @@ impl TrustClassifier {
         hard: &mut Vec<Reason>,
         soft: &mut Vec<Reason>,
     ) {
+        // Preserve lazy geographic evaluation: only fresh, hard-jammed, healthy receivers need it.
+        let independently_confirmed = receiver_fresh(input.fix, input.receiver)
+            && input
+                .receiver
+                .agc_db
+                .is_some_and(|agc| agc < self.config.hard_jam_agc_db)
+            && self.healthy_constellation(input.receiver)
+            && self.network_agrees(input.fix, input.network_fix);
+        self.check_jamming_policy(input, independently_confirmed, hard, soft);
+    }
+
+    /// Apply jamming policy after geographic confirmation; no jammed exception grants GOOD trust.
+    fn check_jamming_policy(
+        &mut self,
+        input: &TrustInput,
+        independently_confirmed: bool,
+        hard: &mut Vec<Reason>,
+        soft: &mut Vec<Reason>,
+    ) {
         let fresh = receiver_fresh(input.fix, input.receiver);
         if fresh
             && input
@@ -459,10 +489,13 @@ impl TrustClassifier {
                 .is_some_and(|agc| agc < self.config.hard_jam_agc_db)
         {
             if self.healthy_constellation(input.receiver)
-                && (self.network_agrees(input.fix, input.network_fix)
+                && (independently_confirmed
                     || self.strong_jam_at_ms.is_some_and(|time| {
-                        input.fix.elapsed_ms - time > 0
-                            && input.fix.elapsed_ms - time <= self.config.strong_jam_chain_ms
+                        input
+                            .fix
+                            .elapsed_ms
+                            .checked_sub(time)
+                            .is_some_and(|age| age > 0 && age <= self.config.strong_jam_chain_ms)
                     }))
             {
                 soft.push(Reason::JamStrong);
@@ -504,13 +537,20 @@ impl TrustClassifier {
         let Some(network_accuracy) = network.horizontal_accuracy_m else {
             return false;
         };
-        network_accuracy <= self.config.strong_jam_network_max_accuracy_m
-            && fix.elapsed_ms.abs_diff(network.elapsed_ms)
-                <= u64::try_from(self.config.strong_jam_network_max_age_ms).unwrap_or(0)
+        self.network_confirmation_eligible(fix, network)
             && distance_m(fix, network)
                 <= self.config.strong_jam_network_m
                     + fix.horizontal_accuracy_m.unwrap_or(10.0)
                     + network_accuracy
+    }
+
+    /// Age and precision eligibility are independent of geographic distance computation.
+    fn network_confirmation_eligible(&self, fix: LocationFix, network: LocationFix) -> bool {
+        network.horizontal_accuracy_m.is_some_and(|accuracy| {
+            accuracy <= self.config.strong_jam_network_max_accuracy_m
+                && fix.elapsed_ms.abs_diff(network.elapsed_ms)
+                    <= u64::try_from(self.config.strong_jam_network_max_age_ms).unwrap_or(0)
+        })
     }
 
     fn check_receiver(&self, input: &TrustInput, hard: &mut Vec<Reason>, soft: &mut Vec<Reason>) {
@@ -553,7 +593,11 @@ impl TrustClassifier {
 }
 
 fn receiver_fresh(fix: LocationFix, receiver: ReceiverHealth) -> bool {
-    receiver.elapsed_ms > 0 && (0..5_000).contains(&(fix.elapsed_ms - receiver.elapsed_ms))
+    receiver.elapsed_ms > 0
+        && fix
+            .elapsed_ms
+            .checked_sub(receiver.elapsed_ms)
+            .is_some_and(|age| (0..5000).contains(&age))
 }
 
 fn distance_m(first: LocationFix, second: LocationFix) -> f64 {

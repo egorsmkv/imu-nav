@@ -88,6 +88,59 @@ proofs retain the numerical fixtures listed above. This does not establish accur
 for every finite input. Replay
 accuracy gates remain necessary.
 
+## Trust timestamps, frozen positions and receiver policy
+
+Five timestamp/sequence harnesses and seven receiver/jamming harnesses call the actual production
+helpers. Unless stated otherwise, configuration is default and valid coordinates are (50°, 30°).
+They use unwind bounds 2–8, with safety and unwinding assertions enabled.
+
+- Clock skew covers every signed fix/current wall timestamp and configured skew limit, comparing
+  against an independent `i128` difference. Negative configured limits act as zero.
+- Sequence ordering covers every signed previous/current elapsed and wall timestamp and optional
+  frozen-start timestamp. Either non-increasing clock adds `DuplicateTime`. With unchanged position
+  and speed 10 m/s, frozen duration adds SUSPECT at 5,000 ms and BAD at 15,000 ms. Independent `i128`
+  arithmetic checks extreme forward and backward differences. A two-step sequence covers start
+  0…`i64::MAX - 20000` and duration 2–20,000 ms, including each exact escalation boundary and anchor
+  retention. Another sequence at 19/20/21 s checks that movement to latitude 50.01°, every floating
+  speed 0–3 m/s, or missing speed clears the old marker before frozen detection restarts.
+- Verdict composition covers arbitrary candidate timestamps and optional hard `DuplicateTime` and
+  soft `JamStrong` reasons. Hard reasons dominate, all supplied reasons survive, and only GOOD
+  promotes the trusted anchor; other classifier bookkeeping is unchanged.
+- Receiver freshness covers all signed fix/receiver timestamps: receiver time must be positive,
+  and age must be 0–4,999 ms. Future, stale and overflowing differences cannot qualify. Receiver
+  reasons use fix time 10,000 ms, arbitrary receiver time/satellite counts and optional signal
+  fields with all floating-point bit patterns. They check no/few satellites, weak mean CN0 and
+  flat spread thresholds, and absence of these reasons for stale data. Input validity remains
+  the responsibility of `check_fix`; this helper proof characterizes comparisons, including NaN.
+- Healthy-constellation eligibility covers all satellite/dual-frequency counts and optional signal
+  bit patterns: at least 6 used satellites with 2 dual-frequency satellites, otherwise 8; mean CN0
+  at least 25 and spread at least 3. Missing signal fields cannot qualify. Independent network
+  eligibility separately checks all signed timestamps and optional accuracy bit patterns against
+  the existing absolute-age ≤10 s and accuracy ≤150 m predicates. This is an age/upper-accuracy
+  gate, not validation of network coordinates or nonnegative accuracy.
+- Hard-jam policy uses fresh receivers at arbitrary positive times, AGC −20, healthy (8 satellites)
+  or unhealthy (7 satellites) constellations, arbitrary optional previous confirmation times and
+  a symbolic independent-confirmation result. A healthy receiver needs independent confirmation
+  or a strictly positive chain age ≤3 s. The exception grants SUSPECT, never GOOD, and renews its
+  marker; rejected hard-jam confirmation grants BAD and clears it. Three calls seeded at 1 s,
+  interrupted by an unhealthy receiver at 2 s or expiry at 4.001 s, then healthy at the next
+  millisecond prove the rejected chain cannot revive itself.
+- AGC/receiver boundaries use fix time 10 s, arbitrary receiver time and satellite counts, AGC
+  absent or −20/−16/−11/−10, and both jamming/independent-confirmation flags. They check strict AGC
+  comparisons, stale/future receiver exclusion and that every emitted jam reason prevents GOOD.
+
+`finish_verdict`, `check_jamming_policy` and `network_confirmation_eligible` are shared production
+helpers, not stubs. Geographic network confirmation remains computed lazily by `check_jamming`
+when fresh hard-jammed healthy receivers need it. Its boolean result is the policy proof boundary;
+these proofs do not establish geodesic distance, last-good reachability, or unrestricted complete
+`evaluate` histories. Existing real-coordinate classifier tests exercise their integration.
+
+Four new public-classifier regression tests reproduce signed timestamp overflow in trusted-anchor
+age, frozen duration, receiver freshness and strong-jam chain age. Duration comparisons now use
+saturating subtraction; freshness/chain gates reject subtraction overflow. Ordinary timestamps
+retain their previous behavior. The full timestamp domains above prove the sequence/freshness/
+chain decisions; the geodesic trusted-anchor path is regression-tested.
+
 ## Numerical guards and rollback
 
 Finite uncertainty can still overflow when squared. Covariance creation and anchor/prior setters

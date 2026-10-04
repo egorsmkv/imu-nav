@@ -365,3 +365,69 @@ fn receiver_checks_and_weak_jam_require_fresh_observations() {
     assert!(!detector.jammed());
     assert!(!detector.update(Some(-8.0), 2000));
 }
+
+#[test]
+fn extreme_sequence_timestamps_reject_without_overflow() {
+    for (previous_ms, current_ms, frozen) in
+        [(i64::MIN, i64::MAX, true), (i64::MAX, i64::MIN, false)]
+    {
+        let mut classifier = TrustClassifier::new(TrustConfig::default());
+        let mut previous = fix(0);
+        previous.elapsed_ms = previous_ms;
+        classifier.previous_raw = Some(previous);
+        let mut current = fix(1000);
+        current.elapsed_ms = current_ms;
+        let mut context = input(fix(1000));
+        context.fix = current;
+        context.receiver = ReceiverHealth::default();
+        let verdict = classifier.evaluate(context);
+        assert_eq!(verdict.level, TrustLevel::Bad);
+        assert_eq!(verdict.reasons.contains(&Reason::Frozen), frozen);
+        assert_eq!(verdict.reasons.contains(&Reason::DuplicateTime), !frozen);
+        assert!(classifier.last_good().is_none());
+    }
+}
+
+#[test]
+fn extreme_anchor_age_does_not_overflow_reachability() {
+    let mut classifier = TrustClassifier::new(TrustConfig::default());
+    let mut previous = fix(0);
+    previous.elapsed_ms = i64::MIN;
+    classifier.last_good = Some(previous);
+    let mut current = fix(1000);
+    current.elapsed_ms = i64::MAX;
+    current.speed_mps = None;
+    let mut context = input(fix(1000));
+    context.fix = current;
+    context.receiver = ReceiverHealth::default();
+    assert_eq!(classifier.evaluate(context).level, TrustLevel::Good);
+    assert_eq!(classifier.last_good(), Some(current));
+}
+
+#[test]
+fn extreme_receiver_age_is_stale_without_overflow() {
+    let mut candidate = fix(1000);
+    candidate.elapsed_ms = i64::MIN;
+    candidate.is_mock = true;
+    let mut context = input(fix(1000));
+    context.fix = candidate;
+    context.receiver = healthy(1);
+    context.receiver.agc_db = Some(-20.0);
+    let verdict = TrustClassifier::new(TrustConfig::default()).evaluate(context);
+    assert_eq!(verdict.level, TrustLevel::Bad);
+    assert!(verdict.reasons.contains(&Reason::Mock));
+    assert!(!verdict.reasons.contains(&Reason::Jam));
+    assert!(!verdict.reasons.contains(&Reason::JamStrong));
+}
+
+#[test]
+fn extreme_jam_chain_age_cannot_extend_confirmation() {
+    let mut classifier = TrustClassifier::new(TrustConfig::default());
+    classifier.strong_jam_at_ms = Some(i64::MIN);
+    let mut context = input(fix(5000));
+    context.receiver.agc_db = Some(-20.0);
+    let verdict = classifier.evaluate(context);
+    assert_eq!(verdict.level, TrustLevel::Bad);
+    assert!(verdict.reasons.contains(&Reason::Jam));
+    assert!(classifier.strong_jam_at_ms.is_none());
+}

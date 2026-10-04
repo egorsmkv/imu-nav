@@ -481,3 +481,9 @@ remains regression-tested. See the verification scope for input domains.
 Turn proofs run the production correction path with bounded landmark tables, checking input/quality
 gates, cooldown, duplicate/landmark reuse, ambiguity and correction limits without claiming a fresh
 GPS/OBD measurement. Geographic landmark construction remains regression-tested.
+
+Trust policy proofs cover timestamp ordering, frozen-position escalation, receiver freshness and
+quality thresholds, and bounded strong-jam confirmation chains. Only GOOD verdicts promote the
+trusted anchor. Extreme timestamp differences now saturate for duration comparisons or reject
+freshness/chain eligibility instead of overflowing. Geographic network agreement and complete
+classifier integration remain regression-tested; the proof scope documents the helper boundaries.
