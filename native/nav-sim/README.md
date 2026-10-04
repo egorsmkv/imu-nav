@@ -312,3 +312,32 @@ Remaining opportunities suggested by the profiles, not implemented here:
   Reusing capacity for the outer history copy or replay scratch storage may reduce churn further, but
   must preserve error rollback and delayed-input ordering. The remaining copy is not a retained-memory
   leak; live-heap sampling alone cannot quantify its short-lived cost.
+
+## Earlier rejection in the coarse-fix scan (2026-10-04)
+
+After the prior change, hotpath still attributed 59–80% of app-like scenario time to
+`project_unambiguous`. Its best-point scan now checks whether both endpoints of a segment are
+safely beyond the same latitude or longitude bound before doing the full projection. The check
+starts only after finding a nearby candidate (within 300 m). It is compiled only into the
+coarse-fix scan; ordinary local/global projection keeps its original loop. This distinction matters:
+applying the bound to all projections slowed the far-off-route reacquisition workload.
+
+The baseline was built from the previous commit in a separate worktree. Both sides used the same
+Linux host, Rust nightly, `--profile profiling`, frame-pointer flag, simulator source and inputs.
+Five timing repetitions followed a warm-up. Exact outcome fingerprints and allocation counts/bytes
+matched in all ten app-like and advanced cases.
+
+| App-like scenario | Median before → after | Time reduction |
+|---|---:|---:|
+| Driving | 44.263 → 34.069 ms | 23.0% |
+| Jamming/recovery | 37.245 → 27.412 ms | 26.4% |
+| Delayed GPS | 99.303 → 67.574 ms | 32.0% |
+| Stop/resume | 36.261 → 25.466 ms | 29.8% |
+| Reroute | 52.553 → 42.459 ms | 19.2% |
+
+All app-like timing ranges were separate. Advanced medians fell 20–35% for winding, parallel and
+crossing geometry, and 19.9% for the sensor burst. Reacquisition was 2.3% slower, with overlapping
+timing ranges. A regression test checks long segments that cross the query despite both endpoints
+being far away. These are synthetic host results, not an Android latency or accuracy claim.
+Local gitignored captures and full comparisons are in `captures/route-bounds-app-{before,final}/`,
+`captures/route-bounds-advanced-{before-current,final}/` and their `*-final-comparison.md` files.

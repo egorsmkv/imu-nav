@@ -162,6 +162,44 @@ fn bounded_scans_match_exhaustive_search_and_ambiguity_at_corridor_edges() {
 }
 
 #[test]
+fn long_segments_crossing_the_query_survive_endpoint_bounds() {
+    let query = GeoPoint {
+        latitude_deg: 50.0,
+        longitude_deg: 30.0,
+    };
+    let point = |north: f64, east: f64| GeoPoint {
+        latitude_deg: query.latitude_deg + north,
+        longitude_deg: query.longitude_deg + east,
+    };
+    for points in [
+        vec![
+            point(0.0, 0.0001),
+            point(0.0, 0.0002),
+            point(-0.01, 0.0),
+            point(0.01, 0.0),
+        ],
+        vec![
+            point(0.0001, 0.0),
+            point(0.0002, 0.0),
+            point(0.0, -0.01),
+            point(0.0, 0.01),
+        ],
+    ] {
+        let route = RouteGeometry::new(points).unwrap();
+        let expected = exhaustive_projection(&route, query, 0, route.points.len() - 2);
+        assert_eq!(expected.segment, 2);
+        assert_eq!(
+            route.project_range(query, 0, route.points.len() - 2),
+            expected
+        );
+        assert_eq!(
+            route.project_unambiguous(query, 1.0).unwrap(),
+            Some(expected)
+        );
+    }
+}
+
+#[test]
 fn projects_onto_local_segment_with_arc_length() {
     let route = route();
     let projection = route

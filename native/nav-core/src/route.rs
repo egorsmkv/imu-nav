@@ -9,6 +9,8 @@ const METRES_PER_DEGREE_LATITUDE: f64 = 110_540.0;
 const METRES_PER_DEGREE_LONGITUDE_EQUATOR: f64 = 111_320.0;
 // Endpoint bounds skip only segments safely outside an ambiguity corridor.
 const RIVAL_PREFILTER_ROUNDING_MARGIN_M: f64 = 1.0;
+// Bounds help near-route fixes; beyond this offset their checks cost more than they skip.
+const MAX_USEFUL_ENDPOINT_BOUND_OFFSET_M: f64 = 300.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GeoPoint {
@@ -168,8 +170,13 @@ impl RouteGeometry {
         // Every rival uses the same query latitude; recomputing its cosine per segment dominates
         // dense-route scans. Keep the same arithmetic and comparisons, just reuse the scale.
         let longitude_scale = longitude_scale(point);
-        let best =
-            self.project_range_scaled(point, 0, self.points.len() - 2, longitude_scale, f64::MAX);
+        let best = self.project_range_scaled::<true>(
+            point,
+            0,
+            self.points.len() - 2,
+            longitude_scale,
+            f64::MAX,
+        );
         let corridor_m = best.offset_m + 2.0 * accuracy_m;
         let distinct_distance_m = (4.0 * accuracy_m).max(100.0);
         let latitude_limit_m = corridor_m + RIVAL_PREFILTER_ROUNDING_MARGIN_M;
@@ -186,8 +193,13 @@ impl RouteGeometry {
             {
                 continue;
             }
-            let rival =
-                self.project_range_scaled(point, segment, segment, longitude_scale, corridor_m);
+            let rival = self.project_range_scaled::<false>(
+                point,
+                segment,
+                segment,
+                longitude_scale,
+                corridor_m,
+            );
             if (rival.position_m - best.position_m).abs() > distinct_distance_m
                 && rival.offset_m <= corridor_m
             {
@@ -198,11 +210,11 @@ impl RouteGeometry {
     }
 
     fn project_range(&self, point: GeoPoint, from: usize, to: usize) -> Projection {
-        self.project_range_scaled(point, from, to, longitude_scale(point), f64::MAX)
+        self.project_range_scaled::<false>(point, from, to, longitude_scale(point), f64::MAX)
     }
 
     /// The longitude scale belongs to the query point, so a multi-segment scan can share it.
-    fn project_range_scaled(
+    fn project_range_scaled<const ENDPOINT_BOUNDS: bool>(
         &self,
         point: GeoPoint,
         from: usize,
@@ -217,10 +229,33 @@ impl RouteGeometry {
             point: self.points[from],
         };
         for index in from..=to.min(self.points.len() - 2) {
-            let start_x = (self.points[index].longitude_deg - point.longitude_deg)
-                * metres_per_degree_longitude;
             let start_y =
                 (self.points[index].latitude_deg - point.latitude_deg) * METRES_PER_DEGREE_LATITUDE;
+            // Once a contender exists, a segment entirely beyond the same coordinate bound
+            // cannot beat it. The margin covers endpoint-vs-interpolation rounding; segments
+            // that might tie still take the original projection path in their original order.
+            if ENDPOINT_BOUNDS && best.offset_m <= MAX_USEFUL_ENDPOINT_BOUND_OFFSET_M {
+                let limit_m = best.offset_m + RIVAL_PREFILTER_ROUNDING_MARGIN_M;
+                let end_y = (self.points[index + 1].latitude_deg - point.latitude_deg)
+                    * METRES_PER_DEGREE_LATITUDE;
+                if (start_y > limit_m && end_y > limit_m)
+                    || (start_y < -limit_m && end_y < -limit_m)
+                {
+                    continue;
+                }
+            }
+            let start_x = (self.points[index].longitude_deg - point.longitude_deg)
+                * metres_per_degree_longitude;
+            if ENDPOINT_BOUNDS && best.offset_m <= MAX_USEFUL_ENDPOINT_BOUND_OFFSET_M {
+                let limit_m = best.offset_m + RIVAL_PREFILTER_ROUNDING_MARGIN_M;
+                let end_x = (self.points[index + 1].longitude_deg - point.longitude_deg)
+                    * metres_per_degree_longitude;
+                if (start_x > limit_m && end_x > limit_m)
+                    || (start_x < -limit_m && end_x < -limit_m)
+                {
+                    continue;
+                }
+            }
             let direction_x = (self.points[index + 1].longitude_deg
                 - self.points[index].longitude_deg)
                 * metres_per_degree_longitude;
