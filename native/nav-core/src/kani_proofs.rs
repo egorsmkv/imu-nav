@@ -2,6 +2,8 @@
 
 use super::*;
 
+mod covariance;
+
 /// Bit patterns include NaN, infinities and both signed zeros.
 fn arbitrary_float() -> f64 {
     f64::from_bits(kani::any())

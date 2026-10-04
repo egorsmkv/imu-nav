@@ -24,14 +24,14 @@ explicitly select bundled Kissat 4.0.1 with `#[kani::solver(kissat)]`. Kani is a
 not a Cargo or Android runtime dependency. The core remains dependency-free.
 
 The runner checks the tool version, selects only `imu-nav-core`, uses two solver workers, allows
-five minutes per harness, and imposes a 35-minute overall verification deadline. It retains Kani's
+five minutes per harness, and imposes a 40-minute overall verification deadline. It retains Kani's
 default overflow, pointer, assertion reachability and unwinding checks. A proof's `#[kani::unwind]`
 is an explicit loop bound; exceeding it fails verification rather than assuming the loop terminates.
-No production function is stubbed. The larger speed-storage inventory increases the overall
+No production function is stubbed. The speed-storage and covariance-family inventories increase the overall
 budget; the five-minute per-harness deadline and two-worker memory limit are unchanged.
 
-CI gives installation its own 15-minute step budget and verification a 37-minute step budget,
-inside a 60-minute job. This leaves room for the runner's 35-minute deadline to report failure
+CI gives installation its own 15-minute step budget and verification a 42-minute step budget,
+inside a 65-minute job. This leaves room for the runner's 40-minute deadline to report failure
 and for artifact upload after a cold installation. The cache includes the `cargo-kani` and `kani`
 launchers as well as the verifier bundle and compiler; installation is skipped only when the
 cached launcher reports the exact pinned version.
@@ -63,6 +63,7 @@ the authoritative list of required harnesses and named `kani::cover!` witnesses.
 
 | Area | Contract | Domain / limits |
 |---|---|---|
+| Correlated covariance families | Valid prediction/measurement inputs must succeed; accepted results stay finite, preserve PSD tolerance and variance floors; errors and innovation rejection preserve every state bit | Five one-operation harnesses: prediction, Joseph position/speed updates, coarse position/speed updates. Independent sigma units 1–4, common scale 1 or 2⁻¹⁶, correlations −1, −(1−2⁻²⁰), 0, 1−2⁻²⁰, 1; input diagonal variances floored at 10⁻⁹. See detailed scope below |
 | Prediction scheduling | Each step advances, stays within the target and 5 s cap, and stops at active hint/OBD expiry; expired OBD is not fresh | Arbitrary signed timestamps; target strictly later, OBD absent or nonnegative and no later than now, active hint deadlines strictly later than now. Includes `i64::MAX`; this proves step selection, not termination over an arbitrary duration |
 | GPS/OBD timestamp gates | Future, duplicate, too-old and pre-checkpoint GPS cannot rewind; stale/duplicate OBD cannot pass ingress | All `i64` bit patterns; expected GPS age computed in `i128` to independently check saturating arithmetic. Same-time GPS is allowed only at an initial checkpoint; same-time OBD requires a newer input watermark |
 | Hint expiry | Reapplying a hint never moves its deadline; an expired walking hint stops speed, an expired car stop restores cruise; no sensor freshness is invented | Nonnegative arbitrary current time and arbitrary deadline; initial speed 10 m/s, no GPS/OBD, walking speed 2 m/s or car stop factor 0. Full production setters/expiry handler; fixed position/covariance/drift remain unchanged |
@@ -311,6 +312,39 @@ Scale arithmetic is proved independently over the full valid scale/ratio interva
 hint sequences have the explicit finite bounds above; these do not prove arbitrary event histories.
 Kotlin modem timestamp tracking is outside this Rust proof suite and retains its own JVM tests.
 
+## Correlated covariance families
+
+`kani_proofs/covariance.rs` constructs 160 combinations of independently varying position/speed
+sigma units, scale and correlation. It asserts input validity rather than assuming the production
+validity predicate. Rank-one matrices, both correlation signs, diagonal and near-singular matrices,
+and results at the variance floor have required successful-operation witnesses. Diagonal flooring can
+make a tiny rank-one input nonsingular; the ordinary-scale family retains exact singular endpoints.
+
+Prediction uses steps 0, 0.5 and 5 seconds, acceleration sigma 0.5 and drift rate 0.25; step −1
+must return an error without mutation. Each of the four measurement operations uses sigma 0, 0.25
+or 2, innovations 0, 0.5 or 64, and NIS gate 9; sigma −1 checks atomic error handling. Coarse
+correction caps are 5 m and 1 m/s. State starts at position 10 m, speed 2 m/s and drift 5 m.
+Valid inputs must not return arithmetic/covariance errors, so rejecting a broken covariance is
+not enough to satisfy the contract. Measurement innovation rejection is allowed and must preserve
+the entire state bit-for-bit. Required witnesses include a nonzero accepted correction, gating,
+errors and an accepted result at the variance floor.
+
+The postconditions check finite state, diagonal floors of 10⁻⁹ and the determinant tolerance
+`det(P) >= -1e-8 * (1 + P.position * P.speed)` without calling `Covariance2::is_valid`.
+Coarse updates additionally retain the unmeasured position/speed and its variance, respect their
+correction caps and cannot shrink the measured variance below the measurement variance. All
+measurement operations preserve systematic drift. These are finite-grid, single-operation proofs,
+not proofs over arbitrary floating-point covariance matrices or repeated filter histories. Existing
+arbitrary-scalar overflow proofs remain separate. Unwinding assertions stay enabled (bound 2), and
+the harnesses call production operations without stubs.
+
+Covariance and coarse-update squares use explicit multiplication in production. The bundled
+[CBMC 6.11.0 integer-power model](https://github.com/diffblue/cbmc/blob/cbmc-6.11.0/src/ansi-c/library/math.c#L3376)
+approximates `powi`, which produced spurious covariance rejections in the first family run.
+The prediction counterexample `(position variance=9, cross=-12, speed variance=16, dt=0.5)`
+passes as an ordinary Rust regression test. Expressing the squares directly keeps the intended
+arithmetic available to the verifier without a proof-only implementation or weakened assertion.
+
 ## Motion and walking priority
 
 The motion/walking harnesses call `apply_motion`, `apply_walking`, and
@@ -416,7 +450,7 @@ road turn. Existing real-route/delayed-GPS regression tests remain the integrati
 without an Android SDK or JNI build. The failing check is **Native core bounded proofs**. Repository
 branch protection/rulesets must list that check as required to enforce it at merge time; a workflow
 file alone cannot configure repository rules. Reports/logs are uploaded even on failure, retained
-for 14 days; the job deadline is 40 minutes.
+for 14 days; the job deadline is 65 minutes.
 
 Add a harness beside its production module, declare the assumptions and explicit unwind bound,
 include named reachability witnesses, and add it to `REQUIRED`. Do not assume an accepted/rejected

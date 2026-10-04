@@ -54,7 +54,9 @@ impl Covariance2 {
         // A symmetric 2x2 matrix is positive semidefinite exactly when both diagonal entries and
         // its determinant are non-negative. Permit a tiny floating-point tolerance.
         let diagonal_product = self.position * self.speed;
-        let cross_squared = self.position_speed.powi(2);
+        // Explicit multiplication gives the same square in runtime and bounded verification;
+        // the verifier's general integer-power library model approximates powi instead.
+        let cross_squared = self.position_speed * self.position_speed;
         if !diagonal_product.is_finite() || !cross_squared.is_finite() {
             return false;
         }
@@ -275,8 +277,9 @@ impl RouteFilter {
         let gain = (old.covariance.position / innovation_variance)
             .min(0.25)
             .min(max_correction_m / innovation.abs().max(MIN_VARIANCE));
+        let retained = 1.0 - gain;
         let covariance = Covariance2 {
-            position: ((1.0 - gain).powi(2) * old.covariance.position
+            position: (retained * retained * old.covariance.position
                 + gain * gain * measurement_variance)
                 .max(measurement_variance),
             position_speed: 0.0,
@@ -322,10 +325,11 @@ impl RouteFilter {
         let gain = (old.covariance.speed / variance)
             .min(0.5)
             .min(max_change_mps / innovation.abs().max(MIN_VARIANCE));
+        let retained = 1.0 - gain;
         let covariance = Covariance2 {
             position: old.covariance.position,
             position_speed: 0.0,
-            speed: ((1.0 - gain).powi(2) * old.covariance.speed
+            speed: (retained * retained * old.covariance.speed
                 + gain * gain * measurement_variance)
                 .max(measurement_variance),
         }

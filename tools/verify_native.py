@@ -15,6 +15,12 @@ OUTPUT = ROOT / 'build/native-verification'
 PROGRESS_INTERVAL_SECONDS = 30
 # Names and cover labels are intentional inventory, not discovery: deleting a proof must fail CI.
 REQUIRED = {
+    'kani_proofs::covariance::prediction_preserves_covariance_family': {'negative correlation', 'positive correlation', 'diagonal', 'singular', 'near singular', 'variance floor', 'error', 'maximum step'},
+    'kani_proofs::covariance::position_update_preserves_covariance_family': {'negative correlation', 'positive correlation', 'diagonal', 'singular', 'near singular', 'variance floor', 'nonzero correction', 'gated', 'error'},
+    'kani_proofs::covariance::speed_update_preserves_covariance_family': {'negative correlation', 'positive correlation', 'diagonal', 'singular', 'near singular', 'variance floor', 'nonzero correction', 'gated', 'error'},
+    'kani_proofs::covariance::coarse_position_preserves_covariance_family': {'negative correlation', 'positive correlation', 'diagonal', 'singular', 'near singular', 'variance floor', 'nonzero correction', 'gated', 'error'},
+    'kani_proofs::covariance::coarse_speed_preserves_covariance_family': {'negative correlation', 'positive correlation', 'diagonal', 'singular', 'near singular', 'variance floor', 'nonzero correction', 'gated', 'error'},
+
     'speed::kani_proofs::window_membership_rejects_future_and_overflowing_ages': {'30 second boundary', '40 second boundary', '90 second boundary', 'expired', 'future', 'overflowing age', 'invalid window', 'current'},
     'speed::kani_proofs::window_selection_preserves_order_payloads_and_storage': {'none selected', 'all selected', 'partial selection'},
     'speed::kani_proofs::future_only_queries_reject_without_consuming_observations': {'next millisecond is future', 'extreme clock'},
@@ -273,7 +279,7 @@ def verify():
         run_logged(['cargo', 'kani', '-p', 'imu-nav-core', '--lib', '--target-dir', str(OUTPUT / 'target'),
                     '-Z', 'unstable-options', '--export-json', str(report_path),
                     '--harness-timeout', '5m', '-j', '2', '--output-format', 'terse'],
-                   env, OUTPUT / 'verification.log', 35 * 60)
+                   env, OUTPUT / 'verification.log', 40 * 60)
         summary = validate_report(json.loads(report_path.read_text()))
     except (OSError, ValueError, RuntimeError) as error:
         summary_path.write_text(json.dumps({'passed': False, 'error': str(error)}, indent=2) + '\n')

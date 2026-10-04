@@ -2,6 +2,43 @@ use super::*;
 
 const OPEN_GATE: f64 = 1.0e12;
 
+/// A rank-one negative correlation stays valid after prediction; this also reproduces the
+/// concrete input from the verifier's approximate powi model without that library model.
+#[test]
+fn negative_rank_one_covariance_predicts_and_accepts_measurements() {
+    let covariance = Covariance2 {
+        position: 9.0,
+        position_speed: -12.0,
+        speed: 16.0,
+    };
+    assert!(covariance.is_valid());
+    let initial = RouteFilter {
+        estimate: Estimate {
+            position_m: 10.0,
+            speed_mps: 2.0,
+            covariance,
+            systematic_drift_m: 5.0,
+        },
+    };
+    let mut predicted = initial.clone();
+    predicted.predict(0.5, 0.5, 0.25).unwrap();
+    assert_eq!(
+        predicted.estimate().covariance,
+        Covariance2 {
+            position: 1.003_906_25,
+            position_speed: -3.984_375,
+            speed: 16.0625,
+        }
+    );
+    for mut filter in [initial.clone(), predicted] {
+        assert!(filter.update_position(10.5, 2.0, 9.0).unwrap().accepted);
+        assert!(filter.estimate().covariance.is_valid());
+    }
+    let mut filter = initial;
+    assert!(filter.update_speed(2.5, 2.0, 9.0).unwrap().accepted);
+    assert!(filter.estimate().covariance.is_valid());
+}
+
 #[test]
 fn prediction_propagates_state_and_full_covariance() {
     let mut filter = RouteFilter::new(10.0, 4.0, 3.0, 2.0, 5.0).unwrap();
