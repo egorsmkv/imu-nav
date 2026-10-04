@@ -349,8 +349,8 @@ The next uninstrumented baseline still spent most app-like time in global coarse
 A query seeds its nearest search from the closest envelope, then visits envelopes in original route
 order. It skips an envelope only when its latitude or longitude bound proves every enclosed segment
 too far away. The rival search uses the same conservative bound before examining individual
-segments. Projection arithmetic, earliest-segment ties, distant-rival detection and local/global
-reacquisition remain unchanged. A long-route test compares exact projections and ambiguity decisions
+segments. In this step, projection arithmetic, earliest-segment ties, distant-rival detection and
+local/global reacquisition remained unchanged. A long-route test compares exact projections and ambiguity decisions
 against the exhaustive algorithm across winding and parallel routes.
 
 Both sides used the same Linux host, Rust nightly, frame-pointer flag, simulator inputs and five
@@ -379,3 +379,23 @@ Timing ranges did not overlap. These are synthetic host results, not Android lat
 accuracy claims. Local gitignored evidence is in `captures/block-index-{app,advanced}-before/`,
 `captures/block-index-{app,advanced}-after-reviewed/` and the matching
 `captures/block-index-*-reviewed-comparison.md` reports.
+
+## Indexed global reacquisition (2026-10-04)
+
+After coarse-fix indexing, the hotpath pass attributed 93.5% of the off-route reacquisition case
+to `RouteGeometry::project`. Its global fallback still scanned every segment. That fallback now
+uses the same block index, with an exact segment projection for surviving blocks in route order.
+The local search and its comparison with the global result are unchanged. Finite queries outside
+geographic latitude/longitude bounds keep the prior exhaustive path because the indexed longitude
+bound assumes a valid latitude. A test compares global fallback against an exhaustive projection
+across a long winding route, including those outside-world inputs.
+
+Uninstrumented before/after captures used the same Linux host, Rust nightly, simulator inputs and
+five timing repetitions. All ten deterministic outputs and allocation counts/bytes matched.
+The focused reacquisition median fell from 63.619 to 7.688 ms (87.9%), with non-overlapping ranges;
+other advanced cases changed by at most 3.2%. App-like medians changed by -2.8% to +1.2%.
+At 100,000 points, a separate 600-second timing pass kept the exact
+output fingerprint and fell from 631.110 to 79.787 ms (87.4%). These are synthetic host results,
+not Android latency or navigation accuracy claims. Local gitignored evidence is in
+`captures/round3-global-{app,advanced}-after/`, the matching `*-comparison.md` files and
+`captures/round3-global-stress-{before,after}/`.

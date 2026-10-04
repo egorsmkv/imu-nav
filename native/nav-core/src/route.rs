@@ -157,7 +157,7 @@ impl RouteGeometry {
     /// # Errors
     ///
     /// Returns [`RouteError::InvalidSearch`] when a coordinate, search distance, or threshold is
-    /// invalid.
+    /// invalid, or [`RouteError::TooShort`] if the route has no indexed segments.
     #[cfg_attr(feature = "profiling", hotpath::measure(impl_type = "RouteGeometry"))]
     pub fn project(
         &self,
@@ -185,7 +185,14 @@ impl RouteGeometry {
             self.segment_at(around_m + ahead_m),
         );
         if local.offset_m > global_if_farther_m {
-            let global = self.project_range(point, 0, self.points.len() - 2);
+            let global = if (-90.0..=90.0).contains(&point.latitude_deg)
+                && (-180.0..=180.0).contains(&point.longitude_deg)
+            {
+                self.project_indexed::<false>(point, longitude_scale(point))?
+            } else {
+                // Keep the historic finite-but-outside-world behavior of project().
+                self.project_range(point, 0, self.points.len() - 2)
+            };
             if global.offset_m < local.offset_m {
                 return Ok(global);
             }
@@ -236,49 +243,7 @@ impl RouteGeometry {
         // Every rival uses the same query latitude; recomputing its cosine per segment dominates
         // dense-route scans. Keep the same arithmetic and comparisons, just reuse the scale.
         let longitude_scale = longitude_scale(point);
-        // Start with a geographically close block, then visit every block in route order.
-        // The envelope only chooses a seed: it never determines the final projection.
-        let seed_block = self
-            .blocks
-            .iter()
-            .min_by(|left, right| {
-                let squared_bound = |block: &SegmentBlock| {
-                    let (latitude, longitude) =
-                        block.lower_bound_components_m(point, longitude_scale);
-                    latitude * latitude + longitude * longitude
-                };
-                squared_bound(left).total_cmp(&squared_bound(right))
-            })
-            .ok_or(RouteError::TooShort)?;
-        let mut best = self.project_range_scaled::<true>(
-            point,
-            seed_block.first,
-            seed_block.last,
-            longitude_scale,
-            f64::MAX,
-        );
-        for block in &self.blocks {
-            if block.first == seed_block.first {
-                continue;
-            }
-            let limit_m = best.offset_m + RIVAL_PREFILTER_ROUNDING_MARGIN_M;
-            if block.outside(point, longitude_scale, limit_m) {
-                continue;
-            }
-            let candidate = self.project_range_scaled::<true>(
-                point,
-                block.first,
-                block.last,
-                longitude_scale,
-                best.offset_m,
-            );
-            if candidate.offset_m < best.offset_m
-                || (candidate.offset_m.total_cmp(&best.offset_m).is_eq()
-                    && candidate.segment < best.segment)
-            {
-                best = candidate;
-            }
-        }
+        let best = self.project_indexed::<true>(point, longitude_scale)?;
         let corridor_m = best.offset_m + 2.0 * accuracy_m;
         let distinct_distance_m = (4.0 * accuracy_m).max(100.0);
         let latitude_limit_m = corridor_m + RIVAL_PREFILTER_ROUNDING_MARGIN_M;
@@ -314,6 +279,57 @@ impl RouteGeometry {
             }
         }
         Ok(Some(best))
+    }
+
+    /// Seed a global search, then reject only blocks that cannot beat its current best.
+    /// Visiting surviving blocks in route order preserves the earliest exact-distance tie.
+    fn project_indexed<const ENDPOINT_BOUNDS: bool>(
+        &self,
+        point: GeoPoint,
+        longitude_scale: f64,
+    ) -> Result<Projection, RouteError> {
+        let seed_block = self
+            .blocks
+            .iter()
+            .min_by(|left, right| {
+                let squared_bound = |block: &SegmentBlock| {
+                    let (latitude, longitude) =
+                        block.lower_bound_components_m(point, longitude_scale);
+                    latitude * latitude + longitude * longitude
+                };
+                squared_bound(left).total_cmp(&squared_bound(right))
+            })
+            .ok_or(RouteError::TooShort)?;
+        let mut best = self.project_range_scaled::<ENDPOINT_BOUNDS>(
+            point,
+            seed_block.first,
+            seed_block.last,
+            longitude_scale,
+            f64::MAX,
+        );
+        for block in &self.blocks {
+            if block.first == seed_block.first {
+                continue;
+            }
+            let limit_m = best.offset_m + RIVAL_PREFILTER_ROUNDING_MARGIN_M;
+            if block.outside(point, longitude_scale, limit_m) {
+                continue;
+            }
+            let candidate = self.project_range_scaled::<ENDPOINT_BOUNDS>(
+                point,
+                block.first,
+                block.last,
+                longitude_scale,
+                best.offset_m,
+            );
+            if candidate.offset_m < best.offset_m
+                || (candidate.offset_m.total_cmp(&best.offset_m).is_eq()
+                    && candidate.segment < best.segment)
+            {
+                best = candidate;
+            }
+        }
+        Ok(best)
     }
 
     fn project_range(&self, point: GeoPoint, from: usize, to: usize) -> Projection {

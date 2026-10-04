@@ -282,6 +282,48 @@ fn global_fallback_finds_farther_route_section() {
 }
 
 #[test]
+fn indexed_global_fallback_matches_exhaustive_projection() {
+    let points: Vec<_> = (0..1_025)
+        .map(|index| {
+            let fraction = f64::from(index) / 1_024.0;
+            GeoPoint {
+                latitude_deg: 50.0 + 0.04 * fraction,
+                longitude_deg: 30.0 + (fraction * 12.0 * PI).sin() * 0.002,
+            }
+        })
+        .collect();
+    let route = RouteGeometry::new(points).unwrap();
+    for query in (0..96)
+        .map(|index| {
+            let fraction = f64::from(index) / 95.0;
+            GeoPoint {
+                latitude_deg: 50.0 + 0.04 * fraction,
+                longitude_deg: 30.02 + (fraction * 9.0 * PI).cos() * 0.002,
+            }
+        })
+        .chain([
+            GeoPoint {
+                latitude_deg: 91.0,
+                longitude_deg: 30.0,
+            },
+            GeoPoint {
+                latitude_deg: 50.0,
+                longitude_deg: 181.0,
+            },
+        ])
+    {
+        let local = exhaustive_projection(&route, query, 0, 0);
+        let global = exhaustive_projection(&route, query, 0, route.points.len() - 2);
+        let expected = if global.offset_m < local.offset_m {
+            global
+        } else {
+            local
+        };
+        assert_eq!(route.project(query, 0.0, 0.0, 0.0, 0.0), Ok(expected));
+    }
+}
+
+#[test]
 fn rejects_invalid_coordinates_and_search_windows() {
     assert_eq!(
         RouteGeometry::new(vec![]).unwrap_err(),
