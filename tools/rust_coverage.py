@@ -21,6 +21,7 @@ TOOLCHAIN = 'nightly-2026-09-25'
 CRATES = {'core': 'native/nav-core/src', 'jni': 'native/nav-jni/src',
           'sim': 'native/nav-sim/src', 'server': 'server/src'}
 FLOORS = {'core': 95, 'trust': 95, 'jni': 85, 'sim': 95, 'server': 90}
+LLVM_EXCLUSION = r'(/tests/|/tests\.rs$|_tests\.rs$|/kani_proofs/|/kani_proofs\.rs$|/\.cargo/|/rustc/|/\.rustup/|/build/|/target/)'
 
 
 def production_file(filename):
@@ -30,7 +31,7 @@ def production_file(filename):
         relative = path.relative_to(ROOT)
     except ValueError:
         return None
-    if ('tests' in relative.parts or path.stem in ('tests', 'kani_proofs') or
+    if ('tests' in relative.parts or 'kani_proofs' in relative.parts or path.stem in ('tests', 'kani_proofs') or
             path.stem.endswith('_tests') or path.stem.startswith('test_')):
         return None
     return next((name for name, root in CRATES.items()
@@ -223,12 +224,11 @@ def run(args):
         common = ['--debuginfod=false', f'-instr-profile={merged}']
         for obj in objects:
             common += ['-object', obj]
-        exclusion = r'(/tests/|/tests\.rs$|_tests\.rs$|/kani_proofs\.rs$|/\.cargo/|/rustc/|/\.rustup/|/build/|/target/)'
-        report = checked([cov, 'export', '-format=lcov', *common, f'-ignore-filename-regex={exclusion}'],
+        report = checked([cov, 'export', '-format=lcov', *common, f'-ignore-filename-regex={LLVM_EXCLUSION}'],
                          env, directory / 'coverage.lcov')
         reports.append(report)
         checked([cov, 'show', '-format=html', f'-output-dir={directory / "html"}',
-                 '-show-branches=count', *common, f'-ignore-filename-regex={exclusion}'],
+                 '-show-branches=count', *common, f'-ignore-filename-regex={LLVM_EXCLUSION}'],
                 env, directory / 'html.log')
         (directory / 'objects.json').write_text(json.dumps(objects, indent=2) + '\n')
     sources = merge_lcov(reports)

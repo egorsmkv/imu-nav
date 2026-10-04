@@ -463,6 +463,7 @@ contracts; see
 `heap-profile` builds), simulator subprocesses and server CLI/HTTP/WebSocket tests. Run
 `python3 tools/rust_coverage.py` after installing the pinned coverage toolchain. CI gates
 production lines per crate; see [coverage setup, thresholds and report semantics](docs/RUST_COVERAGE.md).
+Kani-only `kani_proofs.rs` files and `kani_proofs/` directories are excluded from production coverage.
 
 **Kotlin coverage.** Run `python3 tools/kotlin_coverage.py` for host coverage of core, routing,
 replay and app unit tests. CI enforces reviewed per-module baseline floors, with shared JNI

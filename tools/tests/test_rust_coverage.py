@@ -2,6 +2,7 @@
 import importlib.util
 import json
 from pathlib import Path
+import re
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -15,10 +16,41 @@ class CoverageTests(unittest.TestCase):
     def test_proof_harnesses_do_not_count_as_production(self):
         for module in ['', 'trust/', 'network/', 'speed/', 'estimator/', 'route/', 'estimator/network_position/',
                        'estimator/network_position/speed/', 'estimator/motion/', 'estimator/walking/', 'estimator/turn/']:
-            proof = coverage.ROOT / f'native/nav-core/src/{module}kani_proofs.rs'
-            self.assertIsNone(coverage.production_file(proof))
-            self.assertEqual(coverage.merge_lcov([f'SF:{proof}\nDA:1,0\nend_of_record']), {})
+            for suffix in ['kani_proofs.rs', 'kani_proofs/covariance.rs', 'kani_proofs/nested/contracts.rs']:
+                proof = coverage.ROOT / f'native/nav-core/src/{module}{suffix}'
+                with self.subTest(proof=proof):
+                    self.assertIsNone(coverage.production_file(proof))
+                    self.assertEqual(coverage.merge_lcov([f'SF:{proof}\nDA:1,0\nend_of_record']), {})
+                    self.assertIsNotNone(re.search(coverage.LLVM_EXCLUSION, proof.as_posix()))
         self.assertEqual(coverage.production_file(coverage.ROOT / 'native/nav-core/src/trust.rs'), 'core')
+
+    def test_proof_exclusion_does_not_hide_similarly_named_production(self):
+        for relative in ['covariance.rs', 'kani_proofs_helpers.rs', 'kani_proofs_helpers/covariance.rs',
+                         'estimator/covariance.rs']:
+            source = coverage.ROOT / 'native/nav-core/src' / relative
+            with self.subTest(source=source):
+                self.assertEqual(coverage.production_file(source), 'core')
+                self.assertIsNone(re.search(coverage.LLVM_EXCLUSION, source.as_posix()))
+                self.assertEqual(coverage.merge_lcov([f'SF:{source}\nDA:1,0\nend_of_record']),
+                                 {str(source): {1: 0}})
+
+    def test_nested_proofs_are_optional_but_production_siblings_are_required(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(coverage, 'ROOT', Path(directory)):
+            sources = {}
+            for relative in ['native/nav-core/src/lib.rs', 'native/nav-core/src/trust.rs',
+                             'native/nav-jni/src/lib.rs', 'native/nav-sim/src/main.rs']:
+                source = coverage.ROOT / relative
+                source.parent.mkdir(parents=True, exist_ok=True)
+                source.write_text('fn production() {}')
+                sources[str(source)] = {1: 1}
+            proof = coverage.ROOT / 'native/nav-core/src/kani_proofs/covariance.rs'
+            proof.parent.mkdir()
+            proof.write_text('fn covariance_proof() {}')
+            self.assertTrue(all(item['passed'] for item in coverage.summarize(sources, 'native').values()))
+            production = coverage.ROOT / 'native/nav-core/src/covariance.rs'
+            production.write_text('fn production_covariance() {}')
+            with self.assertRaisesRegex(RuntimeError, 'Missing production module'):
+                coverage.summarize(sources, 'native')
 
     def test_discovers_cargo_reported_paths_not_a_guessed_layout(self):
         with tempfile.TemporaryDirectory() as directory:

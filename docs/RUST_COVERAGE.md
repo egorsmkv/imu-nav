@@ -35,7 +35,9 @@ profiles are never reused. Build caches are isolated from ordinary Cargo builds.
 
 The denominator includes executable lines in handwritten Rust production files.
 Test modules live in separate files and are excluded, as are dependencies and
-build scripts. Missing production modules, missing binaries, empty JVM profiles,
+build scripts. Kani-only `kani_proofs.rs` files and files inside `kani_proofs/`
+directories are excluded from both LLVM reports and the production-module inventory.
+Missing production modules, missing binaries, empty JVM profiles,
 and LLVM mapping warnings fail the run. Gates compare exact counts, not rounded
 percentages. Branch coverage appears in each domain's detailed report but is not
 yet gated. These host results do not measure Android-only platform code.
