@@ -11,6 +11,7 @@ const METRES_PER_DEGREE_LONGITUDE_EQUATOR: f64 = 111_320.0;
 const RIVAL_PREFILTER_ROUNDING_MARGIN_M: f64 = 1.0;
 // Bounds help near-route fixes; beyond this offset their checks cost more than they skip.
 const MAX_USEFUL_ENDPOINT_BOUND_OFFSET_M: f64 = 300.0;
+const SEGMENTS_PER_BLOCK: usize = 32;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GeoPoint {
@@ -33,12 +34,49 @@ pub enum RouteError {
     InvalidSearch,
 }
 
+/// A conservative geographic envelope for consecutive segments, kept in route order.
+#[derive(Clone, Debug, PartialEq)]
+struct SegmentBlock {
+    first: usize,
+    last: usize,
+    min_latitude_deg: f64,
+    max_latitude_deg: f64,
+    min_longitude_deg: f64,
+    max_longitude_deg: f64,
+}
+
+impl SegmentBlock {
+    /// Each axis independently bounds the distance to every point on the enclosed segments.
+    fn lower_bound_components_m(&self, point: GeoPoint, longitude_scale: f64) -> (f64, f64) {
+        let latitude_gap = if point.latitude_deg < self.min_latitude_deg {
+            self.min_latitude_deg - point.latitude_deg
+        } else {
+            (point.latitude_deg - self.max_latitude_deg).max(0.0)
+        };
+        let longitude_gap = if point.longitude_deg < self.min_longitude_deg {
+            self.min_longitude_deg - point.longitude_deg
+        } else {
+            (point.longitude_deg - self.max_longitude_deg).max(0.0)
+        };
+        (
+            latitude_gap * METRES_PER_DEGREE_LATITUDE,
+            longitude_gap * longitude_scale,
+        )
+    }
+
+    fn outside(&self, point: GeoPoint, longitude_scale: f64, limit_m: f64) -> bool {
+        let (latitude_gap, longitude_gap) = self.lower_bound_components_m(point, longitude_scale);
+        latitude_gap > limit_m || longitude_gap > limit_m
+    }
+}
+
 #[derive(Clone, Debug)]
 #[cfg_attr(any(test, kani), derive(PartialEq))]
 pub struct RouteGeometry {
     points: Vec<GeoPoint>,
     cumulative_m: Vec<f64>,
     turns: Vec<RouteTurn>,
+    blocks: Vec<SegmentBlock>,
 }
 
 impl RouteGeometry {
@@ -71,9 +109,36 @@ impl RouteGeometry {
             points,
             cumulative_m,
             turns: Vec::new(),
+            blocks: Vec::new(),
         };
         route.turns = route.build_turns();
+        route.blocks = route.build_blocks();
         Ok(route)
+    }
+
+    /// Build once off the main thread so repeated coarse fixes can reject distant segments.
+    fn build_blocks(&self) -> Vec<SegmentBlock> {
+        (0..self.points.len() - 1)
+            .step_by(SEGMENTS_PER_BLOCK)
+            .map(|first| {
+                let last = (first + SEGMENTS_PER_BLOCK - 1).min(self.points.len() - 2);
+                let mut block = SegmentBlock {
+                    first,
+                    last,
+                    min_latitude_deg: f64::INFINITY,
+                    max_latitude_deg: f64::NEG_INFINITY,
+                    min_longitude_deg: f64::INFINITY,
+                    max_longitude_deg: f64::NEG_INFINITY,
+                };
+                for &point in &self.points[first..=last + 1] {
+                    block.min_latitude_deg = block.min_latitude_deg.min(point.latitude_deg);
+                    block.max_latitude_deg = block.max_latitude_deg.max(point.latitude_deg);
+                    block.min_longitude_deg = block.min_longitude_deg.min(point.longitude_deg);
+                    block.max_longitude_deg = block.max_longitude_deg.max(point.longitude_deg);
+                }
+                block
+            })
+            .collect()
     }
 
     #[must_use]
@@ -153,7 +218,8 @@ impl RouteGeometry {
     /// route occurrence (loops, parallel returns or crossings). Adjacent segments are one match.
     ///
     /// # Errors
-    /// Returns [`RouteError::InvalidSearch`] for invalid coordinates or uncertainty.
+    /// Returns [`RouteError::InvalidSearch`] for invalid coordinates or uncertainty, or
+    /// [`RouteError::TooShort`] if the route has no indexed segments.
     #[cfg_attr(feature = "profiling", hotpath::measure(impl_type = "RouteGeometry"))]
     pub fn project_unambiguous(
         &self,
@@ -170,40 +236,81 @@ impl RouteGeometry {
         // Every rival uses the same query latitude; recomputing its cosine per segment dominates
         // dense-route scans. Keep the same arithmetic and comparisons, just reuse the scale.
         let longitude_scale = longitude_scale(point);
-        let best = self.project_range_scaled::<true>(
+        // Start with a geographically close block, then visit every block in route order.
+        // The envelope only chooses a seed: it never determines the final projection.
+        let seed_block = self
+            .blocks
+            .iter()
+            .min_by(|left, right| {
+                let squared_bound = |block: &SegmentBlock| {
+                    let (latitude, longitude) =
+                        block.lower_bound_components_m(point, longitude_scale);
+                    latitude * latitude + longitude * longitude
+                };
+                squared_bound(left).total_cmp(&squared_bound(right))
+            })
+            .ok_or(RouteError::TooShort)?;
+        let mut best = self.project_range_scaled::<true>(
             point,
-            0,
-            self.points.len() - 2,
+            seed_block.first,
+            seed_block.last,
             longitude_scale,
             f64::MAX,
         );
+        for block in &self.blocks {
+            if block.first == seed_block.first {
+                continue;
+            }
+            let limit_m = best.offset_m + RIVAL_PREFILTER_ROUNDING_MARGIN_M;
+            if block.outside(point, longitude_scale, limit_m) {
+                continue;
+            }
+            let candidate = self.project_range_scaled::<true>(
+                point,
+                block.first,
+                block.last,
+                longitude_scale,
+                best.offset_m,
+            );
+            if candidate.offset_m < best.offset_m
+                || (candidate.offset_m.total_cmp(&best.offset_m).is_eq()
+                    && candidate.segment < best.segment)
+            {
+                best = candidate;
+            }
+        }
         let corridor_m = best.offset_m + 2.0 * accuracy_m;
         let distinct_distance_m = (4.0 * accuracy_m).max(100.0);
         let latitude_limit_m = corridor_m + RIVAL_PREFILTER_ROUNDING_MARGIN_M;
-        for segment in 0..self.points.len() - 1 {
-            // A segment whose endpoints are both beyond the same latitude bound cannot
-            // intersect the corridor. Keep the original projection for every candidate that
-            // might matter, preserving its rounding, ordering and ambiguity decision.
-            let start_y = (self.points[segment].latitude_deg - point.latitude_deg)
-                * METRES_PER_DEGREE_LATITUDE;
-            let end_y = (self.points[segment + 1].latitude_deg - point.latitude_deg)
-                * METRES_PER_DEGREE_LATITUDE;
-            if (start_y > latitude_limit_m && end_y > latitude_limit_m)
-                || (start_y < -latitude_limit_m && end_y < -latitude_limit_m)
-            {
+        for block in &self.blocks {
+            if block.outside(point, longitude_scale, latitude_limit_m) {
                 continue;
             }
-            let rival = self.project_range_scaled::<false>(
-                point,
-                segment,
-                segment,
-                longitude_scale,
-                corridor_m,
-            );
-            if (rival.position_m - best.position_m).abs() > distinct_distance_m
-                && rival.offset_m <= corridor_m
-            {
-                return Ok(None);
+            for segment in block.first..=block.last {
+                // A segment whose endpoints are both beyond the same latitude bound cannot
+                // intersect the corridor. Keep the original projection for every candidate that
+                // might matter, preserving its rounding, ordering and ambiguity decision.
+                let start_y = (self.points[segment].latitude_deg - point.latitude_deg)
+                    * METRES_PER_DEGREE_LATITUDE;
+                let end_y = (self.points[segment + 1].latitude_deg - point.latitude_deg)
+                    * METRES_PER_DEGREE_LATITUDE;
+                if (start_y > latitude_limit_m && end_y > latitude_limit_m)
+                    || (start_y < -latitude_limit_m && end_y < -latitude_limit_m)
+                {
+                    continue;
+                }
+                let rival = self.project_range_scaled::<false>(
+                    point,
+                    segment,
+                    segment,
+                    longitude_scale,
+                    corridor_m,
+                );
+                if (rival.position_m - best.position_m).abs() > distinct_distance_m
+                    && rival.offset_m <= corridor_m
+                {
+                    return Ok(None);
+                }
             }
         }
         Ok(Some(best))

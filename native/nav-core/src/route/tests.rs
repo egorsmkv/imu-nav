@@ -200,6 +200,48 @@ fn long_segments_crossing_the_query_survive_endpoint_bounds() {
 }
 
 #[test]
+fn block_index_matches_exhaustive_search_on_long_winding_and_parallel_routes() {
+    for parallel_return in [false, true] {
+        let points: Vec<_> = (0..1_025)
+            .map(|index| {
+                let fraction = f64::from(index) / 1_024.0;
+                let (north, east) = if parallel_return && index > 512 {
+                    ((1.0 - fraction) * 0.04, 0.0004)
+                } else {
+                    (fraction * 0.04, (fraction * 12.0 * PI).sin() * 0.002)
+                };
+                GeoPoint {
+                    latitude_deg: 50.0 + north,
+                    longitude_deg: 30.0 + east,
+                }
+            })
+            .collect();
+        let route = RouteGeometry::new(points).unwrap();
+        for index in 0..96 {
+            let fraction = f64::from(index) / 95.0;
+            let query = GeoPoint {
+                latitude_deg: 50.0 + fraction * 0.04 + 0.0001,
+                longitude_deg: 30.0 + (fraction * 19.0).cos() * 0.002,
+            };
+            let best = exhaustive_projection(&route, query, 0, route.points.len() - 2);
+            for accuracy in [0.001_f64, 2.0, 40.0, 200.0] {
+                let distinct = (4.0 * accuracy).max(100.0);
+                let ambiguous = (0..route.points.len() - 1).any(|segment| {
+                    let rival = exhaustive_projection(&route, query, segment, segment);
+                    (rival.position_m - best.position_m).abs() > distinct
+                        && rival.offset_m <= best.offset_m + 2.0 * accuracy
+                });
+                assert_eq!(
+                    route.project_unambiguous(query, accuracy).unwrap(),
+                    (!ambiguous).then_some(best),
+                    "parallel_return={parallel_return} index={index} accuracy={accuracy}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn projects_onto_local_segment_with_arc_length() {
     let route = route();
     let projection = route

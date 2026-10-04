@@ -302,7 +302,7 @@ crossings, repeated vertices, extreme latitudes and corridor boundaries. Local g
 `captures/hotpath-app-baseline/`, `captures/hotpath-app-uninstrumented-before/`,
 `captures/hotpath-app-uninstrumented-after/` and `captures/hotpath-app-comparison.md`.
 
-Remaining opportunities suggested by the profiles, not implemented here:
+Opportunities identified at this stage (the segment index below now addresses the first):
 
 - **Spatial route indexing:** projection still takes roughly 88–96% of CPU samples in the geometry
   cases. A conservative segment index could avoid scanning the whole route. It must preserve distant
@@ -341,3 +341,41 @@ timing ranges. A regression test checks long segments that cross the query despi
 being far away. These are synthetic host results, not an Android latency or accuracy claim.
 Local gitignored captures and full comparisons are in `captures/route-bounds-app-{before,final}/`,
 `captures/route-bounds-advanced-{before-current,final}/` and their `*-final-comparison.md` files.
+
+## Indexed coarse-fix projection (2026-10-04)
+
+The next uninstrumented baseline still spent most app-like time in global coarse-fix projection.
+`RouteGeometry` now builds 32-segment geographic envelopes with the route, off the main thread.
+A query seeds its nearest search from the closest envelope, then visits envelopes in original route
+order. It skips an envelope only when its latitude or longitude bound proves every enclosed segment
+too far away. The rival search uses the same conservative bound before examining individual
+segments. Projection arithmetic, earliest-segment ties, distant-rival detection and local/global
+reacquisition remain unchanged. A long-route test compares exact projections and ambiguity decisions
+against the exhaustive algorithm across winding and parallel routes.
+
+Both sides used the same Linux host, Rust nightly, frame-pointer flag, simulator inputs and five
+timing repetitions. All ten deterministic outcomes matched. At 10,000 points, the index adds one
+allocation and about 15 KB of requested route storage per construction (two on reroute).
+
+| Scenario | Median before → after | Time reduction |
+|---|---:|---:|
+| Driving | 33.905 → 17.841 ms | 47.4% |
+| Jamming/recovery | 26.755 → 11.611 ms | 56.6% |
+| Delayed GPS | 66.669 → 22.550 ms | 66.2% |
+| Stop/resume | 25.123 → 11.496 ms | 54.2% |
+| Reroute | 42.990 → 21.692 ms | 49.5% |
+| Winding geometry | 59.809 → 6.055 ms | 89.9% |
+| Parallel geometry | 31.905 → 4.882 ms | 84.7% |
+| Crossing geometry | 30.036 → 5.784 ms | 80.7% |
+| Reacquisition | 66.207 → 63.619 ms | 3.9% |
+| Dense sensor burst | 47.494 → 33.263 ms | 30.0% |
+
+With the 100,000-point stress preset, a separate 600-second driving timing pass had the same
+output fingerprint and a 150.171 → 96.497 ms median (35.7% reduction). Its five-run ranges did
+not overlap. The stress evidence is in `captures/block-index-stress-before/` and
+`captures/block-index-stress-after-reviewed/`.
+
+Timing ranges did not overlap. These are synthetic host results, not Android latency or navigation
+accuracy claims. Local gitignored evidence is in `captures/block-index-{app,advanced}-before/`,
+`captures/block-index-{app,advanced}-after-reviewed/` and the matching
+`captures/block-index-*-reviewed-comparison.md` reports.
