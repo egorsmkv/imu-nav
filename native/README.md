@@ -472,3 +472,12 @@ interval. These decision helpers are shared with production; exact domains are d
 Motion/walking proofs additionally check measured-speed priority, travel-mode isolation, repeated
 prior bounds, and stop recovery without a position anchor. They exercise production setters with
 symbolic inputs and retain the explicit fixture/sequence bounds in the verification scope.
+
+Network evidence proofs check duplicate/rate protection, reroute cleanup, sensor priority, disjoint
+position/speed allocation, bounded batch storage and recovery without reusing old samples. The
+production bookkeeping runs on explicit bounded sequences and fit-result inputs; numerical fitting
+remains regression-tested. See the verification scope for input domains.
+
+Turn proofs run the production correction path with bounded landmark tables, checking input/quality
+gates, cooldown, duplicate/landmark reuse, ambiguity and correction limits without claiming a fresh
+GPS/OBD measurement. Geographic landmark construction remains regression-tested.

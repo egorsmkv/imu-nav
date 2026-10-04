@@ -15,6 +15,7 @@ const MIN_CHANGE_MPS: f64 = 3.0;
 const RECOVERY_MS: i64 = 30_000;
 const MANEUVER_POSITION_MS: i64 = 15_000;
 
+#[derive(Clone, Copy)]
 pub(super) enum NetworkUse {
     Position,
     Reserved,
@@ -69,25 +70,50 @@ impl SpeedBatch {
 
     /// Alternate eligible position/speed fixes. Never return a failed speed batch to position.
     pub(super) fn select(&mut self, candidate: Candidate, current_speed_mps: f64) -> NetworkUse {
-        if candidate.last_ms < self.recovery_until_ms {
-            return NetworkUse::Position;
-        }
-        let reserved = self.reserve_next;
-        self.reserve_next = !reserved;
-        if !reserved {
+        if !self.reserve_for_speed(candidate.last_ms) {
             return NetworkUse::Position;
         }
         if let Some(prior) = self.observe_change(candidate, current_speed_mps) {
-            self.clear();
-            self.recovery_until_ms = candidate.last_ms.saturating_add(RECOVERY_MS);
-            return NetworkUse::RestorePrior(prior);
+            return self.restore_prior(prior, candidate.last_ms);
         }
-        self.samples[self.count] = Some(candidate);
-        self.count += 1;
-        if self.count < BATCH_SIZE {
+        self.push_and_fit(candidate)
+    }
+
+    /// Keep allocation separate from numerical fitting so a reserved fix cannot fall back to position.
+    fn reserve_for_speed(&mut self, elapsed_ms: i64) -> bool {
+        if elapsed_ms < self.recovery_until_ms {
+            return false;
+        }
+        let reserved = self.reserve_next;
+        self.reserve_next = !reserved;
+        reserved
+    }
+
+    /// Recovery consumes its triggering fix and discards all pre-recovery samples.
+    fn restore_prior(&mut self, prior: f64, elapsed_ms: i64) -> NetworkUse {
+        self.clear();
+        self.recovery_until_ms = elapsed_ms.saturating_add(RECOVERY_MS);
+        NetworkUse::RestorePrior(prior)
+    }
+
+    /// Fit only fixes already assigned to speed; failure never reallocates them to position.
+    fn push_and_fit(&mut self, candidate: Candidate) -> NetworkUse {
+        if !self.push_sample(candidate) {
             return NetworkUse::Reserved;
         }
         let estimate = self.fit();
+        self.finish_batch(estimate, candidate.last_ms)
+    }
+
+    /// The caller reserves this sample first; a full batch is always consumed by `finish_batch`.
+    fn push_sample(&mut self, candidate: Candidate) -> bool {
+        self.samples[self.count] = Some(candidate);
+        self.count += 1;
+        self.count >= BATCH_SIZE
+    }
+
+    /// Decide whether a fitted window needs more evidence or must release its storage.
+    fn finish_batch(&mut self, estimate: Option<SpeedEstimate>, elapsed_ms: i64) -> NetworkUse {
         // A slow but coherent moving window can need more distance to separate speed from noise.
         if estimate.is_some_and(|fit| fit.speed_mps - 3.0 * fit.sigma_mps <= MIN_MOVING_MPS)
             && self.count < MAX_BATCH_SIZE
@@ -103,7 +129,7 @@ impl SpeedBatch {
         if estimate.is_none() && self.relearning {
             // A mixed manoeuvre window is not a speed measurement. Give subsequent fixes to
             // position while the window clears, then collect a completely new speed batch.
-            self.recovery_until_ms = candidate.last_ms.saturating_add(MANEUVER_POSITION_MS);
+            self.recovery_until_ms = elapsed_ms.saturating_add(MANEUVER_POSITION_MS);
             self.reserve_next = true;
             self.previous_reserved = None;
             self.previous_change_departure = 0.0;
@@ -139,6 +165,16 @@ impl SpeedBatch {
         let dt = milliseconds_to_seconds(candidate.last_ms - previous.last_ms);
         let slope = (candidate.position_m - previous.position_m) / dt;
         let threshold = (candidate.accuracy_m.hypot(previous.accuracy_m) / dt).max(MIN_CHANGE_MPS);
+        self.observe_departure(slope, threshold, current_speed_mps)
+    }
+
+    /// Require two consistent departures; accepting a new fit resets this confirmation.
+    fn observe_departure(
+        &mut self,
+        slope: f64,
+        threshold: f64,
+        current_speed_mps: f64,
+    ) -> Option<f64> {
         if let Some(reference) = self.reference_speed_mps {
             let change = slope - reference;
             let departs = change.abs() > threshold;
@@ -189,4 +225,4 @@ impl SpeedBatch {
 }
 
 #[cfg(kani)]
-mod kani_proofs;
+pub(super) mod kani_proofs;

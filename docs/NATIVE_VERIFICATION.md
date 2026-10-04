@@ -159,6 +159,85 @@ domain exceeded the five-minute solver budget. Normal/fallback cases retain ever
 factor; the slower capped case uses 257 factors at 1/256 intervals. The larger combined domain and
 unrestricted capped-case factors are not claimed as verified. Every assertion is retained.
 
+## Network evidence accounting
+
+Network ingress proofs reject arbitrary observation scalar bit patterns before projection in a
+populated fixture at 11,500 ms. The fixture retains a coordinate/input watermark at 9,000 ms,
+a position candidate, and an unfinished speed batch. Invalid, stale, future, duplicate-time and
+walking inputs preserve the whole estimator when no motion hint is present. Cached coordinates
+and too-frequent fixes at 9,001–11,500 ms may consume only the input watermark; they cannot add
+position confidence or speed samples. A separate reroute proof covers every timestamp from
+9,000 ms through `i64::MAX`, clearing candidates/speed while retaining coordinate and input caches.
+
+Allocation proofs call production `apply_network_estimates` with already-projected candidates;
+projection, geographic accuracy and candidate-sequence eligibility are outside these contracts.
+The position path requires at least three fixes over ten seconds (all byte counts, spans 0–30 s),
+retains speed/drift, and caps its correction at 50 m on the fixed 100 m innovation fixture. A separate
+production dispatch helper proves that successful, rejected, reserved and prior-restoration speed
+allocations cannot fall through to position, reset drift, or fabricate measured freshness. It uses
+a speed-10/position-0 fixture, fits of 12 or 200 m/s, 2 m/s fit uncertainty, and a restored prior of
+15 m/s. Fresh GPS position/speed (ages 0–2,500 ms), OBD (0–2,499 ms), a stop hint, and disabled network speed each discard unfinished speed learning;
+position remains eligible except under fresh GPS position.
+
+Batch bookkeeping is checked through two four-sample batches over fifteen fixes, with separate
+successful/failed fit cases, and a seven-sample extended batch over thirteen fixes with unresolved
+fit summaries. Position-only slots have arbitrary floating-point positions and must leave all speed
+state except the slot toggle unchanged. A separate finalization proof covers every count 4–7,
+optional fit summaries with every floating-point speed 0–150/3.6 m/s, sigma 2–4 m/s and span 30–60 s,
+and both relearning states. Finalization must leave spare capacity or empty all storage; accepted
+summaries must pass the movement-confidence gate. No numerical fitting accuracy is claimed.
+
+Recovery decisions use slopes 12/20/28 m/s, allowance 5 m/s, model 20 m/s, and original priors
+0/15 m/s. Original-prior retention also checks a subsequent accepted fit. Symbolic cooldown times
+cover the last excluded millisecond and exact resumption boundary after a rejected relearning fit
+or restored prior. Clear removes the entire speed-learning state. A stop between cell scans,
+from either active control or a new hint, clears only unfinished speed learning.
+
+Kani cannot execute libc `hypot`, used to calculate departure uncertainty. Inlining the entire
+allocation path also grew to about 22 GB of solver memory and was stopped; a numerical fitting
+proof was stopped after more than three minutes to retain practical CI costs. A combined success/
+failure two-batch harness exceeded five minutes; splitting those cases retains both domains and
+all assertions. Production allocation, sample insertion, fit finalization, departure confirmation, recovery cleanup and speed dispatch
+are therefore small separate helpers; arithmetic and invocation order are unchanged. Proofs call
+these actual helpers at their input/result boundaries. They do not prove the numerical slope,
+`hypot`, regression fitter, or the complete `select` path. No production operation is stubbed.
+Existing real-route, fitting and delayed-GPS regressions exercise the complete path. Unwind bounds
+are 3, 10, 16 or 18 as declared, with all bounds checks enabled; arbitrary histories remain outside
+scope.
+
+## Turn correction policy
+
+Turn proofs call the complete production `apply_turn` operation with explicit landmark tables
+(up to two entries). The table fixture does not establish geographic turn extraction or route
+construction correctness. The filter starts at position 400 m, speed 10 m/s, position sigma 100 m,
+speed sigma 2 m/s, cross-covariance 2 and drift 50 m; normal observation times are start 1,000 ms,
+end 5,000 ms, current 6,000 ms and angle +90°. All harnesses use unwind 4.
+
+- Ingress rejection covers every signed start/end timestamp and floating-point angle bit pattern,
+  with route start 1,000 ms and previous input 3,000 ms. An independent `i128` age/duration calculation
+  identifies invalid inputs; these must preserve the complete estimator.
+- Fresh GPS position ages 0–2,500 ms, active motion control, walking, speed 0/19 m/s, and position
+  variance 90,001 m² each prevent correction. Except for walking's early rejection, only the seen
+  input watermark advances; it must not mark the turn as successfully used.
+- Cooldown uses a second observation ending at 20,000 ms and all integer previous-use gaps 1–16,000 ms.
+  A distinct matching landmark is usable exactly from 15,000 ms. Another proof starts with a used
+  landmark at 5,000 ms, then rejects reuse at the cooldown boundary and every integer delay up to
+  65,535 ms beyond it; only the seen-input watermark may advance.
+- Two matching landmarks, an opposite-angle rival 0–63.75 m away in quarter-metre increments, or an
+  empty table cannot change filter state or successful-use bookkeeping. A separate proof covers
+  integer rival distances 0–255 m and checks acceptance exactly at the 80 m isolation boundary.
+- One isolated matching landmark at every integer position 300–550 m produces an accepted correction
+  bounded by 30 m in either direction, retains speed/speed variance/drift and position uncertainty
+  of at least 30 m, and never refreshes GPS/OBD timestamps. Reoffering that observation preserves
+  the entire logical state. Forward, backward and capped corrections have required witnesses.
+
+Inlining successful correction and a later reuse attempt exceeded the five-minute solver budget.
+Successful-use recording and rejection from an already-used state are therefore proved separately;
+the full two-turn sequence remains a regression test. No operation is stubbed.
+
+These are bounded policy contracts, not a proof that an observed rotation corresponds to a real
+road turn. Existing real-route/delayed-GPS regression tests remain the integration checks.
+
 ## CI and adding proofs
 
 `.github/workflows/native-verification.yml` runs on every pull request, main push and manual dispatch,

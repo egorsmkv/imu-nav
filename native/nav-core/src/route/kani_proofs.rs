@@ -18,3 +18,10 @@ pub(crate) fn straight_route() -> RouteGeometry {
         turns: Vec::new(),
     }
 }
+
+/// Turn-policy proofs supply a bounded landmark table; geographic landmark construction is separate.
+pub(crate) fn with_landmarks(turns: Vec<super::RouteTurn>) -> RouteGeometry {
+    let mut route = straight_route();
+    route.turns = turns;
+    route
+}

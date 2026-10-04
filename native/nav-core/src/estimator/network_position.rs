@@ -200,48 +200,13 @@ impl NavigationEstimator {
             || motion.is_some_and(|hint| hint.factor < 1.0 || !hint.factor.is_finite());
         if self.network_speed_enabled && !measured_speed && !motion_blocked {
             let previous_speed = self.estimate().speed_mps;
-            match self
+            let allocation = self
                 .state
                 .network_evidence
                 .speed
-                .select(candidate, previous_speed)
-            {
-                NetworkUse::Reserved => return Ok(false),
-                NetworkUse::Speed(estimate) => {
-                    // The mean describes a time window, not instantaneous speed during a manoeuvre.
-                    let sigma = estimate.sigma_mps
-                        + SPEED_SIGMA_PER_SECOND * milliseconds_to_seconds(age_ms);
-                    let correction_limit = if self.state.network_evidence.speed.relearning() {
-                        self.state
-                            .filter
-                            .restore_speed_prior(previous_speed, RECOVERY_SPEED_SIGMA_MPS)?;
-                        MANEUVER_SPEED_CORRECTION_MPS
-                    } else {
-                        MAX_SPEED_CORRECTION_MPS
-                    };
-                    let accepted = self.state.filter.update_coarse_speed(
-                        estimate.speed_mps,
-                        sigma,
-                        SPEED_GATE,
-                        correction_limit,
-                    )?;
-                    if accepted {
-                        self.state.network_evidence.speed.accepted(
-                            previous_speed,
-                            estimate,
-                            self.state.filter.estimate().speed_mps,
-                        );
-                    }
-                    return Ok(accepted);
-                }
-                NetworkUse::RestorePrior(speed_mps) => {
-                    // Retract cell learning without reducing uncertainty or claiming a new sensor.
-                    self.state
-                        .filter
-                        .restore_speed_prior(speed_mps, RECOVERY_SPEED_SIGMA_MPS)?;
-                    return Ok(false);
-                }
-                NetworkUse::Position => (),
+                .select(candidate, previous_speed);
+            if let Some(accepted) = self.apply_network_speed(allocation, age_ms)? {
+                return Ok(accepted);
             }
         } else {
             self.state.network_evidence.speed.clear();
@@ -257,6 +222,54 @@ impl NavigationEstimator {
             POSITION_GATE,
             MAX_CORRECTION_M,
         )
+    }
+
+    /// A speed allocation always consumes the fix, even when rejected or restoring a prior.
+    /// Only Position returns None, allowing the caller to evaluate a position correction.
+    fn apply_network_speed(
+        &mut self,
+        allocation: NetworkUse,
+        age_ms: i64,
+    ) -> Result<Option<bool>, FilterError> {
+        let previous_speed = self.estimate().speed_mps;
+        match allocation {
+            NetworkUse::Reserved => Ok(Some(false)),
+            NetworkUse::Speed(estimate) => {
+                // The mean describes a time window, not instantaneous speed during a manoeuvre.
+                let sigma =
+                    estimate.sigma_mps + SPEED_SIGMA_PER_SECOND * milliseconds_to_seconds(age_ms);
+                let correction_limit = if self.state.network_evidence.speed.relearning() {
+                    self.state
+                        .filter
+                        .restore_speed_prior(previous_speed, RECOVERY_SPEED_SIGMA_MPS)?;
+                    MANEUVER_SPEED_CORRECTION_MPS
+                } else {
+                    MAX_SPEED_CORRECTION_MPS
+                };
+                let accepted = self.state.filter.update_coarse_speed(
+                    estimate.speed_mps,
+                    sigma,
+                    SPEED_GATE,
+                    correction_limit,
+                )?;
+                if accepted {
+                    self.state.network_evidence.speed.accepted(
+                        previous_speed,
+                        estimate,
+                        self.state.filter.estimate().speed_mps,
+                    );
+                }
+                Ok(Some(accepted))
+            }
+            NetworkUse::RestorePrior(speed_mps) => {
+                // Retract cell learning without reducing uncertainty or claiming a new sensor.
+                self.state
+                    .filter
+                    .restore_speed_prior(speed_mps, RECOVERY_SPEED_SIGMA_MPS)?;
+                Ok(Some(false))
+            }
+            NetworkUse::Position => Ok(None),
+        }
     }
 }
 

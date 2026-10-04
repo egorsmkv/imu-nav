@@ -13,6 +13,29 @@ RUSTC = 'rustc 1.100.0-nightly (8925ea358 2026-08-20)'
 OUTPUT = ROOT / 'build/native-verification'
 # Names and cover labels are intentional inventory, not discovery: deleting a proof must fail CI.
 REQUIRED = {
+    'estimator::turn::kani_proofs::landmark_isolation_accepts_the_exact_distance_boundary': {'inside isolation', 'isolation boundary'},
+    'estimator::turn::kani_proofs::invalid_turn_ingress_preserves_all_state': {'duplicate', 'future', 'stale', 'old route', 'invalid angle'},
+    'estimator::turn::kani_proofs::measured_position_motion_and_quality_gates_block_turns': {'gps boundary', 'motion control', 'walking', 'stationary', 'fast', 'uncertain'},
+    'estimator::turn::kani_proofs::cooldown_accepts_only_at_or_after_exact_boundary': {'before cooldown', 'cooldown boundary'},
+    'estimator::turn::kani_proofs::a_used_landmark_cannot_be_reused_after_cooldown': {'same landmark rejected', 'later reuse rejected'},
+    'estimator::turn::kani_proofs::ambiguous_and_nearby_landmarks_cannot_correct_position': {'ambiguous', 'nearby rival', 'no landmark'},
+    'estimator::turn::kani_proofs::isolated_turn_correction_is_bounded_and_never_refreshes_sensors': {'backward correction', 'forward correction', 'correction cap'},
+
+    'estimator::network_position::speed::kani_proofs::failed_batches_are_disjoint_and_position_slots_are_inert': {'failed fits consumed'},
+    'estimator::network_position::speed::kani_proofs::fit_finalization_always_preserves_storage_capacity': {'extended', 'capacity limit', 'span limit', 'usable speed'},
+    'estimator::network_position::kani_proofs::stop_between_network_scans_discards_the_partial_batch': {'active control', 'new hint'},
+    'estimator::network_position::kani_proofs::speed_allocations_never_fall_through_to_position': {'accepted fit', 'rejected fit', 'restored prior'},
+    'estimator::network_position::speed::kani_proofs::departure_confirmation_requires_consistent_evidence': {'standing prior', 'confirmed', 'opposite departure'},
+    'estimator::network_position::kani_proofs::invalid_network_ingress_preserves_all_state': {'walking', 'future', 'duplicate time', 'stale', 'invalid number'},
+    'estimator::network_position::kani_proofs::cached_and_too_frequent_fixes_cannot_add_evidence': {'cached coordinate', 'rate limited'},
+    'estimator::network_position::kani_proofs::reroute_discards_learning_but_keeps_duplicate_protection': {'integer limit', 'same time'},
+    'estimator::network_position::kani_proofs::measured_speed_and_motion_veto_discard_network_learning': {'gps position boundary', 'gps speed boundary', 'obd boundary', 'stop', 'disabled'},
+    'estimator::network_position::kani_proofs::position_correction_requires_count_and_span': {'insufficient count', 'insufficient span', 'eligible boundary'},
+    'estimator::network_position::speed::kani_proofs::completed_batches_are_disjoint_and_position_slots_are_inert': {'second complete batch'},
+    'estimator::network_position::speed::kani_proofs::extended_batch_reaches_capacity_and_clears_storage': {'capacity reached'},
+    'estimator::network_position::speed::kani_proofs::failed_batch_never_returns_reserved_fixes_to_position': {'cooldown', 'fresh batch'},
+    'estimator::network_position::speed::kani_proofs::recovery_restores_original_prior_and_starts_without_old_samples': {'cooldown', 'recovery boundary'},
+
     'estimator::motion::kani_proofs::fresh_measured_speed_blocks_all_motion_hints': {'gps wins', 'obd wins'},
     'estimator::motion::kani_proofs::measured_priority_ends_at_exact_freshness_boundary': {'gps fresh boundary', 'obd fresh boundary', 'gps expired boundary', 'obd expired boundary'},
     'estimator::motion::kani_proofs::walking_mode_ignores_car_motion_hints': {'hint ignored', 'missing hint'},
