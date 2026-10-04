@@ -6,6 +6,7 @@ use super::{
 };
 
 /// Aggregate compatible contributions after rejecting location outliers.
+#[cfg_attr(feature = "profiling", hotpath::measure)]
 pub(super) fn calculate(
     key: &CellKey,
     contributions: &[Contribution],

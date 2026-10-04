@@ -10,6 +10,9 @@ use tracing_subscriber::EnvFilter;
 #[derive(Parser)]
 #[command(version, about)]
 struct Options {
+    /// Network interface to listen on; use 127.0.0.1 for a local traffic simulation.
+    #[arg(long, default_value_t = IpAddr::V4(Ipv4Addr::UNSPECIFIED))]
+    bind: IpAddr,
     #[arg(long, default_value_t = 8080)]
     port: u16,
     #[arg(long, default_value = "cells.sqlite3")]
@@ -29,6 +32,10 @@ struct Options {
     import: Option<PathBuf>,
     #[arg(long, value_delimiter = ',')]
     mcc: Vec<i64>,
+    /// Write an opt-in function timing report after graceful shutdown.
+    #[cfg(feature = "profiling")]
+    #[arg(long, env = "CELLS_PROFILE_OUTPUT")]
+    profile_output: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -39,6 +46,13 @@ async fn main() -> Result<()> {
         )
         .init();
     let options = Options::parse();
+    #[cfg(feature = "profiling")]
+    let _profile_guard = options.profile_output.as_ref().map(|path| {
+        hotpath::HotpathGuardBuilder::new("imu-nav-cell-server")
+            .format(hotpath::Format::JsonPretty)
+            .output_path(path)
+            .build()
+    });
     let policy = Policy {
         min_devices: options.min_devices,
         max_samples_per_device: options.max_samples,
@@ -64,7 +78,7 @@ async fn main() -> Result<()> {
             trust_proxy: options.trust_proxy,
         },
     )?;
-    let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), options.port);
+    let address = SocketAddr::new(options.bind, options.port);
     let listener = tokio::net::TcpListener::bind(address)
         .await
         .context("cannot bind server socket")?;

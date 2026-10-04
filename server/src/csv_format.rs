@@ -64,6 +64,7 @@ const HEADER: [&str; 14] = [
 /// # Errors
 ///
 /// Returns an error for corrupt gzip or CSV data and when the valid-row limit is exceeded.
+#[cfg_attr(feature = "profiling", hotpath::measure)]
 pub fn decode_towers(bytes: &[u8], limit: usize) -> Result<Vec<CellTower>, CsvDecodeError> {
     let decoded = if bytes.starts_with(&[0x1f, 0x8b]) {
         let mut decoded = Vec::new();
@@ -124,6 +125,7 @@ fn parse_tower(row: &csv::StringRecord) -> Option<CellTower> {
 /// # Errors
 ///
 /// Returns an error if CSV serialization or gzip compression fails.
+#[cfg_attr(feature = "profiling", hotpath::measure)]
 pub fn encode_towers(towers: &[crate::Consensus]) -> Result<Vec<u8>, CsvEncodeError> {
     let output = Vec::new();
     let encoder = GzEncoder::new(output, Compression::default());

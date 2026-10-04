@@ -414,7 +414,8 @@ server/target/release/imu-nav-cell-server --data cells.sqlite3 --import 255.csv.
 Put it behind a TLS reverse proxy for use outside your own network. The app warns when an API key
 would travel over plain `http://`. The old Kotlin server's internal contribution gzip is not a
 SQLite migration source; re-import the original seed export when moving to this server. See
-[`server/README.md`](server/README.md) for the complete HTTP, management, and WebSocket API.
+[`server/README.md`](server/README.md) for the complete HTTP, management, and WebSocket API,
+including opt-in profiling and a loopback traffic simulator.
 In the app: **Cells → Sharing server**, enter the URL (and key), then *Sync now* or enable automatic sync (every 6 h and after trips).
 
 Main navigation thresholds live in `core/.../Tuning.kt` (defaults = factory preset) and `TrustConfig`.
@@ -687,9 +688,9 @@ GraphHopper stack plus
 | Axum + Tokio | 0.8 / 1.x | cell server HTTP/WebSocket runtime | MIT |
 | tikv-jemallocator / jemalloc | 0.7 / 5.3.1 | optional Linux native replay heap allocator | MIT / Apache 2.0; jemalloc BSD 2-Clause |
 | pprof-rs | 0.15 | native simulation CPU profiles and flamegraphs (desktop only) | Apache 2.0 |
-| hotpath-rs | 0.28.4 | optional native-core function timing in the Linux simulator | MIT |
+| hotpath-rs | 0.28.4 | optional native-core and cell-server function timing | MIT |
 | jemalloc_pprof | 0.9 | optional Linux native heap export to pprof | Apache 2.0 |
-| Rusqlite + SQLite | 0.37 / bundled | persistent cell server database | MIT / public domain |
+| Rusqlite + SQLite | 0.40 / bundled | persistent cell server database | MIT / public domain |
 
 The sharing server also uses Serde, CSV, Flate2, Clap and Tracing (MIT or MIT/Apache 2.0).
 The desktop simulation uses Clap, Serde/serde_json, Anyhow, Flate2 and tikv-jemalloc-ctl

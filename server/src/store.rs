@@ -85,6 +85,7 @@ impl CellStore {
     /// # Errors
     ///
     /// Returns an error when the transaction cannot read or persist its changes.
+    #[cfg_attr(feature = "profiling", hotpath::measure(impl_type = "CellStore"))]
     pub fn contribute(
         &self,
         device: &str,
@@ -101,6 +102,8 @@ impl CellStore {
         let mut rejected = 0;
         let mut changed_keys = BTreeSet::new();
 
+        // One connection handles the batch; cached statements avoid recompiling identical SQL
+        // for each tower while keeping the same transaction and per-device movement checks.
         for tower in towers {
             if !plausible(tower, policy)
                 || !Self::accepts_movement(&transaction, device, tower, policy)?
@@ -113,14 +116,16 @@ impl CellStore {
             } else {
                 tower.samples.clamp(1, policy.max_samples_per_device)
             };
-            transaction.execute(
-                "INSERT INTO contributions
+            transaction
+                .prepare_cached(
+                    "INSERT INTO contributions
                  (radio,mcc,mnc,area,cid,device,lat,lon,range_m,samples,updated_s)
                  VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)
                  ON CONFLICT(radio,mcc,mnc,area,cid,device) DO UPDATE SET
                  lat=excluded.lat,lon=excluded.lon,range_m=excluded.range_m,
                  samples=excluded.samples,updated_s=excluded.updated_s",
-                params![
+                )?
+                .execute(params![
                     tower.key.radio.to_string(),
                     tower.key.mcc,
                     tower.key.mnc,
@@ -132,8 +137,7 @@ impl CellStore {
                     tower.range_m,
                     samples,
                     now_s,
-                ],
-            )?;
+                ])?;
             changed_keys.insert(tower.key.clone());
             accepted += 1;
         }
@@ -148,6 +152,7 @@ impl CellStore {
         Ok((UploadResult { accepted, rejected }, changed))
     }
 
+    #[cfg_attr(feature = "profiling", hotpath::measure(impl_type = "CellStore"))]
     fn accepts_movement(
         transaction: &Transaction<'_>,
         device: &str,
@@ -158,11 +163,12 @@ impl CellStore {
             return Ok(true);
         }
         let previous = transaction
-            .query_row(
+            .prepare_cached(
                 "SELECT lat,lon FROM contributions WHERE radio=?1 AND mcc=?2 AND mnc=?3 AND area=?4 AND cid=?5 AND device=?6",
-                params![tower.key.radio.to_string(), tower.key.mcc, tower.key.mnc, tower.key.area, tower.key.cid, device],
-                |row| Ok((row.get::<_, f64>(0)?, row.get::<_, f64>(1)?)),
-            )
+            )?
+            .query_row(params![tower.key.radio.to_string(), tower.key.mcc, tower.key.mnc, tower.key.area, tower.key.cid, device], |row| {
+                Ok((row.get::<_, f64>(0)?, row.get::<_, f64>(1)?))
+            })
             .optional()?;
         Ok(previous.is_none_or(|(lat, lon)| {
             distance_m(lat, lon, tower.lat, tower.lon) <= policy.max_jump_m
@@ -225,6 +231,7 @@ impl CellStore {
         self.query_internal(mccs, 0, Some(limit), None, true)
     }
 
+    #[cfg_attr(feature = "profiling", hotpath::measure(impl_type = "CellStore"))]
     fn query_internal(
         &self,
         mccs: Option<&HashSet<i64>>,
@@ -325,6 +332,7 @@ impl CellStore {
     /// # Errors
     ///
     /// Returns an error when the database cannot be queried or a count cannot fit in `usize`.
+    #[cfg_attr(feature = "profiling", hotpath::measure(impl_type = "CellStore"))]
     pub fn management_counts(&self, policy: &Policy) -> Result<StoreCounts> {
         let connection = self.connection()?;
         let contributions_count: i64 =
@@ -347,8 +355,9 @@ impl CellStore {
     }
 }
 
+#[cfg_attr(feature = "profiling", hotpath::measure)]
 fn recompute(transaction: &Transaction<'_>, key: &CellKey, policy: &Policy) -> Result<Consensus> {
-    let mut statement = transaction.prepare(
+    let mut statement = transaction.prepare_cached(
         "SELECT device,lat,lon,range_m,samples,updated_s FROM contributions
          WHERE radio=?1 AND mcc=?2 AND mnc=?3 AND area=?4 AND cid=?5",
     )?;
@@ -374,16 +383,19 @@ fn recompute(transaction: &Transaction<'_>, key: &CellKey, policy: &Policy) -> R
     Ok(consensus::calculate(key, &contributions, policy))
 }
 
+#[cfg_attr(feature = "profiling", hotpath::measure)]
 fn save_consensus(transaction: &Transaction<'_>, consensus: &Consensus) -> Result<()> {
     let tower = &consensus.tower;
-    transaction.execute(
-        "INSERT INTO consensus
+    transaction
+        .prepare_cached(
+            "INSERT INTO consensus
          (radio,mcc,mnc,area,cid,lat,lon,range_m,samples,devices,seeded,updated_s)
          VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)
          ON CONFLICT(radio,mcc,mnc,area,cid) DO UPDATE SET
          lat=excluded.lat,lon=excluded.lon,range_m=excluded.range_m,samples=excluded.samples,
          devices=excluded.devices,seeded=excluded.seeded,updated_s=excluded.updated_s",
-        params![
+        )?
+        .execute(params![
             tower.key.radio.to_string(),
             tower.key.mcc,
             tower.key.mnc,
@@ -396,8 +408,7 @@ fn save_consensus(transaction: &Transaction<'_>, consensus: &Consensus) -> Resul
             i64::try_from(consensus.devices)?,
             consensus.seeded,
             consensus.updated_s,
-        ],
-    )?;
+        ])?;
     Ok(())
 }
 

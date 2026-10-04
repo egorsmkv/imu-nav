@@ -22,6 +22,8 @@ async fn imports_filtered_cells_and_shuts_down_cleanly() -> anyhow::Result<()> {
         "LTE,255,1,10,20,,30.5,50.4,100,3\nLTE,260,1,10,21,,30.5,50.4,100,3\n",
     )?;
     for signal in ["-TERM", "-INT"] {
+        #[cfg(feature = "profiling")]
+        let profile_path = directory.path().join(format!("{signal}-profile.json"));
         let mut command = Command::new(env!("CARGO_BIN_EXE_imu-nav-cell-server"));
         command
             .args([
@@ -42,6 +44,8 @@ async fn imports_filtered_cells_and_shuts_down_cleanly() -> anyhow::Result<()> {
             .env("NO_COLOR", "1")
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit());
+        #[cfg(feature = "profiling")]
+        command.arg("--profile-output").arg(&profile_path);
         let mut server = ServerProcess(command.spawn()?);
         let stdout = server.0.stdout.take().unwrap();
         let (sender, receiver) = mpsc::channel();
@@ -101,6 +105,11 @@ async fn imports_filtered_cells_and_shuts_down_cleanly() -> anyhow::Result<()> {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         reader.join().unwrap();
+        #[cfg(feature = "profiling")]
+        {
+            let profile: serde_json::Value = serde_json::from_slice(&std::fs::read(profile_path)?)?;
+            assert!(profile["functions_timing"]["data"].as_array().is_some());
+        }
     }
     Ok(())
 }
