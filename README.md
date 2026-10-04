@@ -444,6 +444,8 @@ cargo test --manifest-path server/Cargo.toml # persistent HTTP/WebSocket cell se
 ```
 
 **Native formal verification.** Run `python3 tools/verify_native.py` after installing pinned Kani 0.68.0.
+The runner prints progress every 30 seconds and records cancellation diagnostics. CI caches the
+verifier launchers and gives setup a separate budget from the 35-minute proof deadline.
 Future-only speed queries return before allocating a window; bounded proofs check both query APIs
 and unchanged stored observations.
 

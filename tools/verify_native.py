@@ -6,11 +6,13 @@ from pathlib import Path
 import signal
 import subprocess
 import sys
+import time
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = '0.68.0'
 RUSTC = 'rustc 1.100.0-nightly (8925ea358 2026-08-20)'
 OUTPUT = ROOT / 'build/native-verification'
+PROGRESS_INTERVAL_SECONDS = 30
 # Names and cover labels are intentional inventory, not discovery: deleting a proof must fail CI.
 REQUIRED = {
     'speed::kani_proofs::window_membership_rejects_future_and_overflowing_ages': {'30 second boundary', '40 second boundary', '90 second boundary', 'expired', 'future', 'overflowing age', 'invalid window', 'current'},
@@ -212,6 +214,15 @@ def validate_report(report):
         raise ValueError(f'Malformed Kani report: {error}') from error
 
 
+def kill_process_group(process):
+    """Stop cargo and all of its solvers even when the parent has just exited."""
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    process.wait()
+
+
 def run_logged(command, env, path, timeout):
     """Keep diagnostics on failure; terminate the whole solver process group on deadline."""
     with path.open('w') as log:
@@ -219,18 +230,31 @@ def run_logged(command, env, path, timeout):
         log.flush()
         with subprocess.Popen(command, cwd=ROOT / 'native', env=env, stdout=log,
                               stderr=subprocess.STDOUT, start_new_session=True) as process:
+            started = time.monotonic()
+            deadline = started + timeout
             try:
-                code = process.wait(timeout=timeout)
-            except subprocess.TimeoutExpired as error:
-                os.killpg(process.pid, signal.SIGKILL)
-                process.wait()
-                raise RuntimeError(f'Verification timed out; see {path}') from error
+                while True:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise RuntimeError(f'Verification timed out after {timeout}s; see {path}')
+                    try:
+                        code = process.wait(timeout=min(PROGRESS_INTERVAL_SECONDS, remaining))
+                        break
+                    except subprocess.TimeoutExpired:
+                        elapsed = int(time.monotonic() - started)
+                        print(f'{path.name}: running for {elapsed}s (limit {timeout}s); '
+                              f'live log: {path}', flush=True)
+            except BaseException:
+                # CI cancellation must not leave children running in their separate session.
+                kill_process_group(process)
+                raise
             if code:
                 raise RuntimeError(f'Command failed ({code}); see {path}')
     return path.read_text()
 
 
-def main():
+def verify():
+    """Publish a failed summary for command, report-validation and cancellation errors."""
     OUTPUT.mkdir(parents=True, exist_ok=True)
     report_path = OUTPUT / 'results.json'
     summary_path = OUTPUT / 'summary.json'
@@ -258,6 +282,20 @@ def main():
     summary_path.write_text(json.dumps(summary, indent=2) + '\n')
     print(f'All {summary["harnesses"]} bounded proofs and required witnesses passed.')
     return 0
+
+
+def interrupted(signum, _frame):
+    """Turn CI cancellation into an error that can be recorded before Python exits."""
+    raise RuntimeError(f'Verification interrupted by {signal.Signals(signum).name}')
+
+
+def main():
+    previous = {sig: signal.signal(sig, interrupted) for sig in (signal.SIGINT, signal.SIGTERM)}
+    try:
+        return verify()
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
 
 
 if __name__ == '__main__':

@@ -13,24 +13,32 @@ jobs:
   kani:
     name: Native core bounded proofs
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    # Include cold verifier installation and artifact upload outside the proof deadline.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
         with:
           path: |
+            ~/.cargo/bin/cargo-kani
+            ~/.cargo/bin/kani
             ~/.kani/kani-0.68.0
             ~/.rustup/toolchains/nightly-2026-08-21-x86_64-unknown-linux-gnu
-          key: kani-0.68.0-${{ runner.os }}-${{ runner.arch }}
+          key: kani-0.68.0-launchers-v2-${{ runner.os }}-${{ runner.arch }}
       - name: Install pinned verifier and its compiler
+        timeout-minutes: 15
         run: |
           rustup toolchain install nightly-2026-08-21 --profile minimal
-          cargo +nightly-2026-08-21 install --locked kani-verifier --version 0.68.0
+          if ! cargo kani --version 2>/dev/null | grep -Fxq 'Kani Rust Verifier 0.68.0 (cargo plugin)'; then
+            cargo +nightly-2026-08-21 install --locked kani-verifier --version 0.68.0
+          fi
           cargo kani setup
       - name: Test verification and coverage report validation
         run: python3 -m unittest discover -s tools/tests -v
       - name: Verify native contracts and reachable witnesses
-        run: python3 tools/verify_native.py
+        # The runner's 35-minute deadline must fire before Actions kills the step.
+        timeout-minutes: 37
+        run: exec python3 tools/verify_native.py
       - name: Upload proof results and diagnostics
         if: always()
         uses: actions/upload-artifact@v4

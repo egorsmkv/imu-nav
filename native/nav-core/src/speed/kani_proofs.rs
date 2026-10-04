@@ -209,6 +209,8 @@ fn ordinary_fusion_all_nonpositive() {
     check_ordinary_fusion(true, true, true, age);
 }
 
+// Bundled Kissat handles these age-dependent floating-point formulas within the harness deadline.
+// The default solver timed out for both recent and old ages; their domains and checks are unchanged.
 #[kani::proof]
 #[kani::solver(kissat)]
 #[kani::unwind(2)]

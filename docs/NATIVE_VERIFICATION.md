@@ -18,8 +18,10 @@ python3 tools/verify_native.py
 
 Kani 0.68.0 uses `nightly-2026-08-21` (`rustc 1.100.0-nightly`, commit `8925ea358`),
 which satisfies the workspace's Rust 1.99 minimum. This is separate from the pinned Rust coverage
-toolchain. Do not substitute another compiler, CBMC or solver. Kani is a developer tool, not a Cargo
-or Android runtime dependency. The core remains dependency-free.
+toolchain. Use the compiler, CBMC and solvers bundled with that pinned release, rather than external
+replacements. Most harnesses use default CaDiCaL; the recent/old three-source fusion harnesses
+explicitly select bundled Kissat 4.0.1 with `#[kani::solver(kissat)]`. Kani is a developer tool,
+not a Cargo or Android runtime dependency. The core remains dependency-free.
 
 The runner checks the tool version, selects only `imu-nav-core`, uses two solver workers, allows
 five minutes per harness, and imposes a 35-minute overall verification deadline. It retains Kani's
@@ -27,6 +29,18 @@ default overflow, pointer, assertion reachability and unwinding checks. A proof'
 is an explicit loop bound; exceeding it fails verification rather than assuming the loop terminates.
 No production function is stubbed. The larger speed-storage inventory increases the overall
 budget; the five-minute per-harness deadline and two-worker memory limit are unchanged.
+
+CI gives installation its own 15-minute step budget and verification a 37-minute step budget,
+inside a 60-minute job. This leaves room for the runner's 35-minute deadline to report failure
+and for artifact upload after a cold installation. The cache includes the `cargo-kani` and `kani`
+launchers as well as the verifier bundle and compiler; installation is skipped only when the
+cached launcher reports the exact pinned version.
+
+The runner prints elapsed-time progress every 30 seconds while retaining detailed output in its
+log. On `SIGINT` or `SIGTERM`, it kills the solver process group and records an interrupted failure
+in `summary.json`. Exit 143 indicates termination by `SIGTERM`; it alone does not distinguish a
+job timeout from cancellation and does not establish a failed proof. Check the Actions job timing
+and cancellation reason alongside the uploaded diagnostics.
 
 Results go to `build/native-verification/`:
 
@@ -156,7 +170,9 @@ statistical calibration. Separate public-fusion proofs cover arbitrary invalid n
 source speeds, GPS-only fallback, and every subset of fixed GPS/route/network speeds 10/20/12 m/s
 with arbitrary signed GPS age, split by source combination. The three-source case is further split into adjacent GPS-age
 ranges ≤0, 1–60,000 ms, 60,001–3,600,000 ms, and >3,600,000 ms; their union retains every signed
-age. The unsplit three-source proof exceeded five minutes. They check source
+age. The unsplit three-source proof exceeded five minutes. The recent and old partitions also
+exceeded five minutes with default CaDiCaL; they use bundled Kissat without changing their age
+domains or assertions. They check source
 counts, span ownership and the weighted-average
 range with a 0.001 m/s rounding tolerance. Fusion harnesses use unwind 2.
 
