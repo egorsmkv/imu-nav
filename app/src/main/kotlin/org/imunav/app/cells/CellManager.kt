@@ -51,12 +51,6 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
     private val _status = MutableStateFlow(CellStatus())
     val status: StateFlow<CellStatus> = _status.asStateFlow()
 
-    private val _towerLayer = MutableStateFlow(TowerLayer())
-    val towerLayer: StateFlow<TowerLayer> = _towerLayer.asStateFlow()
-    private var towerJob: Job? = null
-    private var lastViewport: DoubleArray? = null
-    private var lastQuery: DoubleArray? = null
-
     val usageHistory = CellUsageHistory(context, scope, log)
 
     val scanner = CellScanner(
@@ -73,6 +67,9 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
         onUsage = usageHistory::record,
         enabledRadios = ::enabledRadios,
     )
+
+    private val towerDisplay = CellTowerLayerCoordinator(scope, db, { scanner.lastUsable }, ::enabledRadios) { prefs.getBoolean("show_towers", false) }
+    val towerLayer: StateFlow<TowerLayer> = towerDisplay.layer
 
     init {
         scope.launch {
@@ -97,8 +94,7 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
         prefs.edit { putString("radios", set.joinToString(",") { it.name }) }
         log("cell_radios ${set.joinToString(",") { it.name }}")
         refresh()
-        lastQuery = null
-        lastViewport?.let { v -> onViewport(v[0], v[1], v[2], v[3], v[4]) }
+        towerDisplay.invalidate(refresh = true)
     }
 
     /** The configured country codes as numbers. */
@@ -130,7 +126,7 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
     /** Re-count towers per source (a database query, so on the IO dispatcher). */
     private suspend fun reloadCounts() {
         val counts = withContext(Dispatchers.IO) { db.counts() }
-        lastQuery = null // the database changed: the next viewport must re-query
+        towerDisplay.invalidate() // the database changed: the next viewport must re-query
         _status.update { it.copy(counts = counts) }
     }
 
@@ -152,47 +148,11 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
     fun setShowTowers(on: Boolean) {
         prefs.edit { putBoolean("show_towers", on) }
         refresh()
-        val v = lastViewport
-        lastQuery = null
-        if (on && v != null) {
-            onViewport(v[0], v[1], v[2], v[3], v[4])
-        } else if (!on) {
-            _towerLayer.value = TowerLayer()
-        }
+        towerDisplay.setVisible(on)
     }
 
     /** Map camera settled: load towers for the visible area (debounced by cancelling the previous query). */
-    fun onViewport(south: Double, west: Double, north: Double, east: Double, zoom: Double) {
-        lastViewport = doubleArrayOf(south, west, north, east, zoom)
-        if (!prefs.getBoolean("show_towers", false)) return
-        // While the camera follows the car it settles every tick; skip queries that would return the same towers.
-        val q = lastQuery
-        if (q != null && q.contains(south, west, north, east) && abs(zoom - q[4]) < 0.5 && !_towerLayer.value.truncated) return
-        // Query a margin around the view so small moves stay inside it.
-        val padLat = (north - south) * 0.5
-        val padLon = (east - west) * 0.5
-        lastQuery = if (zoom >= MIN_TOWER_ZOOM) doubleArrayOf(south - padLat, west - padLon, north + padLat, east + padLon, zoom) else null
-        towerJob?.cancel()
-        if (zoom < MIN_TOWER_ZOOM) {
-            towerJob = scope.launch {
-                _towerLayer.value = TowerLayer(visible = withContext(Dispatchers.IO) { visibleTowers() }, zoomTooLow = true)
-            }
-            return
-        }
-        towerJob = scope.launch {
-            val layer = withContext(Dispatchers.IO) {
-                val (rows, truncated) = db.towersIn(south - padLat, west - padLon, north + padLat, east + padLon, MAX_TOWERS_ON_MAP, enabledRadios())
-                TowerLayer(rows.map { it.first }, visibleTowers(), truncated)
-            }
-            _towerLayer.value = layer
-        }
-    }
-
-    /** This query box (south, west, north, east, zoom) covers the given bounds. */
-    private fun DoubleArray.contains(south: Double, west: Double, north: Double, east: Double) = south >= this[0] && west >= this[1] && north <= this[2] && east <= this[3]
-
-    /** Database entries for the cells the phone sees now (for the red rings on the map). */
-    private fun visibleTowers(): List<CellTower> = scanner.lastUsable.mapNotNull { runCatching { db.resolve(it.key)?.first }.getOrNull() }
+    fun onViewport(south: Double, west: Double, north: Double, east: Double, zoom: Double) = towerDisplay.onViewport(south, west, north, east, zoom)
 
     /** Save the sharing-server and country settings from the Settings screen. */
     fun saveSettings(syncUrl: String, syncKey: String, autoSync: Boolean, mccs: String) {
