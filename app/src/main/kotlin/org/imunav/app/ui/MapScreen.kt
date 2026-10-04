@@ -3,27 +3,20 @@ package org.imunav.app.ui
 import android.Manifest
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.os.Build
 import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.Settings
-import android.text.format.DateFormat
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
@@ -40,45 +33,30 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.AltRoute
-import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.CellTower
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DirectionsCar
-import androidx.compose.material.icons.filled.GpsFixed
-import androidx.compose.material.icons.filled.GpsNotFixed
-import androidx.compose.material.icons.filled.GpsOff
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LocationOff
 import androidx.compose.material.icons.filled.MyLocation
-import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.TripOrigin
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -91,7 +69,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
@@ -99,19 +76,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalResources
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -119,29 +88,17 @@ import org.imunav.app.AppGraph
 import org.imunav.app.MapStartMode
 import org.imunav.app.R
 import org.imunav.app.UiState
-import org.imunav.app.bookmarks.Bookmarks
-import org.imunav.app.cells.TowerLayer
-import org.imunav.core.cells.Radio
 import org.imunav.core.geo.GeoPoint
-import org.imunav.core.gnss.GpsState
-import org.imunav.core.gnss.TrustLevel
-import org.imunav.core.nav.GuidanceState
-import org.imunav.core.nav.PositionSource
 import org.imunav.core.route.TravelMode
-import org.imunav.core.search.ResultKind
-import org.imunav.core.search.SearchResult
-import java.util.Date
 
-private val GoodGreen = Color(0xFF1E8E3E)
-private val WarnAmber = Color(0xFFE37400)
-private val BadRed = Color(0xFFD93025)
-private val InfoBlue = Color(0xFF1A73E8)
-private const val ROUTE_FIELDS_MIN_WIDTH_DP = 480
+internal val GoodGreen = Color(0xFF1E8E3E)
+internal val WarnAmber = Color(0xFFE37400)
+internal val BadRed = Color(0xFFD93025)
+internal val InfoBlue = Color(0xFF1A73E8)
 private const val MAP_HEADER_HEIGHT_FRACTION = 0.4f
 private const val MAP_CONTROLS_HEIGHT_FRACTION = 0.45f
-private const val SPEED_SIGN_TEXT_HEIGHTS = 3
-private val MapButtonSize = 48.dp
-private val MapButtonSpacing = 10.dp
+internal val MapButtonSize = 48.dp
+internal val MapButtonSpacing = 10.dp
 private val MapOverlayPadding = 12.dp
 
 /**
@@ -569,549 +526,3 @@ private fun requestBatteryExemptionOnce(context: Context) {
 
 /** Is the app exempt from battery optimisation? */
 fun isBatteryUnrestricted(context: Context): Boolean = context.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(context.packageName)
-
-// ------------------------------------------------------------------ top
-
-/** Big banner at the top during navigation: maneuver icon, distance and street. */
-@Composable
-private fun ManeuverBanner(nav: GuidanceState) {
-    val res = LocalResources.current
-    val step = nav.nextStep ?: return
-    val m = maneuverOf(step)
-    Surface(color = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary, shape = RoundedCornerShape(24.dp), shadowElevation = 6.dp) {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(m.icon, contentDescription = null, modifier = Modifier.size(52.dp))
-                Spacer(Modifier.width(14.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(formatDistance(res, nav.distToNextM), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                    Text(maneuverText(res, step), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    if (step.name.isNotBlank()) {
-                        Text(step.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                }
-            }
-            nav.thenStep?.let { then ->
-                Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(stringResource(R.string.then), style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f, fill = false))
-                    Spacer(Modifier.width(6.dp))
-                    Icon(maneuverOf(then).icon, contentDescription = maneuverText(res, then), modifier = Modifier.size(20.dp))
-                }
-            }
-        }
-    }
-}
-
-/** A card explaining a problem (e.g. Location is off) with one action button. */
-@Composable
-private fun WarningBanner(icon: ImageVector, title: String, text: String, action: String, onAction: () -> Unit) {
-    Surface(
-        color = MaterialTheme.colorScheme.errorContainer,
-        contentColor = MaterialTheme.colorScheme.onErrorContainer,
-        shape = RoundedCornerShape(20.dp),
-        shadowElevation = 4.dp,
-    ) {
-        Column {
-            Row(Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(icon, contentDescription = null)
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(title, style = MaterialTheme.typography.titleSmall)
-                    Text(text, style = MaterialTheme.typography.bodySmall)
-                }
-            }
-            TextButton(onClick = onAction) { Text(action) }
-        }
-    }
-}
-
-/** Compact "where does my position come from" chip; tap for details. */
-@Composable
-private fun StatusPill(ui: UiState, onClick: () -> Unit) {
-    val res = LocalResources.current
-    val nav = ui.guidance
-    val (label, dot) = when {
-        ui.simulateGpsLoss -> stringResource(R.string.gps_loss_test_active) to InfoBlue
-
-        nav.active -> sourceLabel(res, nav.source) + " · " + formatAccuracy(res, nav.uncertaintyM) to when (nav.source) {
-            PositionSource.GPS -> GoodGreen
-            PositionSource.GPS_SUSPECT -> WarnAmber
-            PositionSource.NONE -> Color.Gray
-            else -> InfoBlue
-        }
-
-        ui.manualStart != null -> stringResource(R.string.idle_position_manual) to InfoBlue
-
-        ui.hasTrustedPosition && ui.trustedFromGps -> stringResource(R.string.src_gps) + " · " + formatAccuracy(res, ui.trustedAccuracyM ?: 0.0) to GoodGreen
-
-        ui.hasTrustedPosition -> stringResource(R.string.src_cells) + " · " + formatAccuracy(res, ui.trustedAccuracyM ?: 0.0) to InfoBlue
-
-        else -> stringResource(R.string.src_none) to Color.Gray
-    }
-    val gps = when {
-        ui.simulateGpsLoss -> Triple(Icons.Filled.GpsOff, stringResource(R.string.gps_loss_test_active), InfoBlue)
-        ui.jammed -> Triple(Icons.Filled.GpsOff, stringResource(R.string.gps_jammed), BadRed)
-        ui.lastVerdict?.level == TrustLevel.BAD -> Triple(Icons.Filled.GpsOff, stringResource(R.string.gps_rejected), BadRed)
-        ui.gpsState == GpsState.OK -> Triple(Icons.Filled.GpsFixed, stringResource(R.string.gps_ok), GoodGreen)
-        ui.gpsState == GpsState.DEGRADED -> Triple(Icons.Filled.GpsNotFixed, stringResource(R.string.gps_weak), WarnAmber)
-        else -> Triple(Icons.Filled.GpsOff, stringResource(R.string.gps_lost), Color.Gray)
-    }
-    Surface(onClick = onClick, shape = CircleShape, color = MaterialTheme.colorScheme.surface, shadowElevation = 4.dp) {
-        Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(10.dp).background(dot, CircleShape))
-            Spacer(Modifier.width(8.dp))
-            Text(label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Spacer(Modifier.width(10.dp))
-            Icon(gps.first, contentDescription = gps.second, tint = gps.third, modifier = Modifier.size(18.dp))
-        }
-    }
-}
-
-// ------------------------------------------------------------------ map controls
-
-/** Round button on the map's right edge (zoom, re-centre, towers). */
-@Composable
-private fun MapButton(icon: ImageVector, description: String, selected: Boolean = false, onClick: () -> Unit) {
-    SmallFloatingActionButton(
-        onClick = onClick,
-        containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-        contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-        modifier = Modifier.size(MapButtonSize).semantics { contentDescription = description },
-    ) { Icon(icon, contentDescription = null) }
-}
-
-/** The "+" in the middle of the map, used to place the start by hand. */
-@Composable
-private fun Crosshair(modifier: Modifier) {
-    Box(modifier.size(44.dp).border(2.dp, MaterialTheme.colorScheme.primary, CircleShape), contentAlignment = Alignment.Center) {
-        Icon(Icons.Filled.Add, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-    }
-}
-
-/** Legend for the cell-tower layer (colours per radio type and how many are drawn). */
-@Composable
-private fun TowerLegend(layer: TowerLayer, radios: Set<Radio>) {
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        shadowElevation = 2.dp,
-    ) {
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                listOf(
-                    Triple(Radio.GSM, "2G", Color(0xFF8E24AA)),
-                    Triple(Radio.UMTS, "3G", Color(0xFFFB8C00)),
-                    Triple(Radio.LTE, "4G", Color(0xFF00897B)),
-                    Triple(Radio.NR, "5G", Color(0xFFE53935)),
-                ).filter { it.first in radios }.forEach { (_, name, color) ->
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Box(Modifier.size(10.dp).background(color, CircleShape))
-                        Text(name, style = MaterialTheme.typography.labelMedium)
-                    }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box(Modifier.size(12.dp).border(2.dp, BadRed, CircleShape))
-                    Text(stringResource(R.string.legend_seen_now), style = MaterialTheme.typography.labelMedium)
-                }
-            }
-            Text(
-                when {
-                    layer.zoomTooLow -> stringResource(R.string.legend_zoom_in)
-                    layer.truncated -> stringResource(R.string.legend_sample, layer.towers.size)
-                    else -> pluralStringResource(R.plurals.legend_count, layer.towers.size, layer.towers.size)
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
-// ------------------------------------------------------------------ bottom panels
-
-/** Rounded card inside the bounded, scrollable map panel, shared by route planning and navigation. */
-@Composable
-private fun PanelSurface(compact: Boolean = false, content: @Composable () -> Unit) {
-    Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surface, shadowElevation = 8.dp, tonalElevation = 2.dp) {
-        Column(Modifier.fillMaxWidth().padding(if (compact) 12.dp else 20.dp)) { content() }
-    }
-}
-
-/** Bottom panel before navigation: position status, hints and the Start / Start here buttons. */
-@Composable
-private fun IdlePanel(
-    ui: UiState,
-    bookmarks: Bookmarks,
-    mode: TravelMode,
-    walkingAvailable: Boolean,
-    onModeChange: (TravelMode) -> Unit,
-    routingBusy: String?,
-    compact: Boolean,
-    showStart: Boolean,
-    pickStart: Boolean,
-    canStart: Boolean,
-    onSetStart: () -> Unit,
-    onSearchStart: () -> Unit,
-    onSearchDestination: () -> Unit,
-    onClearStart: () -> Unit,
-    onStart: () -> Unit,
-    onClearDestination: () -> Unit,
-) {
-    val res = LocalResources.current
-    val startValue = when {
-        ui.manualStartLabel != null -> ui.manualStartLabel
-        ui.manualStart != null -> stringResource(R.string.route_point_on_map)
-        ui.hasTrustedPosition -> stringResource(R.string.route_current_position)
-        else -> stringResource(R.string.search_from_hint)
-    }
-    val destinationValue = when {
-        ui.destinationLabel != null -> ui.destinationLabel
-        ui.destination != null -> stringResource(R.string.route_point_on_map)
-        else -> stringResource(R.string.search_to_hint)
-    }
-    val startHint = stringResource(if (ui.manualStart == null) R.string.idle_set_start_hint else R.string.idle_move_start_hint)
-    PanelSurface(compact) {
-        Text(
-            stringResource(if (ui.destination == null) R.string.idle_title_choose else R.string.idle_title_ready),
-            style = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Spacer(Modifier.size(4.dp))
-        RoutePointEditor(
-            startValue = startValue,
-            destinationValue = destinationValue,
-            compact = compact,
-            onSearchStart = onSearchStart,
-            onSearchDestination = onSearchDestination,
-            onClearStart = onClearStart.takeIf { ui.manualStart != null },
-            onClearDestination = onClearDestination.takeIf { ui.destination != null },
-        )
-        var more by remember { mutableStateOf(false) }
-        if (!compact || more) BookmarkSaveActions(ui, mode, bookmarks)
-        if (compact) TextButton(onClick = { more = !more }) { Text(stringResource(R.string.driving_more)) }
-        val positionLine = when {
-            ui.manualStart != null -> stringResource(R.string.idle_position_manual)
-            ui.hasTrustedPosition && ui.trustedFromGps -> stringResource(R.string.idle_position_gps, formatAccuracy(res, ui.trustedAccuracyM ?: 0.0))
-            ui.hasTrustedPosition -> stringResource(R.string.idle_position_cell, formatAccuracy(res, ui.trustedAccuracyM ?: 0.0))
-            ui.gpsRejectReasons.isNotEmpty() -> stringResource(R.string.idle_gps_spoofed)
-            else -> stringResource(R.string.idle_waiting_position)
-        }
-        if (!compact) IconLine(Icons.Filled.TripOrigin, positionLine)
-        if (pickStart) IconLine(Icons.Filled.Add, startHint)
-        if (!compact && ui.destination == null) IconLine(Icons.Filled.Navigation, stringResource(R.string.idle_hint_long_press))
-        Spacer(Modifier.size(if (compact) 8.dp else 12.dp))
-        TravelModeSelector(mode, walkingAvailable, onModeChange)
-        if (!walkingAvailable) {
-            Text(
-                stringResource(R.string.mode_walk_needs_pack),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        if (routingBusy != null) {
-            Spacer(Modifier.size(8.dp))
-            LinearProgressIndicator(Modifier.fillMaxWidth())
-            Text(routingBusy, style = MaterialTheme.typography.bodySmall)
-        }
-        if (ui.planning) {
-            Spacer(Modifier.size(8.dp))
-            LinearProgressIndicator(Modifier.fillMaxWidth())
-            Text(stringResource(R.string.planning), style = MaterialTheme.typography.bodySmall)
-        }
-        Spacer(Modifier.size(if (compact) 8.dp else 12.dp))
-        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (pickStart) {
-                OutlinedButton(onClick = onSetStart) {
-                    Text(stringResource(if (ui.manualStart == null) R.string.action_set_start else R.string.action_move_start))
-                }
-            }
-            if (showStart) {
-                Button(onClick = onStart, enabled = canStart) {
-                    Icon(Icons.Filled.Navigation, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.action_start))
-                }
-            }
-        }
-    }
-}
-
-/** Start and destination fields are side by side when vertical space is scarce. */
-@Composable
-private fun RoutePointEditor(
-    startValue: String,
-    destinationValue: String,
-    compact: Boolean,
-    onSearchStart: () -> Unit,
-    onSearchDestination: () -> Unit,
-    onClearStart: (() -> Unit)?,
-    onClearDestination: (() -> Unit)?,
-) {
-    BoxWithConstraints {
-        val sideBySide = compact && maxWidth / LocalDensity.current.fontScale >= ROUTE_FIELDS_MIN_WIDTH_DP.dp
-        Column {
-            if (sideBySide) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    RoutePointField(
-                        icon = Icons.Filled.TripOrigin,
-                        label = stringResource(R.string.route_from),
-                        value = startValue,
-                        onClick = onSearchStart,
-                        onClear = onClearStart,
-                        modifier = Modifier.weight(1f),
-                    )
-                    RoutePointField(
-                        icon = Icons.Filled.Navigation,
-                        label = stringResource(R.string.route_to),
-                        value = destinationValue,
-                        onClick = onSearchDestination,
-                        onClear = onClearDestination,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            } else {
-                RoutePointField(
-                    icon = Icons.Filled.TripOrigin,
-                    label = stringResource(R.string.route_from),
-                    value = startValue,
-                    onClick = onSearchStart,
-                    onClear = onClearStart,
-                )
-                Spacer(Modifier.size(8.dp))
-                RoutePointField(
-                    icon = Icons.Filled.Navigation,
-                    label = stringResource(R.string.route_to),
-                    value = destinationValue,
-                    onClick = onSearchDestination,
-                    onClear = onClearDestination,
-                )
-            }
-        }
-    }
-    Spacer(Modifier.size(8.dp))
-}
-
-/** One searchable route endpoint. Clearing the origin returns it to automatic positioning. */
-@Composable
-private fun RoutePointField(icon: ImageVector, label: String, value: String, onClick: () -> Unit, onClear: (() -> Unit)?, modifier: Modifier = Modifier) {
-    Surface(
-        onClick = onClick,
-        modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-    ) {
-        Row(Modifier.fillMaxWidth().padding(start = 14.dp, top = 10.dp, bottom = 10.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(value, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            if (onClear != null) {
-                IconButton(onClick = onClear) { Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.cd_clear)) }
-            }
-        }
-    }
-}
-
-/** Which endpoint a search result should replace. */
-private enum class RoutePoint { START, DESTINATION }
-
-/** Compact address shown in the route editor after a search result is selected. */
-fun SearchResult.routePointLabel(): String = if (kind == ResultKind.PLACE || subtitle.isBlank()) title else "$title, $subtitle"
-
-/** Car / Walk choice before starting. Walking is disabled when the map pack has no walking data. */
-@Composable
-private fun TravelModeSelector(mode: TravelMode, walkingAvailable: Boolean, onModeChange: (TravelMode) -> Unit) {
-    val options = listOf(
-        Triple(TravelMode.CAR, Icons.Filled.DirectionsCar, R.string.mode_car),
-        Triple(TravelMode.FOOT, Icons.AutoMirrored.Filled.DirectionsWalk, R.string.mode_walk),
-    )
-    FlowRow(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        options.forEach { (option, icon, label) ->
-            FilterChip(
-                modifier = Modifier.semantics { role = Role.RadioButton },
-                selected = mode == option,
-                onClick = { onModeChange(option) },
-                enabled = option == TravelMode.CAR || walkingAvailable,
-                leadingIcon = { Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                label = { Text(stringResource(label)) },
-            )
-        }
-    }
-}
-
-/** Has the user allowed step counting ("physical activity")? */
-private fun hasActivityPermission(context: Context): Boolean = Build.VERSION.SDK_INT < 29 ||
-    ContextCompat.checkSelfPermission(context, Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
-
-/** One line of text with a small leading icon. */
-@Composable
-private fun IconLine(icon: ImageVector, text: String) {
-    Row(Modifier.padding(vertical = 3.dp), verticalAlignment = Alignment.Top) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp).padding(top = 2.dp), tint = MaterialTheme.colorScheme.primary)
-        Spacer(Modifier.width(10.dp))
-        Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-/** Bottom panel during navigation: time and distance left, speed, Reroute and Stop. */
-@Composable
-private fun NavigationPanel(nav: GuidanceState, showActions: Boolean, onStop: () -> Unit, onReroute: () -> Unit) {
-    val context = LocalContext.current
-    val res = LocalResources.current
-    PanelSurface {
-        if (nav.arrived) {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(stringResource(R.string.arrived), style = MaterialTheme.typography.titleLarge)
-                Button(onClick = onStop) { Text(stringResource(R.string.action_done)) }
-            }
-            return@PanelSurface
-        }
-        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Column {
-                Text(
-                    formatDuration(res, nav.remainingS),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                val arrival = DateFormat.getTimeFormat(context).format(Date(System.currentTimeMillis() + (nav.remainingS * 1000).toLong()))
-                Text(
-                    formatDistance(res, nav.remainingM) + " · " + stringResource(R.string.nav_arrival_at, arrival),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                if (nav.rerouting) Text(stringResource(R.string.rerouting), style = MaterialTheme.typography.bodySmall, color = WarnAmber)
-            }
-            SpeedBadge(nav.speedKmh.toInt(), nav.speedLimitKmh)
-        }
-        if (showActions) {
-            Spacer(Modifier.size(14.dp))
-            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = onReroute,
-                    enabled = !nav.rerouting,
-                    contentPadding = PaddingValues(horizontal = 12.dp),
-                ) {
-                    Text(stringResource(R.string.action_reroute))
-                }
-                Button(
-                    onClick = onStop,
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError),
-                ) {
-                    Icon(Icons.Filled.Close, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.action_stop))
-                }
-            }
-        }
-    }
-}
-
-/** Current speed, plus a round speed-limit sign (red ring, like the road sign) when the limit is known. */
-@Composable
-private fun SpeedBadge(speedKmh: Int, limitKmh: Int?) {
-    val res = LocalResources.current
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("$speedKmh", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text(stringResource(R.string.unit_kmh, speedKmh).substringAfter(' '), style = MaterialTheme.typography.labelSmall)
-        }
-        if (limitKmh != null) {
-            Surface(
-                shape = CircleShape,
-                color = Color.White,
-                contentColor = Color.Black,
-                border = BorderStroke(4.dp, BadRed),
-                modifier = Modifier.size(maxOf(46.dp, with(LocalDensity.current) { 16.sp.toDp() } * SPEED_SIGN_TEXT_HEIGHTS)).semantics {
-                    contentDescription =
-                        res.getString(R.string.speed_limit_cd, limitKmh)
-                },
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text("$limitKmh", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                }
-            }
-        }
-    }
-}
-
-// ------------------------------------------------------------------ diagnostics sheet
-
-/** Contents of the diagnostics sheet: GPS verdict, satellites, jamming, cells, debug switches. */
-@Composable
-private fun DiagnosticsContent(ui: UiState, app: AppGraph, onOpenLog: () -> Unit) {
-    val res = LocalResources.current
-    val nav = ui.guidance
-    val none = stringResource(R.string.none)
-    Column(
-        Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 32.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Text(stringResource(R.string.diag_title), style = MaterialTheme.typography.titleLarge)
-        if (nav.active) {
-            DiagRow(stringResource(R.string.diag_source), sourceLabel(res, nav.source))
-            DiagRow(stringResource(R.string.diag_uncertainty), formatAccuracy(res, nav.uncertaintyM))
-            if (!nav.source.isGps) DiagRow(stringResource(R.string.diag_without_gps), stringResource(R.string.diag_seconds, nav.blindS))
-        }
-        val verdict = ui.lastVerdict
-        DiagRow(
-            stringResource(R.string.diag_last_fix),
-            when (verdict?.level) {
-                TrustLevel.GOOD -> stringResource(R.string.verdict_good)
-                TrustLevel.SUSPECT -> stringResource(R.string.verdict_suspect)
-                TrustLevel.BAD -> stringResource(R.string.verdict_bad)
-                null -> none
-            },
-            valueColor = when (verdict?.level) {
-                TrustLevel.GOOD -> GoodGreen
-                TrustLevel.SUSPECT -> WarnAmber
-                TrustLevel.BAD -> BadRed
-                null -> null
-            },
-        )
-        val reasons = verdict?.reasons.orEmpty()
-        if (reasons.isNotEmpty()) DiagRow(stringResource(R.string.diag_reasons), reasons.joinToString(", "), mono = true)
-        val gn = ui.gnss
-        DiagRow(stringResource(R.string.diag_satellites), "${gn.satellitesUsed} / ${gn.satellitesVisible}")
-        DiagRow(stringResource(R.string.diag_signal), gn.meanCn0Used?.let { "%.0f ± %.1f dB-Hz".format(it, gn.cn0SpreadUsed ?: 0f) } ?: none)
-        DiagRow(stringResource(R.string.diag_agc), gn.agcDb?.let { "%.1f dB".format(it) } ?: none)
-        when {
-            ui.simulateGpsLoss -> DiagRow(stringResource(R.string.diag_gps), stringResource(R.string.gps_loss_test_active), valueColor = InfoBlue)
-            ui.jammed -> DiagRow(stringResource(R.string.diag_gps), stringResource(R.string.gps_jammed), valueColor = BadRed)
-        }
-        DiagRow(
-            stringResource(R.string.diag_cells),
-            "${ui.cells.located} / ${ui.cells.seen}" + (ui.cells.accuracyM?.let { " · " + formatAccuracy(res, it) } ?: ""),
-        )
-        DiagRow(stringResource(R.string.diag_sensors), ui.sensorWarning ?: stringResource(R.string.diag_sensors_full))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(stringResource(R.string.simulate_gps_loss), style = MaterialTheme.typography.bodyLarge)
-                Text(stringResource(R.string.simulate_gps_loss_summary), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Switch(checked = ui.simulateGpsLoss, onCheckedChange = { app.setSimulateGpsLoss(it) })
-        }
-        TextButton(onClick = onOpenLog) { Text(stringResource(R.string.diag_open_log)) }
-    }
-}
-
-/** One "label: value" row in the diagnostics sheet. */
-@Composable
-private fun DiagRow(label: String, value: String, valueColor: Color? = null, mono: Boolean = false) {
-    Row {
-        Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-        Spacer(Modifier.width(12.dp))
-        Text(
-            value,
-            style = MaterialTheme.typography.bodyMedium,
-            color = valueColor ?: MaterialTheme.colorScheme.onSurface,
-            fontFamily = if (mono) FontFamily.Monospace else null,
-            modifier = Modifier.weight(1.2f),
-        )
-    }
-}

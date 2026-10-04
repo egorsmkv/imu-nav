@@ -20,67 +20,18 @@ import kotlinx.coroutines.withContext
 import org.imunav.app.R
 import org.imunav.app.setup.Preparation
 import org.imunav.app.setup.bundledCellPreparation
-import org.imunav.core.cells.CellSyncClient
 import org.imunav.core.cells.CellTower
 import org.imunav.core.cells.Radio
-import org.imunav.core.cells.ResumableHttpInputStream
 import org.imunav.core.cells.cellLearningKeys
 import org.imunav.core.gnss.PositioningHub
-import java.io.File
 import java.io.IOException
 import java.io.InputStream
-import java.security.MessageDigest
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
 import kotlin.coroutines.coroutineContext
 import kotlin.math.abs
-
-/** Towers to draw on the map for the current viewport. */
-data class TowerLayer(
-    val towers: List<CellTower> = emptyList(),
-    /** Towers of the cells the phone sees right now (exact or site match). */
-    val visible: List<CellTower> = emptyList(),
-    /** True when there were more towers than we draw (only a sample is shown). */
-    val truncated: Boolean = false,
-    /** Map is zoomed out too far to show towers. */
-    val zoomTooLow: Boolean = false,
-)
-
-/** Offline cell positioning status for the UI. */
-data class CellStatus(
-    val preparation: Preparation = Preparation.CHECKING,
-    /** Cells of enabled types the modem sees now. */
-    val seen: Int = 0,
-    /** How many of them are in the database (used for the position). */
-    val located: Int = 0,
-    /** Accuracy of the current cell fix, metres. */
-    val accuracyM: Double? = null,
-    /** Towers per source in the database. */
-    val counts: Map<CellSource, Long> = emptyMap(),
-    /** Learn tower positions from trusted GPS. */
-    val learning: Boolean = true,
-    val showTowers: Boolean = false,
-    /** Cell types used for positioning and drawn on the map. */
-    val radios: Set<Radio> = CellManager.DEFAULT_RADIOS,
-    /** An OpenCellID token has been entered. */
-    val hasToken: Boolean = false,
-    /** Country codes to import, comma-separated (255 = Ukraine). */
-    val mccs: String = "255",
-    /** Cell-sharing server settings. */
-    val syncUrl: String = "",
-    val hasSyncKey: Boolean = false,
-    val autoSync: Boolean = false,
-    val lastSync: String? = null,
-    /** Long-running task message (import / download / sync), null when idle. */
-    val busy: String? = null,
-    val busyCancellable: Boolean = false,
-    /** Result of the last task. */
-    val message: String? = null,
-) {
-    val total: Long get() = counts.values.sum()
-}
 
 /**
  * Owns the offline cell pipeline: scanning, the multi-source tower database, learning from trusted
@@ -92,6 +43,7 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
     /** A string resource in the current app language. */
     private fun str(id: Int, vararg args: Any): String = context.getString(id, *args)
     val db = CellDatabase(context)
+    private val transfers = CellTransfers(context, db, prefs, ::progress)
     private var lastCellLogMs = 0L
     private var lastLearnedFixMs = -1L
     private var task: Job? = null
@@ -294,69 +246,23 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
         scope.launch { _status.update { it.copy(busy = text) } }
     }
 
-    /** Import an OpenCellID / Mozilla CSV (plain or gzip) picked by the user, filtered to the configured MCCs. */
+    /** Import an OpenCellID / Mozilla CSV picked by the user, filtered to the configured MCCs. */
     fun importFile(open: () -> InputStream?) = runTask(str(R.string.task_importing_towers, 0), cancellable = true) {
-        val ctx = coroutineContext
-        val mccs = mccSet()
-        val kept = withContext(Dispatchers.IO) {
-            (open() ?: error("cannot open file")).use { input ->
-                db.importStream(CellSource.OPENCELLID, input, mccs) { read, kept ->
-                    progress(str(R.string.task_importing, kept, read))
-                    ctx.isActive
-                }
-            }
-        }
-        str(R.string.task_imported, kept)
+        str(R.string.task_imported, transfers.importFile(open, mccSet()))
     }
 
-    /** Download and import the OpenCellID export for the first configured MCC with the user's token. */
+    /** Download and import the OpenCellID export for the configured MCCs with the user's token. */
     fun downloadOpenCellId(token: String) {
         if (token.isBlank()) return
         prefs.edit { putString("token", token.trim()) }
         runTask(str(R.string.task_downloading_ocid, 0)) {
-            var total = 0L
-            for (mcc in mccSet()) {
-                total += withContext(Dispatchers.IO) {
-                    val file = File(context.cacheDir, "ocid-$mcc.csv.gz")
-                    try {
-                        OpenCellIdDownloader.download(token, mcc, file) { b -> progress(str(R.string.task_downloading_ocid, (b / 1024).toInt())) }
-                        file.inputStream().use {
-                            db.importStream(CellSource.OPENCELLID, it) { _, kept ->
-                                progress(str(R.string.task_importing_towers, kept))
-                                true
-                            }
-                        }
-                    } finally {
-                        file.delete()
-                    }
-                }
-            }
-            str(R.string.task_ocid_done, total)
+            str(R.string.task_ocid_done, transfers.downloadOpenCellId(token, mccSet()))
         }
     }
 
-    /**
-     * Stream the Mozilla Location Service final export (~1.5 GB, public domain) from archive.org,
-     * keeping only the configured MCCs. Nothing large is written to storage; the download resumes
-     * automatically after network drops.
-     */
+    /** Stream the Mozilla Location Service final export, retaining only configured MCCs. */
     fun downloadMozilla() = runTask(str(R.string.task_connecting), cancellable = true) {
-        val ctx = coroutineContext
-        val mccs = mccSet()
-        val kept = withContext(Dispatchers.IO) {
-            var lastReport = 0L
-            val input = ResumableHttpInputStream(MOZILLA_URL, onProgress = { bytes, total ->
-                if (bytes - lastReport >= 4L * 1024 * 1024) {
-                    lastReport = bytes
-                    val pct = if (total > 0) (bytes * 100 / total).toInt() else 0
-                    progress(str(R.string.task_mozilla_progress, (bytes / (1024 * 1024)).toInt(), (total / (1024 * 1024)).toInt(), pct))
-                }
-            })
-            input.use {
-                db.importStream(CellSource.MOZILLA, it, mccs) { _, _ -> ctx.isActive }
-            }
-        }
-        str(R.string.task_mozilla_done, kept)
+        str(R.string.task_mozilla_done, transfers.downloadMozilla(mccSet()))
     }
 
     /**
@@ -430,22 +336,7 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
     }
 
     /** The bundled tower asset's name and SHA-256, or null if the APK has none (IO thread). */
-    private fun bundledAssetAndHash(): Pair<String, String>? {
-        val asset = BUNDLED_ASSETS.firstOrNull { name -> runCatching { context.assets.open(name).close() }.isSuccess } ?: return null
-        val hash = run {
-            context.assets.open(asset).use { input ->
-                val md = MessageDigest.getInstance("SHA-256")
-                val buf = ByteArray(1 shl 16)
-                while (true) {
-                    val n = input.read(buf)
-                    if (n < 0) break
-                    md.update(buf, 0, n)
-                }
-                md.digest().joinToString("") { "%02x".format(it) }
-            }
-        }
-        return asset to hash
-    }
+    private fun bundledAssetAndHash(): Pair<String, String>? = transfers.bundledAssetAndHash()
 
     /**
      * Delete downloaded/imported towers (all sources except, optionally, the ones this phone learned),
@@ -477,20 +368,10 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
         }
     }
 
-    /**
-     * Export all sources, deduplicated, to the app's external files dir
-     * (Android/data/org.imunav.app/files/cells-export.csv.gz) — readable over adb/USB.
-     */
+    /** Export all sources, deduplicated, to the app's external files directory. */
     fun exportDatabase() = runTask(str(R.string.task_exporting, 0)) {
-        val dir = context.getExternalFilesDir(null) ?: context.filesDir
-        val target = File(dir, "cells-export.csv.gz")
-        val tmp = File(dir, "cells-export.csv.gz.tmp")
-        val n = withContext(Dispatchers.IO) {
-            val count = tmp.outputStream().use { db.exportMerged(it) { k -> progress(str(R.string.task_exporting, k)) } }
-            tmp.renameTo(target)
-            count
-        }
-        str(R.string.task_exported, n, (target.length() / 1024).toInt())
+        val result = transfers.exportDatabase()
+        str(R.string.task_exported, result.count, result.sizeKib.toInt())
     }
 
     /** Upload learned towers, then download merged data into the SHARED source. */
@@ -502,21 +383,7 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
         }
         runTask(str(R.string.task_syncing)) {
             val started = System.currentTimeMillis()
-            val client = CellSyncClient(url, savedSyncKey(), deviceId())
-            val (uploaded, downloaded) = withContext(Dispatchers.IO) {
-                val pending = db.learnedSince(prefs.getLong("last_upload_ms", 0))
-                progress(str(R.string.task_uploading, pending.size))
-                val up = client.upload(pending)
-                prefs.edit { putLong("last_upload_ms", started) }
-
-                progress(str(R.string.task_downloading_shared))
-                val batch = ArrayList<CellTower>()
-                val since = prefs.getLong("last_download_s", 0)
-                client.download(mccSet(), since) { batch += it }
-                db.upsert(CellSource.SHARED, batch)
-                prefs.edit { putLong("last_download_s", started / 1000 - 60) }
-                up to batch.size
-            }
+            val (uploaded, downloaded) = transfers.sync(url, savedSyncKey(), deviceId(), mccSet(), started)
             val msg = str(R.string.task_sync_done, uploaded, downloaded)
             prefs.edit {
                 putLong("last_sync_ms", started)
@@ -552,7 +419,6 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
         val DEFAULT_RADIOS: Set<Radio> = setOf(Radio.LTE, Radio.NR)
         const val MIN_TOWER_ZOOM = 11.0
         const val MAX_TOWERS_ON_MAP = 4000
-        private val BUNDLED_ASSETS = listOf("cells/bundled-cells.csv.gz", "cells/bundled-cells.csv")
         const val MOZILLA_URL = "https://archive.org/download/MLS_Full_Cell_Export_Final/MLS-full-cell-export-final.csv.gz"
         private const val AUTO_SYNC_INTERVAL_MS = 6L * 60 * 60 * 1000
     }

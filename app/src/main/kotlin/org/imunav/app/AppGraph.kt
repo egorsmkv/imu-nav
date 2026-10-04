@@ -7,7 +7,6 @@ import android.content.res.Configuration
 import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -18,11 +17,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import org.imunav.app.bookmarks.BookmarkDatabase
 import org.imunav.app.bookmarks.Bookmarks
 import org.imunav.app.cells.CellManager
-import org.imunav.app.cells.CellStatus
 import org.imunav.app.haptics.Haptics
 import org.imunav.app.maps.OfflineMap
 import org.imunav.app.nativecore.NativeEstimatorBridge
@@ -31,7 +28,11 @@ import org.imunav.app.nativecore.NativeRouteGeometry
 import org.imunav.app.nativecore.NativeRouteProjector
 import org.imunav.app.nativecore.NativeSpeedFusion
 import org.imunav.app.nativecore.NativeTrustEvaluator
+import org.imunav.app.navigation.NavigationSessionLifecycle
 import org.imunav.app.navigation.NavigationWork
+import org.imunav.app.navigation.PreviewResult
+import org.imunav.app.navigation.RoutePreviewCoordinator
+import org.imunav.app.navigation.RoutePreviewRequest
 import org.imunav.app.navigation.withPreparedResource
 import org.imunav.app.net.ProxySettings
 import org.imunav.app.obd.ObdLink
@@ -55,15 +56,12 @@ import org.imunav.core.car.DisplayOwnership
 import org.imunav.core.geo.GeoPoint
 import org.imunav.core.geo.ServiceArea
 import org.imunav.core.gnss.FixSource
-import org.imunav.core.gnss.GnssSnapshot
 import org.imunav.core.gnss.GpsState
 import org.imunav.core.gnss.PlanningPosition
 import org.imunav.core.gnss.PositioningHub
 import org.imunav.core.gnss.TrustLevel
-import org.imunav.core.gnss.Verdict
 import org.imunav.core.imu.eskf.InertialShadow
 import org.imunav.core.nav.EnglishPhrases
-import org.imunav.core.nav.GuidanceState
 import org.imunav.core.nav.NavAlert
 import org.imunav.core.nav.NavListener
 import org.imunav.core.nav.NavigationEngine
@@ -71,62 +69,9 @@ import org.imunav.core.nav.NavigationEstimator
 import org.imunav.core.nav.NavigationMethod
 import org.imunav.core.nav.RussianPhrases
 import org.imunav.core.nav.UkrainianPhrases
-import org.imunav.core.route.Route
 import org.imunav.core.route.TravelMode
 import org.imunav.core.speed.SpeedProfile
-import org.imunav.core.speed.SpeedProfileStore
-import org.imunav.core.util.StartupTransaction
 import java.util.Locale
-
-/**
- * Everything the UI shows, as one immutable value. [AppGraph] publishes a new copy (via a
- * StateFlow) every engine tick; Compose redraws only the parts that changed.
- */
-data class UiState(
-    /** Navigation state from the engine (route, next maneuver, position on the route…). */
-    val guidance: GuidanceState = GuidanceState(),
-    val gpsState: GpsState = GpsState.LOST,
-    /** The classifier's verdict on the latest GPS fix (for the diagnostics sheet). */
-    val lastVerdict: Verdict? = null,
-    val gnss: GnssSnapshot = GnssSnapshot(),
-    val jammed: Boolean = false,
-    /** Where to draw the position dot (active engine estimate, else manual start or fresh automatic fix). */
-    val currentPosition: GeoPoint? = null,
-    /** Destination picked on the map or in search, before navigation starts. */
-    val destination: GeoPoint? = null,
-    /** Address shown for a destination chosen in search; null for a point chosen directly on the map. */
-    val destinationLabel: String? = null,
-    /** One-shot camera request when a bookmark is applied from the library. */
-    val mapFocusRequest: GeoPoint? = null,
-    /** Start point chosen by the user on the map or in search; it overrides the trusted position. */
-    val manualStart: GeoPoint? = null,
-    /** Address shown for a start chosen in search; null for a point chosen directly on the map. */
-    val manualStartLabel: String? = null,
-    val hasTrustedPosition: Boolean = false,
-    /** Accuracy of the best trusted position, metres (null = none). */
-    val trustedAccuracyM: Double? = null,
-    /** The trusted position comes from a GOOD GPS fix (else from cell/network). */
-    val trustedFromGps: Boolean = false,
-    /** Why GPS fixes are currently rejected, for the "no trusted position" message. */
-    val gpsRejectReasons: List<String> = emptyList(),
-    /** A route is being computed. */
-    val planning: Boolean = false,
-    /** A start transaction owns the editor until navigation is installed or fails. */
-    val startingNavigation: Boolean = false,
-    /** Route shown before navigation starts, so the user can review the proposed way. */
-    val previewRoute: Route? = null,
-    /** A message to show once in a snackbar (then cleared with [AppGraph.clearError]). */
-    val error: String? = null,
-    /** Debug switch: pretend GPS is jammed. */
-    val simulateGpsLoss: Boolean = false,
-    /** The phone lacks some sensors (e.g. no gyroscope); shown in diagnostics. */
-    val sensorWarning: String? = null,
-    /** System-wide Location switch; when off, Android delivers no fixes to any app. */
-    val locationEnabled: Boolean = true,
-    /** The latest trip-log lines. */
-    val log: List<String> = emptyList(),
-    val cells: CellStatus = CellStatus(),
-)
 
 /**
  * The app's "object graph": creates every long-lived component once and connects them.
@@ -210,60 +155,49 @@ class AppGraph(private val context: Context) {
 
     // ---------------------------------------------------------------- travel mode
 
-    private val modePrefs = context.getSharedPreferences("travel", Context.MODE_PRIVATE)
+    private val navigationPreferences = NavigationPreferences(context)
 
     /** Car or on foot, chosen before starting (remembered between app starts). */
-    val travelMode = MutableStateFlow(TravelMode.entries.firstOrNull { it.name == modePrefs.getString("mode", null) } ?: TravelMode.CAR)
+    val travelMode = navigationPreferences.travelMode
 
     fun setTravelMode(mode: TravelMode) {
         if (engine.state.active || _ui.value.startingNavigation) return
-        modePrefs.edit { putString("mode", mode.name) }
-        travelMode.value = mode
+        navigationPreferences.setTravelMode(mode)
         tripLog.write("travel_mode $mode")
         planRoutePreview()
     }
 
     /** Fallback used when GPS is unavailable; hybrid preserves the original app behaviour. */
-    val navigationMethod = MutableStateFlow(
-        NavigationMethod.entries.firstOrNull { it.name == modePrefs.getString("navigation_method", null) } ?: NavigationMethod.HYBRID,
-    )
+    val navigationMethod = navigationPreferences.navigationMethod
 
     fun setNavigationMethod(method: NavigationMethod) {
-        modePrefs.edit { putString("navigation_method", method.name) }
-        navigationMethod.value = method
+        navigationPreferences.setNavigationMethod(method)
         tripLog.write("navigation_method $method")
     }
 
-    private val _navigationEstimator = MutableStateFlow(
-        NavigationEstimator.entries.firstOrNull { it.name == modePrefs.getString("navigation_estimator", null) } ?: NavigationEstimator.KOTLIN,
-    )
-    val navigationEstimator: StateFlow<NavigationEstimator> = _navigationEstimator.asStateFlow()
-    private val _inertialExperiment = MutableStateFlow(modePrefs.getBoolean("inertial_experiment", false))
-    val inertialExperiment: StateFlow<Boolean> = _inertialExperiment.asStateFlow()
+    val navigationEstimator: StateFlow<NavigationEstimator> = navigationPreferences.navigationEstimator
+    val inertialExperiment: StateFlow<Boolean> = navigationPreferences.inertialExperiment
     private var inertialShadow: InertialShadow? = null
 
     /** Raw inertial shadow is opt-in, car-only, and cannot take ownership of live guidance. */
     fun setInertialExperiment(enabled: Boolean) {
         if (engine.state.active || _ui.value.planning) return
-        modePrefs.edit { putBoolean("inertial_experiment", enabled) }
-        _inertialExperiment.value = enabled
+        navigationPreferences.setInertialExperiment(enabled)
     }
 
     /** Change only between trips so state and covariance cannot jump mid-navigation. */
     fun setNavigationEstimator(estimator: NavigationEstimator) {
         if (engine.state.active || _ui.value.planning) return
-        modePrefs.edit { putString("navigation_estimator", estimator.name) }
-        _navigationEstimator.value = estimator
+        navigationPreferences.setNavigationEstimator(estimator)
         tripLog.write("navigation_estimator $estimator")
     }
 
     /** Engine thresholds (factory defaults; see [Tuning]), plus the user's terrain-matching choice. */
-    val tuning = MutableStateFlow(Tuning.DEFAULT.copy(terrainMatch = modePrefs.getBoolean("terrain_match", true)))
+    val tuning = navigationPreferences.tuning
 
     /** Settings: compare the barometer with the route's hills (routing packs with elevation). */
     fun setTerrainMatch(on: Boolean) {
-        modePrefs.edit { putBoolean("terrain_match", on) }
-        tuning.value = tuning.value.copy(terrainMatch = on)
+        navigationPreferences.setTerrainMatch(on)
         tripLog.write("terrain_match $on")
     }
 
@@ -372,10 +306,8 @@ class AppGraph(private val context: Context) {
     private val _ui = MutableStateFlow(UiState())
 
     /** The latest preview calculation; replacing it prevents an old result winning a race. */
-    private var previewJob: Job? = null
+    private val routePreview = RoutePreviewCoordinator(scope, router)
     private val navigationWork = NavigationWork(scope)
-    private var previewGeneration = 0L
-    private var previewRequest: RoutePreviewRequest? = null
 
     /** What the UI shows; collect it with `collectAsStateWithLifecycle()`. */
     val ui: StateFlow<UiState> = _ui.asStateFlow()
@@ -384,6 +316,10 @@ class AppGraph(private val context: Context) {
 
     /** Offline cell-tower positioning: tower database, scanning, downloads, sharing. */
     val cells = CellManager(context, scope, hub, tripLog::write)
+
+    /** Owns the foreground service, trip recorder, native resources, engine, and OBD session as one transaction. */
+    private val navigationSession =
+        NavigationSessionLifecycle(context, tripLog, nativeRouteProjector, nativeEstimator, engine, trips, obd, voice, ::applyPower, cells::maybeAutoSync)
 
     // ---------------------------------------------------------------- power
 
@@ -465,7 +401,7 @@ class AppGraph(private val context: Context) {
     fun applyPower() {
         val p = power.resolve()
         _powerProfile.value = p
-        val inertial = engine.state.active && engine.mode == TravelMode.CAR && _inertialExperiment.value
+        val inertial = engine.state.active && engine.mode == TravelMode.CAR && inertialExperiment.value
         if (inertial && inertialShadow == null) {
             inertialShadow = InertialShadow()
             tripLog.write("eskf_shadow status=waiting_for_inputs")
@@ -526,8 +462,7 @@ class AppGraph(private val context: Context) {
     fun openBookmark(route: SavedRoute): Boolean {
         if (engine.state.active || _ui.value.startingNavigation) return false
         val start = (route.origin as? BookmarkOrigin.Fixed)?.endpoint
-        modePrefs.edit { putString("mode", route.mode.name) }
-        travelMode.value = route.mode
+        navigationPreferences.setTravelMode(route.mode)
         tripLog.write("travel_mode ${route.mode}")
         _ui.value = _ui.value.copy(
             manualStart = start?.point,
@@ -559,26 +494,13 @@ class AppGraph(private val context: Context) {
         if (engine.state.active || _ui.value.startingNavigation) return
         val destination = _ui.value.destination
         val from = _ui.value.manualStart ?: currentPosition()
-        previewJob?.cancel()
-        previewGeneration++
-        if (destination == null || from == null) {
-            previewRequest = null
-            _ui.value = _ui.value.copy(previewRoute = null, planning = false)
-            return
-        }
-
-        val request = RoutePreviewRequest(from, destination, travelMode.value)
-        val generation = previewGeneration
-        previewRequest = request
-        _ui.value = _ui.value.copy(previewRoute = null, planning = true, error = null)
-        previewJob = scope.launch {
-            runCatching { router.route(request.from, request.destination, mode = request.mode) }
-                .onSuccess { route ->
-                    if (generation == previewGeneration) _ui.value = _ui.value.copy(previewRoute = route, planning = false)
-                }
-                .onFailure { error ->
-                    if (generation == previewGeneration) _ui.value = _ui.value.copy(previewRoute = null, planning = false, error = error.message)
-                }
+        routePreview.update(from, destination, travelMode.value) { result ->
+            _ui.value = when (result) {
+                PreviewResult.Cleared -> _ui.value.copy(previewRoute = null, planning = false)
+                PreviewResult.Loading -> _ui.value.copy(previewRoute = null, planning = true, error = null)
+                is PreviewResult.Ready -> _ui.value.copy(previewRoute = result.route, planning = false)
+                is PreviewResult.Failed -> _ui.value.copy(previewRoute = null, planning = false, error = result.message)
+            }
         }
     }
 
@@ -605,8 +527,7 @@ class AppGraph(private val context: Context) {
             planningFix?.source == FixSource.GPS -> planningFix.accuracyM?.toDouble() ?: 20.0
             else -> planningFix?.accuracyM?.toDouble() ?: 500.0
         }
-        previewJob?.cancel()
-        previewGeneration++
+        routePreview.cancel()
         val mode = travelMode.value
         _ui.value = _ui.value.copy(planning = true, startingNavigation = true, error = null)
         navigationWork.launch(onFailure = {
@@ -627,37 +548,16 @@ class AppGraph(private val context: Context) {
             }
             ensureCurrent()
             val request = RoutePreviewRequest(from, dest, mode)
-            val route = _ui.value.previewRoute.takeIf { previewRequest == request } ?: router.route(from, dest, mode = mode)
+            val route = routePreview.reusableRoute(_ui.value.previewRoute, request) ?: router.route(from, dest, mode = mode)
             ensureCurrent()
             withPreparedResource(create = { NativeRouteGeometry.create(route) }) { prepared ->
                 ensureCurrent()
-                StartupTransaction { tripLog.write("navigation_cleanup_failed ${it.message}") }.use { transaction ->
-                    transaction.acquire({ NavService.stop(context) }) { NavService.start(context) }
-                    transaction.acquire(tripLog::endTrip) {
-                        tripLog.startTrip()
-                        tripLog.write("start_accuracy=${startAccuracy.toInt()}")
-                    }
-                    transaction.acquire(nativeRouteProjector::close) {
-                        nativeRouteProjector.install(route, prepared.value)
-                        prepared.transfer()
-                    }
-                    val now = SystemClock.elapsedRealtime()
-                    val initialSpeed =
-                        planningFix?.takeIf { it.source == FixSource.GPS && _ui.value.manualStart == null && now - it.elapsedMs in 0..START_SPEED_MAX_AGE_MS }?.speedMps?.toDouble()
-                            ?: 0.0
-                    transaction.acquire(nativeEstimator::close) { nativeEstimator.start(prepared.value, 0.0, initialSpeed, startAccuracy, mode, now) }
-                    transaction.acquire(voice::stop) {}
-                    transaction.acquire(engine::stop) {
-                        engine.start(route, dest, nowMs = now, startAccuracyM = startAccuracy, mode = mode, estimator = navigationEstimator.value)
-                    }
-                    transaction.acquire({ trips.end(arrived = false) }) { trips.begin(route, dest, emptyList(), startAccuracy, mode) }
-                    if (mode == TravelMode.CAR) transaction.acquire(obd::stop, obd::start)
-                    applyPower()
-                    transaction.commit()
-                }
+                navigationSession.start(prepared, route, dest, startAccuracy, mode, initialSpeedAt = { now ->
+                    planningFix?.takeIf { it.source == FixSource.GPS && _ui.value.manualStart == null && now - it.elapsedMs in 0..START_SPEED_MAX_AGE_MS }?.speedMps?.toDouble()
+                        ?: 0.0
+                }, selectedEstimator = navigationEstimator.value)
             }
-            previewJob?.cancel()
-            previewRequest = null
+            routePreview.clear()
             _ui.value = _ui.value.copy(planning = false, startingNavigation = false, previewRoute = null)
             refresh()
             // These optional effects do not own the startup transaction.
@@ -677,13 +577,7 @@ class AppGraph(private val context: Context) {
         navigationWork.cancel()
         if (_ui.value.startingNavigation) _ui.value = _ui.value.copy(startingNavigation = false, planning = false)
         if (!engine.state.active) return
-        val arrived = engine.state.arrived
-        val cleanup = listOf<() -> Unit>(
-            { trips.end(arrived = arrived) }, engine::stop, voice::stop, nativeEstimator::close,
-            nativeRouteProjector::close, obd::stop, ::applyPower, tripLog::endTrip,
-            { cells.maybeAutoSync() }, { NavService.stop(context) },
-        )
-        cleanup.forEach { release -> runCatching(release).onFailure { tripLog.write("navigation_cleanup_failed ${it.message}") } }
+        navigationSession.stop()
         updateDisplays()
         refresh()
     }
@@ -796,27 +690,3 @@ class AppGraph(private val context: Context) {
 
 private const val MANUAL_START_ACCURACY_M = 100.0
 private const val START_SPEED_MAX_AGE_MS = 2_500L
-
-/** Inputs that make a preview reusable when the user starts navigation. */
-private data class RoutePreviewRequest(val from: GeoPoint, val destination: GeoPoint, val mode: TravelMode)
-
-/** Keeps the learned driving-speed profile in SharedPreferences. */
-private class PrefsSpeedProfileStore(context: Context) : SpeedProfileStore {
-    private val prefs = context.getSharedPreferences("speed_profile", Context.MODE_PRIVATE)
-
-    override fun load() = SpeedProfile.State(
-        cityRatio = prefs.getFloat("city_ratio", 0.8f).toDouble(),
-        highwayRatio = prefs.getFloat("hwy_ratio", 0.8f).toDouble(),
-        cityN = prefs.getInt("city_n", 0),
-        highwayN = prefs.getInt("hwy_n", 0),
-    )
-
-    override fun save(state: SpeedProfile.State) {
-        prefs.edit {
-            putFloat("city_ratio", state.cityRatio.toFloat())
-            putFloat("hwy_ratio", state.highwayRatio.toFloat())
-            putInt("city_n", state.cityN)
-            putInt("hwy_n", state.highwayN)
-        }
-    }
-}

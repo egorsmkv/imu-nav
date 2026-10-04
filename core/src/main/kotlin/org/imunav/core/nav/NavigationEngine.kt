@@ -125,8 +125,6 @@ class NavigationEngine(
 
     /** Accuracy of the trip's start position; applies until GPS is first used. */
     private var startAccuracyM = 0.0
-    private var catchUp = 0.0
-    private var lastCatchupFixMs = -1L
     private var cachedNet: SpeedEstimate? = null
     private var cachedNetAtMs = 0L
     private val motionHistory = ArrayDeque<Pair<Long, Double>>()
@@ -154,19 +152,11 @@ class NavigationEngine(
     private val net = networkTracker
     private var lastNetProcessedMs = -1L
     private var netRejectLogMs = 0L
-    private var netDevFastCount = 0
-    private var netDevFastKey: String? = null
-    private var netDevCount = 0
-    private var lastNetBackMs = -30_000L
+    private val networkDeviation = NetworkDeviationDetector()
+    private val networkCorrection = NetworkCorrection(net, ::log)
 
-    // Turns
-    private val consumedSteps = HashSet<Int>()
-    private var holdStep = -1
-    private var holdS = Double.MAX_VALUE
-    private var holdTravel = 0.0
-    private var holdMovingMs = 0L
-    private var holdAccStep = -1
-    private var missedTurnStep = -1
+    // Turn matching owns its state and resets it whenever the route changes.
+    private val turnProgress = TurnProgress(motion, net, ::settings, { phrases }, ::log, ::offerDeviation) { networkCorrection.clearCatchUp() }
 
     // Compass / signals
     private var compassMismatchSinceMs = 0L
@@ -227,7 +217,7 @@ class NavigationEngine(
         car.moveTo(s)
         state = state.copy(s = car.s, position = car.route.pointAt(car.s).point, uncertaintyM = startAccuracyM)
         // Turns already behind the saved position were driven.
-        car.route.steps.indices.filter { car.route.stepS(it) < s - 1.0 }.forEach { consumedSteps += it }
+        turnProgress.markPassed(car.route, s)
         log("nav_resume s=${s.toInt()}")
     }
 
@@ -330,17 +320,13 @@ class NavigationEngine(
         cursor = car
         hazards = route.hazards(trafficCalming)
         waypointS = waypoints.map { it to routeProjector.project(route, it, 0.0, 0.0, route.length, 0.0).s }
-        consumedSteps.clear()
         usedSignals.clear()
         announcer.resetRoute()
         net.reset()
         lastCellProcessedMs = -1L
         motionHistory.clear()
-        clearHold()
-        motion.resetHoldAccumulator()
-        holdAccStep = -1
-        missedTurnStep = -1
-        catchUp = 0.0
+        turnProgress.reset()
+        networkCorrection.clearCatchUp()
         rerouting = false
         offRouteDeclared = false
         offRouteSinceMs = -1L
@@ -368,7 +354,7 @@ class NavigationEngine(
         updateNavigationMethod()
         if (activeNavigationMethod == NavigationMethod.HYBRID) {
             processNetwork(car, pos.lastNet, nowMs)
-            if (lastGpsUseMs == 0L || nowMs - lastGpsUseMs >= 3000) netBack(car, nowMs)
+            if (lastGpsUseMs == 0L || nowMs - lastGpsUseMs >= 3000) networkCorrection.netBack(car, nowMs, currentSpeed, lastConfirmedTurnS(car))
         }
 
         val gps = if (simulateGpsLoss) null else pos.lastUsableGps
@@ -453,7 +439,7 @@ class NavigationEngine(
         lastNetProcessedMs = -1L
         lastCellProcessedMs = -1L
         cachedNet = null
-        catchUp = 0.0
+        networkCorrection.clearCatchUp()
         log("nav_method method=$selected")
     }
 
@@ -486,7 +472,7 @@ class NavigationEngine(
             car.moveTo(smoother.follow(car.s, nowMs, dt, snap = !source.isGps))
         }
         drDriftM = 0.0
-        catchUp = 0.0
+        networkCorrection.clearCatchUp()
         if (speed != null) {
             lastGpsSpeed = speed
             currentSpeed = speed
@@ -570,23 +556,26 @@ class NavigationEngine(
         }
         currentSpeed = speedMps
 
-        if (speedMps > 0.3) advance(car, speedMps, dt, nowMs)
+        if (speedMps > 0.3) {
+            drDriftM += speedMps * dt * driftPerMetre()
+            turnProgress.advance(car, speedMps, dt, nowMs)
+        }
         if (mode == TravelMode.CAR) {
             // These corrections need a phone fixed in a car holder; a phone in the hand swings around.
-            confirmHeldTurn(car, nowMs)
-            matchGyroTurn(car, nowMs)
+            turnProgress.confirmHeldTurn(car, nowMs)
+            turnProgress.matchGyroTurn(car, nowMs)
             checkBlindUturn(car, nowMs)
             compassSnap(car, pos.compassDeg, speedMps, nowMs)
         }
 
         if (config.signalSnap && stopped && !wasStopped) signalSnap(car)
         wasStopped = stopped
-        bandCorrection(car, networkFix, nowMs, dt, stopped)
+        networkCorrection.bandCorrection(car, networkFix, nowMs, dt, stopped, drDriftM, turnProgress.holdS)
 
         source = if (stopped) {
             PositionSource.DR_STOPPED
         } else {
-            applyCatchUp(car, dt)
+            networkCorrection.applyCatchUp(car, dt, turnProgress.holdS)
             val netFresh = networkFix?.let { nowMs - it.elapsedMs < 30_000 } == true
             when {
                 vehicleSpeedInUse && mode == TravelMode.CAR -> PositionSource.DR_OBD
@@ -612,7 +601,7 @@ class NavigationEngine(
             lastCellProcessedMs = fix.elapsedMs
             cellAccuracyM = fix.accuracyM?.toDouble() ?: DEFAULT_CELL_ACCURACY_M
             drDriftM = 0.0
-            catchUp = 0.0
+            networkCorrection.clearCatchUp()
             log("cell_position s=${projection.s.toInt()} off=${projection.offsetM.toInt()} acc=${cellAccuracyM.toInt()}")
         }
         currentSpeed = 0.0
@@ -716,150 +705,6 @@ class NavigationEngine(
         }
     }
 
-    /** First not-yet-passed route turn of at least [Tuning.turnMinDeg] at or ahead of the marker. */
-    private fun nextHoldableTurn(car: RouteCursor, config: Tuning): Triple<Int, Double, Double>? {
-        val route = car.route
-        for (i in route.steps.indices) {
-            if (i in consumedSteps || route.steps[i].isDepartOrArrive) continue
-            val turnS = route.stepS(i)
-            if (turnS < car.s - 1.0) continue // already behind us
-            val turn = route.turnAngleAt(turnS)
-            if (abs(turn) >= config.turnMinDeg) return Triple(i, turnS, turn)
-        }
-        return null
-    }
-
-    /**
-     * Move forward by speedMps·dt, but park the marker 5 m before the next real turn until the turn is
-     * confirmed (gyro or network), found to be missed, or a timeout expires.
-     */
-    private fun advance(car: RouteCursor, speedMps: Double, dt: Double, nowMs: Long) {
-        val config = settings()
-        val ds = speedMps * dt
-        drDriftM += ds * driftPerMetre()
-        if (!config.turnHoldEnabled) {
-            clearHold()
-            car.advance(ds)
-            return
-        }
-        val target = car.s + ds
-        val next = nextHoldableTurn(car, config)
-        val holdAt = next?.let { max(it.second - 5.0, 0.0) } ?: Double.MAX_VALUE
-        if (next == null || target <= holdAt) {
-            clearHold()
-            car.advance(ds)
-            return
-        }
-        val (step, stepS, stepTurn) = next
-        if (holdStep != step) {
-            holdStep = step
-            holdTravel = 0.0
-            holdMovingMs = 0L
-            if (holdAccStep != step || !motion.holdAccumulating) {
-                motion.startHoldAccumulator(nowMs)
-                holdAccStep = step
-            }
-            log("turn_hold step=$step s=${holdAt.toInt()} route_turn=${stepTurn.toInt()}")
-        }
-        holdS = holdAt
-        holdTravel += ds
-        if (!motion.stopped) holdMovingMs += (dt * 1000).toLong()
-        car.moveTo(max(car.s, holdAt))
-
-        // Network says we are well past the turn.
-        if (holdMovingMs >= 8000 && net.recent.size >= 2) {
-            val lastTwo = net.recent.takeLast(2)
-            if (lastTwo.all { nowMs - it.elapsedMs <= 12_000 && it.accM <= 100.0 && it.offsetM <= 130.0 && it.s - 100.0 > stepS + 20.0 }) {
-                snapPastTurn(car, step, max(stepS + 20.0, car.s), nowMs, "net")
-                return
-            }
-        }
-
-        val holdYaw = motion.holdYawDeg
-        val gyroAgrees = holdYaw * stepTurn > 0 && abs(holdYaw) >= 0.3 * abs(stepTurn)
-        if (config.missedTurnEnabled && config.blindDeviationEnabled && missedTurnStep != step && holdTravel >= config.missedTurnM && !gyroAgrees) {
-            missedTurnStep = step
-            offerDeviation(
-                nowMs,
-                "blind_deviation_missed_turn step=$step travel=${holdTravel.toInt()} gyro=${holdYaw.toInt()} delay_s=${config.blindDeviationDelayS}",
-                phrases.blindMissedTurn(config.blindDeviationDelayS),
-            )
-        }
-
-        releaseHoldOnTimeout(car, step, stepTurn, gyroAgrees, target, nowMs)
-    }
-
-    /** Give up holding after [Tuning.turnHoldMaxS] of driving (15 s more if the gyro shows a turn starting). */
-    private fun releaseHoldOnTimeout(car: RouteCursor, step: Int, stepTurn: Double, gyroAgrees: Boolean, target: Double, nowMs: Long) {
-        val limitMs = settings().turnHoldMaxS * 1000L
-        if (holdMovingMs <= limitMs) return
-        val recentYaw = motion.integratedYaw(nowMs, 3000)
-        val partial = (recentYaw * stepTurn > 0 && abs(recentYaw) >= 10.0) || gyroAgrees
-        if (partial && holdMovingMs <= limitMs + 15_000) return
-        log("turn_hold_release step=$step reason=timeout gyro=${motion.holdYawDeg.toInt()}")
-        consumedSteps += step
-        clearHold()
-        motion.resetHoldAccumulator()
-        holdAccStep = -1
-        car.moveTo(target)
-    }
-
-    /** The held turn is confirmed once the gyro has turned the same way by enough. */
-    private fun confirmHeldTurn(car: RouteCursor, nowMs: Long) {
-        val step = holdStep
-        if (step < 0 || step in consumedSteps || holdAccStep != step) return
-        val route = car.route
-        val turnS = route.stepS(step)
-        val turn = route.turnAngleAt(turnS)
-        val yaw = motion.holdYawDeg
-        // Same direction (signs agree) and at least 60 % of the route's turn angle.
-        val sameDirection = yaw * turn > 0
-        if (!sameDirection || abs(yaw) < max(settings().turnMinDeg, abs(turn) * 0.6)) return
-        snapPastTurn(car, step, turnS + 20.0, nowMs, "hold")
-    }
-
-    /** Any clear gyro turn is matched against route turns near the marker (turn-signature map matching). */
-    private fun matchGyroTurn(car: RouteCursor, nowMs: Long) {
-        val config = settings()
-        val yaw = motion.integratedYaw(nowMs, config.turnWindowMs)
-        if (abs(yaw) < config.turnMinDeg) return
-        val route = car.route
-        // The route turn (near the marker) whose angle is closest to what the gyro measured.
-        var best = -1
-        var bestError = config.turnTolDeg
-        for (i in route.steps.indices) {
-            if (i in consumedSteps || route.steps[i].isDepartOrArrive) continue
-            val turnS = route.stepS(i)
-            if (turnS < car.s - config.turnBehindM || turnS > car.s + config.turnAheadM) continue
-            val turn = route.turnAngleAt(turnS)
-            if (abs(turn) < 0.8 * config.turnMinDeg) continue
-            val error = abs(turn - yaw)
-            if (error < bestError) {
-                bestError = error
-                best = i
-            }
-        }
-        if (best < 0) return
-        snapPastTurn(car, best, route.stepS(best) + 20.0, nowMs, "gyro", yaw)
-    }
-
-    /** A turn is confirmed: jump the marker to just after it and reset the turn detectors. */
-    private fun snapPastTurn(car: RouteCursor, step: Int, toS: Double, nowMs: Long, src: String, yaw: Double = motion.holdYawDeg) {
-        consumedSteps += step
-        log("turn_snap step=$step gyro=${yaw.toInt()} from_s=${car.s.toInt()} to_s=${toS.toInt()} src=$src")
-        car.moveTo(toS)
-        catchUp = 0.0
-        clearHold()
-        motion.resetHoldAccumulator()
-        holdAccStep = -1
-        motion.turnResetMs = nowMs
-    }
-
-    private fun clearHold() {
-        holdStep = -1
-        holdS = Double.MAX_VALUE
-    }
-
     /** A big gyro rotation that the route cannot explain means a U-turn / wrong road. */
     private fun checkBlindUturn(car: RouteCursor, nowMs: Long) {
         val config = settings()
@@ -894,7 +739,7 @@ class NavigationEngine(
         if (nowMs - compassMismatchSinceMs < 6000) return
         val netHint = net.recent.lastOrNull()?.takeIf { nowMs - it.elapsedMs <= 15_000 && it.accM <= 60.0 }
         val low = max(car.s - 150.0, lastConfirmedTurnS(car) ?: 0.0)
-        val high = minOf(car.s + if (netHint != null) 300.0 else 150.0, route.length, holdS)
+        val high = minOf(car.s + if (netHint != null) 300.0 else 150.0, route.length, turnProgress.holdS)
         val center = netHint?.s ?: car.s
 
         // Candidate positions every 10 m; a candidate fits if the next 40 m of road point the way the compass does.
@@ -909,7 +754,7 @@ class NavigationEngine(
         if (netHint != null && abs(target - netHint.s) > netHint.accM + 100.0) return
         log("compass_snap from_s=${car.s.toInt()} to_s=${target.toInt()} heading=${heading.toInt()} route=${route.bearingAt(car.s).toInt()}")
         car.moveTo(target)
-        catchUp = 0.0
+        networkCorrection.clearCatchUp()
         lastCompassSnapMs = nowMs
         compassMismatchSinceMs = 0L
     }
@@ -934,7 +779,7 @@ class NavigationEngine(
         val target = max(hazards[best].s - 40.0, 0.0)
         log("signal_snap idx=$best from_s=${car.s.toInt()} to_s=${target.toInt()} signal_s=${hazards[best].s.toInt()}")
         car.moveTo(target)
-        catchUp = 0.0
+        networkCorrection.clearCatchUp()
     }
 
     /**
@@ -951,13 +796,13 @@ class NavigationEngine(
         val match = elevation.match(car.route, car.s, search, scales) ?: return
         var target = match.s
         lastConfirmedTurnS(car)?.let { target = max(target, it) }
-        nextHoldableTurn(car, settings())?.let { (_, turnS, _) -> if (turnS > car.s) target = min(target, max(turnS - 5.0, car.s)) }
-        if (holdS > car.s) target = min(target, holdS)
+        turnProgress.nextHoldableTurn(car, settings())?.let { (_, turnS, _) -> if (turnS > car.s) target = min(target, max(turnS - 5.0, car.s)) }
+        if (turnProgress.holdS > car.s) target = min(target, turnProgress.holdS)
         val detail = "rms=${"%.1f".format(Locale.US, match.rmsM)} relief=${match.reliefM.toInt()} ratio=${"%.1f".format(Locale.US, match.rivalRatio)} scale=${match.scale}"
         if (abs(target - car.s) >= TERRAIN_MIN_SHIFT_M) {
             log("terrain_snap from_s=${car.s.toInt()} to_s=${target.toInt()} $detail")
             car.moveTo(target)
-            catchUp = 0.0
+            networkCorrection.clearCatchUp()
         } else {
             log("terrain_confirm s=${car.s.toInt()} $detail")
         }
@@ -999,114 +844,19 @@ class NavigationEngine(
     private fun checkNetworkDeviation(car: RouteCursor, proj: Projection, acc: Double, fix: RawFix, nowMs: Long) {
         val config = settings()
         val gpsRecent = lastGpsUseMs > 0 && nowMs - lastGpsUseMs < 3000
-        if (gpsRecent || rerouting || !config.blindDeviationEnabled) {
-            netDevFastCount = 0
-            netDevCount = 0
-            netDevFastKey = null
-            return
-        }
-        val remaining = car.route.length - car.s
-        val off = proj.offsetM
-        if (remaining >= 1000.0 && acc <= 300.0) {
-            val key = "${fix.lat},${fix.lon}"
-            if (key != netDevFastKey) {
-                netDevFastKey = key
-                if (off >= max(100.0, 30.0 + 2.5 * acc)) {
-                    netDevFastCount++
-                } else if (off <= acc + 30.0) {
-                    netDevFastCount = 0
-                }
-                if (netDevFastCount >= 3) {
-                    netDevFastCount = 0
-                    netDevCount = 0
-                    if (deviation.canOffer(nowMs)) {
-                        offerDeviation(
-                            nowMs,
-                            "blind_deviation_net off=${off.toInt()} acc=${acc.toInt()} rule=fast delay_s=${config.blindDeviationDelayS}",
-                            phrases.blindOffRoute(config.blindDeviationDelayS),
-                        )
-                    }
-                    return
-                }
-            }
-        }
-        val threshold = if (remaining < 1000.0) 400.0 else 250.0
-        if (acc > 300.0 || off < acc + 150.0 || off < threshold) {
-            netDevCount = 0
-            return
-        }
-        netDevCount++
-        if (netDevCount < 3) return
-        netDevCount = 0
+        val trigger = networkDeviation.check(car, proj, acc, fix, gpsRecent, rerouting, config) ?: return
         if (deviation.canOffer(nowMs)) {
+            val rule = if (trigger.fast) " rule=fast" else ""
             offerDeviation(
                 nowMs,
-                "blind_deviation_net off=${off.toInt()} acc=${acc.toInt()} delay_s=${config.blindDeviationDelayS}",
+                "blind_deviation_net off=${trigger.offsetM.toInt()} acc=${trigger.accuracyM.toInt()}$rule delay_s=${config.blindDeviationDelayS}",
                 phrases.blindOffRoute(config.blindDeviationDelayS),
             )
         }
     }
 
-    /**
-     * Keep the marker within [s_net ± (acc + 300)] of the latest consistent network fix, and
-     * when it lags, schedule a Kalman-style catch-up: gain = σ_dr² / (σ_dr² + (acc+30)²),
-     * σ_dr = min(600, 25 + 0.08·distance dead-reckoned).
-     */
-    private fun bandCorrection(car: RouteCursor, fix: RawFix?, nowMs: Long, dt: Double, stopped: Boolean) {
-        val latest = net.recent.lastOrNull() ?: return
-        if (fix == null || latest.elapsedMs != fix.elapsedMs || nowMs - latest.elapsedMs >= 30_000) return
-        if (!net.lastTwoConsistent()) return
-        val band = latest.accM + 300.0
-        val maxStep = MAX_SPEED_MPS * dt
-        if (!stopped && car.s > latest.s + band) car.moveTo(max(latest.s + band, car.s - maxStep))
-        if (car.s < latest.s - band) {
-            var target = min(car.s + maxStep, latest.s - band)
-            if (holdS > car.s) target = min(target, holdS)
-            car.moveTo(target)
-        }
-        if (!stopped && latest.elapsedMs != lastCatchupFixMs) {
-            lastCatchupFixMs = latest.elapsedMs
-            val gap = latest.s - car.s
-            if (latest.accM <= 100.0 && gap > 0) {
-                // How much to trust the network fix vs. our own estimate, like a Kalman filter:
-                // the longer we dead-reckoned (bigger sigmaDr), the more of the gap we close.
-                val sigmaDr = min(600.0, 25.0 + drDriftM)
-                val sigmaNet = latest.accM + 30.0
-                val gain = gap * sigmaDr * sigmaDr / (sigmaDr * sigmaDr + sigmaNet * sigmaNet)
-                if (gain > 1.0) catchUp = gain
-            }
-        }
-    }
-
-    /** Close the scheduled [catchUp] gradually (at most 15 m/s extra) instead of jumping. */
-    private fun applyCatchUp(car: RouteCursor, dt: Double) {
-        if (catchUp <= 0.0 || car.s >= holdS) return
-        val step = minOf(catchUp, 15.0 * dt, holdS - car.s)
-        car.advance(step)
-        catchUp -= step
-    }
-
-    /** If the marker has run far ahead of every recent network fix, pull it back to their weighted mean. */
-    private fun netBack(car: RouteCursor, nowMs: Long) {
-        net.pruneHistory(nowMs)
-        if (nowMs - lastNetBackMs < 30_000 || net.history.isEmpty()) return
-        val usable = net.history.filter { nowMs - it.elapsedMs in 0..30_000 && it.accM <= 150.0 }
-        if (usable.size < 3) return
-        val predicted = usable.map { it.s + currentSpeed * (nowMs - it.elapsedMs) / 1000.0 }
-        if (usable.indices.any { car.s - predicted[it] < max(200.0, usable[it].accM * 2.0) }) return
-        val weights = usable.map { 1.0 / (it.accM * it.accM) }
-        val mean = usable.indices.sumOf { weights[it] * predicted[it] } / weights.sum()
-        var target = max(mean, car.s - 300.0)
-        lastConfirmedTurnS(car)?.let { target = max(target, it) }
-        if (target >= car.s) return
-        lastNetBackMs = nowMs
-        log("net_back from_s=${car.s.toInt()} to_s=${target.toInt()} n=${usable.size}")
-        car.moveTo(target)
-        catchUp = 0.0
-    }
-
     /** Position just after the last turn we are sure we took; corrections never move the marker before it. */
-    private fun lastConfirmedTurnS(car: RouteCursor): Double? = consumedSteps.map { car.route.stepS(it) + 20.0 }.filter { it <= car.s }.maxOrNull()
+    private fun lastConfirmedTurnS(car: RouteCursor): Double? = turnProgress.lastConfirmedTurnS(car)
 
     // ------------------------------------------------------------------ deviation / reroute
 
