@@ -24,8 +24,14 @@ rand = "0.9"
 rpassword = "7.5.4"
 hotpath = { version = "=0.28.4", default-features = false, optional = true }
 rusqlite = { version = "0.40", features = ["bundled"] }
+postgres = "0.19"
+postgres-native-tls = "0.5"
+native-tls = "0.2"
+r2d2 = "0.8"
+r2d2_postgres = "0.18"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+toml = "0.9"
 sha2 = "0.10"
 thiserror = "2.0"
 tokio = { version = "1.47", features = ["macros", "net", "rt-multi-thread", "signal", "fs", "io-util", "time"] }

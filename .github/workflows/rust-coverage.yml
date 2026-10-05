@@ -18,6 +18,20 @@ jobs:
       fail-fast: false
       matrix:
         suite: [native, server]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: imu_nav_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d imu_nav_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - name: Install pinned coverage toolchain
@@ -40,6 +54,8 @@ jobs:
       - name: Test coverage report validation
         run: python3 -m unittest discover -s tools/tests -v
       - name: Collect and gate production coverage
+        env:
+          TEST_POSTGRES_URL: postgresql://postgres:test@127.0.0.1:5432/imu_nav_test?sslmode=disable
         run: python3 tools/rust_coverage.py --suite '${{ matrix.suite }}'
       - name: Upload reports and diagnostics
         if: always()

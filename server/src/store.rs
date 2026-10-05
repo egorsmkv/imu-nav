@@ -1,14 +1,13 @@
 mod consensus;
 pub(crate) mod management;
 
+use crate::db::{Connection, Transaction, params, params_from_iter};
 use crate::model::{distance_m, plausible};
 use crate::{CellKey, CellTower, Consensus, Policy, Radio, UploadResult};
 use anyhow::{Context, Result};
 use flate2::{Compression, write::GzEncoder};
 use rusqlite::types::{Type, Value};
-use rusqlite::{
-    Connection, OptionalExtension, Transaction, TransactionBehavior, params, params_from_iter,
-};
+use rusqlite::{OptionalExtension, TransactionBehavior};
 use std::collections::{BTreeSet, HashSet};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -18,6 +17,51 @@ const SEED_DEVICE: &str = "seed";
 const MANUAL_DEVICE: &str = "manual";
 const SEED_WEIGHT: f64 = 200.0;
 const SEED_VOTE: f64 = 3.0;
+
+// Parents precede children so PostgreSQL verifies all foreign keys during the copy.
+const MIGRATION_TABLES: &[(&str, &str)] = &[
+    (
+        "users",
+        "id,email,password_hash,admin,suspended,sharing_enabled,email_verified",
+    ),
+    (
+        "contributions",
+        "radio,mcc,mnc,area,cid,device,lat,lon,range_m,samples,updated_s",
+    ),
+    (
+        "consensus",
+        "radio,mcc,mnc,area,cid,lat,lon,range_m,samples,devices,seeded,updated_s",
+    ),
+    ("tower_moderation", "radio,mcc,mnc,area,cid,quarantined"),
+    ("tower_removals", "radio,mcc,mnc,area,cid,updated_s"),
+    ("server_settings", "key,value"),
+    ("admin_audit", "id,actor_id,action,target,at_s"),
+    (
+        "admin_jobs",
+        "id,kind,status,processed,started_s,finished_s",
+    ),
+    ("admin_import_rejections", "job_id,row_number,reason,input"),
+    (
+        "account_deleted_keys",
+        "account_id,radio,mcc,mnc,area,cid,device",
+    ),
+    ("email_verifications", "token_hash,user_id,email,expires_s"),
+    (
+        "auth_tokens",
+        "token_hash,user_id,session_id,kind,expires_s",
+    ),
+    (
+        "web_impersonations",
+        "token_hash,admin_token_hash,actor_id,target_id",
+    ),
+    ("password_resets", "token_hash,user_id,expires_s"),
+    (
+        "debug_sessions",
+        "id,account_id,client_id,context_json,created_s,updated_s,finished_s,incomplete,bytes",
+    ),
+    ("debug_batches", "session_id,seq,digest,bytes"),
+    ("debug_entries", "session_id,seq,item,kind,elapsed_ms,line"),
+];
 
 #[derive(Clone, Debug)]
 struct Contribution {
@@ -29,10 +73,25 @@ struct Contribution {
     updated_s: i64,
 }
 
-/// SQLite-backed contribution and consensus store.
+/// Persistent contribution and consensus store.
 #[derive(Clone, Debug)]
 pub struct CellStore {
-    path: PathBuf,
+    backend: StoreBackend,
+}
+
+#[derive(Clone)]
+enum StoreBackend {
+    Sqlite(PathBuf),
+    Postgres(crate::db::PgPool),
+}
+
+impl std::fmt::Debug for StoreBackend {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Sqlite(path) => formatter.debug_tuple("Sqlite").field(path).finish(),
+            Self::Postgres(_) => formatter.write_str("Postgres(<redacted>)"),
+        }
+    }
 }
 
 /// Aggregate database counts displayed by operational and management views.
@@ -196,7 +255,7 @@ fn initialize_debug_schema(connection: &Connection) -> Result<()> {
     )?;
     let has_client_id = connection
         .prepare("PRAGMA table_info(debug_sessions)")?
-        .query_map([], |row| row.get::<_, String>(1))?
+        .query_map(params![], |row| row.get::<_, String>(1))?
         .collect::<rusqlite::Result<Vec<_>>>()?
         .iter()
         .any(|column| column == "client_id");
@@ -213,12 +272,12 @@ fn initialize_debug_schema(connection: &Connection) -> Result<()> {
 fn migrate_user_columns(connection: &Connection) -> Result<()> {
     let user_columns = connection
         .prepare("PRAGMA table_info(users)")?
-        .query_map([], |row| row.get::<_, String>(1))?
+        .query_map(params![], |row| row.get::<_, String>(1))?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     if !user_columns.iter().any(|column| column == "suspended") {
         connection.execute(
             "ALTER TABLE users ADD COLUMN suspended INTEGER NOT NULL DEFAULT 0",
-            [],
+            params![],
         )?;
     }
     if !user_columns
@@ -227,13 +286,13 @@ fn migrate_user_columns(connection: &Connection) -> Result<()> {
     {
         connection.execute(
             "ALTER TABLE users ADD COLUMN sharing_enabled INTEGER NOT NULL DEFAULT 1",
-            [],
+            params![],
         )?;
     }
     if !user_columns.iter().any(|column| column == "email_verified") {
         connection.execute(
             "ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 1",
-            [],
+            params![],
         )?;
     }
     Ok(())
@@ -247,7 +306,7 @@ impl CellStore {
     /// Returns an error when the database cannot be opened or initialized.
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         let store = Self {
-            path: path.as_ref().to_path_buf(),
+            backend: StoreBackend::Sqlite(path.as_ref().to_path_buf()),
         };
         let connection = store.connection()?;
         initialize_schema(&connection)?;
@@ -255,13 +314,122 @@ impl CellStore {
         Ok(store)
     }
 
+    /// Open a PostgreSQL database and create the server's relational schema when absent.
+    /// The connection URL is never included in errors or diagnostic output.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an invalid URL, TLS setup failure, unsupported schema version, or connection failure.
+    pub fn open_postgres(url: &str) -> Result<Self> {
+        let config = postgres::Config::from_str(url)
+            .map_err(|_| anyhow::anyhow!("invalid PostgreSQL connection URL"))?;
+        let tls = postgres_native_tls::MakeTlsConnector::new(
+            native_tls::TlsConnector::builder()
+                .build()
+                .context("cannot configure PostgreSQL TLS")?,
+        );
+        let manager = r2d2_postgres::PostgresConnectionManager::new(config, tls);
+        let pool = r2d2::Pool::builder()
+            .max_size(16)
+            .build(manager)
+            .context("cannot connect to PostgreSQL")?;
+        let store = Self {
+            backend: StoreBackend::Postgres(pool),
+        };
+        let connection = store.connection()?;
+        connection.execute_batch("SET client_min_messages=warning")?;
+        connection.execute_batch(include_str!("postgres_schema.sql"))?;
+        let version: i64 = connection.query_row(
+            "SELECT MAX(version) FROM server_schema_version",
+            params![],
+            |row| row.get(0),
+        )?;
+        anyhow::ensure!(
+            version == 1,
+            "unsupported PostgreSQL schema version {version}"
+        );
+        Ok(store)
+    }
+
+    /// Copy a stopped SQLite server's full state into an empty PostgreSQL database.
+    /// The PostgreSQL transaction rolls back if any row or verification fails.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error unless this store is PostgreSQL, the source exists and is readable,
+    /// the target is empty, and every source row can be copied and counted.
+    pub fn migrate_from_sqlite(&self, source_path: impl AsRef<Path>) -> Result<()> {
+        anyhow::ensure!(
+            matches!(self.backend, StoreBackend::Postgres(_)),
+            "migration target must be PostgreSQL"
+        );
+        let source = rusqlite::Connection::open_with_flags(
+            source_path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .context("cannot open SQLite migration source")?;
+        source.execute_batch("BEGIN; PRAGMA query_only=ON")?;
+        let mut target = self.connection()?;
+        let transaction = target.transaction()?;
+        for (table, columns) in MIGRATION_TABLES {
+            let count: i64 = transaction.query_row(
+                &format!("SELECT COUNT(*) FROM {table}"),
+                params![],
+                |row| row.get(0),
+            )?;
+            anyhow::ensure!(count == 0, "PostgreSQL target is not empty: {table}");
+            let column_count = columns.split(',').count();
+            let select = format!("SELECT {columns} FROM {table}");
+            let insert = format!(
+                "INSERT INTO {table}({columns}) VALUES ({})",
+                (1..=column_count)
+                    .map(|index| format!("?{index}"))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            );
+            let mut statement = source.prepare(&select)?;
+            let mut rows = statement.query([])?;
+            let mut copied = 0i64;
+            while let Some(row) = rows.next()? {
+                let values = (0..column_count)
+                    .map(|index| row.get_ref(index).map(crate::db::value_to_owned))
+                    .collect::<rusqlite::Result<Vec<_>>>()?;
+                transaction.execute(&insert, values)?;
+                copied += 1;
+            }
+            let stored: i64 = transaction.query_row(
+                &format!("SELECT COUNT(*) FROM {table}"),
+                params![],
+                |row| row.get(0),
+            )?;
+            anyhow::ensure!(
+                stored == copied,
+                "PostgreSQL migration count mismatch in {table}"
+            );
+        }
+        for table in ["users", "admin_jobs", "admin_audit"] {
+            transaction.query_row(
+                &format!("SELECT setval(pg_get_serial_sequence('{table}','id'), COALESCE(MAX(id),1), MAX(id) IS NOT NULL) FROM {table}"),
+                params![],
+                |row| row.get::<_, i64>(0),
+            )?;
+        }
+        transaction.commit()?;
+        source.execute_batch("COMMIT")?;
+        Ok(())
+    }
+
     pub(crate) fn connection(&self) -> Result<Connection> {
-        let connection = Connection::open(&self.path)
-            .with_context(|| format!("cannot open {}", self.path.display()))?;
-        connection.execute_batch("PRAGMA foreign_keys=ON")?;
-        // National seed imports and policy recalculations may hold the writer slot for minutes.
-        // SQLite WAL still serves readers while other writers wait for the atomic commit.
-        connection.busy_timeout(std::time::Duration::from_secs(3600))?;
+        let connection = match &self.backend {
+            StoreBackend::Sqlite(path) => {
+                let connection = Connection::open(path)
+                    .with_context(|| format!("cannot open {}", path.display()))?;
+                connection.execute_batch("PRAGMA foreign_keys=ON")?;
+                connection.busy_timeout(std::time::Duration::from_secs(3600))?;
+                connection
+            }
+            StoreBackend::Postgres(pool) => Connection::postgres(pool)?,
+        };
         Ok(connection)
     }
 
@@ -307,7 +475,7 @@ impl CellStore {
         let mut connection = self.connection()?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let ordinary: bool = transaction.query_row(
-            "SELECT COALESCE((SELECT admin=0 FROM users WHERE id=?1),0)",
+            "SELECT COALESCE((SELECT CASE WHEN admin=0 THEN 1 ELSE 0 END FROM users WHERE id=?1),0)",
             [account_id],
             |row| row.get(0),
         )?;
@@ -364,7 +532,7 @@ impl CellStore {
             .and_then(|(id, _)| id.parse::<i64>().ok());
         if let Some(id) = account_id {
             let allowed: bool = transaction.query_row(
-                "SELECT COALESCE((SELECT sharing_enabled=1 AND email_verified=1 FROM users WHERE id=?1),1)",
+                "SELECT COALESCE((SELECT CASE WHEN sharing_enabled=1 AND email_verified=1 THEN 1 ELSE 0 END FROM users WHERE id=?1),1)",
                 [id], |row| row.get(0),
             )?;
             if !allowed {
@@ -679,14 +847,14 @@ impl CellStore {
         let device = device_filter_pattern(&filter.device);
         let total: i64 = connection.query_row(
             "SELECT COUNT(*) FROM contributions WHERE device GLOB ?1 AND device LIKE ?2 ESCAPE '\\'
-             AND (?3 IS NULL OR mcc=?3) AND (?4 IS NULL OR updated_s>=?4) AND (?5 IS NULL OR updated_s<=?5)",
+             AND (CAST(?3 AS BIGINT) IS NULL OR mcc=?3) AND (CAST(?4 AS BIGINT) IS NULL OR updated_s>=?4) AND (CAST(?5 AS BIGINT) IS NULL OR updated_s<=?5)",
             params![pattern, device, filter.mcc, filter.from_s, filter.to_s],
             |row| row.get(0),
         )?;
         let mut statement = connection.prepare(
             "SELECT radio,mcc,mnc,area,cid,device,lat,lon,range_m,samples,updated_s
              FROM contributions WHERE device GLOB ?1 AND device LIKE ?2 ESCAPE '\\'
-             AND (?3 IS NULL OR mcc=?3) AND (?4 IS NULL OR updated_s>=?4) AND (?5 IS NULL OR updated_s<=?5)
+             AND (CAST(?3 AS BIGINT) IS NULL OR mcc=?3) AND (CAST(?4 AS BIGINT) IS NULL OR updated_s>=?4) AND (CAST(?5 AS BIGINT) IS NULL OR updated_s<=?5)
              ORDER BY updated_s DESC,radio,mcc,mnc,area,cid,device LIMIT ?6 OFFSET ?7",
         )?;
         let rows = statement
@@ -734,7 +902,7 @@ impl CellStore {
         ])?;
         let mut statement = connection.prepare("SELECT radio,mcc,mnc,area,cid,device,lat,lon,range_m,samples,updated_s
             FROM contributions WHERE device GLOB ?1 AND device LIKE ?2 ESCAPE '\\'
-            AND (?3 IS NULL OR mcc=?3) AND (?4 IS NULL OR updated_s>=?4) AND (?5 IS NULL OR updated_s<=?5)
+            AND (CAST(?3 AS BIGINT) IS NULL OR mcc=?3) AND (CAST(?4 AS BIGINT) IS NULL OR updated_s>=?4) AND (CAST(?5 AS BIGINT) IS NULL OR updated_s<=?5)
             ORDER BY updated_s DESC,radio,mcc,mnc,area,cid,device")?;
         let pattern = account_device_pattern(account_id);
         let mut rows = statement.query(params![
@@ -821,7 +989,7 @@ impl CellStore {
         };
         transaction.execute(
             "INSERT OR IGNORE INTO account_deleted_keys(account_id,radio,mcc,mnc,area,cid,device)
-             SELECT DISTINCT ?1,radio,mcc,mnc,area,cid,'*' FROM contributions WHERE device GLOB ?2",
+             SELECT DISTINCT CAST(?1 AS BIGINT),radio,mcc,mnc,area,cid,'*' FROM contributions WHERE device GLOB ?2",
             params![account_id, pattern],
         )?;
         transaction.execute(
@@ -856,7 +1024,9 @@ impl CellStore {
     pub fn management_counts(&self, policy: &Policy) -> Result<StoreCounts> {
         let connection = self.connection()?;
         let contributions_count: i64 =
-            connection.query_row("SELECT COUNT(*) FROM contributions", [], |row| row.get(0))?;
+            connection.query_row("SELECT COUNT(*) FROM contributions", params![], |row| {
+                row.get(0)
+            })?;
         let (consensus_count, published_count, seeded_count): (i64, i64, i64) = connection
             .query_row(
                 "SELECT COUNT(*),
@@ -868,7 +1038,7 @@ impl CellStore {
             )?;
         let quarantined_count: i64 = connection.query_row(
             "SELECT COUNT(*) FROM consensus c JOIN tower_moderation m ON m.radio=c.radio AND m.mcc=c.mcc AND m.mnc=c.mnc AND m.area=c.area AND m.cid=c.cid WHERE m.quarantined=1",
-            [], |row| row.get(0),
+            params![], |row| row.get(0),
         )?;
         Ok(StoreCounts {
             published: usize::try_from(published_count)?,
@@ -893,7 +1063,7 @@ fn device_filter_pattern(value: &str) -> String {
     format!("%{escaped}%")
 }
 
-fn row_to_key(row: &rusqlite::Row<'_>) -> rusqlite::Result<CellKey> {
+fn row_to_key(row: &crate::db::Row) -> rusqlite::Result<CellKey> {
     let radio_text: String = row.get(0)?;
     Ok(CellKey {
         radio: Radio::from_str(&radio_text).map_err(|error| {
@@ -906,7 +1076,7 @@ fn row_to_key(row: &rusqlite::Row<'_>) -> rusqlite::Result<CellKey> {
     })
 }
 
-fn row_to_own_contribution(row: &rusqlite::Row<'_>) -> rusqlite::Result<OwnContribution> {
+fn row_to_own_contribution(row: &crate::db::Row) -> rusqlite::Result<OwnContribution> {
     Ok(OwnContribution {
         key: row_to_key(row)?,
         device: row.get(5)?,
@@ -1098,7 +1268,7 @@ fn save_consensus(transaction: &Transaction<'_>, consensus: &Consensus) -> Resul
     Ok(())
 }
 
-fn row_to_consensus(row: &rusqlite::Row<'_>) -> rusqlite::Result<Consensus> {
+fn row_to_consensus(row: &crate::db::Row) -> rusqlite::Result<Consensus> {
     let radio_text: String = row.get(0)?;
     let radio = Radio::from_str(&radio_text).map_err(|error| {
         rusqlite::Error::FromSqlConversionFailure(0, Type::Text, Box::new(error))

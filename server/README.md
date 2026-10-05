@@ -1,8 +1,9 @@
 # IMU Nav cell server
 
 The reference sharing server preserves the Android app's gzip-CSV sync protocol while storing every
-per-device contribution and materialized consensus in SQLite. SQLite runs in WAL mode, so downloads
-and management reads can continue during uploads. Building the server requires Rust 1.88 or newer.
+per-device contribution and materialized consensus in SQLite or PostgreSQL. SQLite is the default
+and runs in WAL mode, so downloads and management reads can continue during uploads. Building the
+server requires Rust 1.88 or newer.
 
 ```bash
 cargo build --release --manifest-path server/Cargo.toml
@@ -20,6 +21,46 @@ The command logs its progress and prompts for a hidden password in a terminal. E
 character password and press **Enter**; Ctrl-D is no longer needed. When standard input is a pipe,
 the command reads one line instead. It never logs the password. For example, if the server uses
 `--data server/cells.sqlite3`, use that exact path for administrator setup too.
+
+## TOML configuration and PostgreSQL
+
+Copy the [example configuration](config.example.toml), edit it, and use the same file for server
+startup and administrator setup:
+
+```bash
+cp server/config.example.toml server/config.toml
+chmod 600 server/config.toml
+server/target/release/imu-nav-cell-server --config server/config.toml --create-admin admin@example.org
+server/target/release/imu-nav-cell-server --config server/config.toml
+```
+
+The server reads TOML only when `--config` is supplied. `[database] backend = "sqlite"` uses its
+`path`; relative paths in TOML are relative to the config file. To use PostgreSQL, set
+`backend = "postgres"`, remove `path`, and set `url` to a PostgreSQL connection URL. Configure
+TLS and the database server's certificate trust for remote connections. The PostgreSQL backend
+uses a bounded connection pool and supports one running server process per database; the live
+WebSocket and job state is process-local. Never commit the real config: `server/config.toml` is
+gitignored, and it should be readable only by the server operator.
+
+Explicit command-line options override corresponding environment variables, which override TOML
+values, which override built-in defaults. `CELLS_DATABASE_URL` can override the PostgreSQL URL
+without putting a credential in command-line arguments. The database backend itself is selected
+by TOML. A policy saved by an administrator overrides the initial `[policy]` values after a
+restart. Existing `--data` SQLite commands continue to work without a config file.
+
+To move an existing server, stop writes to SQLite, take a backup, and point a PostgreSQL config
+at an empty database. Then run:
+
+```bash
+server/target/release/imu-nav-cell-server --config server/config.toml \
+    --migrate-from-sqlite backup.sqlite3
+```
+
+The command copies accounts, sessions, tower data, settings, audit records, and diagnostics in one
+PostgreSQL transaction. It refuses a nonempty target and leaves the SQLite source untouched. Start
+the server with the PostgreSQL config and check its startup counts. Keep the SQLite
+backup until the new server has been checked; rollback is selecting the original SQLite database.
+Do not run both servers against the same live user traffic during cutover.
 
 Set `CELLS_LOG_LEVEL=debug` or pass `--log-level debug` to see setup and startup details.
 `RUST_LOG` takes precedence and also accepts module filters, for example
@@ -113,7 +154,7 @@ suspended.
 The panel accepts OpenCellID CSV/gzip seed imports up to 512 MiB compressed, 1 GiB decoded, and
 two million rows. Upload staging and import progress update automatically, and administrators can
 cancel during either phase. Rejected rows are available as a CSV report after a successful import.
-Imports are streamed to a temporary file and applied in one cancellable SQLite
+Imports are streamed to a temporary file and applied in one cancellable database
 transaction. It can export all consensuses (including quarantine status) and raw observations as
 gzip CSV; exports omit account emails and credentials. Policy changes are persisted and activate
 after an atomic full recalculation. During the apply transaction, public reads continue against
@@ -226,3 +267,6 @@ observed production traffic or Internet latency measurements.
 cargo test --manifest-path server/Cargo.toml
 cargo clippy --manifest-path server/Cargo.toml --all-targets -- -W clippy::pedantic -D warnings
 ```
+
+PostgreSQL integration tests also run when `TEST_POSTGRES_URL` points at a disposable database.
+The CI coverage job supplies PostgreSQL 16 and includes these tests in the server coverage gate.

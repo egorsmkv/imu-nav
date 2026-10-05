@@ -73,6 +73,8 @@ Jump to: [A to D](#a-to-d) · [E to K](#e-to-k) · [L to R](#l-to-r) · [S to Z]
 - **Position uncertainty** — The app's estimate of how far its displayed position might be from the
   real one. It grows while the app lacks trusted location evidence.
   [Navigation guide](NAVIGATION.md).
+- **PostgreSQL** — A database server that the sharing server can use instead of a local SQLite
+  file. [Server guide](../server/README.md#toml-configuration-and-postgresql).
 - **Proof** — A check that a stated rule holds for the inputs a verification tool explores. A
   bounded proof covers only its stated limits. [Verification guide](NATIVE_VERIFICATION.md).
 - **Proof bound** — A limit on the inputs or loop length a Kani check explores. Passing within a
@@ -95,7 +97,7 @@ Jump to: [A to D](#a-to-d) · [E to K](#e-to-k) · [L to R](#l-to-r) · [S to Z]
 - **Service area** — The geographic region where satellite fixes are accepted. The app now accepts
   valid fixes worldwide; a restricted area can still be used in tests. [Limitations](STATUS_AND_LIMITATIONS.md).
 - **SQLite** — A small database stored in a file. The app uses it for local data, and the sharing
-  server uses it for accounts and towers. [Cell guide](CELL_TOWERS.md).
+  server uses it by default for accounts and towers. [Cell guide](CELL_TOWERS.md).
 - **Spoofing / jamming** — Spoofing supplies a false satellite position; jamming disrupts satellite
   reception. The app checks for both. [Navigation guide](NAVIGATION.md).
 - **Tag** — A named point in Git history used to mark the exact source for a release.

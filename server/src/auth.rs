@@ -2,6 +2,7 @@
 
 use crate::CellStore;
 use crate::api::{ApiError, AppState, client_ip, run_db};
+use crate::db::params;
 use argon2::Argon2;
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 use axum::Json;
@@ -15,7 +16,7 @@ use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::{Message, SmtpTransport, Transport};
 use rand::RngCore;
-use rusqlite::{OptionalExtension, params};
+use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, VecDeque};

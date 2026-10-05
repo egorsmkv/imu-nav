@@ -2,6 +2,7 @@
 
 use crate::api::{ApiError, AppState, run_db};
 use crate::auth::{self, Account};
+use crate::db::params;
 use crate::store::{OwnContributionChange, OwnContributionPage, OwnFilter};
 use crate::{CellKey, Radio, ServerEvent};
 use askama::Template;
@@ -14,7 +15,6 @@ use axum::middleware::Next;
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use futures_util::StreamExt;
-use rusqlite::params;
 use serde::Deserialize;
 use std::net::SocketAddr;
 use std::str::FromStr;
@@ -890,7 +890,7 @@ async fn account_page(
         let connection = store.connection()?;
         let mut statement = connection.prepare("SELECT session_id,MAX(expires_s),MAX(CASE WHEN kind IN ('web','web_impersonated') THEN 1 ELSE 0 END)
             FROM auth_tokens WHERE user_id=?1 AND expires_s>?2 GROUP BY session_id ORDER BY MAX(expires_s) DESC")?;
-        let sessions = statement.query_map(rusqlite::params![account.id, auth::now_s()], |row| {
+        let sessions = statement.query_map(params![account.id, auth::now_s()], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?, row.get::<_, bool>(2)?))
         })?.collect::<rusqlite::Result<Vec<_>>>()?.into_iter().map(|(id, expires, browser)| {
             let label = format!("{} · {}", if browser { "Browser" } else { "App" }, &id[id.len().saturating_sub(8)..]);
@@ -1185,7 +1185,7 @@ async fn revoke_session(
             .unwrap_or_default();
         store.connection()?.execute(
             "DELETE FROM auth_tokens WHERE user_id=?1 AND session_id=?2 AND session_id<>?3",
-            rusqlite::params![account.id, form.session_id, current],
+            params![account.id, form.session_id, current],
         )?;
         Ok(())
     })
@@ -1211,7 +1211,7 @@ async fn revoke_other_sessions(
             .unwrap_or_default();
         store.connection()?.execute(
             "DELETE FROM auth_tokens WHERE user_id=?1 AND session_id<>?2",
-            rusqlite::params![account.id, current],
+            params![account.id, current],
         )?;
         Ok(())
     })

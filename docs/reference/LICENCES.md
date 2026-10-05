@@ -57,6 +57,8 @@ the libraries below. These are not in the APK.
 | hotpath-rs                   | 0.28.4           | optional native-core and cell-server function timing          | MIT                                           |
 | jemalloc_pprof               | 0.9              | optional Linux native heap export to pprof                    | Apache 2.0                                    |
 | Rusqlite + SQLite            | 0.40 / bundled   | persistent cell server database                               | MIT / public domain                           |
+| PostgreSQL, r2d2 and native TLS | 0.19 / 0.8 / 0.2 | optional pooled PostgreSQL cell server database             | MIT or MIT / Apache 2.0                       |
+| TOML                         | 0.9              | server configuration file                                     | MIT / Apache 2.0                              |
 | Argon2, Rand, SHA-2          | 0.5 / 0.9 / 0.10 | password hashes and opaque account tokens                     | MIT or MIT/Apache 2.0                         |
 | rpassword                    | 7.5              | hidden administrator password prompt on the cell server       | Apache 2.0                                    |
 | Lettre                       | 0.11             | password-reset and email-verification messages over SMTP      | MIT                                           |

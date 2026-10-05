@@ -818,7 +818,8 @@ async fn impersonate_account(
     let impersonated_hash = auth::digest(&impersonated_raw);
     let store = state.store.clone();
     let started = run_db(move || {
-        use rusqlite::{OptionalExtension, TransactionBehavior, params};
+        use crate::db::params;
+        use rusqlite::{OptionalExtension, TransactionBehavior};
         let mut connection = store.connection()?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let now = auth::now_s();
@@ -976,8 +977,11 @@ async fn update_policy(
         })
         .await;
         if matches!(result, Ok(true)) {
-            if let Err(error) = state.store.audit(account.id, "update_policy", "server") {
-                tracing::error!(%error, "policy audit failed");
+            let store = state.store.clone();
+            if let Err(error) =
+                run_db(move || store.audit(account.id, "update_policy", "server")).await
+            {
+                tracing::error!(code = error.0.as_u16(), "policy audit failed");
             }
             let _ = state.events.send(ServerEvent::ResyncRequired { missed: 0 });
         }
@@ -1171,11 +1175,9 @@ async fn import(
         })
         .await;
         if let Ok(Some(result)) = &result {
-            let _ = state.store.audit(
-                account.id,
-                "import_seeds",
-                &format!("accepted={} rejected={}", result.accepted, result.rejected),
-            );
+            let store = state.store.clone();
+            let target = format!("accepted={} rejected={}", result.accepted, result.rejected);
+            let _ = run_db(move || store.audit(account.id, "import_seeds", &target)).await;
             let _ = state.events.send(ServerEvent::ResyncRequired { missed: 0 });
         }
         finish_job(&state, result.map(|value| value.is_some())).await;

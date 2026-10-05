@@ -2,6 +2,7 @@
 
 use crate::api::{ApiError, AppState, run_db};
 use crate::auth;
+use crate::db::params;
 use crate::web;
 use askama::Template;
 use axum::body::Bytes;
@@ -11,7 +12,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
 use axum::{Form, Json, Router};
 use flate2::{Compression, write::GzEncoder};
-use rusqlite::{OptionalExtension, TransactionBehavior, params};
+use rusqlite::{OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::io::Write;
@@ -44,7 +45,7 @@ fn enabled(store: &crate::CellStore) -> anyhow::Result<bool> {
         .connection()?
         .query_row(
             "SELECT value FROM server_settings WHERE key='debug_upload_enabled'",
-            [],
+            params![],
             |row| row.get::<_, String>(0),
         )
         .optional()?
@@ -202,7 +203,7 @@ async fn batch(
         }
         let next: i64 = tx.query_row("SELECT COALESCE(MAX(seq)+1,0) FROM debug_batches WHERE session_id=?1", [&id], |row| row.get(0))?;
         if finished || seq != next { return Ok(Err(ApiError(StatusCode::CONFLICT,"DEBUG_SEQUENCE_CONFLICT"))); }
-        let account_bytes: i64 = tx.query_row("SELECT COALESCE(SUM(bytes),0) FROM debug_sessions WHERE account_id=?1", [account.id], |row| row.get(0))?;
+        let account_bytes: i64 = tx.query_row("SELECT CAST(COALESCE(SUM(bytes),0) AS BIGINT) FROM debug_sessions WHERE account_id=?1", [account.id], |row| row.get(0))?;
         let size = i64::try_from(body.len())?;
         if session_bytes + size > MAX_SESSION_BYTES || account_bytes + size > MAX_ACCOUNT_BYTES {
             tx.execute("UPDATE debug_sessions SET incomplete=1 WHERE id=?1",[&id])?;

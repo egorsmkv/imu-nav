@@ -4,25 +4,34 @@ use imu_nav_cell_server::{
     AppState, CellStore, MailConfig, Policy, ServerConfig, create_admin, router,
 };
 use std::io::IsTerminal;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing_subscriber::EnvFilter;
+
+mod config;
+use config::{DatabaseSettings, Settings};
 
 /// Persistent cell-sharing server compatible with IMU Nav clients.
 #[derive(Parser)]
 #[command(version, about)]
 struct Options {
+    /// Read server settings from this TOML file.
+    #[arg(long)]
+    config: Option<PathBuf>,
     /// Default tracing level; `RUST_LOG` overrides this for per-module filters.
-    #[arg(long, env = "CELLS_LOG_LEVEL", default_value = "info", value_parser = ["error", "warn", "info", "debug", "trace"])]
-    log_level: String,
+    #[arg(long, env = "CELLS_LOG_LEVEL", value_parser = ["error", "warn", "info", "debug", "trace"])]
+    log_level: Option<String>,
     /// Network interface to listen on; use 127.0.0.1 for a local traffic simulation.
-    #[arg(long, default_value_t = IpAddr::V4(Ipv4Addr::UNSPECIFIED))]
-    bind: IpAddr,
-    #[arg(long, default_value_t = 8080)]
-    port: u16,
-    #[arg(long, default_value = "cells.sqlite3")]
-    data: PathBuf,
+    #[arg(long)]
+    bind: Option<IpAddr>,
+    #[arg(long)]
+    port: Option<u16>,
+    #[arg(long)]
+    data: Option<PathBuf>,
+    /// Copy a stopped SQLite database into the empty PostgreSQL database selected by --config.
+    #[arg(long)]
+    migrate_from_sqlite: Option<PathBuf>,
     /// Create an admin locally; prompt on a terminal or read one line from standard input.
     #[arg(long)]
     create_admin: Option<String>,
@@ -39,12 +48,12 @@ struct Options {
     /// Trust X-Forwarded-For from the reverse proxy connected to this process.
     #[arg(long)]
     trust_proxy: bool,
-    #[arg(long, default_value_t = 2)]
-    min_devices: usize,
-    #[arg(long, default_value_t = 50)]
-    max_samples: i64,
-    #[arg(long, default_value = "any", value_parser = ["ukraine", "any"])]
-    area: String,
+    #[arg(long)]
+    min_devices: Option<usize>,
+    #[arg(long)]
+    max_samples: Option<i64>,
+    #[arg(long, value_parser = ["ukraine", "any"])]
+    area: Option<String>,
     #[arg(long)]
     import: Option<PathBuf>,
     #[arg(long, value_delimiter = ',')]
@@ -55,17 +64,30 @@ struct Options {
     profile_output: Option<PathBuf>,
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     let options = Options::parse();
+    let settings = Settings::load(&options)?;
+    if options.migrate_from_sqlite.is_some() {
+        anyhow::ensure!(
+            matches!(settings.database, DatabaseSettings::Postgres(_)),
+            "migration target must be PostgreSQL"
+        );
+    }
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new(&options.log_level)),
+                .unwrap_or_else(|_| EnvFilter::new(&settings.log_level)),
         )
         .with_writer(std::io::stderr)
         .init();
-    tracing::info!(data = %options.data.display(), "opening cell database");
+    match &settings.database {
+        DatabaseSettings::Sqlite(path) => {
+            tracing::info!(backend = "sqlite", data = %path.display(), "opening cell database");
+        }
+        DatabaseSettings::Postgres(_) => {
+            tracing::info!(backend = "postgres", "opening cell database");
+        }
+    }
     #[cfg(feature = "profiling")]
     let _profile_guard = options.profile_output.as_ref().map(|path| {
         hotpath::HotpathGuardBuilder::new("imu-nav-cell-server")
@@ -74,12 +96,24 @@ async fn main() -> Result<()> {
             .build()
     });
     let default_policy = Policy {
-        min_devices: options.min_devices,
-        max_samples_per_device: options.max_samples,
-        ukraine_only: options.area == "ukraine",
+        min_devices: settings.min_devices,
+        max_samples_per_device: settings.max_samples,
+        ukraine_only: settings.area == "ukraine",
         ..Policy::default()
     };
-    let store = CellStore::open(&options.data)?;
+    let store = match &settings.database {
+        DatabaseSettings::Sqlite(path) => CellStore::open(path)?,
+        DatabaseSettings::Postgres(url) => CellStore::open_postgres(url)?,
+    };
+    if let Some(path) = options.migrate_from_sqlite.as_ref() {
+        anyhow::ensure!(
+            options.create_admin.is_none() && options.import.is_none(),
+            "migration cannot be combined with admin setup or seed import"
+        );
+        store.migrate_from_sqlite(path)?;
+        tracing::info!("SQLite to PostgreSQL migration completed");
+        return Ok(());
+    }
     let policy = store.stored_policy()?.unwrap_or(default_policy);
     if let Some(email) = options.create_admin.as_deref() {
         tracing::info!("administrator setup started");
@@ -89,13 +123,50 @@ async fn main() -> Result<()> {
         tracing::info!("administrator account created");
         return Ok(());
     }
-    tracing::info!(bind = %options.bind, port = options.port, area = %options.area, "starting cell server");
+    tracing::info!(bind = %settings.bind, port = settings.port, area = %settings.area, "starting cell server");
+    let mail = mail_config(&settings)?;
+    if let Some(path) = options.import {
+        let mut towers = imu_nav_cell_server::read_import(&path, usize::MAX)?;
+        if !options.mcc.is_empty() {
+            towers.retain(|tower| options.mcc.contains(&tower.key.mcc));
+        }
+        let now = i64::try_from(SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs())?;
+        let (result, _) = store.seed(&towers, now, &policy)?;
+        tracing::info!(path = %path.display(), accepted = result.accepted, rejected = result.rejected, "seed import");
+    }
+    let (published, contributions) = store.counts(&policy)?;
+    let cleanup_store = store.clone();
+    let state = AppState::new(
+        store,
+        ServerConfig {
+            mail,
+            policy: policy.clone(),
+            trust_proxy: settings.trust_proxy,
+        },
+    )?;
+    let address = SocketAddr::new(settings.bind, settings.port);
+    let runtime = tokio::runtime::Runtime::new()?;
+    let pool_guard = cleanup_store.clone();
+    let result = runtime.block_on(serve_http(
+        state,
+        cleanup_store,
+        address,
+        (published, contributions),
+        policy.min_devices,
+    ));
+    drop(runtime);
+    drop(pool_guard);
+    result
+}
+
+/// Build complete mail settings only when every required value was supplied.
+fn mail_config(settings: &Settings) -> Result<Option<MailConfig>> {
     let mail = match (
-        options.public_url,
-        options.smtp_host,
-        options.smtp_username,
-        options.smtp_password,
-        options.smtp_from,
+        settings.public_url.clone(),
+        settings.smtp_host.clone(),
+        settings.smtp_username.clone(),
+        settings.smtp_password.clone(),
+        settings.smtp_from.clone(),
     ) {
         (
             Some(public_url),
@@ -121,30 +192,21 @@ async fn main() -> Result<()> {
             "all CELLS_PUBLIC_URL and CELLS_SMTP_* settings must be provided together"
         ),
     };
-    if let Some(path) = options.import {
-        let mut towers = imu_nav_cell_server::read_import(&path, usize::MAX)?;
-        if !options.mcc.is_empty() {
-            towers.retain(|tower| options.mcc.contains(&tower.key.mcc));
-        }
-        let now = i64::try_from(SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs())?;
-        let (result, _) = store.seed(&towers, now, &policy)?;
-        tracing::info!(path = %path.display(), accepted = result.accepted, rejected = result.rejected, "seed import");
-    }
-    let (published, contributions) = store.counts(&policy)?;
-    let cleanup_store = store.clone();
-    let state = AppState::new(
-        store,
-        ServerConfig {
-            mail,
-            policy: policy.clone(),
-            trust_proxy: options.trust_proxy,
-        },
-    )?;
-    let address = SocketAddr::new(options.bind, options.port);
+    Ok(mail)
+}
+
+/// Bind the HTTP listener after database initialization has completed on the ordinary thread.
+async fn serve_http(
+    state: AppState,
+    cleanup_store: CellStore,
+    address: SocketAddr,
+    counts: (usize, usize),
+    min_devices: usize,
+) -> Result<()> {
     let listener = tokio::net::TcpListener::bind(address)
         .await
         .context("cannot bind server socket")?;
-    tracing::info!(address = %listener.local_addr()?, published, contributions, min_devices = policy.min_devices, "cell server ready");
+    tracing::info!(address = %listener.local_addr()?, published = counts.0, contributions = counts.1, min_devices, "cell server ready");
     let cleanup = spawn_debug_cleanup(cleanup_store);
     axum::serve(
         listener,

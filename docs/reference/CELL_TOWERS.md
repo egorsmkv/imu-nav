@@ -66,7 +66,7 @@ and download everyone's merged data. Protocol (gzip CSV in OpenCellID columns):
 - `GET /health`
 
 The Rust reference server in `server/` persists per-device contributions and materialized consensus
-in SQLite (WAL mode), so state survives restarts and reads continue during uploads. It is built to
+in SQLite (WAL mode) or PostgreSQL. SQLite is the default. It is built to
 resist **poisoning** (a phone or a script uploading fake tower positions):
 
 - Every upload carries an `X-Device-Id`; contributions are stored per account and device (at most 50 samples each).
@@ -87,9 +87,12 @@ server/target/release/imu-nav-cell-server --data cells.sqlite3 --import 255.csv.
 ```
 
 Create the first admin with `--data cells.sqlite3 --create-admin admin@example.org` (password from
-standard input). Put the server behind a TLS reverse proxy for use outside your own network;
-account sign-in in the app requires HTTPS outside local loopback development (including the
-emulator's `10.0.2.2` host alias). Public downloads still work without signing in.
+standard input). To select PostgreSQL or configure the server with TOML, use
+`--config server/config.toml` as described in the
+[server guide](../../server/README.md#toml-configuration-and-postgresql). Put the server behind
+a TLS reverse proxy for use outside your own network. Account sign-in in the app requires HTTPS
+outside local loopback development (including the emulator's `10.0.2.2` host alias). Public
+downloads still work without signing in.
 Browser users can register at `/signup`, sign in at `/login`, and manage their uploaded cell
 observations at `/account`. The panel filters and exports the account's observations, supports
 individual or full deletion, pauses uploads, changes credentials, revokes sessions, and closes the

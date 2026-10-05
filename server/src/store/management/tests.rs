@@ -69,20 +69,22 @@ fn manual_correction_import_and_quarantine() -> Result<()> {
         1
     );
     assert_eq!(store.query(None, 0, None, &policy)?.len(), 1);
-    assert_eq!(
-        store
+    assert!(
+        (store
             .correct_tower(1, &tower(1, 50.8), &policy)?
             .unwrap()
             .tower
-            .lat,
-        50.8
+            .lat
+            - 50.8)
+            .abs()
+            < 1e-9
     );
     store.set_quarantined(1, &original.key, true, &policy)?;
     assert!(store.query(None, 0, None, &policy)?.is_empty());
     store.contribute("account:2:phone", &[tower(1, 50.4)], 100, &policy)?;
     assert!(store.query(None, 0, None, &policy)?.is_empty());
     store.import_seeds(import.path(), &policy, &cancel, &progress)?;
-    assert_eq!(store.consensus(&original.key)?.unwrap().tower.lat, 50.8);
+    assert!((store.consensus(&original.key)?.unwrap().tower.lat - 50.8).abs() < 1e-9);
     assert!(store.delete_quarantined(1, &original.key)?);
     assert!(store.consensus(&original.key)?.is_none());
     store.contribute("account:2:phone", &[tower(1, 50.4)], 101, &policy)?;

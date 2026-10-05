@@ -69,7 +69,7 @@ impl CellStore {
         connection
             .query_row(
                 "SELECT j.id,j.kind,j.status,j.processed,(SELECT COUNT(*) FROM admin_import_rejections r WHERE r.job_id=j.id) FROM admin_jobs j ORDER BY j.id DESC LIMIT 1",
-                [],
+                params![],
                 |row| {
                     Ok(JobRecord {
                         id: row.get(0)?,
@@ -193,12 +193,12 @@ impl CellStore {
         );
         let mut key_statement =
             transaction.prepare("SELECT radio,mcc,mnc,area,cid FROM import_keys")?;
-        let mut keys = key_statement.query([])?;
+        let mut keys = key_statement.query(params![])?;
         while let Some(row) = keys.next()? {
             if cancel.load(Ordering::Relaxed) {
                 return Ok(None);
             }
-            let key = row_to_key(row)?;
+            let key = row_to_key(&row)?;
             let consensus = recompute(&transaction, &key, policy)?;
             save_consensus(&transaction, &consensus)?;
             let hidden: bool = transaction.query_row(
@@ -261,7 +261,7 @@ impl CellStore {
                 "updated_s",
             ])?;
             let mut statement = connection.prepare("SELECT radio,mcc,mnc,area,cid,device,lat,lon,range_m,samples,updated_s FROM contributions ORDER BY radio,mcc,mnc,area,cid,device")?;
-            let mut rows = statement.query([])?;
+            let mut rows = statement.query(params![])?;
             while let Some(row) = rows.next()? {
                 writer.write_record([
                     row.get::<_, String>(0)?,
@@ -295,7 +295,7 @@ impl CellStore {
             ])?;
             let mut statement = connection.prepare("SELECT c.radio,c.mcc,c.mnc,c.area,c.cid,c.lat,c.lon,c.range_m,c.samples,c.devices,c.seeded,c.updated_s,
                 COALESCE(m.quarantined,0) FROM consensus c LEFT JOIN tower_moderation m ON m.radio=c.radio AND m.mcc=c.mcc AND m.mnc=c.mnc AND m.area=c.area AND m.cid=c.cid ORDER BY c.radio,c.mcc,c.mnc,c.area,c.cid")?;
-            let mut rows = statement.query([])?;
+            let mut rows = statement.query(params![])?;
             while let Some(row) = rows.next()? {
                 writer.write_record([
                     row.get::<_, String>(0)?,
@@ -336,7 +336,7 @@ impl CellStore {
             "SELECT actor_id,action,target,at_s FROM admin_audit ORDER BY id DESC LIMIT 30",
         )?;
         Ok(statement
-            .query_map([], |row| {
+            .query_map(params![], |row| {
                 Ok(AuditEntry {
                     actor_id: row.get(0)?,
                     action: row.get(1)?,
@@ -441,7 +441,7 @@ impl CellStore {
         if suspended && admin && !current {
             let active: i64 = transaction.query_row(
                 "SELECT COUNT(*) FROM users WHERE admin=1 AND suspended=0",
-                [],
+                params![],
                 |row| row.get(0),
             )?;
             if active <= 1 {
@@ -506,7 +506,7 @@ impl CellStore {
                 params![key.radio.to_string(), key.mcc, key.mnc, key.area, key.cid, now_s()],
             )?;
             let published: bool = transaction.query_row(
-                "SELECT COALESCE((SELECT seeded=1 OR devices>=?6 FROM consensus WHERE radio=?1 AND mcc=?2 AND mnc=?3 AND area=?4 AND cid=?5),0)",
+                "SELECT COALESCE((SELECT CASE WHEN seeded=1 OR devices>=?6 THEN 1 ELSE 0 END FROM consensus WHERE radio=?1 AND mcc=?2 AND mnc=?3 AND area=?4 AND cid=?5),0)",
                 params![key.radio.to_string(), key.mcc, key.mnc, key.area, key.cid, i64::try_from(policy.min_devices)?], |row| row.get(0),
             )?;
             if published {
@@ -633,7 +633,7 @@ impl CellStore {
         self.connection()?
             .query_row(
                 "SELECT value FROM server_settings WHERE key='policy'",
-                [],
+                params![],
                 |row| row.get::<_, String>(0),
             )
             .optional()?
@@ -656,13 +656,13 @@ impl CellStore {
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let mut statement =
             transaction.prepare("SELECT DISTINCT radio,mcc,mnc,area,cid FROM contributions")?;
-        let mut rows = statement.query([])?;
+        let mut rows = statement.query(params![])?;
         let mut index = 0;
         while let Some(row) = rows.next()? {
             if cancel.load(Ordering::Relaxed) {
                 return Ok(false);
             }
-            let key = row_to_key(row)?;
+            let key = row_to_key(&row)?;
             let hidden: bool = transaction.query_row(
                 "SELECT COALESCE((SELECT quarantined FROM tower_moderation WHERE radio=?1 AND mcc=?2 AND mnc=?3 AND area=?4 AND cid=?5),0)",
                 params![key.radio.to_string(), key.mcc, key.mnc, key.area, key.cid], |row| row.get(0),

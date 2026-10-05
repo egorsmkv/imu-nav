@@ -221,10 +221,22 @@ async fn upload_cells(
     let device_for_log = device.clone();
     let (result, changed) =
         run_db(move || store.contribute(&device, &towers, now_s(), &policy)).await?;
-    for tower in changed {
-        if !state.store.quarantined(&tower.tower.key)? {
-            let _ = state.events.send(ServerEvent::TowerUpserted { tower });
-        }
+    let visibility_store = state.store.clone();
+    let visible = run_db(move || {
+        changed
+            .into_iter()
+            .filter_map(
+                |tower| match visibility_store.quarantined(&tower.tower.key) {
+                    Ok(false) => Some(Ok(tower)),
+                    Ok(true) => None,
+                    Err(error) => Some(Err(error)),
+                },
+            )
+            .collect::<anyhow::Result<Vec<_>>>()
+    })
+    .await?;
+    for tower in visible {
+        let _ = state.events.send(ServerEvent::TowerUpserted { tower });
     }
     tracing::info!(
         device = device_for_log,
@@ -391,7 +403,9 @@ async fn put_tower(
     let consensus = run_db(move || store.correct_tower(account.id, &tower, &policy))
         .await?
         .ok_or(ApiError(StatusCode::BAD_REQUEST, "INVALID_TOWER"))?;
-    if !state.store.quarantined(&consensus.tower.key)? {
+    let visibility_store = state.store.clone();
+    let consensus_key = consensus.tower.key.clone();
+    if !run_db(move || visibility_store.quarantined(&consensus_key)).await? {
         let _ = state.events.send(ServerEvent::TowerUpserted {
             tower: consensus.clone(),
         });
@@ -446,7 +460,13 @@ async fn quarantine_tower(
     }
     if update.quarantined {
         let _ = state.events.send(ServerEvent::TowerDeleted { key });
-    } else if let Some(tower) = state.store.consensus(&key)? {
+    } else if let Some(tower) = run_db({
+        let store = state.store.clone();
+        let key = key.clone();
+        move || store.consensus(&key)
+    })
+    .await?
+    {
         let _ = state.events.send(ServerEvent::TowerUpserted { tower });
     }
     Ok(StatusCode::NO_CONTENT)

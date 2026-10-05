@@ -1,0 +1,28 @@
+# Copy to server/config.toml, restrict permissions, then pass --config server/config.toml.
+# Paths in this file are relative to this file's directory.
+[server]
+bind = "127.0.0.1"
+port = 8080
+trust_proxy = false
+# public_url = "https://cells.example.org"
+
+[database]
+backend = "sqlite" # Change to "postgres" to use PostgreSQL.
+path = "cells.sqlite3"
+# For PostgreSQL, remove path and add:
+# url = "postgresql://imu_nav:REPLACE_ME@db.example.org/imu_nav?sslmode=require"
+
+[logging]
+level = "info"
+
+[policy]
+min_devices = 2
+max_samples = 50
+area = "any" # Or "ukraine".
+
+# To send verification and password reset mail, set every mail field and server.public_url.
+# [mail]
+# smtp_host = "smtp.example.org"
+# smtp_username = "imu-nav@example.org"
+# smtp_password = "REPLACE_ME"
+# smtp_from = "imu-nav@example.org"
