@@ -1,4 +1,5 @@
 use super::*;
+use crate::Radio;
 use crate::auth;
 use tempfile::NamedTempFile;
 
@@ -278,17 +279,17 @@ fn removals_follow_quarantine_delete_and_restore() -> Result<()> {
     let policy = Policy::default();
     let item = tower(7, 50.4);
     store.seed(std::slice::from_ref(&item), 1, &policy)?;
-    assert!(store.removals(None, 0)?.is_empty());
+    assert_eq!(store.removals(None, 0)?, []);
     store.set_quarantined(1, &item.key, true, &policy)?;
     assert_eq!(store.removals(None, 0)?, vec![item.key.clone()]);
     assert!(store.delete_quarantined(1, &item.key)?);
     store.set_quarantined(1, &item.key, false, &policy)?;
     assert_eq!(store.removals(None, 0)?, vec![item.key.clone()]);
     store.seed(std::slice::from_ref(&item), 2, &policy)?;
-    assert!(store.removals(None, 0)?.is_empty());
+    assert_eq!(store.removals(None, 0)?, []);
     store.set_quarantined(1, &item.key, true, &policy)?;
     store.set_quarantined(1, &item.key, false, &policy)?;
-    assert!(store.removals(None, 0)?.is_empty());
+    assert_eq!(store.removals(None, 0)?, []);
     assert!(store.consensus(&item.key)?.unwrap().updated_s >= auth::now_s() - 1);
     Ok(())
 }
@@ -330,7 +331,7 @@ fn policy_filters_historical_rows_and_recovers_when_relaxed() -> Result<()> {
         &active
     )?);
     assert_eq!(store.query(None, 0, None, &original)?.len(), 2);
-    assert!(store.removals(None, 0)?.is_empty());
+    assert_eq!(store.removals(None, 0)?, []);
     Ok(())
 }
 

@@ -94,7 +94,7 @@
         {% else %}
         <div class="table-responsive">
             <table class="table table-hover table-striped align-middle mb-0">
-                <caption class="px-3">Page {{ tower_page }} of matching towers. Times are in UTC.</caption>
+                <caption class="px-3">Page {{ tower_page.number }} of matching towers. Times are in UTC.</caption>
                 <thead class="table-light">
                     <tr>
                         <th scope="col">Status</th>
@@ -134,9 +134,9 @@
         {% endif %}
         <form class="card-footer d-flex align-items-center gap-2" method="get" action="/admin">
             <input type="hidden" name="mcc" value="{{ mcc }}"><input type="hidden" name="status" value="{{ status }}"><input type="hidden" name="limit" value="{{ limit }}">
-            {% if tower_page > 1 %}<button class="btn btn-outline-secondary btn-sm" name="tower_page" value="{{ tower_previous }}">Previous</button>{% endif %}
-            <span>Page {{ tower_page }}</span>
-            {% if tower_has_next %}<button class="btn btn-outline-secondary btn-sm" name="tower_page" value="{{ tower_next }}">Next</button>{% endif %}
+            {% if tower_page.number > 1 %}<button class="btn btn-outline-secondary btn-sm" name="tower_page" value="{{ tower_page.previous }}">Previous</button>{% endif %}
+            <span>Page {{ tower_page.number }}</span>
+            {% if tower_page.has_next %}<button class="btn btn-outline-secondary btn-sm" name="tower_page" value="{{ tower_page.next }}">Next</button>{% endif %}
         </form>
     </section>
 
@@ -150,10 +150,10 @@
                     <button class="btn btn-primary" type="submit">Start import</button>
                 </form>
                 <div class="mt-3"><a class="btn btn-outline-secondary btn-sm" href="/admin/export/consensus">Export consensuses</a> <a class="btn btn-outline-secondary btn-sm" href="/admin/export/observations">Export observations</a></div>
-                <div id="job-status" class="alert alert-info mt-3 mb-0" role="status" {% if job_status.is_empty() %}hidden{% endif %}>
-                    <span id="job-summary">{{ job_kind }}: {{ job_status }} · {{ job_phase }} · {{ job_processed }} {% if job_phase == "uploading" %}bytes{% else %}rows{% endif %} processed · {{ job_rejected }} rejected</span>
-                    <a id="rejection-report" class="d-block mt-2" href="/admin/jobs/{{ job_id }}/rejections.csv" {% if job_rejected == 0 || job_id == 0 %}hidden{% endif %}>Download rejected rows</a>
-                    <form id="cancel-job" method="post" action="/admin/jobs/cancel" class="mt-2" {% if job_status != "running" %}hidden{% endif %}><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-outline-danger btn-sm">Cancel job</button></form>
+                <div id="job-status" class="alert alert-info mt-3 mb-0" role="status" {% if job.status.is_empty() %}hidden{% endif %}>
+                    <span id="job-summary">{{ job.kind }}: {{ job.status }} · {{ job.phase }} · {{ job.processed }} {% if job.phase == "uploading" %}bytes{% else %}rows{% endif %} processed · {{ job.rejected }} rejected</span>
+                    <a id="rejection-report" class="d-block mt-2" href="/admin/jobs/{{ job.id }}/rejections.csv" {% if job.rejected == 0 || job.id == 0 %}hidden{% endif %}>Download rejected rows</a>
+                    <form id="cancel-job" method="post" action="/admin/jobs/cancel" class="mt-2" {% if job.status != "running" %}hidden{% endif %}><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-outline-danger btn-sm">Cancel job</button></form>
                 </div>
             </div></section>
         </div>
@@ -183,11 +183,11 @@
             {% if account.suspended %}<form method="post" action="/admin/accounts/{{ account.id }}/restore"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-outline-success btn-sm">Restore</button></form>
             {% else %}<div class="d-flex gap-2"><form method="post" action="/admin/accounts/{{ account.id }}/suspend"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-outline-danger btn-sm">Suspend</button></form>{% if !account.admin %}<form method="post" action="/admin/accounts/{{ account.id }}/impersonate"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-outline-primary btn-sm" aria-label="View as {{ account.email }}">View as user</button></form>{% endif %}</div>{% endif %}
         </td></tr>{% endfor %}
-    </tbody></table></div><form class="card-footer d-flex align-items-center gap-2" method="get" action="/admin"><input type="hidden" name="email" value="{{ email }}">{% if account_page > 1 %}<button class="btn btn-outline-secondary btn-sm" name="account_page" value="{{ account_previous }}">Previous</button>{% endif %}<span>Page {{ account_page }}</span>{% if account_has_next %}<button class="btn btn-outline-secondary btn-sm" name="account_page" value="{{ account_next }}">Next</button>{% endif %}</form></section>
+    </tbody></table></div><form class="card-footer d-flex align-items-center gap-2" method="get" action="/admin"><input type="hidden" name="email" value="{{ email }}">{% if account_page.number > 1 %}<button class="btn btn-outline-secondary btn-sm" name="account_page" value="{{ account_page.previous }}">Previous</button>{% endif %}<span>Page {{ account_page.number }}</span>{% if account_page.has_next %}<button class="btn btn-outline-secondary btn-sm" name="account_page" value="{{ account_page.next }}">Next</button>{% endif %}</form></section>
 
     <section class="card"><div class="card-header d-flex justify-content-between"><h2 class="h5 mb-0">Administrator activity</h2><form method="get" action="/admin"><input name="audit_action" aria-label="Filter by action" placeholder="Filter action" value="{{ audit_action }}"><button class="btn btn-outline-secondary btn-sm">Search</button></form></div><div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Time</th><th>Actor ID</th><th>Action</th><th>Target</th></tr></thead><tbody>
         {% for entry in audit %}<tr><td><time {% if entry.at.valid %}datetime="{{ entry.at.datetime }}"{% endif %}>{{ entry.at.display }}</time></td><td>{{ entry.actor_id }}</td><td>{{ entry.action }}</td><td>{{ entry.target }}</td></tr>{% endfor %}
-    </tbody></table></div><form class="card-footer d-flex align-items-center gap-2" method="get" action="/admin"><input type="hidden" name="audit_action" value="{{ audit_action }}">{% if audit_page > 1 %}<button class="btn btn-outline-secondary btn-sm" name="audit_page" value="{{ audit_previous }}">Previous</button>{% endif %}<span>Page {{ audit_page }}</span>{% if audit_has_next %}<button class="btn btn-outline-secondary btn-sm" name="audit_page" value="{{ audit_next }}">Next</button>{% endif %}</form></section>
+    </tbody></table></div><form class="card-footer d-flex align-items-center gap-2" method="get" action="/admin"><input type="hidden" name="audit_action" value="{{ audit_action }}">{% if audit_page.number > 1 %}<button class="btn btn-outline-secondary btn-sm" name="audit_page" value="{{ audit_page.previous }}">Previous</button>{% endif %}<span>Page {{ audit_page.number }}</span>{% if audit_page.has_next %}<button class="btn btn-outline-secondary btn-sm" name="audit_page" value="{{ audit_page.next }}">Next</button>{% endif %}</form></section>
 </main>
 <script src="/admin/admin.js" defer></script>
 <script src="/web-locale.js" defer></script>

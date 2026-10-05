@@ -81,9 +81,9 @@
     </table>
     {% endif %}
     <div class="actions">
-      {% if has_previous %}<form action="/account" method="get"><input type="hidden" name="page" value="{{ previous_page }}"><input type="hidden" name="device" value="{{ filter_device }}"><input type="hidden" name="mcc" value="{{ filter_mcc }}"><input type="hidden" name="from_s" value="{{ filter_from }}"><input type="hidden" name="to_s" value="{{ filter_to }}"><button type="submit">Previous page</button></form>{% endif %}
+      {% if pagination.has_previous %}<form action="/account" method="get"><input type="hidden" name="page" value="{{ previous_page }}"><input type="hidden" name="device" value="{{ filter_device }}"><input type="hidden" name="mcc" value="{{ filter_mcc }}"><input type="hidden" name="from_s" value="{{ filter_from }}"><input type="hidden" name="to_s" value="{{ filter_to }}"><button type="submit">Previous page</button></form>{% endif %}
       <span>Page {{ page + 1 }}</span>
-      {% if has_next %}<form action="/account" method="get"><input type="hidden" name="page" value="{{ next_page }}"><input type="hidden" name="device" value="{{ filter_device }}"><input type="hidden" name="mcc" value="{{ filter_mcc }}"><input type="hidden" name="from_s" value="{{ filter_from }}"><input type="hidden" name="to_s" value="{{ filter_to }}"><button type="submit">Next page</button></form>{% endif %}
+      {% if pagination.has_next %}<form action="/account" method="get"><input type="hidden" name="page" value="{{ next_page }}"><input type="hidden" name="device" value="{{ filter_device }}"><input type="hidden" name="mcc" value="{{ filter_mcc }}"><input type="hidden" name="from_s" value="{{ filter_from }}"><input type="hidden" name="to_s" value="{{ filter_to }}"><button type="submit">Next page</button></form>{% endif %}
     </div>
   </section>
   <section class="card">

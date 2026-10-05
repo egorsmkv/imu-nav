@@ -79,8 +79,7 @@ struct AccountTemplate {
     rows: Vec<AccountRow>,
     total: usize,
     page: usize,
-    has_previous: bool,
-    has_next: bool,
+    pagination: AccountPagination,
     previous_page: usize,
     next_page: usize,
     filter_device: String,
@@ -93,6 +92,11 @@ struct AccountTemplate {
     sessions: Vec<SessionRow>,
     impersonating: bool,
     actor_email: String,
+}
+
+struct AccountPagination {
+    has_previous: bool,
+    has_next: bool,
 }
 
 struct Impersonation {
@@ -841,8 +845,10 @@ async fn account_page(
             rows: contributions.into(),
             total,
             page,
-            has_previous: page > 0,
-            has_next,
+            pagination: AccountPagination {
+                has_previous: page > 0,
+                has_next,
+            },
             previous_page: page.saturating_sub(1),
             next_page: page + 1,
             filter_device: filter.device,
@@ -973,14 +979,11 @@ async fn change_email(
             "Email changes require server email delivery.",
         ));
     };
-    let email = match auth::normalize_email(&form.email) {
-        Ok(email) => email,
-        Err(_) => {
-            return Ok(error_page(
-                StatusCode::BAD_REQUEST,
-                "Invalid email address.",
-            ));
-        }
+    let Ok(email) = auth::normalize_email(&form.email) else {
+        return Ok(error_page(
+            StatusCode::BAD_REQUEST,
+            "Invalid email address.",
+        ));
     };
     auth::rate_limit(&state, "verify", peer, &headers, &email)?;
     let store = state.store.clone();

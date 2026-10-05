@@ -849,6 +849,10 @@ async fn management_api_is_authenticated_and_broadcasts_deletes() -> Result<()> 
     Ok(())
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep one complete administrator page scenario in sequence"
+)]
 #[tokio::test]
 async fn admin_pages_use_session_and_render_controls() -> Result<()> {
     let server = start_server().await?;
@@ -1165,6 +1169,10 @@ async fn admin_pages_use_session_and_render_controls() -> Result<()> {
     Ok(())
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the policy, import, export, and account transaction in one scenario"
+)]
 #[tokio::test]
 async fn admin_policy_import_export_and_account_actions_work() -> Result<()> {
     let server = start_server().await?;
@@ -1626,6 +1634,10 @@ async fn health_bad_uploads_and_management_validation() -> Result<()> {
     Ok(())
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the full account lifecycle in one HTTP scenario"
+)]
 #[tokio::test]
 async fn browser_account_controls_pause_revoke_change_password_and_close() -> Result<()> {
     let server = start_server().await?;
@@ -1832,6 +1844,10 @@ async fn browser_account_controls_pause_revoke_change_password_and_close() -> Re
     Ok(())
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep form validation and destructive-action checks in one scenario"
+)]
 #[tokio::test]
 async fn browser_account_forms_validate_filters_and_destructive_actions() -> Result<()> {
     let server = start_server().await?;
@@ -2052,6 +2068,10 @@ async fn browser_account_forms_validate_filters_and_destructive_actions() -> Res
     Ok(())
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep email verification and recovery in one HTTP scenario"
+)]
 #[tokio::test]
 async fn browser_verification_and_recovery_paths_gate_unverified_uploads() -> Result<()> {
     let mail = MailConfig {
@@ -2194,6 +2214,10 @@ async fn browser_verification_and_recovery_paths_gate_unverified_uploads() -> Re
     Ok(())
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep impersonation start, actions, and return in one scenario"
+)]
 #[tokio::test]
 async fn administrator_can_impersonate_active_user_and_return_with_audit() -> Result<()> {
     let server = start_server().await?;
@@ -2469,6 +2493,10 @@ async fn administrator_can_impersonate_active_user_and_return_with_audit() -> Re
     Ok(())
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep suspended-account and signout checks in one scenario"
+)]
 #[tokio::test]
 async fn impersonation_rejects_suspended_users_and_signout_revokes_admin() -> Result<()> {
     let server = start_server().await?;

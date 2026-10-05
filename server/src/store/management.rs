@@ -1,6 +1,11 @@
 //! Administrator operations shared by browser and JSON interfaces.
 
-use super::*;
+use super::{
+    CellKey, CellStore, CellTower, Consensus, OptionalExtension, OwnContribution,
+    OwnContributionChange, Path, Policy, Result, Transaction, TransactionBehavior, UploadResult,
+    clear_removal, params, plausible, recompute, recompute_filtered, record_removal, row_to_key,
+    row_to_own_contribution, save_consensus, update_consensus_after_deletion,
+};
 use crate::auth::now_s;
 use flate2::Compression;
 use flate2::read::GzDecoder;
@@ -31,6 +36,27 @@ pub(crate) struct JobRecord {
     pub status: String,
     pub processed: usize,
     pub rejected: usize,
+}
+
+/// Keep the compressed-size and decoded-size limits together at the import boundary.
+fn open_import_reader(path: &Path) -> Result<csv::Reader<std::io::Take<Box<dyn Read>>>> {
+    anyhow::ensure!(
+        std::fs::metadata(path)?.len() <= 512 * 1024 * 1024,
+        "import exceeds 512 MiB compressed"
+    );
+    let mut file = std::fs::File::open(path)?;
+    let mut prefix = [0u8; 2];
+    let read = file.read(&mut prefix)?;
+    file.rewind()?;
+    let input: Box<dyn Read> = if read == 2 && prefix == [0x1f, 0x8b] {
+        Box::new(GzDecoder::new(file))
+    } else {
+        Box::new(file)
+    };
+    Ok(csv::ReaderBuilder::new()
+        .has_headers(false)
+        .flexible(true)
+        .from_reader(input.take(1024 * 1024 * 1024 + 1)))
 }
 
 impl CellStore {
@@ -95,23 +121,7 @@ impl CellStore {
         job_id: Option<i64>,
         rejected_progress: &AtomicUsize,
     ) -> Result<Option<UploadResult>> {
-        anyhow::ensure!(
-            std::fs::metadata(path)?.len() <= 512 * 1024 * 1024,
-            "import exceeds 512 MiB compressed"
-        );
-        let mut file = std::fs::File::open(path)?;
-        let mut prefix = [0u8; 2];
-        let read = file.read(&mut prefix)?;
-        file.rewind()?;
-        let input: Box<dyn Read> = if read == 2 && prefix == [0x1f, 0x8b] {
-            Box::new(GzDecoder::new(file))
-        } else {
-            Box::new(file)
-        };
-        let mut reader = csv::ReaderBuilder::new()
-            .has_headers(false)
-            .flexible(true)
-            .from_reader(input.take(1024 * 1024 * 1024 + 1));
+        let mut reader = open_import_reader(path)?;
         let mut connection = self.connection()?;
         connection.busy_timeout(std::time::Duration::from_secs(3600))?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -307,7 +317,7 @@ impl CellStore {
         writer.flush()?;
         writer
             .into_inner()
-            .map_err(|error| error.into_error())?
+            .map_err(csv::IntoInnerError::into_error)?
             .finish()?;
         Ok(())
     }
@@ -616,6 +626,9 @@ impl CellStore {
         Ok(Some(change))
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the saved policy cannot be read or decoded.
     pub fn stored_policy(&self) -> Result<Option<Policy>> {
         self.connection()?
             .query_row(
@@ -654,24 +667,21 @@ impl CellStore {
                 "SELECT COALESCE((SELECT quarantined FROM tower_moderation WHERE radio=?1 AND mcc=?2 AND mnc=?3 AND area=?4 AND cid=?5),0)",
                 params![key.radio.to_string(), key.mcc, key.mnc, key.area, key.cid], |row| row.get(0),
             )?;
-            match recompute_filtered(&transaction, &key, policy)? {
-                Some(mut consensus) => {
-                    // Force incremental clients to receive the result even if the input rows are old.
-                    consensus.updated_s = consensus.updated_s.max(now_s());
-                    save_consensus(&transaction, &consensus)?;
-                    if hidden || !(consensus.seeded || consensus.devices >= policy.min_devices) {
-                        record_removal(&transaction, &key)?;
-                    } else {
-                        clear_removal(&transaction, &key)?;
-                    }
-                }
-                None => {
-                    transaction.execute(
-                        "DELETE FROM consensus WHERE radio=?1 AND mcc=?2 AND mnc=?3 AND area=?4 AND cid=?5",
-                        params![key.radio.to_string(), key.mcc, key.mnc, key.area, key.cid],
-                    )?;
+            if let Some(mut consensus) = recompute_filtered(&transaction, &key, policy)? {
+                // Force incremental clients to receive the result even if the input rows are old.
+                consensus.updated_s = consensus.updated_s.max(now_s());
+                save_consensus(&transaction, &consensus)?;
+                if hidden || !(consensus.seeded || consensus.devices >= policy.min_devices) {
                     record_removal(&transaction, &key)?;
+                } else {
+                    clear_removal(&transaction, &key)?;
                 }
+            } else {
+                transaction.execute(
+                    "DELETE FROM consensus WHERE radio=?1 AND mcc=?2 AND mnc=?3 AND area=?4 AND cid=?5",
+                    params![key.radio.to_string(), key.mcc, key.mnc, key.area, key.cid],
+                )?;
+                record_removal(&transaction, &key)?;
             }
             index += 1;
             progress.store(index, Ordering::Relaxed);

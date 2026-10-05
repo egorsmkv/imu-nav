@@ -10,6 +10,7 @@ use rusqlite::{
     Connection, OptionalExtension, Transaction, TransactionBehavior, params, params_from_iter,
 };
 use std::collections::{BTreeSet, HashSet};
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -77,6 +78,127 @@ pub(crate) enum OwnContributionChange {
     Removed(CellKey),
 }
 
+fn initialize_schema(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        "PRAGMA journal_mode=WAL;
+         PRAGMA foreign_keys=ON;
+         CREATE TABLE IF NOT EXISTS contributions (
+           radio TEXT NOT NULL, mcc INTEGER NOT NULL, mnc INTEGER NOT NULL,
+           area INTEGER NOT NULL, cid INTEGER NOT NULL, device TEXT NOT NULL,
+           lat REAL NOT NULL, lon REAL NOT NULL, range_m REAL NOT NULL,
+           samples INTEGER NOT NULL, updated_s INTEGER NOT NULL,
+           PRIMARY KEY (radio, mcc, mnc, area, cid, device)
+         );
+         CREATE TABLE IF NOT EXISTS consensus (
+           radio TEXT NOT NULL, mcc INTEGER NOT NULL, mnc INTEGER NOT NULL,
+           area INTEGER NOT NULL, cid INTEGER NOT NULL, lat REAL NOT NULL,
+           lon REAL NOT NULL, range_m REAL NOT NULL, samples INTEGER NOT NULL,
+           devices INTEGER NOT NULL, seeded INTEGER NOT NULL, updated_s INTEGER NOT NULL,
+           PRIMARY KEY (radio, mcc, mnc, area, cid)
+         );
+         CREATE INDEX IF NOT EXISTS consensus_sync ON consensus(mcc, updated_s);",
+    )?;
+    connection.execute_batch(
+        "CREATE TABLE IF NOT EXISTS tower_moderation (
+           radio TEXT NOT NULL, mcc INTEGER NOT NULL, mnc INTEGER NOT NULL,
+           area INTEGER NOT NULL, cid INTEGER NOT NULL, quarantined INTEGER NOT NULL DEFAULT 1,
+           PRIMARY KEY (radio,mcc,mnc,area,cid)
+         );
+         CREATE TABLE IF NOT EXISTS server_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+         CREATE TABLE IF NOT EXISTS admin_audit (
+           id INTEGER PRIMARY KEY, actor_id INTEGER NOT NULL, action TEXT NOT NULL,
+           target TEXT NOT NULL, at_s INTEGER NOT NULL
+         );
+         CREATE TABLE IF NOT EXISTS admin_jobs (
+           id INTEGER PRIMARY KEY, kind TEXT NOT NULL, status TEXT NOT NULL,
+           processed INTEGER NOT NULL DEFAULT 0, started_s INTEGER NOT NULL,
+           finished_s INTEGER
+         );
+         CREATE TABLE IF NOT EXISTS tower_removals (
+           radio TEXT NOT NULL, mcc INTEGER NOT NULL, mnc INTEGER NOT NULL,
+           area INTEGER NOT NULL, cid INTEGER NOT NULL, updated_s INTEGER NOT NULL,
+           PRIMARY KEY (radio,mcc,mnc,area,cid)
+         );
+         CREATE INDEX IF NOT EXISTS tower_removals_sync ON tower_removals(mcc,updated_s);
+         CREATE TABLE IF NOT EXISTS admin_import_rejections (
+           job_id INTEGER NOT NULL REFERENCES admin_jobs(id) ON DELETE CASCADE,
+           row_number INTEGER NOT NULL, reason TEXT NOT NULL, input TEXT NOT NULL,
+           PRIMARY KEY(job_id,row_number)
+         );",
+    )?;
+    connection.execute_batch(
+        "CREATE INDEX IF NOT EXISTS contributions_device ON contributions(device);",
+    )?;
+    connection.execute_batch(
+        "CREATE TABLE IF NOT EXISTS users (
+           id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE,
+           password_hash TEXT NOT NULL, admin INTEGER NOT NULL DEFAULT 0,
+           suspended INTEGER NOT NULL DEFAULT 0,
+           sharing_enabled INTEGER NOT NULL DEFAULT 1,
+           email_verified INTEGER NOT NULL DEFAULT 1
+         );
+         CREATE TABLE IF NOT EXISTS account_deleted_keys (
+           account_id INTEGER NOT NULL,
+           radio TEXT NOT NULL,mcc INTEGER NOT NULL,mnc INTEGER NOT NULL,
+           area INTEGER NOT NULL,cid INTEGER NOT NULL,device TEXT NOT NULL,
+           PRIMARY KEY(account_id,radio,mcc,mnc,area,cid,device)
+         );
+         CREATE TABLE IF NOT EXISTS email_verifications (
+           token_hash TEXT PRIMARY KEY,user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+           email TEXT NOT NULL,expires_s INTEGER NOT NULL
+         );
+         CREATE TABLE IF NOT EXISTS auth_tokens (
+           token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+           session_id TEXT NOT NULL, kind TEXT NOT NULL, expires_s INTEGER NOT NULL
+         );
+         CREATE TABLE IF NOT EXISTS web_impersonations (
+           token_hash TEXT PRIMARY KEY REFERENCES auth_tokens(token_hash) ON DELETE CASCADE,
+           admin_token_hash TEXT NOT NULL REFERENCES auth_tokens(token_hash) ON DELETE CASCADE,
+           actor_id INTEGER NOT NULL REFERENCES users(id),
+           target_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE
+         );
+         CREATE INDEX IF NOT EXISTS web_impersonations_admin ON web_impersonations(admin_token_hash);
+         CREATE INDEX IF NOT EXISTS auth_tokens_user ON auth_tokens(user_id);
+         CREATE INDEX IF NOT EXISTS auth_tokens_session ON auth_tokens(session_id);
+         CREATE INDEX IF NOT EXISTS auth_tokens_expiry ON auth_tokens(expires_s);
+         CREATE TABLE IF NOT EXISTS password_resets (
+           token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+           expires_s INTEGER NOT NULL
+         );
+         CREATE INDEX IF NOT EXISTS password_resets_expiry ON password_resets(expires_s);",
+    )?;
+    Ok(())
+}
+
+fn migrate_user_columns(connection: &Connection) -> Result<()> {
+    let user_columns = connection
+        .prepare("PRAGMA table_info(users)")?
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    if !user_columns.iter().any(|column| column == "suspended") {
+        connection.execute(
+            "ALTER TABLE users ADD COLUMN suspended INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
+    }
+    if !user_columns
+        .iter()
+        .any(|column| column == "sharing_enabled")
+    {
+        connection.execute(
+            "ALTER TABLE users ADD COLUMN sharing_enabled INTEGER NOT NULL DEFAULT 1",
+            [],
+        )?;
+    }
+    if !user_columns.iter().any(|column| column == "email_verified") {
+        connection.execute(
+            "ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 1",
+            [],
+        )?;
+    }
+    Ok(())
+}
+
 impl CellStore {
     /// Open the database, create its schema, and enable WAL for concurrent readers.
     ///
@@ -88,119 +210,8 @@ impl CellStore {
             path: path.as_ref().to_path_buf(),
         };
         let connection = store.connection()?;
-        connection.execute_batch(
-            "PRAGMA journal_mode=WAL;
-             PRAGMA foreign_keys=ON;
-             CREATE TABLE IF NOT EXISTS contributions (
-               radio TEXT NOT NULL, mcc INTEGER NOT NULL, mnc INTEGER NOT NULL,
-               area INTEGER NOT NULL, cid INTEGER NOT NULL, device TEXT NOT NULL,
-               lat REAL NOT NULL, lon REAL NOT NULL, range_m REAL NOT NULL,
-               samples INTEGER NOT NULL, updated_s INTEGER NOT NULL,
-               PRIMARY KEY (radio, mcc, mnc, area, cid, device)
-             );
-             CREATE TABLE IF NOT EXISTS consensus (
-               radio TEXT NOT NULL, mcc INTEGER NOT NULL, mnc INTEGER NOT NULL,
-               area INTEGER NOT NULL, cid INTEGER NOT NULL, lat REAL NOT NULL,
-               lon REAL NOT NULL, range_m REAL NOT NULL, samples INTEGER NOT NULL,
-               devices INTEGER NOT NULL, seeded INTEGER NOT NULL, updated_s INTEGER NOT NULL,
-               PRIMARY KEY (radio, mcc, mnc, area, cid)
-             );
-             CREATE INDEX IF NOT EXISTS consensus_sync ON consensus(mcc, updated_s);",
-        )?;
-        connection.execute_batch(
-            "CREATE TABLE IF NOT EXISTS tower_moderation (
-               radio TEXT NOT NULL, mcc INTEGER NOT NULL, mnc INTEGER NOT NULL,
-               area INTEGER NOT NULL, cid INTEGER NOT NULL, quarantined INTEGER NOT NULL DEFAULT 1,
-               PRIMARY KEY (radio,mcc,mnc,area,cid)
-             );
-             CREATE TABLE IF NOT EXISTS server_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-             CREATE TABLE IF NOT EXISTS admin_audit (
-               id INTEGER PRIMARY KEY, actor_id INTEGER NOT NULL, action TEXT NOT NULL,
-               target TEXT NOT NULL, at_s INTEGER NOT NULL
-             );
-             CREATE TABLE IF NOT EXISTS admin_jobs (
-               id INTEGER PRIMARY KEY, kind TEXT NOT NULL, status TEXT NOT NULL,
-               processed INTEGER NOT NULL DEFAULT 0, started_s INTEGER NOT NULL,
-               finished_s INTEGER
-             );
-             CREATE TABLE IF NOT EXISTS tower_removals (
-               radio TEXT NOT NULL, mcc INTEGER NOT NULL, mnc INTEGER NOT NULL,
-               area INTEGER NOT NULL, cid INTEGER NOT NULL, updated_s INTEGER NOT NULL,
-               PRIMARY KEY (radio,mcc,mnc,area,cid)
-             );
-             CREATE INDEX IF NOT EXISTS tower_removals_sync ON tower_removals(mcc,updated_s);
-             CREATE TABLE IF NOT EXISTS admin_import_rejections (
-               job_id INTEGER NOT NULL REFERENCES admin_jobs(id) ON DELETE CASCADE,
-               row_number INTEGER NOT NULL, reason TEXT NOT NULL, input TEXT NOT NULL,
-               PRIMARY KEY(job_id,row_number)
-             );",
-        )?;
-        connection.execute_batch(
-            "CREATE INDEX IF NOT EXISTS contributions_device ON contributions(device);",
-        )?;
-        connection.execute_batch(
-            "CREATE TABLE IF NOT EXISTS users (
-               id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE,
-               password_hash TEXT NOT NULL, admin INTEGER NOT NULL DEFAULT 0,
-               suspended INTEGER NOT NULL DEFAULT 0,
-               sharing_enabled INTEGER NOT NULL DEFAULT 1,
-               email_verified INTEGER NOT NULL DEFAULT 1
-             );
-             CREATE TABLE IF NOT EXISTS account_deleted_keys (
-               account_id INTEGER NOT NULL,
-               radio TEXT NOT NULL,mcc INTEGER NOT NULL,mnc INTEGER NOT NULL,
-               area INTEGER NOT NULL,cid INTEGER NOT NULL,device TEXT NOT NULL,
-               PRIMARY KEY(account_id,radio,mcc,mnc,area,cid,device)
-             );
-             CREATE TABLE IF NOT EXISTS email_verifications (
-               token_hash TEXT PRIMARY KEY,user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-               email TEXT NOT NULL,expires_s INTEGER NOT NULL
-             );
-             CREATE TABLE IF NOT EXISTS auth_tokens (
-               token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-               session_id TEXT NOT NULL, kind TEXT NOT NULL, expires_s INTEGER NOT NULL
-             );
-             CREATE TABLE IF NOT EXISTS web_impersonations (
-               token_hash TEXT PRIMARY KEY REFERENCES auth_tokens(token_hash) ON DELETE CASCADE,
-               admin_token_hash TEXT NOT NULL REFERENCES auth_tokens(token_hash) ON DELETE CASCADE,
-               actor_id INTEGER NOT NULL REFERENCES users(id),
-               target_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE
-             );
-             CREATE INDEX IF NOT EXISTS web_impersonations_admin ON web_impersonations(admin_token_hash);
-             CREATE INDEX IF NOT EXISTS auth_tokens_user ON auth_tokens(user_id);
-             CREATE INDEX IF NOT EXISTS auth_tokens_session ON auth_tokens(session_id);
-             CREATE INDEX IF NOT EXISTS auth_tokens_expiry ON auth_tokens(expires_s);
-             CREATE TABLE IF NOT EXISTS password_resets (
-               token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-               expires_s INTEGER NOT NULL
-             );
-             CREATE INDEX IF NOT EXISTS password_resets_expiry ON password_resets(expires_s);",
-        )?;
-        let user_columns = connection
-            .prepare("PRAGMA table_info(users)")?
-            .query_map([], |row| row.get::<_, String>(1))?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        if !user_columns.iter().any(|column| column == "suspended") {
-            connection.execute(
-                "ALTER TABLE users ADD COLUMN suspended INTEGER NOT NULL DEFAULT 0",
-                [],
-            )?;
-        }
-        if !user_columns
-            .iter()
-            .any(|column| column == "sharing_enabled")
-        {
-            connection.execute(
-                "ALTER TABLE users ADD COLUMN sharing_enabled INTEGER NOT NULL DEFAULT 1",
-                [],
-            )?;
-        }
-        if !user_columns.iter().any(|column| column == "email_verified") {
-            connection.execute(
-                "ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 1",
-                [],
-            )?;
-        }
+        initialize_schema(&connection)?;
+        migrate_user_columns(&connection)?;
         Ok(store)
     }
 
@@ -485,16 +496,14 @@ impl CellStore {
         }
         let hidden = "EXISTS (SELECT 1 FROM tower_moderation m WHERE m.radio=c.radio AND m.mcc=c.mcc AND m.mnc=c.mnc AND m.area=c.area AND m.cid=c.cid AND m.quarantined=1)";
         match status {
-            "quarantined" => sql.push_str(&format!(" AND {hidden}")),
-            "seeded" => sql.push_str(&format!(" AND NOT {hidden} AND c.seeded=1")),
+            "quarantined" => write!(sql, " AND {hidden}")?,
+            "seeded" => write!(sql, " AND NOT {hidden} AND c.seeded=1")?,
             "published" => {
-                sql.push_str(&format!(
-                    " AND NOT {hidden} AND c.seeded=0 AND c.devices>=?"
-                ));
+                write!(sql, " AND NOT {hidden} AND c.seeded=0 AND c.devices>=?")?;
                 values.push(Value::Integer(i64::try_from(policy.min_devices)?));
             }
             "pending" => {
-                sql.push_str(&format!(" AND NOT {hidden} AND c.seeded=0 AND c.devices<?"));
+                write!(sql, " AND NOT {hidden} AND c.seeded=0 AND c.devices<?")?;
                 values.push(Value::Integer(i64::try_from(policy.min_devices)?));
             }
             _ => {}
@@ -696,7 +705,7 @@ impl CellStore {
         writer.flush()?;
         writer
             .into_inner()
-            .map_err(|error| error.into_error())?
+            .map_err(csv::IntoInnerError::into_error)?
             .finish()?;
         Ok(())
     }
@@ -922,6 +931,10 @@ fn clear_removal(transaction: &Transaction<'_>, key: &CellKey) -> Result<()> {
 
 impl CellStore {
     /// Return keys that were withdrawn from public sync since the requested epoch second.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the removal query or row decoding fails.
     pub fn removals(&self, mccs: Option<&HashSet<i64>>, since_s: i64) -> Result<Vec<CellKey>> {
         let connection = self.connection()?;
         let mut sql =

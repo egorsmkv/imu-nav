@@ -259,6 +259,47 @@ impl From<crate::store::OwnContribution> for ObservationRow {
 }
 
 /// Askama context for the dashboard and recent tower table.
+struct DashboardPage {
+    number: usize,
+    previous: usize,
+    next: usize,
+    has_next: bool,
+}
+
+impl DashboardPage {
+    fn new(number: usize, has_next: bool) -> Self {
+        Self {
+            number,
+            previous: number.saturating_sub(1),
+            next: number + 1,
+            has_next,
+        }
+    }
+}
+
+struct JobSummary {
+    kind: String,
+    status: String,
+    processed: usize,
+    rejected: usize,
+    phase: String,
+    id: i64,
+}
+
+impl JobSummary {
+    fn snapshot(state: &AppState) -> Result<Self, AdminError> {
+        let job = state.job.lock().map_err(|_| AdminError::internal())?;
+        Ok(Self {
+            kind: job.kind.clone(),
+            status: job.status.clone(),
+            processed: job.processed.load(Ordering::Relaxed),
+            rejected: job.rejected.load(Ordering::Relaxed),
+            phase: job.phase.clone(),
+            id: job.id.unwrap_or(0),
+        })
+    }
+}
+
 #[derive(Template)]
 #[template(path = "admin.html")]
 struct AdminTemplate {
@@ -269,18 +310,9 @@ struct AdminTemplate {
     has_mcc_filter: bool,
     limit: usize,
     status: String,
-    tower_page: usize,
-    tower_previous: usize,
-    tower_next: usize,
-    tower_has_next: bool,
-    account_page: usize,
-    account_previous: usize,
-    account_next: usize,
-    account_has_next: bool,
-    audit_page: usize,
-    audit_previous: usize,
-    audit_next: usize,
-    audit_has_next: bool,
+    tower_page: DashboardPage,
+    account_page: DashboardPage,
+    audit_page: DashboardPage,
     audit_action: String,
     email: String,
     towers: Vec<TowerRow>,
@@ -288,12 +320,38 @@ struct AdminTemplate {
     accounts: Vec<crate::store::management::ManagedAccount>,
     audit: Vec<AuditRow>,
     policy: Policy,
-    job_kind: String,
-    job_status: String,
-    job_processed: usize,
-    job_rejected: usize,
-    job_phase: String,
-    job_id: i64,
+    job: JobSummary,
+}
+
+/// Resolve a direct tower-key lookup before loading the dashboard tables.
+fn tower_lookup_redirect(query: &AdminQuery) -> Result<Option<Response>, AdminError> {
+    let Some(value) = query
+        .key
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Ok(None);
+    };
+    let fields = value.split(':').collect::<Vec<_>>();
+    if fields.len() != 5 {
+        return Err(AdminError::bad_request(
+            "Use RADIO:MCC:MNC:AREA:CID for tower lookup.",
+        ));
+    }
+    let numbers = fields[1..]
+        .iter()
+        .map(|item| item.parse::<i64>())
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| AdminError::bad_request("Tower identifiers must be numbers."))?;
+    let key = path_key((
+        fields[0].to_owned(),
+        numbers[0],
+        numbers[1],
+        numbers[2],
+        numbers[3],
+    ))?;
+    Ok(Some(redirect(&tower_path(&key))))
 }
 
 /// Askama context for tower details and moderation controls.
@@ -319,31 +377,8 @@ async fn dashboard(
 ) -> Result<Response, AdminError> {
     let (_, raw) = admin_session(&state, &headers).await?;
     let _visibility = state.activation_gate.read().await;
-    if let Some(value) = query
-        .key
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        let fields = value.split(':').collect::<Vec<_>>();
-        if fields.len() != 5 {
-            return Err(AdminError::bad_request(
-                "Use RADIO:MCC:MNC:AREA:CID for tower lookup.",
-            ));
-        }
-        let numbers = fields[1..]
-            .iter()
-            .map(|item| item.parse::<i64>())
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|_| AdminError::bad_request("Tower identifiers must be numbers."))?;
-        let key = path_key((
-            fields[0].to_owned(),
-            numbers[0],
-            numbers[1],
-            numbers[2],
-            numbers[3],
-        ))?;
-        return Ok(redirect(&tower_path(&key)));
+    if let Some(response) = tower_lookup_redirect(&query)? {
+        return Ok(response);
     }
     let mccs = query.mccs()?;
     let limit = query.limit();
@@ -399,17 +434,7 @@ async fn dashboard(
     let minimum_devices = policy.min_devices;
     let mcc = query.mcc.unwrap_or_default();
     let has_mcc_filter = !mcc.trim().is_empty();
-    let (job_kind, job_status, job_processed, job_rejected, job_phase, job_id) = {
-        let job = state.job.lock().map_err(|_| AdminError::internal())?;
-        (
-            job.kind.clone(),
-            job.status.clone(),
-            job.processed.load(Ordering::Relaxed),
-            job.rejected.load(Ordering::Relaxed),
-            job.phase.clone(),
-            job.id,
-        )
-    };
+    let job = JobSummary::snapshot(&state)?;
     render(&AdminTemplate {
         counts,
         pending: counts
@@ -420,18 +445,9 @@ async fn dashboard(
         has_mcc_filter,
         limit,
         status,
-        tower_page,
-        tower_previous: tower_page.saturating_sub(1),
-        tower_next: tower_page + 1,
-        tower_has_next,
-        account_page,
-        account_previous: account_page.saturating_sub(1),
-        account_next: account_page + 1,
-        account_has_next,
-        audit_page,
-        audit_previous: audit_page.saturating_sub(1),
-        audit_next: audit_page + 1,
-        audit_has_next,
+        tower_page: DashboardPage::new(tower_page, tower_has_next),
+        account_page: DashboardPage::new(account_page, account_has_next),
+        audit_page: DashboardPage::new(audit_page, audit_has_next),
         audit_action,
         email: query.email.unwrap_or_default(),
         towers: towers.into_iter().take(limit).collect(),
@@ -443,12 +459,7 @@ async fn dashboard(
             .map(AuditRow::from)
             .collect(),
         policy,
-        job_kind,
-        job_status,
-        job_processed,
-        job_rejected,
-        job_phase,
-        job_id: job_id.unwrap_or(0),
+        job,
     })
 }
 
@@ -870,9 +881,9 @@ async fn begin_job(
             return Err(AdminError::conflict("Another job is running."));
         }
         job.id = None;
-        job.kind = kind.to_owned();
-        job.status = "running".to_owned();
-        job.phase = "processing".to_owned();
+        kind.clone_into(&mut job.kind);
+        "running".clone_into(&mut job.status);
+        "processing".clone_into(&mut job.phase);
         job.cancel = Arc::new(AtomicBool::new(false));
         job.processed = Arc::new(AtomicUsize::new(0));
         job.rejected = Arc::new(AtomicUsize::new(0));
@@ -883,8 +894,8 @@ async fn begin_job(
     let id = match run_db(move || store.start_admin_job(&kind_for_db)).await {
         Ok(id) => id,
         Err(error) => {
-            state.job.lock().map_err(|_| AdminError::internal())?.status =
-                "failed; check server logs".to_owned();
+            "failed; check server logs"
+                .clone_into(&mut state.job.lock().map_err(|_| AdminError::internal())?.status);
             return Err(error.into());
         }
     };
@@ -924,7 +935,7 @@ async fn finish_job(state: &AppState, result: Result<bool, ApiError>) {
     let mut job = state.job.lock().expect("job lock");
     tracing::info!(job_id = ?id, %status, processed, "admin job finished");
     job.status = status;
-    job.phase = "finished".to_owned();
+    "finished".clone_into(&mut job.phase);
 }
 
 async fn update_policy(
@@ -1094,7 +1105,7 @@ async fn import(
     let (cancel, progress) = begin_job(&state, "seed import").await?;
     let (id, rejected) = {
         let mut job = state.job.lock().map_err(|_| AdminError::internal())?;
-        job.phase = "uploading".to_owned();
+        "uploading".clone_into(&mut job.phase);
         (job.id, job.rejected.clone())
     };
     let staging = async {
@@ -1146,7 +1157,7 @@ async fn import(
         }
     };
     progress.store(0, Ordering::Relaxed);
-    state.job.lock().map_err(|_| AdminError::internal())?.phase = "processing".to_owned();
+    "processing".clone_into(&mut state.job.lock().map_err(|_| AdminError::internal())?.phase);
     tokio::spawn(async move {
         let _guard = state.write_gate.write().await;
         let store = state.store.clone();

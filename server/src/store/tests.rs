@@ -97,7 +97,7 @@ fn deleting_an_observation_updates_incremental_sync() -> Result<()> {
         &policy,
     )?;
     assert_eq!(store.query(None, 0, None, &policy)?.len(), 1);
-    assert!(store.removals(None, 0)?.is_empty());
+    assert_eq!(store.removals(None, 0)?, []);
     store.delete_own_contribution(1, &item.key, "account:1:phone", &policy)?;
     assert_eq!(store.removals(None, 0)?, vec![item.key]);
     Ok(())

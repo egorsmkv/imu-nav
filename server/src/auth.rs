@@ -536,7 +536,9 @@ async fn confirm_email(
             transaction.query_row("SELECT email FROM users WHERE id=?1", [user_id], |row| {
                 row.get(0)
             })?;
-        if current != email {
+        if current == email {
+            transaction.execute("UPDATE users SET email_verified=1 WHERE id=?1", [user_id])?;
+        } else {
             let changed = transaction.execute(
                 "UPDATE OR IGNORE users SET email=?1,email_verified=1 WHERE id=?2",
                 params![email, user_id],
@@ -545,8 +547,6 @@ async fn confirm_email(
                 return Ok(false);
             }
             transaction.execute("DELETE FROM auth_tokens WHERE user_id=?1", [user_id])?;
-        } else {
-            transaction.execute("UPDATE users SET email_verified=1 WHERE id=?1", [user_id])?;
         }
         transaction.execute(
             "DELETE FROM email_verifications WHERE user_id=?1",
