@@ -35,13 +35,14 @@ only be enabled when direct access to the server port is blocked.
 
 ## Browser account pages
 
-Open `/signup` to create an account or `/login` to sign in. `/forgot-password` requests a reset
-email when SMTP is configured. The `/account` panel filters the account's cell observations by
-device, MCC, and update time; pages through 100 results at a time; and downloads matching rows as
-gzip CSV. It can delete individual observations or all observations, pause and resume uploads,
-change password or email, revoke other sessions, and close the account. The server does not store
-trip recordings. Other accounts' and seed observations are never included in account exports or
-deletions. Deletion recalculates shared consensus and updates management WebSocket subscribers.
+Open `/data-usage` for a public explanation of what the server receives, stores, publishes, and
+lets users remove. Open `/signup` to create an account or `/login` to sign in. `/forgot-password`
+requests a reset email when SMTP is configured. The `/account` panel filters the account's cell
+observations by device, MCC, and update time; pages through 100 results at a time; and downloads
+matching rows as gzip CSV. It can delete individual observations or all observations, pause and
+resume uploads, change password or email, revoke other sessions, and close the account. The server
+does not store trip recordings. Other accounts' and seed observations are never included in
+account exports or deletions. Deletion recalculates shared consensus and updates management WebSocket subscribers.
 Web pages show observation, session, tower, and administrator activity times in UTC. The account
 page accepts UTC date and time filters with second precision; existing links with Unix-second
 `from_s` and `to_s` values still work. CSV and JSON timestamps remain Unix seconds.

@@ -35,6 +35,7 @@ pub(crate) fn router() -> Router<AppState> {
         .route("/", get(home))
         .route("/login", get(login_page).post(login))
         .route("/signup", get(signup_page).post(signup))
+        .route("/data-usage", get(data_usage_page))
         .route("/forgot-password", get(forgot_page).post(forgot_submit))
         .route("/account", get(account_page))
         .route("/account/export", get(export_own))
@@ -64,6 +65,10 @@ struct AccountFormTemplate {
     email: String,
     error: &'static str,
 }
+
+#[derive(Template)]
+#[template(path = "data_usage.html")]
+struct DataUsageTemplate;
 
 #[derive(Template)]
 #[template(path = "account.html")]
@@ -379,6 +384,11 @@ async fn login_page() -> Result<Response, ApiError> {
 
 async fn signup_page() -> Result<Response, ApiError> {
     form_page(true, String::new(), "", StatusCode::OK)
+}
+
+/// Explain the server's data flow without requiring an account or loading external assets.
+async fn data_usage_page() -> Result<Response, ApiError> {
+    render(StatusCode::OK, &DataUsageTemplate)
 }
 
 async fn forgot_page() -> Result<Response, ApiError> {

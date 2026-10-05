@@ -100,6 +100,6 @@
     <form action="/account/sessions/revoke-others" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Sign out all other sessions</button></form>
   </section>
   <section class="card"><h2>Close account</h2><p>Closing your account deletes your cell observations and sessions. This cannot be undone.</p><form action="/account/close" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><label for="close-password">Current password</label><input id="close-password" name="password" type="password" autocomplete="current-password" required><label for="close-confirm">Type DELETE ACCOUNT to confirm</label><input id="close-confirm" name="confirm" type="text" required pattern="DELETE ACCOUNT" autocomplete="off"><p><button class="danger" type="submit">Close my account</button></p></form></section>
-  <footer><p>IMU Nav is a research prototype, not a safety system.</p></footer>
+  <footer><p><a href="/data-usage">How the server uses your data</a></p><p>IMU Nav is a research prototype, not a safety system.</p></footer>
 </main>
 </html>

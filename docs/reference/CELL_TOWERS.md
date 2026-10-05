@@ -59,6 +59,7 @@ and download everyone's merged data. Protocol (gzip CSV in OpenCellID columns):
 - `GET /v1/towers` plus `PUT` / `DELETE /v1/towers/{radio}/{mcc}/{mnc}/{area}/{cid}` — JSON management API
 - `GET /v1/events` — WebSocket stream of tower upserts and deletions for realtime management tools
 - `GET /admin` — administrator dashboard for tower moderation, accounts, imports, exports, and policy
+- `GET /data-usage` — public explanation of tower uploads, publication, logs, and account controls
 - `GET /health`
 
 The Rust reference server in `server/` persists per-device contributions and materialized consensus

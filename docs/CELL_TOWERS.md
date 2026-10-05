@@ -19,5 +19,6 @@ The phone can estimate a rough position from nearby cell towers when GPS is unav
 4. Sign out when you no longer want to upload. Public downloads can still work without an account.
 
 A tower normally needs contributions from at least two devices before the server publishes it. For a server outside your local network, use HTTPS. The [server guide](../server/README.md) covers setup, accounts and administration.
+The server's public `/data-usage` page explains what uploads contain and how to review or delete your observations.
 
 See the [glossary](GLOSSARY.md) and the [detailed cell-tower reference](reference/CELL_TOWERS.md) for data sources, privacy and moderation behaviour.

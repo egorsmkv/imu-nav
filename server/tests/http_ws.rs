@@ -233,6 +233,19 @@ async fn browser_account_pages_show_and_delete_only_owned_contributions() -> Res
     let browser = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .build()?;
+    let data_usage = browser
+        .get(format!("{}/data-usage", server.base_url))
+        .send()
+        .await?;
+    assert_eq!(data_usage.status(), StatusCode::OK);
+    assert_eq!(data_usage.headers()["cache-control"], "no-store");
+    let data_usage_html = data_usage.text().await?;
+    assert!(data_usage_html.contains("<h1>Data Usage</h1>"));
+    assert!(data_usage_html.contains("latest accepted observation for each device and tower"));
+    assert!(
+        data_usage_html
+            .contains("Copies already downloaded or exported cannot be removed remotely")
+    );
     assert_eq!(
         browser
             .get(format!("{}/login", server.base_url))
@@ -332,6 +345,7 @@ async fn browser_account_pages_show_and_delete_only_owned_contributions() -> Res
     let body = panel.text().await?;
     assert!(body.contains(&first_device));
     assert!(!body.contains(&second_device));
+    assert!(body.contains("href=\"/data-usage\""));
     assert!(body.contains("type=\"datetime-local\" step=\"1\""));
     assert!(body.contains("Updated at or after (UTC)"));
     assert!(body.contains("<time datetime=\""));
@@ -852,6 +866,7 @@ async fn admin_pages_use_session_and_render_controls() -> Result<()> {
     );
     let dashboard_html = dashboard.text().await?;
     assert!(dashboard_html.contains("Management dashboard"));
+    assert!(dashboard_html.contains("href=\"/data-usage\""));
     assert!(dashboard_html.contains("bootstrap@5.3.8"));
     assert!(dashboard_html.contains("/admin/towers/LTE/255/1/1864/99"));
     assert!(dashboard_html.contains("Seed import and exports"));
