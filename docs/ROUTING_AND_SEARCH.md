@@ -3,6 +3,7 @@
 [Documentation index](../README.md)
 
 A routing pack lets the phone calculate routes and search addresses without internet. A map pack draws the streets; it is a different download. See the [glossary](GLOSSARY.md) if these terms are new.
+The app accepts locations worldwide. Install packs for the region you will use; only one map pack and one routing pack are active at a time. Outside a map pack's bounds, the map uses online tiles when available.
 
 ## Use an offline routing pack
 
@@ -22,7 +23,7 @@ Online search sends your search text to the chosen server. Turn it off if you wa
 
 ## Build a pack on a computer
 
-A full Ukraine build needs about 10 GB of RAM. Download an OpenStreetMap extract and run:
+A full Ukraine build needs about 10 GB of RAM; other regions vary. Download the OpenStreetMap extract for your chosen region and run, for example:
 
 ```bash
 ./gradlew :routing:run --args="--osm ukraine-latest.osm.pbf --out graph-ukraine --name Ukraine"

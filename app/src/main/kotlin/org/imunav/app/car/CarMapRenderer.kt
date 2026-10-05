@@ -22,6 +22,7 @@ import org.imunav.app.maps.mapStyle
 import org.imunav.app.maps.routeFeatures
 import org.imunav.app.maps.updateMapPoint
 import org.imunav.app.maps.updateMapPosition
+import org.imunav.core.geo.GeoPoint
 import org.imunav.core.route.Route
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
@@ -152,7 +153,8 @@ class CarMapRenderer(
             guidanceZoomPending = false
         }
         val dark = context.isDarkMode
-        val key = dark to if (graph.offlineMap.status.value.offlineInUse) graph.offlineMap.styleJson(dark) else null
+        val center = (if (following) ui.currentPosition else null) ?: loaded.cameraPosition.target?.let { GeoPoint(it.latitude, it.longitude) }
+        val key = dark to if (graph.offlineMap.status.value.offlineInUse) graph.offlineMap.styleJson(dark, center) else null
         if (styleKey != key) {
             styleKey = key
             style = null
@@ -179,6 +181,7 @@ class CarMapRenderer(
         loaded.uiSettings.isAttributionEnabled = true
         val start = graph.mapStart.initialView()
         loaded.cameraPosition = CameraPosition.Builder().target(LatLng(start.point.lat, start.point.lon)).zoom(start.zoom).build()
+        loaded.addOnCameraIdleListener { if (resumed) update(state) }
         mapInitialized = true
     }
 

@@ -62,7 +62,7 @@ class MapStartPrefs(private val context: Context, private val area: ServiceArea)
         if (mode == MapStartMode.FIXED) fixed?.let { return MapStartView(it, FIXED_ZOOM, isPosition = false) }
         systemLastGps()?.let { return MapStartView(it, POSITION_ZOOM, isPosition = true) }
         lastTrusted?.let { return MapStartView(it, POSITION_ZOOM, isPosition = true) }
-        return MapStartView(fixed ?: KYIV, OVERVIEW_ZOOM, isPosition = false)
+        return MapStartView(fixed ?: WORLD, OVERVIEW_ZOOM, isPosition = false)
     }
 
     /**
@@ -80,7 +80,7 @@ class MapStartPrefs(private val context: Context, private val area: ServiceArea)
             loc.isFromMockProvider
         }
         val ageMs = System.currentTimeMillis() - loc.time
-        if (mock || ageMs > MAX_LAST_GPS_AGE_MS || !area.contains(loc.latitude, loc.longitude)) return null
+        if (mock || ageMs > MAX_LAST_GPS_AGE_MS || !validCoordinates(loc.latitude, loc.longitude) || !area.contains(loc.latitude, loc.longitude)) return null
         return GeoPoint(loc.latitude, loc.longitude)
     }
 
@@ -88,17 +88,19 @@ class MapStartPrefs(private val context: Context, private val area: ServiceArea)
     private fun point(prefix: String): GeoPoint? {
         val lat = prefs.getString("${prefix}_lat", null)?.toDoubleOrNull() ?: return null
         val lon = prefs.getString("${prefix}_lon", null)?.toDoubleOrNull() ?: return null
-        return GeoPoint(lat, lon)
+        return if (validCoordinates(lat, lon)) GeoPoint(lat, lon) else null
     }
 
     companion object {
         /** Fallback when nothing else is known. */
-        val KYIV = GeoPoint(50.4501, 30.5234)
+        val WORLD = GeoPoint(0.0, 0.0)
         const val POSITION_ZOOM = 14.0
         const val FIXED_ZOOM = 13.0
-        const val OVERVIEW_ZOOM = 12.0
+        const val OVERVIEW_ZOOM = 2.0
         private const val REMEMBER_MIN_MOVE_M = 200.0
         private const val MAX_LAST_GPS_AGE_MS = 7L * 24 * 60 * 60 * 1000
+
+        private fun validCoordinates(lat: Double, lon: Double) = lat.isFinite() && lon.isFinite() && lat in -90.0..90.0 && lon in -180.0..180.0
 
         /** Parse "50.45, 30.52" (also with ';' or spaces). */
         fun parse(text: String): GeoPoint? {

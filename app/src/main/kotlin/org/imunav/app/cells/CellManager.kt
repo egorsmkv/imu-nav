@@ -67,6 +67,12 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
         },
         log = log,
         onUsage = usageHistory::record,
+        onServingMcc = { mcc ->
+            if (!prefs.contains("mccs")) {
+                prefs.edit { putString("mccs", mcc.toString()) }
+                scope.launch { refresh() }
+            }
+        },
         enabledRadios = ::enabledRadios,
     )
 
@@ -101,8 +107,11 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
     }
 
     /** The configured country codes as numbers. */
-    private fun mccSet(): Set<Int> = mccText().split(',', ' ').mapNotNull { it.trim().toIntOrNull() }.toSet().ifEmpty { setOf(255) }
-    private fun mccText(): String = prefs.getString("mccs", "255").orEmpty()
+    private fun mccSet(): Set<Int> = parseMccs(mccText())
+    private fun mccText(): String = prefs.getString("mccs", "").orEmpty()
+
+    /** Country-scoped downloads must never silently fall back to another country. */
+    private fun requireMccs(): Set<Int> = mccSet().takeIf { it.isNotEmpty() } ?: throw IOException(str(R.string.cells_region_required))
 
     /** Called ~1/s from the UI refresh loop. */
     fun refresh() {
@@ -159,13 +168,13 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
     /** Save the sharing-server and country settings from the Settings screen. */
     fun saveSettings(syncUrl: String, autoSync: Boolean, mccs: String) {
         val serverChanged = prefs.getString("sync_url", "").orEmpty().trimEnd('/') != syncUrl.trim().trimEnd('/')
-        val countries = mccs.trim().ifEmpty { "255" }
-        val countriesChanged = prefs.getString("mccs", "255") != countries
+        val countries = mccs.trim()
+        val countriesChanged = prefs.getString("mccs", "").orEmpty() != countries
         if (serverChanged) auth.clear()
         prefs.edit {
             putString("sync_url", syncUrl.trim())
             putBoolean("auto_sync", autoSync)
-            putString("mccs", countries)
+            if (countries.isBlank()) remove("mccs") else putString("mccs", countries)
             if (serverChanged) {
                 putLong("last_upload_ms", 0)
                 putLong("last_download_s", 0)
@@ -259,7 +268,7 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
 
     /** Import an OpenCellID / Mozilla CSV picked by the user, filtered to the configured MCCs. */
     fun importFile(open: () -> InputStream?) = runTask(str(R.string.task_importing_towers, 0), cancellable = true) {
-        str(R.string.task_imported, transfers.importFile(open, mccSet()))
+        str(R.string.task_imported, transfers.importFile(open, requireMccs()))
     }
 
     /** Download and import the OpenCellID export for the configured MCCs with the user's token. */
@@ -267,13 +276,13 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
         if (token.isBlank()) return
         prefs.edit { putString("token", token.trim()) }
         runTask(str(R.string.task_downloading_ocid, 0)) {
-            str(R.string.task_ocid_done, transfers.downloadOpenCellId(token, mccSet()))
+            str(R.string.task_ocid_done, transfers.downloadOpenCellId(token, requireMccs()))
         }
     }
 
     /** Stream the Mozilla Location Service final export, retaining only configured MCCs. */
     fun downloadMozilla() = runTask(str(R.string.task_connecting), cancellable = true) {
-        str(R.string.task_mozilla_done, transfers.downloadMozilla(mccSet()))
+        str(R.string.task_mozilla_done, transfers.downloadMozilla(requireMccs()))
     }
 
     /**
@@ -393,13 +402,17 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
             if (!auto) _status.update { it.copy(message = str(R.string.task_sync_no_url)) }
             return
         }
+        if (mccSet().isEmpty()) {
+            if (!auto) _status.update { it.copy(message = str(R.string.cells_region_required)) }
+            return
+        }
         runTask(str(R.string.task_syncing)) {
             val started = System.currentTimeMillis()
-            val (uploaded, downloaded) = transfers.sync(url, deviceId(), mccSet(), started)
+            val (uploaded, downloaded) = transfers.sync(url, deviceId(), requireMccs(), started)
             val msg = when {
-                auth.email == null -> str(R.string.task_sync_download_only, downloaded)
-                !auth.emailVerified -> str(R.string.task_sync_unverified, downloaded)
-                !auth.sharingEnabled -> str(R.string.task_sync_paused, downloaded)
+                auth.email == null -> context.resources.getQuantityString(R.plurals.task_sync_download_only, downloaded, downloaded)
+                !auth.emailVerified -> context.resources.getQuantityString(R.plurals.task_sync_unverified, downloaded, downloaded)
+                !auth.sharingEnabled -> context.resources.getQuantityString(R.plurals.task_sync_paused, downloaded, downloaded)
                 else -> str(R.string.task_sync_done, uploaded, downloaded)
             }
             prefs.edit {
@@ -439,4 +452,12 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
         const val MOZILLA_URL = "https://archive.org/download/MLS_Full_Cell_Export_Final/MLS-full-cell-export-final.csv.gz"
         private const val AUTO_SYNC_INTERVAL_MS = 6L * 60 * 60 * 1000
     }
+}
+
+/** Parse the user's comma/space-separated MCCs without accepting a partial selection. */
+internal fun parseMccs(text: String): Set<Int> {
+    val values = text.split(',', ' ', '\n').filter(String::isNotBlank)
+    if (values.isEmpty()) return emptySet()
+    val parsed = values.map { it.toIntOrNull()?.takeIf { mcc -> mcc in 1..999 } ?: return emptySet() }
+    return parsed.toSet()
 }

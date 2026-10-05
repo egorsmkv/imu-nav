@@ -188,7 +188,8 @@
     <string name="cells_types_hint">Використовуються для позиціонування й показуються на карті</string>
     <string name="cells_none_warning">Не обрано жодного типу — позиціонування за вишками вимкнено</string>
     <string name="cells_region">Коди країн (MCC)</string>
-    <string name="cells_region_hint">255 = Україна; кілька кодів — через кому</string>
+    <string name="cells_region_hint">Якщо можливо, визначається за поточною мережею; кілька кодів MCC розділяйте комами.</string>
+    <string name="cells_region_required">Виберіть код країни (MCC) перед імпортом, завантаженням або синхронізацією веж.</string>
     <string name="cells_total">У базі %1$s вишок</string>
     <string name="src_label_shared">сервер обміну</string>
     <string name="src_label_ocid">OpenCellID</string>
@@ -309,9 +310,9 @@
     <string name="task_uploading">Надсилаємо вишки: %1$d…</string>
     <string name="task_downloading_shared">Завантажуємо спільні вишки…</string>
     <string name="task_sync_done">Синхронізація: вишок надіслано %1$d, отримано %2$d</string>
-    <string name="task_sync_unverified">Потрібно підтвердити пошту; отримано %1$d вишок без надсилання</string>
-    <string name="task_sync_paused">Обмін призупинено в кабінеті; отримано %1$d вишок без надсилання</string>
-    <string name="task_sync_download_only">Отримано %1$d вишок; увійдіть, щоб надіслати власні</string>
+    <plurals name="task_sync_unverified"><item quantity="one">Потрібно підтвердити пошту; отримано %1$d вишку без надсилання</item><item quantity="few">Потрібно підтвердити пошту; отримано %1$d вишки без надсилання</item><item quantity="many">Потрібно підтвердити пошту; отримано %1$d вишок без надсилання</item><item quantity="other">Потрібно підтвердити пошту; отримано %1$d вишки без надсилання</item></plurals>
+    <plurals name="task_sync_paused"><item quantity="one">Обмін призупинено в кабінеті; отримано %1$d вишку без надсилання</item><item quantity="few">Обмін призупинено в кабінеті; отримано %1$d вишки без надсилання</item><item quantity="many">Обмін призупинено в кабінеті; отримано %1$d вишок без надсилання</item><item quantity="other">Обмін призупинено в кабінеті; отримано %1$d вишки без надсилання</item></plurals>
+    <plurals name="task_sync_download_only"><item quantity="one">Отримано %1$d вишку; увійдіть, щоб надіслати власні</item><item quantity="few">Отримано %1$d вишки; увійдіть, щоб надіслати власні</item><item quantity="many">Отримано %1$d вишок; увійдіть, щоб надіслати власні</item><item quantity="other">Отримано %1$d вишки; увійдіть, щоб надіслати власні</item></plurals>
     <string name="task_sync_no_url">Спершу вкажіть адресу сервера</string>
     <string name="task_exporting">Експорт… вишок: %1$d</string>
     <string name="task_exported">Експортовано вишок: %1$d (%2$d КБ)</string>

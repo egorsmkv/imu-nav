@@ -188,7 +188,8 @@
     <string name="cells_types_hint">Используются для позиционирования и показываются на карте</string>
     <string name="cells_none_warning">Не выбран ни один тип — позиционирование по вышкам выключено</string>
     <string name="cells_region">Коды стран (MCC)</string>
-    <string name="cells_region_hint">255 = Украина; несколько кодов разделяйте запятыми</string>
+    <string name="cells_region_hint">По возможности определяется по текущей сети; несколько кодов MCC разделяйте запятыми.</string>
+    <string name="cells_region_required">Выберите код страны (MCC) перед импортом, загрузкой или синхронизацией вышек.</string>
     <string name="cells_total">В базе %1$s вышек</string>
     <string name="src_label_shared">сервер обмена</string>
     <string name="src_label_ocid">OpenCellID</string>
@@ -309,9 +310,9 @@
     <string name="task_uploading">Отправляем вышки: %1$d…</string>
     <string name="task_downloading_shared">Загружаем общие вышки…</string>
     <string name="task_sync_done">Синхронизация: отправлено вышек %1$d, получено %2$d</string>
-    <string name="task_sync_unverified">Требуется подтвердить почту; получено %1$d вышек без отправки</string>
-    <string name="task_sync_paused">Обмен приостановлен в личном кабинете; получено %1$d вышек без отправки</string>
-    <string name="task_sync_download_only">Получено %1$d вышек; войдите, чтобы отправить свои</string>
+    <plurals name="task_sync_unverified"><item quantity="one">Требуется подтвердить почту; получена %1$d вышка без отправки</item><item quantity="few">Требуется подтвердить почту; получено %1$d вышки без отправки</item><item quantity="many">Требуется подтвердить почту; получено %1$d вышек без отправки</item><item quantity="other">Требуется подтвердить почту; получено %1$d вышки без отправки</item></plurals>
+    <plurals name="task_sync_paused"><item quantity="one">Обмен приостановлен в личном кабинете; получена %1$d вышка без отправки</item><item quantity="few">Обмен приостановлен в личном кабинете; получено %1$d вышки без отправки</item><item quantity="many">Обмен приостановлен в личном кабинете; получено %1$d вышек без отправки</item><item quantity="other">Обмен приостановлен в личном кабинете; получено %1$d вышки без отправки</item></plurals>
+    <plurals name="task_sync_download_only"><item quantity="one">Получена %1$d вышка; войдите, чтобы отправить свои</item><item quantity="few">Получено %1$d вышки; войдите, чтобы отправить свои</item><item quantity="many">Получено %1$d вышек; войдите, чтобы отправить свои</item><item quantity="other">Получено %1$d вышки; войдите, чтобы отправить свои</item></plurals>
     <string name="task_sync_no_url">Сначала укажите адрес сервера</string>
     <string name="task_exporting">Экспорт… вышек: %1$d</string>
     <string name="task_exported">Экспортировано вышек: %1$d (%2$d КБ)</string>

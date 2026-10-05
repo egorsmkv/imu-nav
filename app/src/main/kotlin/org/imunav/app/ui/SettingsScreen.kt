@@ -92,6 +92,7 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
     val scroll = TopAppBarDefaults.pinnedScrollBehavior()
 
     var mccs by remember { mutableStateOf(c.mccs) }
+    LaunchedEffect(c.mccs) { if (mccs.isBlank()) mccs = c.mccs }
     var token by remember { mutableStateOf(mgr.savedToken()) }
     var syncUrl by remember { mutableStateOf(c.syncUrl) }
     var accountEmail by remember { mutableStateOf(c.accountEmail.orEmpty()) }
@@ -213,10 +214,11 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                             save()
                         },
                         stringResource(R.string.cells_region),
-                        "255",
+                        "310, 311",
                         keyboard = KeyboardType.Number,
                         helper = stringResource(R.string.cells_region_hint),
                     )
+                    if (mccs.isBlank()) Text(stringResource(R.string.cells_region_required), color = MaterialTheme.colorScheme.error)
 
                     // ---------------- Data sources
                     SectionHeader(stringResource(R.string.sec_sources))

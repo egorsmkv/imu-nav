@@ -201,8 +201,8 @@ class AppGraph(private val context: Context) {
         tripLog.write("terrain_match $on")
     }
 
-    /** Fixes outside this area are treated as spoofed. Set to [ServiceArea.EVERYWHERE] to use the app elsewhere. */
-    val serviceArea: ServiceArea = ServiceArea.UKRAINE_COARSE
+    /** Geography does not determine GPS trust; receiver and motion checks still reject spoofed fixes. */
+    val serviceArea: ServiceArea = ServiceArea.EVERYWHERE
     private val nativeTrustEvaluator = NativeTrustEvaluator(serviceArea)
     val hub = PositioningHub(area = serviceArea, trustEvaluator = nativeTrustEvaluator, jammingDetector = nativeTrustEvaluator).also { it.log = tripLog::write }
     private val nativeEstimator = NativeEstimatorBridge(tripLog::write)

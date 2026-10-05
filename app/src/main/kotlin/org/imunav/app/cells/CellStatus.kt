@@ -33,8 +33,8 @@ data class CellStatus(
     val radios: Set<Radio> = CellManager.DEFAULT_RADIOS,
     /** An OpenCellID token has been entered. */
     val hasToken: Boolean = false,
-    /** Country codes to import, comma-separated (255 = Ukraine). */
-    val mccs: String = "255",
+    /** Country codes to import, comma-separated; detected from the serving cell on first use. */
+    val mccs: String = "",
     /** Cell-sharing server settings. */
     val syncUrl: String = "",
     val accountEmail: String? = null,

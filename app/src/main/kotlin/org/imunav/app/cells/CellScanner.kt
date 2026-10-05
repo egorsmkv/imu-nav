@@ -43,6 +43,8 @@ class CellScanner(
     private val log: (String) -> Unit,
     /** Persist the exact contributing towers on this worker, without delaying main-thread consumers. */
     private val onUsage: (RawFix, CellFix) -> Unit = { _, _ -> },
+    /** Called on the scanner worker when the serving network identifies its country. */
+    private val onServingMcc: (Int) -> Unit = {},
     /** Cell types used for positioning; others are still recorded for learning. */
     private val enabledRadios: () -> Set<Radio> = { Radio.entries.toSet() },
     /** Scan period; re-read after every scan so power-mode changes apply at once. */
@@ -136,6 +138,7 @@ class CellScanner(
     /** Runs on the worker thread: turn modem data into observations, a position fix and (sometimes) a log line. */
     private fun process(cells: List<CellMeasurement>) {
         val observations = cells.map { it.observation }
+        observations.firstOrNull { it.serving && it.key.mcc in 1..999 }?.let { onServingMcc(it.key.mcc) }
         val now = SystemClock.elapsedRealtime()
         lastMeasurements = cells
         val radios = enabledRadios()
@@ -185,7 +188,7 @@ class CellScanner(
                 is CellInfoLte -> lte(cell, mcc, mnc)
                 is CellInfoGsm -> gsm(cell, mcc, mnc)
                 is CellInfoWcdma -> umts(cell, mcc, mnc)
-                else -> if (Build.VERSION.SDK_INT >= 29) Android10CellApi.nrObservation(cell, mcc, mnc) else null // CDMA/TD-SCDMA: not used in Ukraine
+                else -> if (Build.VERSION.SDK_INT >= 29) Android10CellApi.nrObservation(cell, mcc, mnc) else null // CDMA/TD-SCDMA are not supported.
             }
             observation?.let { CellMeasurement(it, elapsedMs) }
         }

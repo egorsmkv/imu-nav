@@ -177,8 +177,8 @@ pub struct TrustConfig {
 impl Default for TrustConfig {
     fn default() -> Self {
         Self {
-            altitude_min_m: -50.0,
-            altitude_max_m: 2_500.0,
+            altitude_min_m: -500.0,
+            altitude_max_m: 9_000.0,
             max_speed_mps: 150.0 / 3.6,
             max_accuracy_m: 100.0,
             max_clock_skew_ms: 30_000,

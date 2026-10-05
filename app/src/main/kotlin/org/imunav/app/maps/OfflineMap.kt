@@ -16,6 +16,7 @@ import kotlinx.coroutines.withContext
 import org.imunav.app.R
 import org.imunav.app.packs.PackTasks
 import org.imunav.core.cells.ResumableHttpInputStream
+import org.imunav.core.geo.GeoPoint
 import org.imunav.core.route.Route
 import org.imunav.core.route.RouteCorridor
 import org.imunav.core.util.PackFiles
@@ -48,11 +49,27 @@ fun mapStyle(offlineStyleJson: String?, dark: Boolean): Style.Builder =
     if (offlineStyleJson != null) Style.Builder().fromJson(offlineStyleJson) else Style.Builder().fromUri(MapStyles.online(dark))
 
 /** Description of an installed map display pack (its `pack.json`, written by `tools/make_map_pack.py`). */
-data class MapPackInfo(val name: String, val builtAt: String, val sizeBytes: Long, val maxZoom: Int) {
+data class MapPackInfo(val name: String, val builtAt: String, val sizeBytes: Long, val maxZoom: Int, val bounds: List<Double>? = null) {
+    /** Older packs without bounds retain their previous offline-style behavior. */
+    fun covers(point: GeoPoint): Boolean = bounds?.let { point.lat in it[0]..it[1] && point.lon in it[2]..it[3] } ?: true
+
     companion object {
         fun parse(json: String): MapPackInfo? = try {
             val o = JSONObject(json)
-            if (o.optString("kind") != "map") null else MapPackInfo(o.getString("name"), o.optString("builtAt"), o.optLong("sizeBytes"), o.optInt("maxzoom", 14))
+            if (o.optString("kind") != "map") {
+                null
+            } else {
+                val array = o.optJSONArray("bounds")
+                val bounds = if (array?.length() == 4) {
+                    List(4) { array.getDouble(it) }.takeIf { values ->
+                        values.all(Double::isFinite) && values[0] in -90.0..90.0 && values[1] in -90.0..90.0 &&
+                            values[2] in -180.0..180.0 && values[3] in -180.0..180.0 && values[0] <= values[1] && values[2] <= values[3]
+                    }
+                } else {
+                    null
+                }
+                MapPackInfo(o.getString("name"), o.optString("builtAt"), o.optLong("sizeBytes"), o.optInt("maxzoom", 14), bounds)
+            }
         } catch (_: JSONException) {
             null
         }
@@ -129,8 +146,9 @@ class OfflineMap(private val context: Context, private val scope: CoroutineScope
      * The style to draw with when the offline pack is in use: the pack's style with its
      * `{PACK_URI}` placeholder replaced by the pack folder. Null = use the online style.
      */
-    fun styleJson(dark: Boolean): String? {
+    fun styleJson(dark: Boolean, center: GeoPoint? = null): String? {
         if (!_status.value.offlineInUse) return null
+        if (center != null && _status.value.pack?.covers(center) == false) return null
         val (light, darkStyle) = styles ?: return null
         return if (dark) darkStyle else light
     }

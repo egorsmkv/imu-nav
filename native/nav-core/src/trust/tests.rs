@@ -51,6 +51,25 @@ fn clean_fix_is_good_and_becomes_anchor() {
 }
 
 #[test]
+fn high_altitude_worldwide_fix_is_allowed_but_invalid_coordinates_are_not() {
+    let mut classifier = TrustClassifier::new(TrustConfig::default());
+    let mut high_road = fix(1_000);
+    high_road.latitude_deg = 28.0;
+    high_road.longitude_deg = 86.0;
+    high_road.altitude_m = Some(5_200.0);
+    assert_eq!(
+        classifier.evaluate(input(high_road)).level,
+        TrustLevel::Good
+    );
+
+    let mut invalid = fix(2_000);
+    invalid.latitude_deg = 95.0;
+    let verdict = TrustClassifier::new(TrustConfig::default()).evaluate(input(invalid));
+    assert_eq!(verdict.level, TrustLevel::Bad);
+    assert!(verdict.reasons.contains(&Reason::Invalid));
+}
+
+#[test]
 fn mock_and_outside_fixes_are_bad() {
     let mut classifier = TrustClassifier::new(TrustConfig::default());
     let mut candidate = fix(1_000);
@@ -140,10 +159,10 @@ fn jamming_detector_ignores_missing_and_non_finite_agc() {
 fn physical_thresholds_accept_the_boundary_and_reject_beyond_it() {
     let config = TrustConfig::default();
     for (altitude, bad) in [
-        (-53.0, false),
-        (-53.1, true),
-        (2503.0, false),
-        (2503.1, true),
+        (config.altitude_min_m - 3.0, false),
+        (config.altitude_min_m - 3.1, true),
+        (config.altitude_max_m + 3.0, false),
+        (config.altitude_max_m + 3.1, true),
     ] {
         let mut candidate = fix(1000);
         candidate.altitude_m = Some(altitude);

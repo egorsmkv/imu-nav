@@ -82,7 +82,6 @@ import org.imunav.app.trips.TripTracks
 import org.imunav.app.trips.extractTracks
 import org.imunav.app.trips.tripShareIntent
 import org.imunav.core.geo.GeoPoint
-import org.imunav.core.geo.ServiceArea
 import org.imunav.core.route.TravelMode
 import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
@@ -193,7 +192,7 @@ fun TripDetailScreen(app: AppGraph, trip: TripSummary, onBack: () -> Unit) {
 
     LaunchedEffect(trip.id) {
         tracks = withContext(Dispatchers.IO) {
-            runCatching { extractTracks(app.trips.recordingFile(trip), ServiceArea.UKRAINE_COARSE) }.getOrNull() ?: TripTracks(emptyList(), emptyList(), 0)
+            runCatching { extractTracks(app.trips.recordingFile(trip), app.serviceArea) }.getOrNull() ?: TripTracks(emptyList(), emptyList(), 0)
         }
     }
 

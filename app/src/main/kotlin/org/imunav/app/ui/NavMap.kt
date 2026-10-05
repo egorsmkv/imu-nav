@@ -46,7 +46,7 @@ import kotlin.math.abs
 /** Imperative handle for map buttons (zoom, re-center) living outside the map composable. */
 @Stable
 class MapController {
-    internal var map: MapLibreMap? = null
+    internal var map by mutableStateOf<MapLibreMap?>(null)
 
     /** Zoom picked by the user; while following, it replaces the automatic zoom. */
     var followZoom by mutableStateOf<Double?>(null)
@@ -100,8 +100,8 @@ fun NavMap(
     /** Glide the camera between positions, or jump (one frame per update instead of a 450 ms animation). */
     animateCamera: Boolean = true,
     /** Where the camera starts before any position is known (Settings → Map start). */
-    initialCenter: GeoPoint = MapStartPrefs.KYIV,
-    initialZoom: Double = 12.0,
+    initialCenter: GeoPoint = MapStartPrefs.WORLD,
+    initialZoom: Double = MapStartPrefs.OVERVIEW_ZOOM,
     /** Zoom while following the position (closer when walking). */
     followZoomDefault: Double = 16.0,
     /** Style of the installed offline map pack; null = online map. */
@@ -141,6 +141,7 @@ fun NavMap(
         lifecycle.addObserver(observer)
         onDispose {
             lifecycle.removeObserver(observer)
+            controller.map = null
             // Without this every discarded map leaked its native map and GL surface.
             moveMapTo(MapViewState.CREATED)
             mapView.onDestroy()

@@ -8,7 +8,7 @@ The phone can estimate a rough position from nearby cell towers when GPS is unav
 
 1. During setup, choose **Install built-in towers** if offered. This is optional.
 2. In **Settings → Cell towers**, you can also import a CSV file or download OpenCellID or Mozilla data. OpenCellID needs a token that you enter yourself.
-3. Set the country codes you want to keep; the default `255` is Ukraine.
+3. The app initially chooses the serving network's country code (MCC), if available. Check or edit it before importing, downloading or syncing. Without a detected code, enter one in Settings.
 4. Open the cell status and usage history to see what the phone is using.
 
 ## Sync with a sharing server

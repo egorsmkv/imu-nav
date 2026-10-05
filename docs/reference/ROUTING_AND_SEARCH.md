@@ -14,7 +14,7 @@ streets, preferring pleasant ways over busy roads). Choose _Car_ or _Walk_ in th
 before starting. Walking routes are offline-only (the public OSRM server drives only). Packs built
 before walking support (`pack.json` without `"profiles"`) still load; _Walk_ is then disabled.
 
-Build a pack (needs a desktop JVM; the full Ukraine takes a few minutes and ~10 GB RAM):
+Build one active routing pack for the region you need (needs a desktop JVM; a full Ukraine pack takes a few minutes and ~10 GB RAM). Use an OSM extract for another country in the same command:
 
 ```bash
 curl -LO https://download.geofabrik.de/europe/ukraine-latest.osm.pbf

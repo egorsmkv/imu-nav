@@ -38,6 +38,17 @@ class ComponentsTest {
     }
 
     @Test
+    fun worldwideFixesKeepCoordinateAndAltitudeChecks() {
+        val classifier = TrustClassifier(area = ServiceArea.EVERYWHERE)
+        val highRoad = gps(1000, 28.0, 86.0).copy(altitudeM = 5200.0)
+        assertEquals(TrustLevel.GOOD, classifier.evaluate(highRoad, null, null, healthyGnss.copy(elapsedMs = 900), false, null, highRoad.timeMs).level)
+        val invalid = gps(2000, 95.0, 86.0)
+        val verdict = TrustClassifier(area = ServiceArea.EVERYWHERE).evaluate(invalid, null, null, healthyGnss.copy(elapsedMs = 1900), false, null, invalid.timeMs)
+        assertEquals(TrustLevel.BAD, verdict.level)
+        assertTrue("invalid" in verdict.reasons)
+    }
+
+    @Test
     fun mockAndOutsideAreaAreBad() {
         val c = TrustClassifier(area = ServiceArea.UKRAINE_COARSE)
         val mock = gps(1000, kyiv.lat, kyiv.lon, mock = true)

@@ -83,6 +83,7 @@ class TrustClassifier(private val config: TrustConfig = TrustConfig(), private v
         val c = config
         val speed = fix.speedMps
         val acc = fix.accuracyM
+        if (!fix.lat.isFinite() || !fix.lon.isFinite() || fix.lat !in -90.0..90.0 || fix.lon !in -180.0..180.0) r.hard += "invalid"
         if (fix.isMock) r.hard += "mock"
         if (!area.contains(fix.lat, fix.lon)) r.hard += "outside_area"
         fix.altitudeM?.let { alt ->

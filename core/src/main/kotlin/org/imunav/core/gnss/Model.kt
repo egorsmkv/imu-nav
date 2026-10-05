@@ -89,14 +89,14 @@ data class JudgedFix(val fix: RawFix, val verdict: Verdict)
 enum class GpsState { OK, DEGRADED, LOST }
 
 /**
- * Thresholds of the spoofing / jamming classifier ([TrustClassifier]). The defaults were tuned for
- * cars in Ukraine; change them only with recorded trips to test against (see the `replay` tool).
+ * Thresholds of the spoofing / jamming classifier ([TrustClassifier]). Motion and receiver thresholds
+ * were tuned with recorded trips; change them only with replay tests (see the `replay` tool).
  */
 data class TrustConfig(
     // --- Checks on the fix alone (hard: fail ⇒ BAD)
-    /** Plausible altitude range for a car, metres (Ukraine: sea level … Carpathian passes). */
-    val altMinM: Double = -50.0,
-    val altMaxM: Double = 2500.0,
+    /** Broad global altitude bounds; local road height is checked separately when available. */
+    val altMinM: Double = -500.0,
+    val altMaxM: Double = 9000.0,
     /** Faster than this is not a car. */
     val maxSpeedKmh: Double = 150.0,
     /** Fixes claiming worse accuracy than this are useless for navigation. */

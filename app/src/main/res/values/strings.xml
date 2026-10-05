@@ -190,7 +190,8 @@
     <string name="cells_types_hint">Used for positioning and shown on the map</string>
     <string name="cells_none_warning">No type selected — cell positioning is off</string>
     <string name="cells_region">Country codes (MCC)</string>
-    <string name="cells_region_hint">255 = Ukraine; separate several with commas</string>
+    <string name="cells_region_hint">Detected from the serving network when available; separate multiple MCCs with commas.</string>
+    <string name="cells_region_required">Choose a country code (MCC) before importing, downloading, or syncing towers.</string>
     <string name="cells_total">%1$s towers in the database</string>
     <string name="src_label_shared">sharing server</string>
     <string name="src_label_ocid">OpenCellID</string>
@@ -311,9 +312,9 @@
     <string name="task_uploading">Uploading towers: %1$d…</string>
     <string name="task_downloading_shared">Downloading shared towers…</string>
     <string name="task_sync_done">Sync: towers sent %1$d, received %2$d</string>
-    <string name="task_sync_unverified">Email verification needed; received %1$d towers without uploading</string>
-    <string name="task_sync_paused">Sharing paused in your account panel; received %1$d towers without uploading</string>
-    <string name="task_sync_download_only">Downloaded %1$d towers; sign in to upload your own</string>
+    <plurals name="task_sync_unverified"><item quantity="one">Email verification needed; received %1$d tower without uploading</item><item quantity="other">Email verification needed; received %1$d towers without uploading</item></plurals>
+    <plurals name="task_sync_paused"><item quantity="one">Sharing paused in your account panel; received %1$d tower without uploading</item><item quantity="other">Sharing paused in your account panel; received %1$d towers without uploading</item></plurals>
+    <plurals name="task_sync_download_only"><item quantity="one">Downloaded %1$d tower; sign in to upload your own</item><item quantity="other">Downloaded %1$d towers; sign in to upload your own</item></plurals>
     <string name="task_sync_no_url">Set a server URL first</string>
     <string name="task_exporting">Exporting… towers: %1$d</string>
     <string name="task_exported">Towers exported: %1$d (%2$d KB)</string>

@@ -92,8 +92,8 @@ Jump to: [A to D](#a-to-d) · [E to K](#e-to-k) · [L to R](#l-to-r) · [S to Z]
 
 ## S to Z
 
-- **Service area** — The geographic region where the app currently accepts satellite fixes; its
-  default is a coarse Ukraine outline. [Limitations](STATUS_AND_LIMITATIONS.md).
+- **Service area** — The geographic region where satellite fixes are accepted. The app now accepts
+  valid fixes worldwide; a restricted area can still be used in tests. [Limitations](STATUS_AND_LIMITATIONS.md).
 - **SQLite** — A small database stored in a file. The app uses it for local data, and the sharing
   server uses it for accounts and towers. [Cell guide](CELL_TOWERS.md).
 - **Spoofing / jamming** — Spoofing supplies a false satellite position; jamming disrupts satellite

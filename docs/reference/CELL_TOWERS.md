@@ -21,7 +21,10 @@ Tower locations come from four sources, each in its own table and looked up in t
 | **Mozilla**     | _Download Mozilla data_ streams the Mozilla Location Service final export (1.5 GB, public domain, March 2024) from archive.org, keeping only your region's MCCs; resumes after network drops, nothing large is stored.                                                                                                                                                              |
 | **Built-in**    | Shipped inside the APK (`app/src/main/assets/cells/bundled-cells.csv.gz`, ~530k Ukrainian towers compiled from OpenCellID + Mozilla). Optional: choose **Install built-in towers** in onboarding (or reopen **Settings → Set up IMU Nav**) to import it (~20 s). After opting in, changed archives are imported on app updates. Lowest priority, so anything downloaded later wins. |
 
-All imports are filtered to the configured country codes (default `255`, Ukraine).
+Imports, downloads and sync use the configured country codes. On a new installation the serving
+network's MCC is selected when a cell scan provides one. Existing saved codes stay unchanged;
+without a detected or entered MCC these operations wait for a country selection. The bundled
+Ukraine tower database remains optional and does not set the MCC filter.
 
 **Usage history:** **Settings → Cell towers → Cell tower usage history** shows the latest 20 tower
 contributions and can share the complete history as a UTF-8 CSV file through Android's share sheet.
@@ -71,7 +74,8 @@ resist **poisoning** (a phone or a script uploading fake tower positions):
   by uploading many samples; positions far from the consensus (MAD-based) are dropped as outliers.
 - A new tower is published only after `--min-devices` (default 2) independent devices agree, or if it
   came from the seed import (which counts as a strong vote).
-- Rows outside the service area, jumps > 5 km from the consensus, and absurd ranges are rejected.
+- Rows outside an optional administrator-configured service area, jumps > 5 km from the consensus,
+  and absurd ranges are rejected. The server default accepts coordinates worldwide.
 - Rate limits per device and per IP, and a cap on new device ids per IP per day.
 
 ```bash

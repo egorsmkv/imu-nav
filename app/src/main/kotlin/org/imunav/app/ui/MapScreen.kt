@@ -169,9 +169,9 @@ fun MapScreen(
     LaunchedEffect(nav.active, hasLocation, ui.locationEnabled) { headerScroll.scrollTo(0) }
     // GPS mode: jump to the first live trusted position once, so the map shows where the user is.
     // Fixed mode keeps the chosen place; the re-centre button still goes to the position.
-    LaunchedEffect(ui.currentPosition != null) {
+    LaunchedEffect(ui.currentPosition != null, controller.map) {
         val p = ui.currentPosition
-        if (!centeredOnce && p != null && !nav.active && startMode == MapStartMode.GPS) {
+        if (!centeredOnce && controller.map != null && p != null && !nav.active && startMode == MapStartMode.GPS) {
             centeredOnce = true
             controller.moveTo(p, 14.0)
         }
@@ -253,7 +253,7 @@ fun MapScreen(
             initialCenter = startView.point,
             initialZoom = startView.zoom,
             followZoomDefault = if (nav.travelMode == TravelMode.FOOT) 17.5 else 16.0,
-            offlineStyleJson = if (offlineMapStatus.offlineInUse) app.offlineMap.styleJson(dark) else null,
+            offlineStyleJson = if (offlineMapStatus.offlineInUse) app.offlineMap.styleJson(dark, mapCenter ?: startView.point) else null,
             active = mapActive && (searchTarget == null || landscape),
         )
 
