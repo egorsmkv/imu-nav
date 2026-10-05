@@ -1,6 +1,12 @@
 use super::*;
 
 #[test]
+fn pass_names_cover_orchestration_and_optional_profiling() {
+    assert_eq!(Pass::All.name(), "all");
+    assert_eq!(Pass::Hotpath.name(), "hotpath");
+}
+
+#[test]
 fn cli_rejects_invalid_sizes_and_accepts_stress() {
     assert!(Cli::try_parse_from(["sim", "run", "--out", "unused", "--duration-s", "0"]).is_err());
     assert!(Cli::try_parse_from(["sim", "run", "--out", "unused", "--route-points", "1"]).is_err());
