@@ -20,7 +20,7 @@ jobs:
         suite: [native, server]
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18-bookworm
         env:
           POSTGRES_DB: imu_nav_test
           POSTGRES_USER: postgres

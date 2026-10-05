@@ -3,7 +3,7 @@
 The reference sharing server preserves the Android app's gzip-CSV sync protocol while storing every
 per-device contribution and materialized consensus in SQLite or PostgreSQL. SQLite is the default
 and runs in WAL mode, so downloads and management reads can continue during uploads. Building the
-server requires Rust 1.88 or newer.
+server requires Rust 1.99 or newer.
 
 ```bash
 cargo build --release --manifest-path server/Cargo.toml
@@ -26,8 +26,8 @@ the command reads one line instead. It never logs the password. For example, if 
 
 ### Production with Compose
 
-The repository's [Compose file](../compose.yml) builds the Rust server, starts PostgreSQL 16,
-and keeps database files in the `postgres_data` volume. The server reads the checked-in
+The repository's [Compose file](../compose.yml) builds the Rust server, starts PostgreSQL 18,
+and keeps database files in the `postgres18_data` volume. The server reads the checked-in
 [production TOML](config.production.toml); it contains no credentials. PostgreSQL and SMTP
 credentials come from a local `.env` file. Set up a TLS reverse proxy on the same host before
 letting users sign in or upload data:
@@ -60,6 +60,35 @@ example with `docker compose exec -T postgres pg_dump -U imu_nav -d imu_nav -Fc 
 Keep backups outside this repository and restrict access to them.
 Changing `POSTGRES_PASSWORD` in `.env` after PostgreSQL has initialized does not rotate the
 password stored in its database.
+
+**Upgrading an existing Compose deployment from PostgreSQL 16:** [PostgreSQL 18 requires a major-version migration](https://www.postgresql.org/docs/18/release-18.html),
+and the [official container changed its data mount](https://github.com/docker-library/docs/blob/master/postgres/content.md#pgdata).
+Stop the server before exporting the old database, and
+keep the old volume and a separate backup until the restored server has been checked. Run these
+commands while the old PostgreSQL 16 container is still running:
+
+```bash
+docker compose stop server
+docker compose exec -T postgres pg_dump -U imu_nav -d imu_nav -Fc > /secure/backup/cells-pg16.dump
+test -s /secure/backup/cells-pg16.dump
+```
+
+After updating this repository, start only PostgreSQL 18, restore into its empty database, then
+start the server. Wait until `docker compose ps` shows PostgreSQL as healthy before restoring:
+
+```bash
+docker compose rm -sf postgres
+docker compose up -d postgres
+docker compose exec -T postgres pg_restore -U imu_nav -d imu_nav --no-owner --no-privileges --single-transaction --exit-on-error < /secure/backup/cells-pg16.dump
+docker compose up -d --build server
+curl http://127.0.0.1:8080/health
+```
+
+The new volume name prevents the PostgreSQL 18 container from silently initializing over the
+old volume. `rm -sf` removes only the old container, leaving its data volume intact. Do not run
+`docker compose down -v` during migration; it removes named volumes.
+If the old database has additional roles or databases beyond this Compose setup, migrate them
+separately before switching traffic.
 
 If your installation uses the standalone `docker-compose` command, substitute it for
 `docker compose` in these examples.
@@ -320,4 +349,4 @@ cargo clippy --manifest-path server/Cargo.toml --all-targets -- -W clippy::pedan
 ```
 
 PostgreSQL integration tests also run when `TEST_POSTGRES_URL` points at a disposable database.
-The CI coverage job supplies PostgreSQL 16 and includes these tests in the server coverage gate.
+The CI coverage job supplies PostgreSQL 18 and includes these tests in the server coverage gate.

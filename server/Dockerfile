@@ -1,4 +1,4 @@
-FROM rust:1.88-bookworm AS build
+FROM rust:1.99-bookworm AS build
 
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential libssl-dev pkg-config \
     && rm -rf /var/lib/apt/lists/*
