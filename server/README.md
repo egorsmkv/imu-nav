@@ -42,6 +42,9 @@ gzip CSV. It can delete individual observations or all observations, pause and r
 change password or email, revoke other sessions, and close the account. The server does not store
 trip recordings. Other accounts' and seed observations are never included in account exports or
 deletions. Deletion recalculates shared consensus and updates management WebSocket subscribers.
+Web pages show observation, session, tower, and administrator activity times in UTC. The account
+page accepts UTC date and time filters with second precision; existing links with Unix-second
+`from_s` and `to_s` values still work. CSV and JSON timestamps remain Unix seconds.
 Deleted cell keys remain blocked for that account so a phone with an old local copy cannot
 silently reupload them. Deleting all also pauses uploads; resuming needs the account password.
 

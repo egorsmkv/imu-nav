@@ -332,6 +332,40 @@ async fn browser_account_pages_show_and_delete_only_owned_contributions() -> Res
     let body = panel.text().await?;
     assert!(body.contains(&first_device));
     assert!(!body.contains(&second_device));
+    assert!(body.contains("type=\"datetime-local\" step=\"1\""));
+    assert!(body.contains("Updated at or after (UTC)"));
+    assert!(body.contains("<time datetime=\""));
+    assert!(body.contains(" UTC</time>"));
+    let future_filter = browser
+        .get(format!(
+            "{}/account?from_s=2099-01-01T00:00:00",
+            server.base_url
+        ))
+        .header("cookie", &first_cookie)
+        .send()
+        .await?;
+    assert_eq!(future_filter.status(), StatusCode::OK);
+    let future_html = future_filter.text().await?;
+    assert!(future_html.contains("0 matching observations"));
+    assert!(future_html.contains("value=\"2099-01-01T00:00:00\""));
+    let legacy_filter = browser
+        .get(format!("{}/account?from_s=1", server.base_url))
+        .header("cookie", &first_cookie)
+        .send()
+        .await?;
+    assert_eq!(legacy_filter.status(), StatusCode::OK);
+    let legacy_html = legacy_filter.text().await?;
+    assert!(legacy_html.contains(&first_device));
+    assert!(legacy_html.contains("value=\"1970-01-01T00:00:01\""));
+    let invalid_filter = browser
+        .get(format!(
+            "{}/account?from_s=2024-02-30T00:00",
+            server.base_url
+        ))
+        .header("cookie", &first_cookie)
+        .send()
+        .await?;
+    assert_eq!(invalid_filter.status(), StatusCode::BAD_REQUEST);
     let export = browser
         .get(format!("{}/account/export?mcc=255", server.base_url))
         .header("cookie", &first_cookie)
@@ -342,6 +376,63 @@ async fn browser_account_pages_show_and_delete_only_owned_contributions() -> Res
     flate2::read::GzDecoder::new(export.bytes().await?.as_ref()).read_to_string(&mut csv)?;
     assert!(csv.contains(&first_device));
     assert!(!csv.contains(&second_device));
+    let filtered_export = browser
+        .get(format!(
+            "{}/account/export?to_s=2000-01-01T00:00:00",
+            server.base_url
+        ))
+        .header("cookie", &first_cookie)
+        .send()
+        .await?;
+    assert_eq!(filtered_export.status(), StatusCode::OK);
+    let mut filtered_csv = String::new();
+    flate2::read::GzDecoder::new(filtered_export.bytes().await?.as_ref())
+        .read_to_string(&mut filtered_csv)?;
+    assert!(!filtered_csv.contains(&first_device));
+    let extra_towers = (0..100)
+        .map(|index| {
+            let mut cell = tower(50.4);
+            cell.key.cid = 1_000 + index;
+            Consensus {
+                tower: cell,
+                devices: 2,
+                seeded: false,
+                updated_s: 1,
+            }
+        })
+        .collect::<Vec<_>>();
+    let extra_upload = browser
+        .post(format!("{}/v1/cells", server.base_url))
+        .bearer_auth(first_login["access_token"].as_str().unwrap())
+        .header("x-device-id", "device-first")
+        .body(encode_towers(&extra_towers)?)
+        .send()
+        .await?;
+    assert_eq!(extra_upload.status(), StatusCode::OK);
+    let first_page = browser
+        .get(format!("{}/account?from_s=1", server.base_url))
+        .header("cookie", &first_cookie)
+        .send()
+        .await?
+        .text()
+        .await?;
+    assert!(first_page.contains("101 matching observations"));
+    assert!(first_page.contains("Next page"));
+    assert!(first_page.contains("name=\"from_s\" value=\"1970-01-01T00:00:01\""));
+    let second_page = browser
+        .get(format!(
+            "{}/account?page=1&from_s=1970-01-01T00:00:01",
+            server.base_url
+        ))
+        .header("cookie", &first_cookie)
+        .send()
+        .await?
+        .text()
+        .await?;
+    assert!(second_page.contains("101 matching observations"));
+    assert!(second_page.contains("Page 2"));
+    assert!(second_page.contains("Previous page"));
+    assert!(second_page.contains("name=\"from_s\" value=\"1970-01-01T00:00:01\""));
     let csrf = body
         .split("name=\"csrf\" value=\"")
         .nth(1)
@@ -767,6 +858,8 @@ async fn admin_pages_use_session_and_render_controls() -> Result<()> {
     assert!(dashboard_html.contains("Save and recalculate"));
     assert!(dashboard_html.contains("name=\"status\""));
     assert!(dashboard_html.contains("Page 1 of matching towers"));
+    assert!(dashboard_html.contains("Times are in UTC"));
+    assert!(dashboard_html.contains("<time datetime=\""));
     let script = client
         .get(format!("{}/admin/admin.js", server.base_url))
         .header("cookie", &cookie)
@@ -806,6 +899,7 @@ async fn admin_pages_use_session_and_render_controls() -> Result<()> {
     assert!(detail_html.contains("50.4500000"));
     assert!(detail_html.contains("Manual correction"));
     assert!(detail_html.contains("Quarantine tower"));
+    assert!(detail_html.contains("<time datetime=\""));
     let observation_page = client
         .get(format!(
             "{}/admin/towers/LTE/255/1/1864/99?page=2",
@@ -1006,6 +1100,7 @@ async fn admin_pages_use_session_and_render_controls() -> Result<()> {
         .text()
         .await?;
     assert!(audit_filter.contains("<td>quarantine_tower</td>"));
+    assert!(audit_filter.contains("<time datetime=\""));
     Ok(())
 }
 

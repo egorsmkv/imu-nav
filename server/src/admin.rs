@@ -169,7 +169,7 @@ struct TowerRow {
     seeded: bool,
     status: &'static str,
     status_class: &'static str,
-    updated_s: i64,
+    updated_time: web::WebTime,
     quarantined: bool,
 }
 
@@ -210,8 +210,50 @@ impl TowerRow {
             seeded: consensus.seeded,
             status,
             status_class,
-            updated_s: consensus.updated_s,
+            updated_time: web::utc_time(consensus.updated_s),
             quarantined,
+        }
+    }
+}
+
+/// Keep storage timestamps out of the administrator activity template.
+struct AuditRow {
+    actor_id: i64,
+    action: String,
+    target: String,
+    at: web::WebTime,
+}
+
+impl From<crate::store::management::AuditEntry> for AuditRow {
+    fn from(entry: crate::store::management::AuditEntry) -> Self {
+        Self {
+            actor_id: entry.actor_id,
+            action: entry.action,
+            target: entry.target,
+            at: web::utc_time(entry.at_s),
+        }
+    }
+}
+
+/// Format a tower observation once before rendering its detail page.
+struct ObservationRow {
+    device: String,
+    lat: f64,
+    lon: f64,
+    range_m: f64,
+    samples: i64,
+    updated_time: web::WebTime,
+}
+
+impl From<crate::store::OwnContribution> for ObservationRow {
+    fn from(observation: crate::store::OwnContribution) -> Self {
+        Self {
+            device: observation.device,
+            lat: observation.lat,
+            lon: observation.lon,
+            range_m: observation.range_m,
+            samples: observation.samples,
+            updated_time: web::utc_time(observation.updated_s),
         }
     }
 }
@@ -244,7 +286,7 @@ struct AdminTemplate {
     towers: Vec<TowerRow>,
     csrf: String,
     accounts: Vec<crate::store::management::ManagedAccount>,
-    audit: Vec<crate::store::management::AuditEntry>,
+    audit: Vec<AuditRow>,
     policy: Policy,
     job_kind: String,
     job_status: String,
@@ -261,7 +303,7 @@ struct TowerTemplate {
     tower: TowerRow,
     minimum_devices: usize,
     csrf: String,
-    observations: Vec<crate::store::OwnContribution>,
+    observations: Vec<ObservationRow>,
     observation_page: usize,
     observation_previous: usize,
     observation_next: usize,
@@ -395,7 +437,11 @@ async fn dashboard(
         towers: towers.into_iter().take(limit).collect(),
         csrf: web::csrf_token(&raw),
         accounts: accounts.into_iter().take(ACCOUNT_PAGE_SIZE).collect(),
-        audit: audit.into_iter().take(AUDIT_PAGE_SIZE).collect(),
+        audit: audit
+            .into_iter()
+            .take(AUDIT_PAGE_SIZE)
+            .map(AuditRow::from)
+            .collect(),
         policy,
         job_kind,
         job_status,
@@ -444,6 +490,7 @@ async fn tower_detail(
         observations: observations
             .into_iter()
             .take(OBSERVATION_PAGE_SIZE)
+            .map(ObservationRow::from)
             .collect(),
         observation_page: page,
         observation_previous: page.saturating_sub(1),

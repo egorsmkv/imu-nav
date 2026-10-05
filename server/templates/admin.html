@@ -94,7 +94,7 @@
         {% else %}
         <div class="table-responsive">
             <table class="table table-hover table-striped align-middle mb-0">
-                <caption class="px-3">Page {{ tower_page }} of matching towers. Times are Unix seconds.</caption>
+                <caption class="px-3">Page {{ tower_page }} of matching towers. Times are in UTC.</caption>
                 <thead class="table-light">
                     <tr>
                         <th scope="col">Status</th>
@@ -125,7 +125,7 @@
                         <td>{{ tower.range_m }} m</td>
                         <td>{{ tower.samples }}</td>
                         <td>{{ tower.devices }}</td>
-                        <td class="font-monospace">{{ tower.updated_s }}</td>
+                        <td><time {% if tower.updated_time.valid %}datetime="{{ tower.updated_time.datetime }}"{% endif %}>{{ tower.updated_time.display }}</time></td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -186,7 +186,7 @@
     </tbody></table></div><form class="card-footer d-flex align-items-center gap-2" method="get" action="/admin"><input type="hidden" name="email" value="{{ email }}">{% if account_page > 1 %}<button class="btn btn-outline-secondary btn-sm" name="account_page" value="{{ account_previous }}">Previous</button>{% endif %}<span>Page {{ account_page }}</span>{% if account_has_next %}<button class="btn btn-outline-secondary btn-sm" name="account_page" value="{{ account_next }}">Next</button>{% endif %}</form></section>
 
     <section class="card"><div class="card-header d-flex justify-content-between"><h2 class="h5 mb-0">Administrator activity</h2><form method="get" action="/admin"><input name="audit_action" aria-label="Filter by action" placeholder="Filter action" value="{{ audit_action }}"><button class="btn btn-outline-secondary btn-sm">Search</button></form></div><div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Time</th><th>Actor ID</th><th>Action</th><th>Target</th></tr></thead><tbody>
-        {% for entry in audit %}<tr><td>{{ entry.at_s }}</td><td>{{ entry.actor_id }}</td><td>{{ entry.action }}</td><td>{{ entry.target }}</td></tr>{% endfor %}
+        {% for entry in audit %}<tr><td><time {% if entry.at.valid %}datetime="{{ entry.at.datetime }}"{% endif %}>{{ entry.at.display }}</time></td><td>{{ entry.actor_id }}</td><td>{{ entry.action }}</td><td>{{ entry.target }}</td></tr>{% endfor %}
     </tbody></table></div><form class="card-footer d-flex align-items-center gap-2" method="get" action="/admin"><input type="hidden" name="audit_action" value="{{ audit_action }}">{% if audit_page > 1 %}<button class="btn btn-outline-secondary btn-sm" name="audit_page" value="{{ audit_previous }}">Previous</button>{% endif %}<span>Page {{ audit_page }}</span>{% if audit_has_next %}<button class="btn btn-outline-secondary btn-sm" name="audit_page" value="{{ audit_next }}">Next</button>{% endif %}</form></section>
 </main>
 <script src="/admin/admin.js" defer></script>

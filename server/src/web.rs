@@ -18,7 +18,10 @@ use rusqlite::params;
 use serde::Deserialize;
 use std::net::SocketAddr;
 use std::str::FromStr;
-use time::{OffsetDateTime, format_description::well_known::Rfc3339};
+use time::{
+    OffsetDateTime, PrimitiveDateTime, format_description::well_known::Rfc3339,
+    macros::format_description,
+};
 use tokio_util::io::ReaderStream;
 
 pub(crate) const WEB_LIFETIME_S: i64 = 7 * 24 * 60 * 60;
@@ -96,15 +99,107 @@ struct Impersonation {
 struct SessionRow {
     id: String,
     label: String,
-    expires: String,
+    expires: WebTime,
     current: bool,
 }
 
-fn utc_time(epoch_s: i64) -> String {
+/// Display a database timestamp as UTC while retaining a machine-readable HTML value.
+pub(crate) struct WebTime {
+    pub display: String,
+    pub datetime: String,
+    pub valid: bool,
+}
+
+pub(crate) fn utc_time(epoch_s: i64) -> WebTime {
     OffsetDateTime::from_unix_timestamp(epoch_s)
         .ok()
-        .and_then(|value| value.format(&Rfc3339).ok())
-        .unwrap_or_else(|| epoch_s.to_string())
+        .and_then(|value| {
+            Some(WebTime {
+                display: value
+                    .format(format_description!(
+                        "[day padding:none] [month repr:short] [year], [hour]:[minute]:[second] UTC"
+                    ))
+                    .ok()?,
+                datetime: value.format(&Rfc3339).ok()?,
+                valid: true,
+            })
+        })
+        .unwrap_or_else(|| WebTime {
+            display: format!("Invalid time (Unix {epoch_s})"),
+            datetime: String::new(),
+            valid: false,
+        })
+}
+
+/// Date-time inputs have no zone, so the page and parser both treat them as UTC.
+fn utc_input(epoch_s: i64) -> String {
+    OffsetDateTime::from_unix_timestamp(epoch_s)
+        .ok()
+        .and_then(|value| {
+            value
+                .format(format_description!(
+                    "[year]-[month]-[day]T[hour]:[minute]:[second]"
+                ))
+                .ok()
+        })
+        .unwrap_or_default()
+}
+
+fn parse_utc_filter(raw: &str) -> Result<i64, &'static str> {
+    if let Ok(epoch_s) = raw.parse::<i64>() {
+        return OffsetDateTime::from_unix_timestamp(epoch_s)
+            .map(|_| epoch_s)
+            .map_err(|_| "Timestamp is outside the supported range");
+    }
+    let second_format = format_description!("[year]-[month]-[day]T[hour]:[minute]:[second]");
+    let minute_format = format_description!("[year]-[month]-[day]T[hour]:[minute]");
+    let datetime = PrimitiveDateTime::parse(raw, second_format)
+        .or_else(|_| PrimitiveDateTime::parse(raw, minute_format))
+        .map_err(|_| "Use a valid UTC date and time")?;
+    Ok(datetime.assume_utc().unix_timestamp())
+}
+
+fn optional_utc_filter<'de, D>(deserializer: D) -> Result<Option<i64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw = String::deserialize(deserializer)?;
+    if raw.is_empty() {
+        Ok(None)
+    } else {
+        parse_utc_filter(&raw)
+            .map(Some)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+#[cfg(test)]
+mod time_tests {
+    use super::{parse_utc_filter, utc_input, utc_time};
+
+    #[test]
+    fn utc_display_and_input_keep_the_exact_second() {
+        let time = utc_time(1_706_753_445);
+        assert!(time.valid);
+        assert_eq!(time.display, "1 Feb 2024, 02:10:45 UTC");
+        assert_eq!(time.datetime, "2024-02-01T02:10:45Z");
+        assert_eq!(utc_input(1_706_753_445), "2024-02-01T02:10:45");
+        assert_eq!(
+            parse_utc_filter(&utc_input(1_706_753_445)),
+            Ok(1_706_753_445)
+        );
+        assert!(!utc_time(i64::MAX).valid);
+    }
+
+    #[test]
+    fn utc_filter_accepts_browser_values_and_legacy_unix_seconds() {
+        assert_eq!(parse_utc_filter("2024-02-01T02:10:45"), Ok(1_706_753_445));
+        assert_eq!(parse_utc_filter("2024-02-01T02:10"), Ok(1_706_753_400));
+        assert_eq!(parse_utc_filter("1706753445"), Ok(1_706_753_445));
+        assert!(parse_utc_filter("2024-02-30T02:10").is_err());
+        assert!(parse_utc_filter("2024-02-01T25:10").is_err());
+        assert!(parse_utc_filter("999999999999999999").is_err());
+    }
 }
 
 /// Preformatted fields keep display logic and URL construction out of the template.
@@ -120,7 +215,7 @@ struct AccountRow {
     lon: String,
     range_m: String,
     samples: i64,
-    updated_text: String,
+    updated_time: WebTime,
 }
 
 impl From<OwnContributionPage> for Vec<AccountRow> {
@@ -144,7 +239,7 @@ impl From<OwnContributionPage> for Vec<AccountRow> {
                 lon: format!("{:.7}", row.lon),
                 range_m: format!("{:.0}", row.range_m),
                 samples: row.samples,
-                updated_text: utc_time(row.updated_s),
+                updated_time: utc_time(row.updated_s),
             })
             .collect()
     }
@@ -208,9 +303,9 @@ struct AccountQuery {
     device: Option<String>,
     #[serde(default, deserialize_with = "optional_number")]
     mcc: Option<i64>,
-    #[serde(default, deserialize_with = "optional_number")]
+    #[serde(default, deserialize_with = "optional_utc_filter")]
     from_s: Option<i64>,
-    #[serde(default, deserialize_with = "optional_number")]
+    #[serde(default, deserialize_with = "optional_utc_filter")]
     to_s: Option<i64>,
     message: Option<String>,
 }
@@ -738,12 +833,8 @@ async fn account_page(
             filter_mcc: filter
                 .mcc
                 .map_or_else(String::new, |value| value.to_string()),
-            filter_from: filter
-                .from_s
-                .map_or_else(String::new, |value| value.to_string()),
-            filter_to: filter
-                .to_s
-                .map_or_else(String::new, |value| value.to_string()),
+            filter_from: filter.from_s.map_or_else(String::new, utc_input),
+            filter_to: filter.to_s.map_or_else(String::new, utc_input),
             sharing_enabled,
             email_verified,
             message: account_message(query.message.as_deref()).to_owned(),

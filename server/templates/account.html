@@ -56,8 +56,8 @@
     <form action="/account" method="get" class="filters">
       <div><label for="device">Device ID contains</label><input id="device" name="device" type="text" maxlength="100" value="{{ filter_device }}"></div>
       <div><label for="mcc">Mobile country code</label><input id="mcc" name="mcc" type="number" min="1" max="999" value="{{ filter_mcc }}"></div>
-      <div><label for="from-s">Updated after (Unix seconds)</label><input id="from-s" name="from_s" type="number" min="0" value="{{ filter_from }}"></div>
-      <div><label for="to-s">Updated before (Unix seconds)</label><input id="to-s" name="to_s" type="number" min="0" value="{{ filter_to }}"></div>
+      <div><label for="from-s">Updated at or after (UTC)</label><input id="from-s" name="from_s" type="datetime-local" step="1" value="{{ filter_from }}"></div>
+      <div><label for="to-s">Updated at or before (UTC)</label><input id="to-s" name="to_s" type="datetime-local" step="1" value="{{ filter_to }}"></div>
       <button type="submit">Apply filters</button><a class="button" href="/account">Clear</a>
     </form>
     <form action="/account/export" method="get" class="row">
@@ -71,7 +71,7 @@
       <thead><tr><th>Radio</th><th>MCC</th><th>MNC</th><th>Area</th><th>Cell ID</th><th>Device</th><th>Latitude</th><th>Longitude</th><th>Range (m)</th><th>Samples</th><th>Updated (UTC)</th><th></th></tr></thead>
       <tbody>
       {% for row in rows %}<tr>
-        <td>{{ row.radio }}</td><td>{{ row.mcc }}</td><td>{{ row.mnc }}</td><td>{{ row.area }}</td><td>{{ row.cid }}</td><td title="{{ row.device }}">{{ row.device_label }}</td><td>{{ row.lat }}</td><td>{{ row.lon }}</td><td>{{ row.range_m }}</td><td>{{ row.samples }}</td><td>{{ row.updated_text }}</td>
+        <td>{{ row.radio }}</td><td>{{ row.mcc }}</td><td>{{ row.mnc }}</td><td>{{ row.area }}</td><td>{{ row.cid }}</td><td title="{{ row.device }}">{{ row.device_label }}</td><td>{{ row.lat }}</td><td>{{ row.lon }}</td><td>{{ row.range_m }}</td><td>{{ row.samples }}</td><td><time {% if row.updated_time.valid %}datetime="{{ row.updated_time.datetime }}"{% endif %}>{{ row.updated_time.display }}</time></td>
         <td><form action="/account/contributions/delete" method="post">
           <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="radio" value="{{ row.radio }}"><input type="hidden" name="mcc" value="{{ row.mcc }}"><input type="hidden" name="mnc" value="{{ row.mnc }}"><input type="hidden" name="area" value="{{ row.area }}"><input type="hidden" name="cid" value="{{ row.cid }}"><input type="hidden" name="device" value="{{ row.device }}">
           <button class="danger" type="submit" aria-label="Delete observation for cell {{ row.cid }}">Delete</button>
@@ -96,7 +96,7 @@
     <section class="card"><h2>Change email</h2><p>We send a confirmation link to your new address. You remain signed in until confirmation.</p><form action="/account/email" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><label for="new-email">New email</label><input id="new-email" name="email" type="email" autocomplete="email" required maxlength="254"><label for="email-password">Current password</label><input id="email-password" name="password" type="password" autocomplete="current-password" required><p><button type="submit">Send confirmation link</button></p></form></section>
   </div>
   <section class="card"><h2>Signed-in sessions</h2><p>Sign out devices you no longer use. This browser is marked as current.</p>
-    {% for session in sessions %}<div class="row"><span>{{ session.label }} · expires {{ session.expires }}{% if session.current %} · current browser{% endif %}</span>{% if !session.current %}<form action="/account/sessions/revoke" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="session_id" value="{{ session.id }}"><button type="submit">Sign out</button></form>{% endif %}</div>{% endfor %}
+    {% for session in sessions %}<div class="row"><span>{{ session.label }} · expires <time {% if session.expires.valid %}datetime="{{ session.expires.datetime }}"{% endif %}>{{ session.expires.display }}</time>{% if session.current %} · current browser{% endif %}</span>{% if !session.current %}<form action="/account/sessions/revoke" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="session_id" value="{{ session.id }}"><button type="submit">Sign out</button></form>{% endif %}</div>{% endfor %}
     <form action="/account/sessions/revoke-others" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Sign out all other sessions</button></form>
   </section>
   <section class="card"><h2>Close account</h2><p>Closing your account deletes your cell observations and sessions. This cannot be undone.</p><form action="/account/close" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><label for="close-password">Current password</label><input id="close-password" name="password" type="password" autocomplete="current-password" required><label for="close-confirm">Type DELETE ACCOUNT to confirm</label><input id="close-confirm" name="confirm" type="text" required pattern="DELETE ACCOUNT" autocomplete="off"><p><button class="danger" type="submit">Close my account</button></p></form></section>
