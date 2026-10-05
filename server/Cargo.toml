@@ -32,6 +32,6 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
-reqwest = { version = "0.13", default-features = false, features = ["gzip", "json", "rustls"] }
+reqwest = { version = "0.13", default-features = false, features = ["form", "gzip", "json", "rustls"] }
 tempfile = "3.21"
 tokio-tungstenite = "0.30"

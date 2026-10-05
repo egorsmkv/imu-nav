@@ -147,7 +147,7 @@ async fn reset_page() -> Response {
     response
 }
 
-fn now_s() -> i64 {
+pub(crate) fn now_s() -> i64 {
     i64::try_from(
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -157,7 +157,7 @@ fn now_s() -> i64 {
     .unwrap_or(i64::MAX)
 }
 
-fn normalize_email(email: &str) -> Result<String, ApiError> {
+pub(crate) fn normalize_email(email: &str) -> Result<String, ApiError> {
     let email = email.trim().to_ascii_lowercase();
     if email.len() > 254
         || email.len() < 3
@@ -171,20 +171,20 @@ fn normalize_email(email: &str) -> Result<String, ApiError> {
     Ok(email)
 }
 
-fn validate_password(password: &str) -> Result<(), ApiError> {
+pub(crate) fn validate_password(password: &str) -> Result<(), ApiError> {
     if !(12..=256).contains(&password.chars().count()) || password.len() > 1_024 {
         return Err(ApiError(StatusCode::BAD_REQUEST, "INVALID_PASSWORD"));
     }
     Ok(())
 }
 
-fn token() -> String {
+pub(crate) fn token() -> String {
     let mut bytes = [0u8; 32];
     rand::rng().fill_bytes(&mut bytes);
     URL_SAFE_NO_PAD.encode(bytes)
 }
 
-fn digest(value: &str) -> String {
+pub(crate) fn digest(value: &str) -> String {
     format!("{:x}", Sha256::digest(value.as_bytes()))
 }
 
@@ -207,7 +207,7 @@ fn verify_password(password: &str, stored: &str) -> bool {
     })
 }
 
-fn rate_limit(
+pub(crate) fn rate_limit(
     state: &AppState,
     operation: &str,
     peer: SocketAddr,
@@ -262,7 +262,7 @@ fn issue_session(
     })
 }
 
-fn account_for_token(
+pub(crate) fn account_for_token(
     store: &CellStore,
     raw: &str,
     kind: &str,
@@ -333,7 +333,7 @@ pub(crate) async fn admin_account(
         .ok_or(ApiError(StatusCode::FORBIDDEN, "FORBIDDEN"))
 }
 
-fn login_account(
+pub(crate) fn login_account(
     store: &CellStore,
     email: &str,
     password: &str,
@@ -358,6 +358,25 @@ fn login_account(
     Ok(result.and_then(|(account, hash)| verify_password(password, &hash).then_some(account)))
 }
 
+/// Create an account once, returning none when its normalized email already exists.
+pub(crate) fn register_account(
+    store: &CellStore,
+    email: &str,
+    password: &str,
+) -> anyhow::Result<Option<Account>> {
+    let hash = hash_password(password)?;
+    let connection = store.connection()?;
+    let count = connection.execute(
+        "INSERT OR IGNORE INTO users(email,password_hash,admin) VALUES (?1,?2,0)",
+        params![email, hash],
+    )?;
+    Ok((count > 0).then(|| Account {
+        id: connection.last_insert_rowid(),
+        email: email.to_owned(),
+        admin: false,
+    }))
+}
+
 async fn register(
     State(state): State<AppState>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
@@ -369,21 +388,9 @@ async fn register(
     rate_limit(&state, "register", peer, &headers, &email)?;
     let store = state.store.clone();
     let result = run_db(move || {
-        let hash = hash_password(&body.password)?;
-        let connection = store.connection()?;
-        let count = connection.execute(
-            "INSERT OR IGNORE INTO users(email,password_hash,admin) VALUES (?1,?2,0)",
-            params![email, hash],
-        )?;
-        if count == 0 {
-            return Ok(None);
-        }
-        let account = Account {
-            id: connection.last_insert_rowid(),
-            email,
-            admin: false,
-        };
-        issue_session(&store, account, None).map(Some)
+        register_account(&store, &email, &body.password)?
+            .map(|account| issue_session(&store, account, None))
+            .transpose()
     })
     .await?;
     result

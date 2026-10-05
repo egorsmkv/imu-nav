@@ -415,6 +415,8 @@ Create the first admin with `--data cells.sqlite3 --create-admin admin@example.o
 standard input). Put the server behind a TLS reverse proxy for use outside your own network;
 account sign-in in the app requires HTTPS outside local loopback development (including the
 emulator's `10.0.2.2` host alias). Public downloads still work without signing in.
+Browser users can register at `/signup`, sign in at `/login`, and review or delete their own
+uploaded cell observations at `/account`; the panel updates shared consensus after deletion.
 The old Kotlin server's internal contribution gzip is not a
 SQLite migration source; re-import the original seed export when moving to this server. See
 [`server/README.md`](server/README.md) for the complete HTTP, management, and WebSocket API,

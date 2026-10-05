@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My observations · IMU Nav</title>
+<style>
+  :root { font-family: system-ui, sans-serif; color: #172033; background: #f4f6fa; }
+  body { margin: 0; }
+  header { background: #172033; color: white; padding: 1rem max(1rem, calc((100vw - 76rem)/2)); display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  header strong { font-size: 1.2rem; }
+  header span { color: #dbe5f7; }
+  main { max-width: 76rem; margin: 2rem auto; padding: 0 1rem; }
+  .card { background: white; border: 1px solid #dce2ec; border-radius: .8rem; padding: 1.25rem; margin-bottom: 1rem; }
+  h1 { margin: 0 0 .5rem; }
+  p { line-height: 1.5; color: #536176; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; text-align: left; }
+  th, td { padding: .65rem; border-bottom: 1px solid #e5e9f0; white-space: nowrap; }
+  th { color: #536176; font-size: .85rem; }
+  button { padding: .5rem .7rem; border: 1px solid #bf3f3a; border-radius: .45rem; background: white; color: #a22521; font: inherit; cursor: pointer; }
+  .danger { background: #a22521; color: white; }
+  .quiet { color: #dbe5f7; border-color: #8397b8; background: transparent; }
+  .actions { display: flex; justify-content: space-between; gap: 1rem; align-items: center; flex-wrap: wrap; }
+  nav { display: flex; gap: 1rem; margin: 1rem 0; }
+  footer { margin: 2rem 0; font-size: .9rem; }
+</style>
+<header>
+  <div><strong>IMU Nav</strong> <span>· {{ email }}</span></div>
+  <form action="/account/logout" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="quiet" type="submit">Sign out</button></form>
+</header>
+<main>
+  <section class="card">
+    <h1>My recorded observations</h1>
+    <p>{{ total }} contributions from devices linked to this account. Deleting a contribution updates the shared tower estimate; other accounts' observations remain.</p>
+    {% if total > 0 %}
+    <div class="actions">
+      <span>Page {{ page + 1 }}</span>
+      <form action="/account/contributions/delete-all" method="post">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button class="danger" type="submit">Delete all my contributions</button>
+      </form>
+    </div>
+    {% endif %}
+  </section>
+  <section class="card table-wrap">
+    {% if rows.is_empty() %}
+    {% if total == 0 %}<p>No observations have been uploaded by this account.</p>{% else %}<p>No observations on this page. Use the previous page link.</p>{% endif %}
+    {% else %}
+    <table>
+      <thead><tr><th>Radio</th><th>MCC</th><th>MNC</th><th>Area</th><th>Cell ID</th><th>Device</th><th>Latitude</th><th>Longitude</th><th>Range (m)</th><th>Samples</th><th>Updated (Unix seconds)</th><th></th></tr></thead>
+      <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>{{ row.radio }}</td><td>{{ row.mcc }}</td><td>{{ row.mnc }}</td><td>{{ row.area }}</td><td>{{ row.cid }}</td>
+        <td>{{ row.device }}</td><td>{{ row.lat }}</td><td>{{ row.lon }}</td><td>{{ row.range_m }}</td><td>{{ row.samples }}</td><td>{{ row.updated_s }}</td>
+        <td>
+          <form action="/account/contributions/delete" method="post">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="hidden" name="radio" value="{{ row.radio }}">
+            <input type="hidden" name="mcc" value="{{ row.mcc }}">
+            <input type="hidden" name="mnc" value="{{ row.mnc }}">
+            <input type="hidden" name="area" value="{{ row.area }}">
+            <input type="hidden" name="cid" value="{{ row.cid }}">
+            <input type="hidden" name="device" value="{{ row.device }}">
+            <button type="submit" aria-label="Delete observation for cell {{ row.cid }}">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </section>
+  <nav aria-label="Pages">
+    {% if has_previous %}<a href="/account?page={{ previous_page }}">Previous page</a>{% endif %}
+    {% if has_next %}<a href="/account?page={{ next_page }}">Next page</a>{% endif %}
+  </nav>
+  <footer><p>IMU Nav is a research prototype, not a safety system.</p></footer>
+</main>
+</html>

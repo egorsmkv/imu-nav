@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 
 use crate::admin;
 use crate::auth::{self, AuthRateLimits, MailConfig, SharedAuthLimits};
+use crate::web;
 use crate::{
     CellKey, CellStore, CellTower, Consensus, CsvDecodeError, Policy, PolicyError, Radio,
     ServerEvent, decode_towers, encode_towers,
@@ -44,7 +45,7 @@ pub struct ServerConfig {
 pub struct AppState {
     pub(crate) store: CellStore,
     pub(crate) config: ServerConfig,
-    events: broadcast::Sender<ServerEvent>,
+    pub(crate) events: broadcast::Sender<ServerEvent>,
     limits: Arc<Mutex<Limits>>,
     pub(crate) auth_limits: SharedAuthLimits,
 }
@@ -73,6 +74,7 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .merge(admin::router())
         .merge(auth::router())
+        .merge(web::router())
         .route("/health", get(health))
         .route("/v1/cells", post(upload_cells))
         .route("/v1/cells.csv.gz", get(download_cells))

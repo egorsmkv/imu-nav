@@ -25,6 +25,19 @@ detailed operational logs.
 `--bind 127.0.0.1` restricts the listener to loopback for local testing; the default remains
 `0.0.0.0` for existing deployments.
 
+## Browser account pages
+
+Open `/signup` to create an account or `/login` to sign in. The `/account` panel lists the
+observations uploaded by that account's devices, 100 per page, with controls to delete one
+observation or all of the account's observations. Other accounts' and seed observations are not
+shown or removed. Each deletion recalculates the affected tower consensus and updates management
+WebSocket subscribers. Sign out on the panel revokes the browser session.
+
+Browser sessions use a seven-day, HttpOnly, SameSite=Strict cookie. Delete and sign-out forms
+require a session-specific form token. The Android JSON token endpoints remain separate. Serve
+the browser pages through HTTPS before entering real credentials; the direct HTTP listener is
+intended for local development or a trusted reverse proxy.
+
 ## Read-only admin interface
 
 Open `/admin` for a server-rendered dashboard with database totals, MCC filtering, recent tower

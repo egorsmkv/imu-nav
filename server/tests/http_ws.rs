@@ -13,7 +13,7 @@ use tokio_tungstenite::tungstenite::http::HeaderValue;
 struct TestServer {
     base_url: String,
     task: tokio::task::JoinHandle<()>,
-    _database: NamedTempFile,
+    database: NamedTempFile,
     token: String,
 }
 
@@ -58,9 +58,9 @@ async fn start_server_with_policy(policy: Policy) -> Result<TestServer> {
         .to_owned();
     Ok(TestServer {
         base_url,
-        token,
         task,
-        _database: database,
+        database,
+        token,
     })
 }
 
@@ -87,6 +87,18 @@ fn upload_body(tower: CellTower) -> Result<Vec<u8>> {
         seeded: false,
         updated_s: 1,
     }])?)
+}
+
+fn delete_form<'a>(token: &'a str, device: &'a str) -> [(&'static str, &'a str); 7] {
+    [
+        ("csrf", token),
+        ("radio", "LTE"),
+        ("mcc", "255"),
+        ("mnc", "1"),
+        ("area", "1864"),
+        ("cid", "42"),
+        ("device", device),
+    ]
 }
 
 async fn assert_account_rejections(server: &TestServer, client: &reqwest::Client) -> Result<()> {
@@ -204,6 +216,305 @@ async fn account_registration_refresh_and_logout_gate_uploads() -> Result<()> {
             .status(),
         StatusCode::UNAUTHORIZED
     );
+    Ok(())
+}
+
+#[tokio::test]
+// This end-to-end flow keeps browser session, ownership, consensus, and logout checks together.
+#[allow(clippy::too_many_lines)]
+async fn browser_account_pages_show_and_delete_only_owned_contributions() -> Result<()> {
+    let server = start_server().await?;
+    let browser = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?;
+    assert_eq!(
+        browser
+            .get(format!("{}/login", server.base_url))
+            .send()
+            .await?
+            .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        browser
+            .get(format!("{}/signup", server.base_url))
+            .send()
+            .await?
+            .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        browser
+            .get(format!("{}/account", server.base_url))
+            .send()
+            .await?
+            .status(),
+        StatusCode::SEE_OTHER
+    );
+
+    let first_signup = browser
+        .post(format!("{}/signup", server.base_url))
+        .form(&[
+            ("email", "first@example.org"),
+            ("password", "first long password"),
+        ])
+        .send()
+        .await?;
+    assert_eq!(first_signup.status(), StatusCode::SEE_OTHER);
+    let first_cookie = first_signup.headers()["set-cookie"]
+        .to_str()?
+        .split(';')
+        .next()
+        .unwrap()
+        .to_owned();
+    assert!(
+        first_signup.headers()["set-cookie"]
+            .to_str()?
+            .contains("HttpOnly; SameSite=Strict")
+    );
+    let second_signup = browser
+        .post(format!("{}/signup", server.base_url))
+        .form(&[
+            ("email", "second@example.org"),
+            ("password", "second long password"),
+        ])
+        .send()
+        .await?;
+    assert_eq!(second_signup.status(), StatusCode::SEE_OTHER);
+    let second_cookie = second_signup.headers()["set-cookie"]
+        .to_str()?
+        .split(';')
+        .next()
+        .unwrap()
+        .to_owned();
+    let first_login: serde_json::Value = browser
+        .post(format!("{}/v1/auth/login", server.base_url))
+        .json(&serde_json::json!({"email":"first@example.org","password":"first long password"}))
+        .send()
+        .await?
+        .json()
+        .await?;
+    let second_login: serde_json::Value = browser
+        .post(format!("{}/v1/auth/login", server.base_url))
+        .json(&serde_json::json!({"email":"second@example.org","password":"second long password"}))
+        .send()
+        .await?
+        .json()
+        .await?;
+    let first_device = format!("account:{}:device-first", first_login["account"]["id"]);
+    let second_device = format!("account:{}:device-second", second_login["account"]["id"]);
+    for (session, device, latitude) in [
+        (&first_login, "device-first", 50.400),
+        (&second_login, "device-second", 50.401),
+    ] {
+        let upload = browser
+            .post(format!("{}/v1/cells", server.base_url))
+            .bearer_auth(session["access_token"].as_str().unwrap())
+            .header("x-device-id", device)
+            .body(upload_body(tower(latitude))?)
+            .send()
+            .await?;
+        assert_eq!(upload.status(), StatusCode::OK);
+    }
+    let panel = browser
+        .get(format!("{}/account", server.base_url))
+        .header("cookie", &first_cookie)
+        .send()
+        .await?;
+    assert_eq!(panel.status(), StatusCode::OK);
+    assert_eq!(panel.headers()["cache-control"], "no-store");
+    let body = panel.text().await?;
+    assert!(body.contains(&first_device));
+    assert!(!body.contains(&second_device));
+    let csrf = body
+        .split("name=\"csrf\" value=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap()
+        .to_owned();
+    assert_eq!(
+        browser
+            .post(format!("{}/account/contributions/delete", server.base_url))
+            .header("cookie", &first_cookie)
+            .form(&delete_form("wrong", &first_device))
+            .send()
+            .await?
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        browser
+            .post(format!("{}/account/contributions/delete", server.base_url))
+            .header("cookie", &first_cookie)
+            .form(&delete_form(&csrf, &second_device))
+            .send()
+            .await?
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        browser
+            .post(format!("{}/account/contributions/delete", server.base_url))
+            .header("cookie", &first_cookie)
+            .form(&delete_form(&csrf, &first_device))
+            .send()
+            .await?
+            .status(),
+        StatusCode::SEE_OTHER
+    );
+    let store = CellStore::open(server.database.path())?;
+    assert_eq!(store.consensus(&tower(50.4).key)?.unwrap().devices, 1);
+    assert!(
+        browser
+            .get(format!("{}/account", server.base_url))
+            .header("cookie", &second_cookie)
+            .send()
+            .await?
+            .text()
+            .await?
+            .contains(&second_device)
+    );
+
+    assert_eq!(
+        browser
+            .post(format!("{}/v1/cells", server.base_url))
+            .bearer_auth(first_login["access_token"].as_str().unwrap())
+            .header("x-device-id", "device-first")
+            .body(upload_body(tower(50.400))?)
+            .send()
+            .await?
+            .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        browser
+            .post(format!(
+                "{}/account/contributions/delete-all",
+                server.base_url
+            ))
+            .header("cookie", &first_cookie)
+            .form(&[("csrf", csrf.as_str())])
+            .send()
+            .await?
+            .status(),
+        StatusCode::SEE_OTHER
+    );
+    assert_eq!(store.consensus(&tower(50.4).key)?.unwrap().devices, 1);
+    let first_panel = browser
+        .get(format!("{}/account", server.base_url))
+        .header("cookie", &first_cookie)
+        .send()
+        .await?
+        .text()
+        .await?;
+    assert!(first_panel.contains("No observations have been uploaded"));
+    assert_eq!(
+        browser
+            .post(format!("{}/account/logout", server.base_url))
+            .header("cookie", &first_cookie)
+            .form(&[("csrf", csrf.as_str())])
+            .send()
+            .await?
+            .status(),
+        StatusCode::SEE_OTHER
+    );
+    assert_eq!(
+        browser
+            .get(format!("{}/account", server.base_url))
+            .header("cookie", &first_cookie)
+            .send()
+            .await?
+            .status(),
+        StatusCode::SEE_OTHER
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn browser_forms_validate_credentials_and_sign_in() -> Result<()> {
+    let server = start_server().await?;
+    let browser = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?;
+    let signup = format!("{}/signup", server.base_url);
+    let login = format!("{}/login", server.base_url);
+    assert_eq!(
+        browser
+            .post(&signup)
+            .form(&[("email", "invalid"), ("password", "long password")])
+            .send()
+            .await?
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        browser
+            .post(&signup)
+            .form(&[("email", "user@example.org"), ("password", "short")])
+            .send()
+            .await?
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        browser
+            .post(&signup)
+            .form(&[("email", "user@example.org"), ("password", "long password")])
+            .send()
+            .await?
+            .status(),
+        StatusCode::SEE_OTHER
+    );
+    assert_eq!(
+        browser
+            .post(&signup)
+            .form(&[("email", "user@example.org"), ("password", "long password")])
+            .send()
+            .await?
+            .status(),
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        browser
+            .post(&login)
+            .form(&[("email", "invalid"), ("password", "long password")])
+            .send()
+            .await?
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        browser
+            .post(&login)
+            .form(&[
+                ("email", "user@example.org"),
+                ("password", "wrong password")
+            ])
+            .send()
+            .await?
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    let signed_in = browser
+        .post(&login)
+        .form(&[("email", "USER@example.org"), ("password", "long password")])
+        .send()
+        .await?;
+    assert_eq!(signed_in.status(), StatusCode::SEE_OTHER);
+    let cookie = signed_in.headers()["set-cookie"]
+        .to_str()?
+        .split(';')
+        .next()
+        .unwrap();
+    let account = browser
+        .get(format!("{}/account", server.base_url))
+        .header("cookie", cookie)
+        .send()
+        .await?;
+    assert_eq!(account.status(), StatusCode::OK);
+    assert!(account.text().await?.contains("user@example.org"));
     Ok(())
 }
 

@@ -6,6 +6,7 @@ mod auth;
 mod csv_format;
 mod model;
 mod store;
+mod web;
 
 pub use api::{AppState, ServerConfig, router};
 pub use auth::{MailConfig, create_admin};

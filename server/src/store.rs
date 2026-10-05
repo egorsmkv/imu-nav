@@ -40,6 +40,30 @@ pub struct StoreCounts {
     pub seeded: usize,
 }
 
+/// A single observation uploaded by one of an account's devices.
+#[derive(Clone, Debug)]
+pub(crate) struct OwnContribution {
+    pub key: CellKey,
+    pub device: String,
+    pub lat: f64,
+    pub lon: f64,
+    pub range_m: f64,
+    pub samples: i64,
+    pub updated_s: i64,
+}
+
+/// A page of account observations and the total number available for pagination.
+pub(crate) struct OwnContributionPage {
+    pub rows: Vec<OwnContribution>,
+    pub total: usize,
+}
+
+/// The consensus change caused by removing an account observation.
+pub(crate) enum OwnContributionChange {
+    Updated(Consensus),
+    Removed(CellKey),
+}
+
 impl CellStore {
     /// Open the database, create its schema, and enable WAL for concurrent readers.
     ///
@@ -69,6 +93,9 @@ impl CellStore {
                PRIMARY KEY (radio, mcc, mnc, area, cid)
              );
              CREATE INDEX IF NOT EXISTS consensus_sync ON consensus(mcc, updated_s);",
+        )?;
+        connection.execute_batch(
+            "CREATE INDEX IF NOT EXISTS contributions_device ON contributions(device);",
         )?;
         connection.execute_batch(
             "CREATE TABLE IF NOT EXISTS users (
@@ -335,6 +362,94 @@ impl CellStore {
         Ok(removed > 0)
     }
 
+    /// List only contributions from devices linked to this account, newest first.
+    pub(crate) fn own_contributions(
+        &self,
+        account_id: i64,
+        limit: usize,
+        offset: usize,
+    ) -> Result<OwnContributionPage> {
+        let connection = self.connection()?;
+        let pattern = account_device_pattern(account_id);
+        let total: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM contributions WHERE device GLOB ?1",
+            [&pattern],
+            |row| row.get(0),
+        )?;
+        let mut statement = connection.prepare(
+            "SELECT radio,mcc,mnc,area,cid,device,lat,lon,range_m,samples,updated_s
+             FROM contributions WHERE device GLOB ?1
+             ORDER BY updated_s DESC,radio,mcc,mnc,area,cid,device LIMIT ?2 OFFSET ?3",
+        )?;
+        let rows = statement
+            .query_map(
+                params![pattern, i64::try_from(limit)?, i64::try_from(offset)?],
+                row_to_own_contribution,
+            )?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(OwnContributionPage {
+            rows,
+            total: usize::try_from(total)?,
+        })
+    }
+
+    /// Delete one account-owned device observation and recalculate that cell's consensus.
+    pub(crate) fn delete_own_contribution(
+        &self,
+        account_id: i64,
+        key: &CellKey,
+        device: &str,
+        policy: &Policy,
+    ) -> Result<Option<OwnContributionChange>> {
+        let mut connection = self.connection()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let removed = transaction.execute(
+            "DELETE FROM contributions WHERE radio=?1 AND mcc=?2 AND mnc=?3 AND area=?4 AND cid=?5
+             AND device=?6 AND device GLOB ?7",
+            params![
+                key.radio.to_string(),
+                key.mcc,
+                key.mnc,
+                key.area,
+                key.cid,
+                device,
+                account_device_pattern(account_id)
+            ],
+        )?;
+        if removed == 0 {
+            return Ok(None);
+        }
+        let change = update_consensus_after_deletion(&transaction, key, policy)?;
+        transaction.commit()?;
+        Ok(Some(change))
+    }
+
+    /// Remove every observation owned by one account in one transaction.
+    pub(crate) fn delete_all_own_contributions(
+        &self,
+        account_id: i64,
+        policy: &Policy,
+    ) -> Result<Vec<OwnContributionChange>> {
+        let mut connection = self.connection()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let pattern = account_device_pattern(account_id);
+        let keys = {
+            let mut statement = transaction.prepare(
+                "SELECT DISTINCT radio,mcc,mnc,area,cid FROM contributions WHERE device GLOB ?1",
+            )?;
+            statement
+                .query_map([&pattern], row_to_key)?
+                .collect::<rusqlite::Result<Vec<_>>>()?
+        };
+        transaction.execute("DELETE FROM contributions WHERE device GLOB ?1", [&pattern])?;
+        let changes = keys
+            .iter()
+            .map(|key| update_consensus_after_deletion(&transaction, key, policy))
+            .collect::<Result<Vec<_>>>()?;
+        transaction.commit()?;
+        Ok(changes)
+    }
+
     /// Counts used by health checks and startup logs.
     ///
     /// # Errors
@@ -371,6 +486,57 @@ impl CellStore {
             seeded: usize::try_from(seeded_count)?,
         })
     }
+}
+
+fn account_device_pattern(account_id: i64) -> String {
+    format!("account:{account_id}:*")
+}
+
+fn row_to_key(row: &rusqlite::Row<'_>) -> rusqlite::Result<CellKey> {
+    let radio_text: String = row.get(0)?;
+    Ok(CellKey {
+        radio: Radio::from_str(&radio_text).map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(0, Type::Text, Box::new(error))
+        })?,
+        mcc: row.get(1)?,
+        mnc: row.get(2)?,
+        area: row.get(3)?,
+        cid: row.get(4)?,
+    })
+}
+
+fn row_to_own_contribution(row: &rusqlite::Row<'_>) -> rusqlite::Result<OwnContribution> {
+    Ok(OwnContribution {
+        key: row_to_key(row)?,
+        device: row.get(5)?,
+        lat: row.get(6)?,
+        lon: row.get(7)?,
+        range_m: row.get(8)?,
+        samples: row.get(9)?,
+        updated_s: row.get(10)?,
+    })
+}
+
+fn update_consensus_after_deletion(
+    transaction: &Transaction<'_>,
+    key: &CellKey,
+    policy: &Policy,
+) -> Result<OwnContributionChange> {
+    let remaining: i64 = transaction.query_row(
+        "SELECT COUNT(*) FROM contributions WHERE radio=?1 AND mcc=?2 AND mnc=?3 AND area=?4 AND cid=?5",
+        params![key.radio.to_string(), key.mcc, key.mnc, key.area, key.cid],
+        |row| row.get(0),
+    )?;
+    if remaining == 0 {
+        transaction.execute(
+            "DELETE FROM consensus WHERE radio=?1 AND mcc=?2 AND mnc=?3 AND area=?4 AND cid=?5",
+            params![key.radio.to_string(), key.mcc, key.mnc, key.area, key.cid],
+        )?;
+        return Ok(OwnContributionChange::Removed(key.clone()));
+    }
+    let consensus = recompute(transaction, key, policy)?;
+    save_consensus(transaction, &consensus)?;
+    Ok(OwnContributionChange::Updated(consensus))
 }
 
 #[cfg_attr(feature = "profiling", hotpath::measure)]
