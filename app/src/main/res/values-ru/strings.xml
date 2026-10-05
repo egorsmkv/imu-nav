@@ -146,8 +146,8 @@
     <string name="sec_navigation_method">Навигация без GPS</string>
     <string name="navigation_method_title">Резервный метод классической навигации</string>
     <string name="navigation_estimator_title">Оценка положения</string>
-    <string name="navigation_estimator_kotlin">Классическая навигация</string>
-    <string name="navigation_estimator_native">Фильтр Калмана (по умолчанию)</string>
+    <string name="navigation_estimator_kotlin">Классическая навигация (по умолчанию)</string>
+    <string name="navigation_estimator_native">Фильтр Калмана</string>
     <string name="navigation_estimator_summary">Выберите перед началом маршрута. Фильтр Калмана определяет положение и скорость для авто и пешком. Пешком использует GPS и шаги × изученную длину шага; без шагов — свежие данные о движении, а без них и свежего GPS удерживает позицию. OBD и поправки от вышек и поворотов — только для авто. Классическая навигация использует резервный метод ниже и привязку к рельефу. Улучшение точности не гарантировано; это исследовательский прототип, а не система безопасности.</string>
     <string name="navigation_estimator_locked">Остановите навигацию, чтобы изменить алгоритм.</string>
     <string name="inertial_experiment_title">Инерциальный ESKF в фоновом сравнении</string>

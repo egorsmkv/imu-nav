@@ -15,7 +15,7 @@ The app tries to use trusted GPS first. When GPS is unreliable, it estimates pro
 ## Choose how to navigate without GPS
 
 1. Open **Settings → Everyday settings → Navigation without GPS**.
-2. The **Kalman filter** is selected by default on a new install. To use the older route estimator, choose **Classic navigation**. Its **Hybrid** fallback combines route progress with cell and network corrections.
+2. **Classic navigation** is selected by default on a new install. Its **Hybrid** fallback combines route progress with cell and network corrections. To use the other estimator, choose **Kalman filter**.
 3. Keep a route active. The app's position estimate follows that route; free-drive dead reckoning is not available.
 
 The app labels fixes **GOOD**, **SUSPECT** or **BAD**. Only a GOOD fix can anchor navigation. The [glossary](GLOSSARY.md) explains these labels, dead reckoning and route progress.

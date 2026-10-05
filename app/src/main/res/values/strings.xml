@@ -148,8 +148,8 @@
     <string name="sec_navigation_method">Navigation without GPS</string>
     <string name="navigation_method_title">Classic fallback method</string>
     <string name="navigation_estimator_title">Position estimator</string>
-    <string name="navigation_estimator_kotlin">Classic navigation</string>
-    <string name="navigation_estimator_native">Kalman filter (default)</string>
+    <string name="navigation_estimator_kotlin">Classic navigation (default)</string>
+    <string name="navigation_estimator_native">Kalman filter</string>
     <string name="navigation_estimator_summary">Choose before starting a trip. The Kalman filter estimates position and speed for driving and walking. Walking uses GPS and steps × learned stride; without steps it uses fresh motion evidence, otherwise holds without fresh GPS. OBD and cell/turn corrections are car-only. Classic navigation uses the fallback method below and terrain snaps. Accuracy improvement is not guaranteed; this is a research prototype, not a safety system.</string>
     <string name="navigation_estimator_locked">Stop navigation to change the estimator.</string>
     <string name="inertial_experiment_title">Inertial ESKF shadow (experimental)</string>

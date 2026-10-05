@@ -17,7 +17,7 @@ internal class NavigationPreferences(context: Context) {
     val travelMode = MutableStateFlow(TravelMode.entries.firstOrNull { it.name == prefs.getString("mode", null) } ?: TravelMode.CAR)
     val navigationMethod = MutableStateFlow(NavigationMethod.entries.firstOrNull { it.name == prefs.getString("navigation_method", null) } ?: NavigationMethod.HYBRID)
     private val _navigationEstimator =
-        MutableStateFlow(NavigationEstimator.entries.firstOrNull { it.name == prefs.getString("navigation_estimator", null) } ?: NavigationEstimator.NATIVE_KALMAN)
+        MutableStateFlow(NavigationEstimator.entries.firstOrNull { it.name == prefs.getString("navigation_estimator", null) } ?: NavigationEstimator.KOTLIN)
     val navigationEstimator: StateFlow<NavigationEstimator> = _navigationEstimator.asStateFlow()
     private val _inertialExperiment = MutableStateFlow(prefs.getBoolean("inertial_experiment", false))
     val inertialExperiment: StateFlow<Boolean> = _inertialExperiment.asStateFlow()

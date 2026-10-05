@@ -60,7 +60,7 @@
   speed, so valid highway-speed readings are not locked out by the near-zero stop model. Both models
   retain innovation gates; recovering speed does not erase accumulated position error.
   **Settings → Everyday settings → Navigation without GPS → Position estimator** offers
-  **Classic navigation** and **Kalman filter (default)**. Kalman is selected when no estimator
+  **Classic navigation (default)** and **Kalman filter**. Classic is selected when no estimator
   preference has been saved; an existing explicit choice is preserved. Select before starting navigation;
   changes are locked during a trip. Native mode owns position, speed, uncertainty and the
   state used by guidance for both driving and walking. Walking uses step cadence × learned stride;
