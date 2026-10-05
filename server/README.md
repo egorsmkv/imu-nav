@@ -49,6 +49,8 @@ requests a reset email when SMTP is configured.
 The web pages include a language selector for English, Ukrainian, and Russian. They initially use
 the browser's preferred language, then remember the selected language in a one-year cookie.
 JavaScript applies the translations in the browser; API responses and exported files are unchanged.
+The shared footer links to the English Telegram group for English pages and the other group for
+Ukrainian or Russian pages.
 The pages share one navigation bar and footer. The account panel starts with sharing and
 diagnostics, then provides observation filters, downloads, account security, and session controls.
 Destructive account actions are grouped behind expandable sections.

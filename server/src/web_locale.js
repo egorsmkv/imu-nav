@@ -2,6 +2,7 @@
 (() => {
   "use strict";
   const copy = {
+    "Telegram group": ["Група в Telegram", "Группа в Telegram"],
     "cell server": ["сервер стільникових веж", "сервер сотовых вышек"],
     "Admin": ["Адміністрування", "Администрирование"],
     "Trip debugging": ["Налагодження поїздок", "Отладка поездок"],
@@ -338,6 +339,8 @@
     }
     return "en";
   })();
+  const telegramGroup = document.getElementById("telegram-group");
+  if (telegramGroup) telegramGroup.href = language === "en" ? "https://t.me/imu_nav_en" : "https://t.me/imu_nav";
   document.documentElement.lang = language;
   const index = codes.indexOf(language);
   const choose = (english) => index < 0 ? english : (copy[english]?.[index] || english);

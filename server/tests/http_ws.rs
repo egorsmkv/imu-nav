@@ -364,6 +364,8 @@ async fn browser_pages_serve_all_three_locales_under_their_csp() -> Result<()> {
     assert!(translations.contains("Українська"));
     assert!(translations.contains("Русский"));
     assert!(translations.contains("navigator.languages"));
+    assert!(translations.contains("https://t.me/imu_nav_en"));
+    assert!(translations.contains("https://t.me/imu_nav"));
     let stylesheet = client
         .get(format!("{}/web.css", server.base_url))
         .send()
@@ -400,6 +402,7 @@ async fn browser_pages_serve_all_three_locales_under_their_csp() -> Result<()> {
         assert!(html.contains("href=\"/web.css?v="), "{path}");
         assert!(html.contains("class=\"site-header\""), "{path}");
         assert!(html.contains("class=\"site-footer\""), "{path}");
+        assert!(html.contains("id=\"telegram-group\""), "{path}");
     }
     Ok(())
 }

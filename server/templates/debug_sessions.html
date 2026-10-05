@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Developer diagnostics · IMU Nav</title><link rel="stylesheet" href="/web.css?v=20261005-ui"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Developer diagnostics · IMU Nav</title><link rel="stylesheet" href="/web.css?v=20261005-ui2"></head>
 <body>
 {% include "site_header.html" %}
 <main class="page-shell">
@@ -18,5 +18,5 @@
   {% if !admin && !rows.is_empty() %}<details class="card account-controls"><summary>Delete all my sessions</summary><form method="post" action="/debug/delete-all"><input type="hidden" name="csrf" value="{{ csrf }}"><label for="delete-debug-confirm">Type DELETE to confirm</label><input id="delete-debug-confirm" name="confirm" required pattern="DELETE" autocomplete="off"><p><button class="danger" type="submit">Delete all</button></p></form></details>{% endif %}
 </main>
 {% include "site_footer.html" %}
-<script src="/web-locale.js?v=20261005-ui" defer></script>
+<script src="/web-locale.js?v=20261005-ui2" defer></script>
 </body></html>
