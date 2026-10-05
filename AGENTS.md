@@ -1,7 +1,7 @@
 # AGENTS.md
 
 Guidance for AI coding agents (and humans) working in this repository. Read this before changing
-code; `README.md` explains what the app does and how its algorithms work.
+code; `README.md` indexes the user and developer guides, and `docs/NAVIGATION.md` explains the algorithms.
 
 ## What this is
 
@@ -48,7 +48,7 @@ Requirements: JDK 17+, Android SDK platform 36. `adb` lives at `~/Library/Androi
    `grep -h -o "p95[^<]*" core/build/test-results/test/*.xml`
 3. UI or runtime changes: build the release APK and try it on the emulator/phone (see *Testing on a device*).
 4. User-visible strings exist in **both** `values/strings.xml` and `values-uk/strings.xml`.
-5. README updated when behaviour, settings, commands or dependencies change.
+5. Update the relevant file in `docs/` when behaviour, settings, commands or dependencies change.
 
 ## Code style
 
@@ -118,7 +118,7 @@ Requirements: JDK 17+, Android SDK platform 36. `adb` lives at `~/Library/Androi
   Android and is wrapped in `runCatching`. Points are clamped into the pack's bounds.
 - **APK licence hygiene:** `osmosis-osm-binary` (LGPL) and protobuf are excluded from the app in
   `app/build.gradle.kts` — only GraphHopper's `.osm.pbf` reader needs them (desktop only). Don't add
-  copyleft dependencies to `:app`; update README *Libraries and licences* for any dependency change.
+  copyleft dependencies to `:app`; update `docs/LICENCES.md` for any dependency change.
 - **R8:** GraphHopper/Jackson/HPPC/MapLibre are kept wholesale in `app/proguard-rules.pro`
   (reflection). Broad `-dontwarn com.graphhopper.**` hides missing-class errors — verify with the
   mapping file (`app/build/outputs/mapping/release/mapping.txt`) when changing dependencies.
