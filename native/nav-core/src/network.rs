@@ -91,6 +91,7 @@ impl NetworkTracker {
             {
                 self.anchor = Some(fix);
                 self.candidates.clear();
+                tracing::debug!("network anchor reestablished");
                 return GateResult::Reanchored;
             }
             return GateResult::Rejected;

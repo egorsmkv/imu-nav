@@ -21,3 +21,5 @@ tikv-jemalloc-ctl = { version = "0.7", features = ["use_std", "stats"] }
 jemalloc_pprof = { version = "0.9", features = ["symbolize"] }
 pprof = { version = "0.15", default-features = false, features = ["flamegraph", "prost-codec"] }
 flate2 = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

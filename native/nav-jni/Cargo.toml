@@ -12,6 +12,8 @@ crate-type = ["cdylib"]
 [dependencies]
 imu-nav-core = { path = "../nav-core" }
 jni = { version = "0.21", default-features = false }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [features]
 heap-profile = ["dep:tikv-jemallocator", "dep:jemalloc_pprof"]

@@ -103,16 +103,22 @@ pub fn execute() -> Result<()> {
             out,
             pass,
         } => {
+            tracing::info!(pass = pass.name(), scenario = config.scenario.name(), out = %out.display(), "simulation started");
             if config.stress {
                 config.route_points = config.route_points.max(100_000);
             }
-            run(&config, &out, pass)
+            let result = run(&config, &out, pass);
+            if result.is_ok() {
+                tracing::info!(pass = pass.name(), "simulation completed");
+            }
+            result
         }
         Action::Compare {
             baseline,
             candidate,
             out,
         } => {
+            tracing::info!(baseline = %baseline.display(), candidate = %candidate.display(), "comparison started");
             let comparison = report::compare(&baseline, &candidate)?;
             if let Some(path) = out {
                 report::write_new(&path, comparison.as_bytes())?;

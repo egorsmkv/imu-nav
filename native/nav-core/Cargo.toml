@@ -8,6 +8,7 @@ rust-version.workspace = true
 
 [dependencies]
 hotpath = { version = "=0.28.4", default-features = false, optional = true }
+tracing = "0.1"
 
 [features]
 profiling = ["dep:hotpath", "hotpath/hotpath"]

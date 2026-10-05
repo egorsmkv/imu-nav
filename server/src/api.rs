@@ -4,7 +4,7 @@ mod limits;
 use limits::{DAY, HOUR, enforce_limits_at};
 use limits::{Limits, enforce_limits};
 #[cfg(test)]
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use crate::admin;
 use crate::auth::{self, AuthRateLimits, MailConfig, SharedAuthLimits};
@@ -15,8 +15,9 @@ use crate::{
 };
 use axum::body::Bytes;
 use axum::extract::ws::{Message, WebSocket};
-use axum::extract::{ConnectInfo, Path, Query, State, WebSocketUpgrade};
+use axum::extract::{ConnectInfo, MatchedPath, Path, Query, Request, State, WebSocketUpgrade};
 use axum::http::{HeaderMap, StatusCode, header};
+use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -26,7 +27,7 @@ use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, RwLock};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast;
 
 const MAX_UPLOAD_BYTES: usize = 20 * 1024 * 1024;
@@ -111,7 +112,30 @@ pub fn router(state: AppState) -> Router {
             state.clone(),
             web::audit_impersonated_requests,
         ))
+        .layer(axum::middleware::from_fn(log_request))
         .with_state(state)
+}
+
+/// Record route-level outcomes without exposing query strings or submitted data.
+async fn log_request(request: Request, next: Next) -> Response {
+    let method = request.method().clone();
+    let route = request
+        .extensions()
+        .get::<MatchedPath>()
+        .map_or("<unmatched>", MatchedPath::as_str)
+        .to_owned();
+    let started = Instant::now();
+    let response = next.run(request).await;
+    let status = response.status().as_u16();
+    let elapsed_ms = started.elapsed().as_millis();
+    if status >= 500 {
+        tracing::warn!(%method, %route, status, elapsed_ms, "request completed");
+    } else if route == "/health" {
+        tracing::trace!(%method, %route, status, elapsed_ms, "request completed");
+    } else {
+        tracing::debug!(%method, %route, status, elapsed_ms, "request completed");
+    }
+    response
 }
 
 #[derive(Debug)]
@@ -432,7 +456,8 @@ async fn websocket_events(
     headers: HeaderMap,
     websocket: WebSocketUpgrade,
 ) -> Result<Response, ApiError> {
-    auth::admin_account(&state, &headers, peer).await?;
+    let account = auth::admin_account(&state, &headers, peer).await?;
+    tracing::info!(account_id = account.id, "admin event stream connected");
     Ok(websocket
         .on_upgrade(move |socket| stream_events(socket, state))
         .into_response())
@@ -472,6 +497,7 @@ async fn stream_events(mut socket: WebSocket, state: AppState) {
             }
         }
     }
+    tracing::info!("admin event stream disconnected");
 }
 
 async fn send_event(socket: &mut WebSocket, event: &ServerEvent) -> anyhow::Result<()> {

@@ -609,6 +609,11 @@ async fn correct_tower(
             .events
             .send(ServerEvent::TowerUpserted { tower: changed });
     }
+    tracing::info!(
+        actor_id = account.id,
+        action = "correct_tower",
+        "admin action completed"
+    );
     Ok(redirect(&tower_path(&key)))
 }
 
@@ -642,6 +647,12 @@ async fn set_quarantine(
     {
         let _ = state.events.send(ServerEvent::TowerUpserted { tower });
     }
+    let action = if hidden {
+        "quarantine_tower"
+    } else {
+        "restore_tower"
+    };
+    tracing::info!(actor_id = account.id, action, "admin action completed");
     Ok(redirect(&tower_path(&key)))
 }
 
@@ -683,6 +694,11 @@ async fn delete_tower(
             "Quarantine this tower before deleting it.",
         ));
     }
+    tracing::info!(
+        actor_id = account.id,
+        action = "delete_tower",
+        "admin action completed"
+    );
     Ok(redirect("/admin"))
 }
 
@@ -716,6 +732,11 @@ async fn delete_observation(
         };
         let _ = state.events.send(event);
     }
+    tracing::info!(
+        actor_id = account.id,
+        action = "delete_observation",
+        "admin action completed"
+    );
     Ok(redirect(&tower_path(&key)))
 }
 
@@ -735,6 +756,17 @@ async fn account_action(
             "Account not found or last administrator cannot be suspended.",
         ));
     }
+    let action = if suspended {
+        "suspend_account"
+    } else {
+        "restore_account"
+    };
+    tracing::info!(
+        actor_id = account.id,
+        target_id = id,
+        action,
+        "admin action completed"
+    );
     Ok(redirect("/admin"))
 }
 
@@ -819,6 +851,12 @@ async fn impersonate_account(
         web::WEB_LIFETIME_S,
         secure,
     );
+    tracing::info!(
+        actor_id = actor.id,
+        target_id = id,
+        action = "start_impersonation",
+        "admin action completed"
+    );
     Ok(response)
 }
 
@@ -841,8 +879,8 @@ async fn begin_job(
         (job.cancel.clone(), job.processed.clone())
     };
     let store = state.store.clone();
-    let kind = kind.to_owned();
-    let id = match run_db(move || store.start_admin_job(&kind)).await {
+    let kind_for_db = kind.to_owned();
+    let id = match run_db(move || store.start_admin_job(&kind_for_db)).await {
         Ok(id) => id,
         Err(error) => {
             state.job.lock().map_err(|_| AdminError::internal())?.status =
@@ -851,6 +889,7 @@ async fn begin_job(
         }
     };
     state.job.lock().map_err(|_| AdminError::internal())?.id = Some(id);
+    tracing::info!(job_id = id, kind, "admin job started");
     Ok((cancel, processed))
 }
 
@@ -883,6 +922,7 @@ async fn finish_job(state: &AppState, result: Result<bool, ApiError>) {
         }
     }
     let mut job = state.job.lock().expect("job lock");
+    tracing::info!(job_id = ?id, %status, processed, "admin job finished");
     job.status = status;
     job.phase = "finished".to_owned();
 }

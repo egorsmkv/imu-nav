@@ -604,6 +604,11 @@ async fn start_session(
         secure_cookie(state, uri, headers),
     );
     clear_cookie(&mut response, "imu_nav_admin_return");
+    tracing::info!(
+        account_id = account.id,
+        admin = account.admin,
+        "browser session started"
+    );
     Ok(response)
 }
 
@@ -1249,6 +1254,9 @@ async fn stop_impersonation(
         clear_cookie(&mut response, "imu_nav_session");
     }
     clear_cookie(&mut response, "imu_nav_admin_return");
+    if restored {
+        tracing::info!(action = "stop_impersonation", "admin action completed");
+    }
     Ok(response)
 }
 

@@ -5,6 +5,7 @@
 //! cleanly instead of dereferencing freed memory.
 
 mod estimator;
+mod logging;
 mod network;
 mod profiling;
 mod route_filter;
@@ -106,6 +107,7 @@ fn with_network_tracker<T>(
 }
 
 fn error_code(error: FilterError) -> jint {
+    tracing::debug!(?error, "native filter input rejected");
     match error {
         FilterError::NonFinite
         | FilterError::InvalidTimeStep
@@ -137,7 +139,10 @@ fn with_route_state<T>(
 }
 
 fn guarded_code(action: impl FnOnce() -> jint) -> jint {
-    catch_unwind(AssertUnwindSafe(action)).unwrap_or(ERROR_INTERNAL)
+    catch_unwind(AssertUnwindSafe(action)).unwrap_or_else(|_| {
+        tracing::error!("native call panicked");
+        ERROR_INTERNAL
+    })
 }
 
 fn optional(value: f64) -> Option<f64> {

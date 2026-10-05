@@ -597,6 +597,7 @@ async fn register(
             tracing::error!(%error, "verification email failed");
         }
     }
+    tracing::info!(account_id = session.account.id, "API account registered");
     Ok(Json(session))
 }
 
@@ -609,15 +610,16 @@ async fn login(
     let email = normalize_email(&body.email)?;
     rate_limit(&state, "login", peer, &headers, &email)?;
     let store = state.store.clone();
-    run_db(move || {
+    let session = run_db(move || {
         let account = login_account(&store, &email, &body.password)?;
         account
             .map(|account| issue_session(&store, account, None))
             .transpose()
     })
     .await?
-    .map(Json)
-    .ok_or(ApiError(StatusCode::UNAUTHORIZED, "INVALID_CREDENTIALS"))
+    .ok_or(ApiError(StatusCode::UNAUTHORIZED, "INVALID_CREDENTIALS"))?;
+    tracing::info!(account_id = session.account.id, "API account signed in");
+    Ok(Json(session))
 }
 
 async fn refresh(

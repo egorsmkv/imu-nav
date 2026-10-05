@@ -63,15 +63,15 @@ async fn imports_filtered_cells_and_shuts_down_cleanly() -> anyhow::Result<()> {
             .arg(&csv)
             .env("RUST_LOG", "info")
             .env("NO_COLOR", "1")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit());
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped());
         #[cfg(feature = "profiling")]
         command.arg("--profile-output").arg(&profile_path);
         let mut server = ServerProcess(command.spawn()?);
-        let stdout = server.0.stdout.take().unwrap();
+        let stderr = server.0.stderr.take().unwrap();
         let (sender, receiver) = mpsc::channel();
         let reader = std::thread::spawn(move || {
-            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
                 if line.contains("cell server ready") {
                     let _ = sender.send(line);
                 }
@@ -166,7 +166,8 @@ fn admin_setup_prompts_and_finishes_after_one_password_line() -> anyhow::Result<
         .env_remove("RUST_LOG")
         .env("NO_COLOR", "1")
         .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()?;
     let mut input = child.stdin.take().unwrap();
     input.write_all(b"correct horse battery staple\n")?;
@@ -185,7 +186,7 @@ fn admin_setup_prompts_and_finishes_after_one_password_line() -> anyhow::Result<
         std::thread::sleep(Duration::from_millis(10));
     };
     let mut output = String::new();
-    child.stdout.take().unwrap().read_to_string(&mut output)?;
+    child.stderr.take().unwrap().read_to_string(&mut output)?;
     assert!(status.success());
     assert!(output.contains("waiting for one administrator password line"));
     assert!(output.contains("administrator password received"));

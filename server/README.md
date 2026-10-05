@@ -24,6 +24,14 @@ the command reads one line instead. It never logs the password. For example, if 
 Set `CELLS_LOG_LEVEL=debug` or pass `--log-level debug` to see setup and startup details.
 `RUST_LOG` takes precedence and also accepts module filters, for example
 `RUST_LOG=imu_nav_cell_server=debug,info`. The default level is `info`.
+Startup, successful sign-ins, administrator actions and jobs, uploads, and WebSocket sessions appear at
+`info`. Request outcomes appear at `debug` with the route, status, and elapsed time; health
+checks appear at `trace`. Server failures appear at `warn` or `error`. Logs go to standard
+error and omit passwords, tokens, request bodies, and URL query strings. For example:
+
+```bash
+RUST_LOG=imu_nav_cell_server=debug,info server/target/release/imu-nav-cell-server --data cells.sqlite3
+```
 
 Put the server behind a TLS reverse proxy for public deployments. Accounts replace the former
 shared API key: users register with email and password in the Android app, and only signed-in

@@ -58,7 +58,11 @@ impl JamDetector {
                 self.above_since_ms = None;
             }
         }
-        before != self.jammed
+        let changed = before != self.jammed;
+        if changed {
+            tracing::debug!(jammed = self.jammed, "receiver jamming state changed");
+        }
+        changed
     }
 
     pub fn reset(&mut self) {
@@ -255,7 +259,9 @@ impl TrustClassifier {
         self.check_receiver(&input, &mut hard, &mut soft);
         self.check_heading(fix, input.compass_deg, &mut soft);
 
-        self.finish_verdict(fix, hard, soft)
+        let verdict = self.finish_verdict(fix, hard, soft);
+        tracing::trace!(level = ?verdict.level, reasons = verdict.reasons.len(), "GPS fix classified");
+        verdict
     }
 
     /// Hard reasons always dominate; only the final GOOD verdict may publish a trusted anchor.

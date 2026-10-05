@@ -63,6 +63,7 @@ async fn main() -> Result<()> {
             EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| EnvFilter::new(&options.log_level)),
         )
+        .with_writer(std::io::stderr)
         .init();
     tracing::info!(data = %options.data.display(), "opening cell database");
     #[cfg(feature = "profiling")]

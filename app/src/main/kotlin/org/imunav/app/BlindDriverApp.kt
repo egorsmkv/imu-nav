@@ -3,6 +3,7 @@ package org.imunav.app
 import android.app.Application
 import android.content.Context
 import android.os.StrictMode
+import org.imunav.app.nativecore.NativeLogging
 import org.imunav.core.net.Http
 import org.maplibre.android.MapLibre
 import org.maplibre.android.module.http.HttpRequestUtil
@@ -16,6 +17,7 @@ class BlindDriverApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        NativeLogging.configure(BuildConfig.DIAGNOSTICS)
         if (BuildConfig.DIAGNOSTICS) {
             enableStrictMode()
             MainThreadWatchdog.start()

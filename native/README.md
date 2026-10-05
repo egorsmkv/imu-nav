@@ -12,9 +12,21 @@ through JNI. It has three crates:
 The split keeps the algorithms deterministic and directly testable on the host. Android-specific
 array conversion, handle ownership and error codes stay in the JNI crate.
 
+## Logs
+
+The native core emits structured tracing events but does not install a subscriber. The Android
+JNI library sends warnings and errors to Logcat under `ImuNavRust` in release builds. Debug and
+benchmark builds also show native debug events. To inspect them, run
+`adb logcat -s ImuNavRust:V`. Messages omit GPS coordinates, route positions and credentials.
+The host JNI library logs to standard error when loaded by a JVM.
+
+The simulation program logs to standard error and keeps its normal report output on standard
+output. It defaults to warnings and errors. Set `RUST_LOG=imu_nav_sim=info,imu_nav_core=debug`
+to see run progress and core state events. Avoid `trace` when comparing performance runs.
+
 ## `imu-nav-core`
 
-`imu-nav-core` has no external dependencies and forbids unsafe Rust. Its modules are:
+`imu-nav-core` uses `tracing` for diagnostics and forbids unsafe Rust. Its modules are:
 
 ### `lib.rs`: route-state filter
 

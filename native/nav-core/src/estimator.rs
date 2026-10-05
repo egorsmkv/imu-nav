@@ -216,6 +216,7 @@ impl NavigationEstimator {
         if mode == TravelMode::Foot {
             state.filter.set_speed_prior(0.0, initial.speed_sigma_mps)?;
         }
+        tracing::debug!(mode = ?mode, "navigation estimator created");
         Ok(Self {
             state: state.clone(),
             route,
@@ -646,6 +647,7 @@ impl NavigationEstimator {
         self.state.turn_state = TurnState::new(self.state.elapsed_ms);
         self.history.clear();
         self.remember(None);
+        tracing::debug!(mode = ?self.mode, "navigation route replaced");
         Ok(())
     }
 }

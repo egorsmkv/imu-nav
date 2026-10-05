@@ -10,6 +10,10 @@ optimizations. IMU Nav remains a research prototype, not a safety system.
 Use Rust 1.99+ and a C/C++ build toolchain. The custom Cargo profile keeps optimized code and debug
 symbols; forced frame pointers preserve allocator backtraces through optimized Rust code. Do not use the stripped Android release profile for these measurements.
 
+Run messages go to standard error and are filtered by `RUST_LOG`; the default is `warn`.
+For example, `RUST_LOG=imu_nav_sim=info,imu_nav_core=debug` shows run progress and native
+state changes. Keep tracing at the default level for before/after performance captures.
+
 ```bash
 RUSTFLAGS="-C force-frame-pointers=yes" cargo build --manifest-path native/Cargo.toml -p imu-nav-sim --profile profiling
 native/target/profiling/imu-nav-sim run --out captures/native-baseline
