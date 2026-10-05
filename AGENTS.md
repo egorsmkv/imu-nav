@@ -1,7 +1,7 @@
 # AGENTS.md
 
 Guidance for AI coding agents (and humans) working in this repository. Read this before changing
-code; `README.md` indexes the user and developer guides, and `docs/NAVIGATION.md` explains the algorithms.
+code; `README.md` indexes the user and developer guides, and `docs/reference/NAVIGATION.md` explains the algorithms.
 
 ## What this is
 
@@ -118,7 +118,7 @@ Requirements: JDK 17+, Android SDK platform 36. `adb` lives at `~/Library/Androi
   Android and is wrapped in `runCatching`. Points are clamped into the pack's bounds.
 - **APK licence hygiene:** `osmosis-osm-binary` (LGPL) and protobuf are excluded from the app in
   `app/build.gradle.kts` — only GraphHopper's `.osm.pbf` reader needs them (desktop only). Don't add
-  copyleft dependencies to `:app`; update `docs/LICENCES.md` for any dependency change.
+  copyleft dependencies to `:app`; update `docs/LICENCES.md` and `docs/reference/LICENCES.md` for any dependency change.
 - **R8:** GraphHopper/Jackson/HPPC/MapLibre are kept wholesale in `app/proguard-rules.pro`
   (reflection). Broad `-dontwarn com.graphhopper.**` hides missing-class errors — verify with the
   mapping file (`app/build/outputs/mapping/release/mapping.txt`) when changing dependencies.

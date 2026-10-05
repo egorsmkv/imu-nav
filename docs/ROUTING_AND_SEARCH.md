@@ -1,61 +1,29 @@
 # Routing and address search
 
-## Offline routing
-Routes are computed on the phone with **GraphHopper 11** from a *routing pack*: a road graph with
-contraction hierarchies built on a computer from an OpenStreetMap extract. OSRM (online) is only a
-fallback, and can be switched off in **Settings → Maps and route planning → Offline routing**. Packs also provide real speed
-limits (OSM `maxspeed`) for the speed sign and the dead-reckoning speed prior.
+A routing pack lets the phone calculate routes and search addresses without internet. A map pack draws the streets; it is a different download. See the [glossary](GLOSSARY.md) if these terms are new.
 
-Packs contain two profiles, **car** and **foot** (walking: footways, paths, steps, pedestrian
-streets, preferring pleasant ways over busy roads). Choose *Car* or *Walk* in the "Where to?" panel
-before starting. Walking routes are offline-only (the public OSRM server drives only). Packs built
-before walking support (`pack.json` without `"profiles"`) still load; *Walk* is then disabled.
+## Use an offline routing pack
 
-Build a pack (needs a desktop JVM; the full Ukraine takes a few minutes and ~10 GB RAM):
+1. Install the built-in pack during setup if your build offers one. Otherwise open **Settings → Maps and route planning → Offline routing** and import or download a routing-pack ZIP.
+2. In **Where to?**, choose **Car** or **Walk**. Older packs may support only Car.
+3. Search for a destination and, if needed, a starting address. Review the route before tapping **Start**.
+
+Walking routes require an offline pack with a foot profile. If you allow online routing, the app can use an online fallback for car routes when offline routing is unavailable.
+
+## Search for an address
+
+1. Type a town, street or house number into the **From** or **To** field.
+2. Choose a result. A routing pack with `search.db` provides offline results.
+3. If no offline result appears, you can allow online search in **Settings → Maps and route planning → Offline routing**. You can choose your own search server in **Address search**.
+
+Online search sends your search text to the chosen server. Turn it off if you want to keep searches on the phone.
+
+## Build a pack on a computer
+
+A full Ukraine build needs about 10 GB of RAM. Download an OpenStreetMap extract and run:
+
 ```bash
-curl -LO https://download.geofabrik.de/europe/ukraine-latest.osm.pbf
 ./gradlew :routing:run --args="--osm ukraine-latest.osm.pbf --out graph-ukraine --name Ukraine"
-# → graph-ukraine/ and graph-ukraine.zip
-```
-**Road heights (for terrain matching):** add `--elevation skadi` to store a height for every road
-point from a digital elevation model (AWS Terrain Tiles; `srtm`, `srtmgl1`, `cgiar` and `gmted` also work).
-Tiles are downloaded once into `--elevation-cache <dir>` (default `elevation-cache/`; about 150 tiles, several GB
-unpacked, for Ukraine). Bridges and tunnels get heights interpolated between their ends. `pack.json` then says
-`"elevation":true`; older packs and online routes simply have no height profile, and terrain matching stays off.
-```bash
-./gradlew :routing:run --args="--osm ukraine-latest.osm.pbf --out graph-ukraine --name Ukraine --elevation skadi --elevation-cache ~/dem-cache"
 ```
 
-**Bundling a pack in a Play APK:** copy the zip and its metadata into the Play-only assets before building —
-```bash
-mkdir -p app/src/play/assets/routing
-cp graph-ukraine.zip app/src/play/assets/routing/pack.zip
-cp graph-ukraine/pack.json app/src/play/assets/routing/pack.json
-```
-On first start the app unpacks it in the background (~20 s for Ukraine) and uses it. It is only
-reinstalled when an update ships a newer pack, and stays removed if the user removes it (Settings
-offers *Install built-in routing pack*). The APK grows by the zip size (~400+ MB for Ukraine with car and
-foot profiles and the search index, making the APK ~450+ MB — over Google Play's 200 MB base-APK limit, fine for
-sideloading); both files are gitignored. The F-Droid flavor deliberately never bundles this locally
-generated pack: users can import or download the same freely licensed data pack in the app.
-
-Packs can also be installed at runtime with **Import pack** (the `.zip`) or **Download** from any HTTP(S) URL — the
-zip is unpacked while it streams, and interrupted downloads resume. The graph is memory-mapped, so
-large regions do not need a large heap.
-
-Android cannot compile GraphHopper's custom models at runtime (Janino generates JVM bytecode), so
-`PhoneGraphHopper` builds the same weighting from plain code; `GraphSpec` holds everything the
-builder and the phone must agree on, and `OfflineGraphTest` checks both give identical routes.
-
-## Address search
-Routing packs also contain `search.db`, an SQLite FTS4 index of settlements, streets and house
-numbers built from the same OSM extract (~87 MB for Ukraine; skip with `--no-addresses` or
-`--no-search`). Queries like `Хрещатик 22`, `Київ Хрещатик`, `вул. Шевченка, Львів` or `Буча`
-work offline in a few milliseconds; street-type words are ignored and results near you rank first.
-The route panel uses the same text search for both the starting address and the destination; the
-current trusted position remains the default start until the user chooses another one.
-When the offline index finds nothing and online use is allowed (**Settings → Maps and route planning → Offline routing →
-Allow online routing and search**), a [Photon](https://github.com/komoot/photon) geocoder is asked.
-The public server `photon.komoot.io` is the default; **Settings → Maps and route planning → Address search** accepts your own
-server instead (a host such as `http://192.168.1.10:2322` or the full `…/api` URL), with a *Test*
-button that runs a sample query. Self-hosting keeps search text off third-party servers.
+Import the resulting ZIP in the app. For road heights, pack bundling and matching the phone's routing rules, see the [detailed routing reference](reference/ROUTING_AND_SEARCH.md).

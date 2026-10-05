@@ -19,9 +19,11 @@ IMU Nav is a research prototype, not a safety system.
 - [Build, testing and performance checks](docs/BUILD_AND_TEST.md)
 - [Status and limitations](docs/STATUS_AND_LIMITATIONS.md)
 - [Licences and provenance](docs/LICENCES.md)
+- [Glossary](docs/GLOSSARY.md)
 
 Specialized guides: [F-Droid releases](docs/FDROID.md), [Kotlin coverage](docs/KOTLIN_COVERAGE.md),
 [Rust coverage](docs/RUST_COVERAGE.md) and [native verification](docs/NATIVE_VERIFICATION.md).
+Each guide gives short steps and links to its detailed reference.
 
 ## Quick build
 

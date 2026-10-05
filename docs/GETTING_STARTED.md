@@ -1,39 +1,24 @@
 # Getting started
 
-## First launch
+IMU Nav can guide a trip when GPS becomes unreliable. It is a research prototype, not a safety system. You can finish setup with limited features and return to it later.
 
-The setup checklist appears once on new and existing installations after the onboarding update.
-It offers precise location, notifications (Android 13+), physical activity (Android 10+), nearby
-devices for Bluetooth OBD-II (Android 12+), and a separate battery optimization exemption. Grants
-enable access; they do not turn on walking mode or connect an OBD adapter. The checklist also checks
-the phone's Location switch and opens system settings if it is off. Disabling Location is supported
-on Android 8–10 as well as newer phones; it does not stop the app or its inertial navigation. Declined permissions can
-be enabled later, including through Android Settings when the permission dialog is no longer offered.
+## Set up the app
 
-Choose the UI and voice language directly in onboarding: phone default, Ukrainian, English or Russian.
-The selection is saved and the checklist stays open when the language changes.
-The **Telegram group** link opens <https://t.me/imu_nav> from onboarding as well as Settings.
+1. Open the app and choose the language for screens and voice directions.
+2. Tap **Enable permissions**. Allow precise location for navigation. Allow notifications if you want trip updates. Walking uses the Physical activity permission; a Bluetooth car-speed adapter uses Nearby devices on newer Android versions.
+3. If the app says the phone's Location switch is off, open the offered Android settings and turn it on. A permission grant alone does not switch Location on.
+4. Choose **Install built-in routing pack** or **Install built-in towers** if those options are available and you want the offline data. Both are optional. F-Droid users can import or download a routing pack later in Settings.
+5. Tap **Continue with limited functionality** when you are ready. Any chosen data installation can finish in the background.
 
-The bundled routing/address-search archive is **optional**: it is not unpacked until you tap **Install
-built-in routing pack**, and the work then continues in the background. The built-in cell tower database
-is optional too and is not unpacked until you tap **Install built-in towers**. Skip it to learn towers from trusted GPS and use your own sharing server; the checklist
-links to **Settings → Cell towers → Sharing server**. Skipping towers does not block setup completion.
-Existing tower data is preserved, and database resets only reinstall the archive after explicit opt-in.
-Play builds can include the routing archive; F-Droid builds
-require a routing pack imported or downloaded in Settings. Missing archives or denied permissions
-do not block **Continue with limited functionality**, and preparation continues in the background.
-Reopen the checklist from **Settings → Set up IMU Nav**. Previously removed routing packs stay removed
-until explicitly reinstalled. IMU Nav is a research prototype, not a safety system.
+To return to the checklist, open **Settings → Set up IMU Nav**. Skipping a pack does not erase tower data already on the phone.
 
-## Network proxy
+## Set a network proxy, if needed
 
-**Settings → Network proxy** supports the phone/system default (initial setting), explicit direct
-connections, an HTTP proxy with optional Basic username/password, or an unauthenticated SOCKS proxy.
-Enter a hostname/IP (not a URL) and port, then tap **Apply proxy settings**. Settings persist across
-restarts and take effect for new online map/style/tile requests, route/search requests, archive and
-tower downloads, and cell sync. Active downloads keep their existing connection/configuration.
-A custom proxy failure never silently falls back to a direct connection. This is not a VPN: Android
-location providers and other apps are unaffected. Offline features do not need a proxy.
-HTTP proxy credentials are stored in app-private preferences, not encrypted by the app, and never
-logged or included in exports. HTTP proxy authentication is not encrypted on the proxy connection;
-use only trusted proxies. SOCKS authentication is not supported.
+1. Open **Settings → Network proxy**.
+2. Choose the phone's default connection, a direct connection, an HTTP proxy, or a SOCKS proxy.
+3. For a proxy, enter its host name or IP address and port. Enter a username and password only for an HTTP proxy that you trust.
+4. Tap **Apply proxy settings**. New online requests use the setting; a download already in progress keeps its current connection.
+
+Offline navigation does not need a proxy. This setting does not act as a VPN for the rest of the phone. HTTP proxy credentials are stored in app-private settings but are not encrypted by the app.
+
+See the [glossary](GLOSSARY.md) for unfamiliar terms and the [detailed setup reference](reference/GETTING_STARTED.md) for permission and proxy behaviour.

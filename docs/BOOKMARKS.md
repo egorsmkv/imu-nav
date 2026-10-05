@@ -1,18 +1,15 @@
 # Bookmarks
 
-Tap the bookmark button on the map for **Places** and **Routes**. Save a search result with its
-bookmark button, or use **Save start**, **Save destination** and **Save route** in the route editor.
-Long-pressing the map selects a destination that can then be saved. Give each bookmark a name;
-the library supports filtering, renaming and confirmed deletion. Saved places also appear above
-recent searches and can fill either route endpoint without an address-search pack or network.
+Bookmarks keep places and routes on this phone so you can use them again, even without address search.
 
-A saved route remembers the endpoints and car/walking mode, then calculates a fresh preview when
-opened. **My location** remains automatic and uses the permitted position available at that time;
-a manually selected start stays fixed. Without a usable position, select a manual start or wait for
-positioning. Opening a bookmark never starts navigation. Stop an active trip before applying a
-bookmark; browsing and management remain available during navigation.
+## Save and use a bookmark
 
-Bookmarks persist locally in a separate SQLite database and survive routing-pack replacement.
-Saved routes contain their own endpoint copies, so renaming or deleting a place does not change
-any route. There is no synchronization, file import/export or backup; existing Android backup
-exclusions apply. This remains a research prototype, not a safety system.
+1. Tap the bookmark button on the map to open **Places** and **Routes**.
+2. Save a place from a search result or use **Save start** or **Save destination** in the route editor. Give it a name.
+3. To save both endpoints and the travel mode, choose **Save route**.
+4. Open a saved place to use it as a route endpoint. Open a saved route to see a fresh route preview, then tap **Start** only if you want to navigate.
+5. Filter the list to find a bookmark, or use its menu to rename or delete it.
+
+A saved route keeps its own copy of each endpoint. Renaming or deleting a saved place does not change that route. Bookmarks stay in a local database; they do not sync or have a file backup.
+
+See the [glossary](GLOSSARY.md) and the [detailed bookmarks reference](reference/BOOKMARKS.md) for storage and active-trip behaviour.

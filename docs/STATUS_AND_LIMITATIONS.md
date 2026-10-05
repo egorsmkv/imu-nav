@@ -1,14 +1,13 @@
 # Status and limitations
 
-- Walking mode is new and tuned only on simulations; record a few walks (with GPS) and check them
-  with the replay tool before relying on it.
+IMU Nav is a research prototype, not a safety system. It has not been validated as a replacement for normal navigation or driver attention.
 
-- Offline routing packs carry no traffic-signal data yet, so the stop-at-signal snap and signal
-  speed plan stay inactive. The OSRM fallback uses the public demo server — self-host it for real use.
-- The service area defaults to a coarse Ukraine outline (`ServiceArea.UKRAINE_COARSE`); fixes
-  outside it are rejected as spoofed. Change it in `AppGraph` to use the app elsewhere.
-- Free-drive (no route) dead reckoning and speed cameras are not implemented yet;
-  `Tuning` already carries the camera parameters.
-- The engine differs from the analysed app in a few places: the gyro bias estimate is applied to
-  turn integration, and projections compute exact arc-length.
-- Not road-tested. Treat as a research prototype, never as a safety system.
+## Before relying on a feature
+
+1. Test it on a route you know while you can still see where you are.
+2. Record trips with usable GPS, then [replay](TRIPS.md) them to compare the estimate with the recorded track.
+3. Treat an uncertain position or a rejected GPS fix as a reason to check your surroundings yourself.
+
+Walking mode has mainly been tuned in simulations. Offline packs do not yet carry traffic-signal data, and free-drive navigation without a planned route is not implemented. The default service area is a coarse outline of Ukraine; fixes outside it are rejected. The public online routing fallback is a demo service.
+
+See the [glossary](GLOSSARY.md) and the [detailed limitations reference](reference/STATUS_AND_LIMITATIONS.md) for the full list.
