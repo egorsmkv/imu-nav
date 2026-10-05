@@ -2037,3 +2037,433 @@ async fn browser_verification_and_recovery_paths_gate_unverified_uploads() -> Re
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn administrator_can_impersonate_active_user_and_return_with_audit() -> Result<()> {
+    let server = start_server().await?;
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?;
+    let admin_login = client
+        .post(format!("{}/login", server.base_url))
+        .form(&[
+            ("email", "admin@example.org"),
+            ("password", "correct horse battery staple"),
+        ])
+        .send()
+        .await?;
+    assert_eq!(admin_login.status(), StatusCode::SEE_OTHER);
+    let admin_cookie = admin_login.headers()["set-cookie"]
+        .to_str()?
+        .split(';')
+        .next()
+        .unwrap()
+        .to_owned();
+    let register: serde_json::Value = client
+        .post(format!("{}/v1/auth/register", server.base_url))
+        .json(&serde_json::json!({"email":"driver@example.org","password":"driver safe password"}))
+        .send()
+        .await?
+        .json()
+        .await?;
+    let target_id = register["account"]["id"].as_i64().unwrap();
+    assert_eq!(
+        client
+            .post(format!("{}/v1/cells", server.base_url))
+            .bearer_auth(register["access_token"].as_str().unwrap())
+            .header("x-device-id", "driver-phone")
+            .body(upload_body(tower(50.4))?)
+            .send()
+            .await?
+            .status(),
+        StatusCode::OK
+    );
+    let dashboard = client
+        .get(format!("{}/admin", server.base_url))
+        .header("cookie", &admin_cookie)
+        .send()
+        .await?
+        .text()
+        .await?;
+    assert!(dashboard.contains(&format!("/admin/accounts/{target_id}/impersonate")));
+    let csrf = dashboard
+        .split("name=\"csrf\" value=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap()
+        .to_owned();
+    let path = format!("{}/admin/accounts/{target_id}/impersonate", server.base_url);
+    assert_eq!(
+        client
+            .post(&path)
+            .header("cookie", &admin_cookie)
+            .form(&[("csrf", "wrong")])
+            .send()
+            .await?
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        client
+            .post(format!("{}/admin/accounts/1/impersonate", server.base_url))
+            .header("cookie", &admin_cookie)
+            .form(&[("csrf", csrf.as_str())])
+            .send()
+            .await?
+            .status(),
+        StatusCode::CONFLICT
+    );
+    let switched = client
+        .post(&path)
+        .header("cookie", &admin_cookie)
+        .form(&[("csrf", csrf.as_str())])
+        .send()
+        .await?;
+    assert_eq!(switched.status(), StatusCode::SEE_OTHER);
+    assert_eq!(switched.headers()["location"], "/account");
+    let cookies = switched
+        .headers()
+        .get_all("set-cookie")
+        .iter()
+        .map(|value| {
+            value
+                .to_str()
+                .unwrap()
+                .split(';')
+                .next()
+                .unwrap()
+                .to_owned()
+        })
+        .collect::<Vec<_>>();
+    let user_cookie = cookies
+        .iter()
+        .find(|cookie| cookie.starts_with("imu_nav_session="))
+        .unwrap()
+        .clone();
+    let return_cookie = cookies
+        .iter()
+        .find(|cookie| cookie.starts_with("imu_nav_admin_return="))
+        .unwrap()
+        .clone();
+    let combined = format!("{user_cookie}; {return_cookie}");
+    assert_eq!(
+        client
+            .get(format!("{}/admin", server.base_url))
+            .header("cookie", &combined)
+            .send()
+            .await?
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    let panel = client
+        .get(format!("{}/account", server.base_url))
+        .header("cookie", &combined)
+        .send()
+        .await?
+        .text()
+        .await?;
+    assert!(panel.contains("Administrator view as driver@example.org"));
+    assert!(panel.contains("account:") && panel.contains("driver-phone"));
+    let user_csrf = panel
+        .split("name=\"csrf\" value=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap()
+        .to_owned();
+    assert_eq!(
+        client
+            .get(format!("{}/account/export?mcc=255", server.base_url))
+            .header("cookie", &combined)
+            .send()
+            .await?
+            .status(),
+        StatusCode::OK
+    );
+    let device = format!("account:{target_id}:driver-phone");
+    assert_eq!(
+        client
+            .post(format!("{}/account/contributions/delete", server.base_url))
+            .header("cookie", &combined)
+            .form(&delete_form(&user_csrf, &device))
+            .send()
+            .await?
+            .status(),
+        StatusCode::SEE_OTHER
+    );
+    assert_eq!(
+        client
+            .post(format!("{}/account/stop-impersonation", server.base_url))
+            .header("cookie", &combined)
+            .form(&[("csrf", "wrong")])
+            .send()
+            .await?
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    let restored = client
+        .post(format!("{}/account/stop-impersonation", server.base_url))
+        .header("cookie", &combined)
+        .form(&[("csrf", user_csrf.as_str())])
+        .send()
+        .await?;
+    assert_eq!(restored.status(), StatusCode::SEE_OTHER);
+    assert_eq!(restored.headers()["location"], "/admin");
+    assert_eq!(
+        client
+            .get(format!("{}/admin", server.base_url))
+            .header("cookie", &admin_cookie)
+            .send()
+            .await?
+            .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        client
+            .get(format!("{}/account", server.base_url))
+            .header("cookie", &user_cookie)
+            .send()
+            .await?
+            .status(),
+        StatusCode::SEE_OTHER
+    );
+    let automatic_return = client
+        .get(format!("{}/account", server.base_url))
+        .header("cookie", &combined)
+        .send()
+        .await?;
+    assert_eq!(automatic_return.status(), StatusCode::SEE_OTHER);
+    assert_eq!(automatic_return.headers()["location"], "/admin");
+    let late_return = client
+        .post(format!("{}/account/stop-impersonation", server.base_url))
+        .header("cookie", &combined)
+        .form(&[("csrf", user_csrf.as_str())])
+        .send()
+        .await?;
+    assert_eq!(late_return.status(), StatusCode::SEE_OTHER);
+    assert_eq!(late_return.headers()["location"], "/admin");
+    let connection = rusqlite::Connection::open(server.database.path())?;
+    let actions = connection
+        .prepare("SELECT action FROM admin_audit WHERE actor_id=1 ORDER BY id")?
+        .query_map([], |row| row.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    for expected in [
+        "start_impersonation",
+        "impersonate_export",
+        "impersonate_delete_observation",
+        "stop_impersonation",
+    ] {
+        assert!(
+            actions.iter().any(|action| action == expected),
+            "missing {expected} audit"
+        );
+    }
+    assert_eq!(
+        client
+            .get(format!("{}/v1/auth/me", server.base_url))
+            .bearer_auth(register["access_token"].as_str().unwrap())
+            .send()
+            .await?
+            .status(),
+        StatusCode::OK
+    );
+    let switched_again = client
+        .post(&path)
+        .header("cookie", &admin_cookie)
+        .form(&[("csrf", csrf.as_str())])
+        .send()
+        .await?;
+    let second_user_cookie = switched_again
+        .headers()
+        .get_all("set-cookie")
+        .iter()
+        .map(|value| {
+            value
+                .to_str()
+                .unwrap()
+                .split(';')
+                .next()
+                .unwrap()
+                .to_owned()
+        })
+        .find(|cookie| cookie.starts_with("imu_nav_session="))
+        .unwrap();
+    assert_eq!(
+        client
+            .post(format!("{}/account/logout", server.base_url))
+            .header("cookie", &admin_cookie)
+            .form(&[("csrf", csrf.as_str())])
+            .send()
+            .await?
+            .status(),
+        StatusCode::SEE_OTHER
+    );
+    assert_eq!(
+        client
+            .get(format!("{}/account", server.base_url))
+            .header("cookie", &second_user_cookie)
+            .send()
+            .await?
+            .status(),
+        StatusCode::SEE_OTHER
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn impersonation_rejects_suspended_users_and_signout_revokes_admin() -> Result<()> {
+    let server = start_server().await?;
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?;
+    let register: serde_json::Value = client
+        .post(format!("{}/v1/auth/register", server.base_url))
+        .json(&serde_json::json!({"email":"other@example.org","password":"other safe password"}))
+        .send()
+        .await?
+        .json()
+        .await?;
+    let target_id = register["account"]["id"].as_i64().unwrap();
+    let login = client
+        .post(format!("{}/login", server.base_url))
+        .form(&[
+            ("email", "admin@example.org"),
+            ("password", "correct horse battery staple"),
+        ])
+        .send()
+        .await?;
+    let admin_cookie = login.headers()["set-cookie"]
+        .to_str()?
+        .split(';')
+        .next()
+        .unwrap()
+        .to_owned();
+    let dashboard = client
+        .get(format!("{}/admin", server.base_url))
+        .header("cookie", &admin_cookie)
+        .send()
+        .await?
+        .text()
+        .await?;
+    let csrf = dashboard
+        .split("name=\"csrf\" value=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap()
+        .to_owned();
+    assert_eq!(
+        client
+            .post(format!(
+                "{}/admin/accounts/{target_id}/suspend",
+                server.base_url
+            ))
+            .header("cookie", &admin_cookie)
+            .form(&[("csrf", csrf.as_str())])
+            .send()
+            .await?
+            .status(),
+        StatusCode::SEE_OTHER
+    );
+    let impersonate = format!("{}/admin/accounts/{target_id}/impersonate", server.base_url);
+    assert_eq!(
+        client
+            .post(&impersonate)
+            .header("cookie", &admin_cookie)
+            .form(&[("csrf", csrf.as_str())])
+            .send()
+            .await?
+            .status(),
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        client
+            .post(format!(
+                "{}/admin/accounts/{target_id}/restore",
+                server.base_url
+            ))
+            .header("cookie", &admin_cookie)
+            .form(&[("csrf", csrf.as_str())])
+            .send()
+            .await?
+            .status(),
+        StatusCode::SEE_OTHER
+    );
+    let switched = client
+        .post(&impersonate)
+        .header("cookie", &admin_cookie)
+        .form(&[("csrf", csrf.as_str())])
+        .send()
+        .await?;
+    let cookies = switched
+        .headers()
+        .get_all("set-cookie")
+        .iter()
+        .map(|value| {
+            value
+                .to_str()
+                .unwrap()
+                .split(';')
+                .next()
+                .unwrap()
+                .to_owned()
+        })
+        .collect::<Vec<_>>();
+    let active = cookies
+        .iter()
+        .find(|cookie| cookie.starts_with("imu_nav_session="))
+        .unwrap();
+    let return_cookie = cookies
+        .iter()
+        .find(|cookie| cookie.starts_with("imu_nav_admin_return="))
+        .unwrap();
+    let combined = format!("{active}; {return_cookie}");
+    let panel = client
+        .get(format!("{}/account", server.base_url))
+        .header("cookie", &combined)
+        .send()
+        .await?
+        .text()
+        .await?;
+    let user_csrf = panel
+        .split("name=\"csrf\" value=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap()
+        .to_owned();
+    assert_eq!(
+        client
+            .post(format!("{}/account/logout", server.base_url))
+            .header("cookie", &combined)
+            .form(&[("csrf", user_csrf.as_str())])
+            .send()
+            .await?
+            .status(),
+        StatusCode::SEE_OTHER
+    );
+    assert_eq!(
+        client
+            .get(format!("{}/admin", server.base_url))
+            .header("cookie", &admin_cookie)
+            .send()
+            .await?
+            .status(),
+        StatusCode::SEE_OTHER
+    );
+    assert_eq!(
+        client
+            .get(format!("{}/account", server.base_url))
+            .header("cookie", &combined)
+            .send()
+            .await?
+            .status(),
+        StatusCode::SEE_OTHER
+    );
+    Ok(())
+}

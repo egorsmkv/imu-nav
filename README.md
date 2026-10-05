@@ -425,6 +425,8 @@ Administrators sign in through `/login` and are directed to `/admin`. Tower dele
 quarantine first; the panel also supports account suspension and atomic seed imports and policy
 recalculation. The dashboard pages through towers, accounts, audit activity, and observations;
 imports show live staging/progress, can be cancelled, and provide a rejected-row CSV report.
+Administrators can use **View as user** on an active ordinary account to open its account panel
+in a short lived, audited browser session, then return to the administrator panel.
 Phones now receive tower removals on their next sync when a shared tower is quarantined, deleted,
 or withdrawn by policy. Recalculation applies Ukraine-only and maximum-range rules to stored
 observations; maximum-jump checks still apply to new uploads because earlier positions are not

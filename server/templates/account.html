@@ -35,6 +35,7 @@
   <form action="/account/logout" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="quiet" type="submit">Sign out</button></form>
 </header>
 <main>
+  {% if impersonating %}<section class="card warning" role="status"><strong>Administrator view as {{ email }}</strong><p>You are signed in as this user from {{ actor_email }}. Account actions are recorded in the administrator activity log. This view expires after one hour.</p><form action="/account/stop-impersonation" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Return to administrator panel</button></form></section>{% endif %}
   {% if !message.is_empty() %}<p class="notice" role="status">{{ message }}</p>{% endif %}
   <section class="card">
     <h1>My cell observations</h1>

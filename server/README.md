@@ -59,6 +59,15 @@ administrator actions, and the current anti-poisoning policy. Observations can b
 device, accounts by email, and audit entries by action. Forms use the browser session and CSRF token.
 The pages use Askama templates and Bootstrap 5.3.8 from the jsDelivr CDN.
 
+For an active ordinary account, use **View as user** in the Accounts table to open its account
+panel without its password. The delegated browser session lasts at most one hour and depends on
+the original administrator session remaining active. A banner names the account and acting
+administrator; **Return to administrator panel** restores the administrator session. A user cannot
+reach `/admin` through the delegated session. Starting, stopping, exporting, and successful
+account actions made during impersonation are recorded with the administrator's ID in the audit
+log. Signing out while impersonating signs out both browser sessions. Suspended accounts and other
+administrators cannot be impersonated.
+
 Administrators can correct a tower position, remove individual observations, quarantine or restore
 a tower, and delete its current data after quarantine and typing `DELETE`. Quarantined towers are
 hidden from public downloads while new observations continue to be stored. Deletion retains the

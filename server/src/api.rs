@@ -107,6 +107,10 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/v1/events", get(websocket_events))
         .layer(axum::extract::DefaultBodyLimit::max(MAX_UPLOAD_BYTES))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            web::audit_impersonated_requests,
+        ))
         .with_state(state)
 }
 

@@ -7,8 +7,10 @@ use crate::{CellKey, Radio, ServerEvent};
 use askama::Template;
 use axum::Router;
 use axum::body::Body;
+use axum::extract::Request;
 use axum::extract::{ConnectInfo, Form, Query, State};
-use axum::http::{HeaderMap, StatusCode, Uri, header};
+use axum::http::{HeaderMap, Method, StatusCode, Uri, header};
+use axum::middleware::Next;
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use futures_util::StreamExt;
@@ -19,7 +21,8 @@ use std::str::FromStr;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tokio_util::io::ReaderStream;
 
-const WEB_LIFETIME_S: i64 = 7 * 24 * 60 * 60;
+pub(crate) const WEB_LIFETIME_S: i64 = 7 * 24 * 60 * 60;
+pub(crate) const IMPERSONATION_LIFETIME_S: i64 = 60 * 60;
 const PAGE_SIZE: usize = 100;
 const CONTENT_SECURITY_POLICY: &str = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'";
 
@@ -44,6 +47,7 @@ pub(crate) fn router() -> Router<AppState> {
         )
         .route("/account/close", post(close_account))
         .route("/account/logout", post(logout))
+        .route("/account/stop-impersonation", post(stop_impersonation))
         .route("/account/contributions/delete", post(delete_one))
         .route("/account/contributions/delete-all", post(delete_all))
 }
@@ -78,6 +82,15 @@ struct AccountTemplate {
     email_verified: bool,
     message: String,
     sessions: Vec<SessionRow>,
+    impersonating: bool,
+    actor_email: String,
+}
+
+struct Impersonation {
+    actor_id: i64,
+    actor_email: String,
+    target_id: i64,
+    admin_token_hash: String,
 }
 
 struct SessionRow {
@@ -476,37 +489,62 @@ async fn start_session(
         Ok(())
     })
     .await?;
-    let secure = uri.scheme_str() == Some("https")
+    let mut response = redirect(if account.admin { "/admin" } else { "/account" });
+    set_session_cookie(
+        &mut response,
+        "imu_nav_session",
+        &raw,
+        WEB_LIFETIME_S,
+        secure_cookie(state, uri, headers),
+    );
+    clear_cookie(&mut response, "imu_nav_admin_return");
+    Ok(response)
+}
+
+pub(crate) fn secure_cookie(state: &AppState, uri: &Uri, headers: &HeaderMap) -> bool {
+    uri.scheme_str() == Some("https")
         || state.config.trust_proxy
             && headers
                 .get("x-forwarded-proto")
-                .is_some_and(|value| value == "https");
-    let mut response = redirect(if account.admin { "/admin" } else { "/account" });
-    response.headers_mut().insert(
+                .is_some_and(|value| value == "https")
+}
+
+pub(crate) fn set_session_cookie(
+    response: &mut Response,
+    name: &str,
+    raw: &str,
+    lifetime: i64,
+    secure: bool,
+) {
+    response.headers_mut().append(
         header::SET_COOKIE,
         format!(
-            "imu_nav_session={raw}; Path=/; HttpOnly; SameSite=Strict; Max-Age={WEB_LIFETIME_S}{}",
+            "{name}={raw}; Path=/; HttpOnly; SameSite=Strict; Max-Age={lifetime}{}",
             if secure { "; Secure" } else { "" }
         )
         .parse()
         .expect("URL-safe token cookie"),
     );
-    Ok(response)
 }
 
-/// Resolve only a valid, unexpired browser token from an `HttpOnly` cookie.
-pub(crate) async fn web_account(
-    state: &AppState,
-    headers: &HeaderMap,
-) -> Result<Option<(Account, String)>, ApiError> {
-    let raw = headers
+fn clear_cookie(response: &mut Response, name: &str) {
+    response.headers_mut().append(
+        header::SET_COOKIE,
+        format!("{name}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0")
+            .parse()
+            .expect("cookie"),
+    );
+}
+
+pub(crate) fn cookie_token(headers: &HeaderMap, name: &str) -> Option<String> {
+    headers
         .get(header::COOKIE)
         .and_then(|value| value.to_str().ok())
         .and_then(|cookies| {
             cookies
                 .split(';')
                 .map(str::trim)
-                .find_map(|cookie| cookie.strip_prefix("imu_nav_session="))
+                .find_map(|cookie| cookie.strip_prefix(&format!("{name}=")))
         })
         .filter(|value| {
             value.len() == 43
@@ -514,27 +552,143 @@ pub(crate) async fn web_account(
                     .bytes()
                     .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
         })
-        .map(str::to_owned);
+        .map(str::to_owned)
+}
+
+/// Record successful account actions performed through a delegated browser session.
+pub(crate) async fn audit_impersonated_requests(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let action = match (request.method(), request.uri().path()) {
+        (&Method::GET, "/account/export") => Some("impersonate_export"),
+        (&Method::POST, "/account/logout") => Some("impersonate_logout"),
+        (&Method::POST, "/account/password") => Some("impersonate_change_password"),
+        (&Method::POST, "/account/email") => Some("impersonate_change_email"),
+        (&Method::POST, "/account/email/resend") => Some("impersonate_resend_email"),
+        (&Method::POST, "/account/sharing/pause") => Some("impersonate_pause_sharing"),
+        (&Method::POST, "/account/sharing/resume") => Some("impersonate_resume_sharing"),
+        (&Method::POST, "/account/sessions/revoke") => Some("impersonate_revoke_session"),
+        (&Method::POST, "/account/sessions/revoke-others") => Some("impersonate_revoke_sessions"),
+        (&Method::POST, "/account/close") => Some("impersonate_close_account"),
+        (&Method::POST, "/account/contributions/delete") => Some("impersonate_delete_observation"),
+        (&Method::POST, "/account/contributions/delete-all") => Some("impersonate_delete_all"),
+        _ => None,
+    };
+    let actor = if let (Some(_), Some(raw)) =
+        (action, cookie_token(request.headers(), "imu_nav_session"))
+    {
+        let store = state.store.clone();
+        match run_db(move || {
+            let target = auth::account_for_token(&store, &raw, "web_impersonated")?;
+            let impersonation = impersonation_for_token(&store, &raw)?;
+            Ok(target
+                .zip(impersonation)
+                .and_then(|((account, _), record)| {
+                    (account.id == record.target_id).then_some((record.actor_id, record.target_id))
+                }))
+        })
+        .await
+        {
+            Ok(actor) => actor,
+            Err(error) => {
+                tracing::error!(?error, "impersonation audit lookup failed");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let response = next.run(request).await;
+    if let (Some(action), Some((actor_id, target_id))) = (action, actor)
+        && (response.status().is_success() || response.status().is_redirection())
+    {
+        let store = state.store.clone();
+        if let Err(error) =
+            run_db(move || store.audit(actor_id, action, &target_id.to_string())).await
+        {
+            tracing::error!(?error, "impersonation audit write failed");
+        }
+    }
+    response
+}
+
+fn impersonation_for_token(
+    store: &crate::CellStore,
+    raw: &str,
+) -> anyhow::Result<Option<Impersonation>> {
+    use rusqlite::OptionalExtension;
+    Ok(store.connection()?.query_row(
+        "SELECT wi.actor_id,actor.email,wi.target_id,wi.admin_token_hash FROM web_impersonations wi
+         JOIN auth_tokens admin_token ON admin_token.token_hash=wi.admin_token_hash AND admin_token.kind='web' AND admin_token.expires_s>?2
+         JOIN users actor ON actor.id=wi.actor_id AND actor.admin=1 AND actor.suspended=0
+         WHERE wi.token_hash=?1",
+        params![auth::digest(raw), auth::now_s()],
+        |row| Ok(Impersonation { actor_id: row.get(0)?, actor_email: row.get(1)?, target_id: row.get(2)?, admin_token_hash: row.get(3)? }),
+    ).optional()?)
+}
+
+/// Resolve only a valid, unexpired browser token from an `HttpOnly` cookie.
+pub(crate) async fn web_account(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<Option<(Account, String)>, ApiError> {
+    let raw = cookie_token(headers, "imu_nav_session");
     let Some(raw) = raw else {
         return Ok(None);
     };
     let store = state.store.clone();
     let token = raw.clone();
-    Ok(
-        run_db(move || auth::account_for_token(&store, &token, "web"))
-            .await?
-            .map(|(account, _)| (account, raw)),
-    )
+    let account = run_db(move || {
+        if let Some((account, _)) = auth::account_for_token(&store, &token, "web")? {
+            return Ok(Some(account));
+        }
+        let Some((account, _)) = auth::account_for_token(&store, &token, "web_impersonated")?
+        else {
+            return Ok(None);
+        };
+        let valid =
+            impersonation_for_token(&store, &token)?.is_some_and(|imp| imp.target_id == account.id);
+        Ok(valid.then_some(account))
+    })
+    .await?;
+    Ok(account.map(|account| (account, raw)))
 }
 
 async fn account_page(
     State(state): State<AppState>,
+    uri: Uri,
     headers: HeaderMap,
     Query(query): Query<AccountQuery>,
 ) -> Result<Response, ApiError> {
     let Some((account, raw)) = web_account(&state, &headers).await? else {
+        if let Some(admin_raw) = cookie_token(&headers, "imu_nav_admin_return") {
+            let store = state.store.clone();
+            let token = admin_raw.clone();
+            let valid = run_db(move || {
+                Ok(auth::account_for_token(&store, &token, "web")?
+                    .is_some_and(|(actor, _)| actor.admin))
+            })
+            .await?;
+            if valid {
+                let mut response = redirect("/admin");
+                set_session_cookie(
+                    &mut response,
+                    "imu_nav_session",
+                    &admin_raw,
+                    WEB_LIFETIME_S,
+                    secure_cookie(&state, &uri, &headers),
+                );
+                clear_cookie(&mut response, "imu_nav_admin_return");
+                return Ok(response);
+            }
+        }
         return Ok(redirect("/login"));
     };
+    let store = state.store.clone();
+    let token = raw.clone();
+    let impersonation = run_db(move || impersonation_for_token(&store, &token)).await?;
     let Some(filter) = query.filter() else {
         return Ok(error_page(
             StatusCode::BAD_REQUEST,
@@ -555,7 +709,7 @@ async fn account_page(
         let current = auth::account_for_token(&store, &raw_for_sessions, "web")?
             .map(|(_, session_id)| session_id).unwrap_or_default();
         let connection = store.connection()?;
-        let mut statement = connection.prepare("SELECT session_id,MAX(expires_s),MAX(CASE WHEN kind='web' THEN 1 ELSE 0 END)
+        let mut statement = connection.prepare("SELECT session_id,MAX(expires_s),MAX(CASE WHEN kind IN ('web','web_impersonated') THEN 1 ELSE 0 END)
             FROM auth_tokens WHERE user_id=?1 AND expires_s>?2 GROUP BY session_id ORDER BY MAX(expires_s) DESC")?;
         let sessions = statement.query_map(rusqlite::params![account.id, auth::now_s()], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?, row.get::<_, bool>(2)?))
@@ -594,6 +748,8 @@ async fn account_page(
             email_verified,
             message: account_message(query.message.as_deref()).to_owned(),
             sessions,
+            impersonating: impersonation.is_some(),
+            actor_email: impersonation.map_or_else(String::new, |record| record.actor_email),
         },
     )
 }
@@ -928,12 +1084,69 @@ async fn close_account(
         publish_change(&state, change);
     }
     let mut response = redirect("/login");
-    response.headers_mut().insert(
-        header::SET_COOKIE,
-        "imu_nav_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"
-            .parse()
-            .expect("header"),
-    );
+    clear_cookie(&mut response, "imu_nav_session");
+    clear_cookie(&mut response, "imu_nav_admin_return");
+    Ok(response)
+}
+
+async fn stop_impersonation(
+    State(state): State<AppState>,
+    uri: Uri,
+    headers: HeaderMap,
+    Form(form): Form<CsrfForm>,
+) -> Result<Response, ApiError> {
+    let Some(raw) = cookie_token(&headers, "imu_nav_session") else {
+        return Ok(redirect("/login"));
+    };
+    if form.csrf != csrf_token(&raw) {
+        return Ok(error_page(StatusCode::FORBIDDEN, "Invalid form token."));
+    }
+    let admin_raw = cookie_token(&headers, "imu_nav_admin_return");
+    let store = state.store.clone();
+    let target_token = raw.clone();
+    let return_token = admin_raw.clone();
+    let restored = run_db(move || {
+        let impersonation = impersonation_for_token(&store, &target_token)?;
+        let admin = return_token
+            .as_deref()
+            .map(|raw| auth::account_for_token(&store, raw, "web"))
+            .transpose()?
+            .flatten()
+            .map(|(account, _)| account)
+            .filter(|account| account.admin);
+        let actor = match (impersonation, admin, return_token) {
+            (Some(record), Some(admin), Some(return_token))
+                if record.admin_token_hash == auth::digest(&return_token)
+                    && admin.id == record.actor_id =>
+            {
+                Some((admin.id, record.target_id.to_string()))
+            }
+            (None, Some(admin), _) => Some((admin.id, "expired_session".to_owned())),
+            _ => None,
+        };
+        store.connection()?.execute(
+            "DELETE FROM auth_tokens WHERE token_hash=?1 AND kind='web_impersonated'",
+            [auth::digest(&target_token)],
+        )?;
+        if let Some((actor_id, target)) = &actor {
+            store.audit(*actor_id, "stop_impersonation", target)?;
+        }
+        Ok(actor.is_some())
+    })
+    .await?;
+    let mut response = redirect(if restored { "/admin" } else { "/login" });
+    if let (true, Some(admin_raw)) = (restored, admin_raw) {
+        set_session_cookie(
+            &mut response,
+            "imu_nav_session",
+            &admin_raw,
+            WEB_LIFETIME_S,
+            secure_cookie(&state, &uri, &headers),
+        );
+    } else {
+        clear_cookie(&mut response, "imu_nav_session");
+    }
+    clear_cookie(&mut response, "imu_nav_admin_return");
     Ok(response)
 }
 
@@ -950,20 +1163,22 @@ async fn logout(
     }
     let store = state.store.clone();
     run_db(move || {
+        if let Some(record) = impersonation_for_token(&store, &raw)? {
+            store.connection()?.execute(
+                "DELETE FROM auth_tokens WHERE token_hash=?1 AND kind='web'",
+                [record.admin_token_hash],
+            )?;
+        }
         store.connection()?.execute(
-            "DELETE FROM auth_tokens WHERE token_hash=?1 AND kind='web'",
+            "DELETE FROM auth_tokens WHERE token_hash=?1 AND kind IN ('web','web_impersonated')",
             [auth::digest(&raw)],
         )?;
         Ok(())
     })
     .await?;
     let mut response = redirect("/login");
-    response.headers_mut().insert(
-        header::SET_COOKIE,
-        "imu_nav_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"
-            .parse()
-            .expect("static cookie"),
-    );
+    clear_cookie(&mut response, "imu_nav_session");
+    clear_cookie(&mut response, "imu_nav_admin_return");
     Ok(response)
 }
 

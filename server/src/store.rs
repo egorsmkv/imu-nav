@@ -160,6 +160,13 @@ impl CellStore {
                token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                session_id TEXT NOT NULL, kind TEXT NOT NULL, expires_s INTEGER NOT NULL
              );
+             CREATE TABLE IF NOT EXISTS web_impersonations (
+               token_hash TEXT PRIMARY KEY REFERENCES auth_tokens(token_hash) ON DELETE CASCADE,
+               admin_token_hash TEXT NOT NULL REFERENCES auth_tokens(token_hash) ON DELETE CASCADE,
+               actor_id INTEGER NOT NULL REFERENCES users(id),
+               target_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE
+             );
+             CREATE INDEX IF NOT EXISTS web_impersonations_admin ON web_impersonations(admin_token_hash);
              CREATE INDEX IF NOT EXISTS auth_tokens_user ON auth_tokens(user_id);
              CREATE INDEX IF NOT EXISTS auth_tokens_session ON auth_tokens(session_id);
              CREATE INDEX IF NOT EXISTS auth_tokens_expiry ON auth_tokens(expires_s);

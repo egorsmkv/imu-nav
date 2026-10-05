@@ -6,7 +6,7 @@ use crate::{CellTower, Consensus, Policy, ServerEvent, StoreCounts};
 use askama::Template;
 use axum::body::Body;
 use axum::extract::{DefaultBodyLimit, Multipart, Path, Query, State};
-use axum::http::{HeaderMap, StatusCode, header};
+use axum::http::{HeaderMap, StatusCode, Uri, header};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Form, Json, Router};
@@ -83,6 +83,10 @@ pub(crate) fn router() -> Router<AppState> {
         )
         .route("/admin/accounts/{id}/suspend", post(suspend_account))
         .route("/admin/accounts/{id}/restore", post(restore_account))
+        .route(
+            "/admin/accounts/{id}/impersonate",
+            post(impersonate_account),
+        )
         .route("/admin/policy", post(update_policy))
         .route("/admin/jobs/cancel", post(cancel_job))
         .route("/admin/jobs/status", get(job_status))
@@ -703,6 +707,72 @@ async fn restore_account(
     Form(form): Form<CsrfForm>,
 ) -> Result<Response, AdminError> {
     account_action(state, headers, id, form, false).await
+}
+
+/// Open an auditable, one-hour browser session for an active ordinary user.
+async fn impersonate_account(
+    State(state): State<AppState>,
+    uri: Uri,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+    Form(form): Form<CsrfForm>,
+) -> Result<Response, AdminError> {
+    let (actor, raw) = admin_session(&state, &headers).await?;
+    check_csrf(&raw, &form.csrf)?;
+    let impersonated_raw = auth::token();
+    let admin_hash = auth::digest(&raw);
+    let impersonated_hash = auth::digest(&impersonated_raw);
+    let store = state.store.clone();
+    let started = run_db(move || {
+        use rusqlite::{OptionalExtension, TransactionBehavior, params};
+        let mut connection = store.connection()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let now = auth::now_s();
+        let admin_expires: Option<i64> = transaction.query_row(
+            "SELECT expires_s FROM auth_tokens WHERE token_hash=?1 AND user_id=?2 AND kind='web' AND expires_s>?3",
+            params![admin_hash, actor.id, now], |row| row.get(0),
+        ).optional()?;
+        let target_active: bool = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM users WHERE id=?1 AND admin=0 AND suspended=0)", [id], |row| row.get(0),
+        )?;
+        let Some(admin_expires) = admin_expires.filter(|_| target_active) else { return Ok(false); };
+        transaction.execute("DELETE FROM auth_tokens WHERE token_hash IN
+            (SELECT token_hash FROM web_impersonations WHERE admin_token_hash=?1)", [&admin_hash])?;
+        transaction.execute("INSERT INTO auth_tokens(token_hash,user_id,session_id,kind,expires_s)
+            VALUES (?1,?2,?3,'web_impersonated',?4)",
+            params![impersonated_hash, id, auth::token(), (now + web::IMPERSONATION_LIFETIME_S).min(admin_expires)])?;
+        transaction.execute("INSERT INTO web_impersonations(token_hash,admin_token_hash,actor_id,target_id) VALUES (?1,?2,?3,?4)",
+            params![impersonated_hash, admin_hash, actor.id, id])?;
+        transaction.execute("INSERT INTO admin_audit(actor_id,action,target,at_s) VALUES (?1,'start_impersonation',?2,?3)",
+            params![actor.id, id.to_string(), now])?;
+        transaction.commit()?;
+        Ok(true)
+    }).await?;
+    if !started {
+        return Err(AdminError::conflict(
+            "Only active user accounts can be opened, and your administrator session must still be valid.",
+        ));
+    }
+    let secure = web::secure_cookie(&state, &uri, &headers);
+    let mut response = redirect("/account");
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, "no-store".parse().expect("header"));
+    web::set_session_cookie(
+        &mut response,
+        "imu_nav_session",
+        &impersonated_raw,
+        web::IMPERSONATION_LIFETIME_S,
+        secure,
+    );
+    web::set_session_cookie(
+        &mut response,
+        "imu_nav_admin_return",
+        &raw,
+        web::WEB_LIFETIME_S,
+        secure,
+    );
+    Ok(response)
 }
 
 async fn begin_job(
