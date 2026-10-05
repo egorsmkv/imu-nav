@@ -9,7 +9,7 @@ The [offline routing pack CI workflow](docs/ROUTING_AND_SEARCH.md#build-an-offli
 builds an importable archive for offline routes and address search. The separate
 [offline map pack CI workflow](docs/ROUTING_AND_SEARCH.md#build-an-offline-display-map-in-ci)
 produces the streets shown on screen.
-The app also links to map and routing ZIP archives from **Settings → Maps and route planning**.
+The app also links to map and routing ZIP archives from **Settings → Community links**.
 
 IMU Nav is a research prototype, not a safety system.
 

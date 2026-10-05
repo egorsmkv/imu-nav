@@ -12,7 +12,7 @@ The app accepts locations worldwide. Install packs for the region you will use; 
 3. Search for a destination and, if needed, a starting address. Review the route before tapping **Start**.
 
 Walking routes require an offline pack with a foot profile. If you allow online routing, the app can use an online fallback for car routes when offline routing is unavailable.
-The **Maps and route planning** settings also link to the Telegram group where you can find map and routing ZIP archives. English opens <https://t.me/imu_nav_en>; Ukrainian and Russian open <https://t.me/imu_nav>.
+At the bottom of **Settings → Community links**, the Telegram group link points to map and routing ZIP archives. English opens <https://t.me/imu_nav_en>; Ukrainian and Russian open <https://t.me/imu_nav>.
 
 ## Search for an address
 

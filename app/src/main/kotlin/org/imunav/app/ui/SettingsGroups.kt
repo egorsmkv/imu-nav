@@ -28,7 +28,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -180,23 +179,12 @@ internal fun EverydaySettings(app: AppGraph, ui: UiState, context: Context, save
 /** Offline routing pack, map pack, and online search controls. */
 @Composable
 internal fun MapsSettings(app: AppGraph, routing: OfflineRoutingStatus, offlineMap: OfflineMapStatus, packUrl: String, onPackUrlChange: (String) -> Unit, onPickPack: () -> Unit) {
-    val uriHandler = LocalUriHandler.current
-    val telegramGroupUrl = stringResource(R.string.telegram_group_url)
     SettingsGroup(
         title = stringResource(R.string.settings_group_maps),
         summary = stringResource(if (routing.pack == null) R.string.settings_group_maps_setup else R.string.settings_group_maps_ready),
         icon = Icons.Filled.Route,
     ) {
         SettingsHelp(stringResource(R.string.settings_help_maps))
-        ListItem(
-            headlineContent = { Text(stringResource(R.string.offline_packs_telegram_title)) },
-            supportingContent = {
-                Column {
-                    Text(stringResource(R.string.offline_packs_telegram_summary))
-                    TextButton(onClick = { uriHandler.openUri(telegramGroupUrl) }) { Text(telegramGroupUrl) }
-                }
-            },
-        )
 
         // ---------------- Offline routing
         SectionHeader(stringResource(R.string.sec_routing))

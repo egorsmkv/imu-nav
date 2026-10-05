@@ -142,6 +142,8 @@
     <string name="settings_help_cells">Optional. The built-in tower database works automatically; adding data can improve cell positioning.</string>
     <string name="settings_group_advanced">Advanced and support</string>
     <string name="settings_group_advanced_summary">Data tools, tests, logs and app information</string>
+    <string name="settings_group_links">Community links</string>
+    <string name="settings_group_links_summary">Offline pack ZIPs, Telegram and donations</string>
     <string name="settings_help_advanced">Most users can leave these settings unchanged.</string>
     <string name="settings_expand_section">Expand section</string>
     <string name="settings_collapse_section">Collapse section</string>
@@ -399,8 +401,7 @@
     <string name="routing_import">Import pack</string>
     <string name="routing_url">Pack URL (.zip)</string>
     <string name="routing_url_help">Paste a routing-pack link, or import a downloaded .zip file.</string>
-    <string name="offline_packs_telegram_title">Offline map and routing ZIPs</string>
-    <string name="offline_packs_telegram_summary">Find the ZIP archives in our Telegram group. Download the map or routing pack, then import it below.</string>
+    <string name="offline_packs_telegram_summary">Find offline map and routing ZIP archives in our Telegram group. Download a ZIP, then import it in Maps and route planning.</string>
     <string name="routing_remove">Remove</string>
     <string name="routing_allow_online">Allow online routing and search</string>
     <string name="routing_allow_online_summary">Used when the offline map or search index cannot answer. Sends start and destination to router.project-osrm.org, and search text to the address-search server below.</string>

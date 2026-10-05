@@ -140,6 +140,8 @@
     <string name="settings_help_cells">Необязательно. Встроенная база вышек работает автоматически; дополнительные данные могут повысить точность.</string>
     <string name="settings_group_advanced">Дополнительно и поддержка</string>
     <string name="settings_group_advanced_summary">Управление данными, тесты, журналы и сведения о приложении</string>
+    <string name="settings_group_links">Ссылки сообщества</string>
+    <string name="settings_group_links_summary">ZIP-архивы офлайн-пакетов, Telegram и поддержка проекта</string>
     <string name="settings_help_advanced">Большинству пользователей не нужно менять эти параметры.</string>
     <string name="settings_expand_section">Развернуть раздел</string>
     <string name="settings_collapse_section">Свернуть раздел</string>
@@ -397,8 +399,7 @@
     <string name="routing_import">Импорт пакета</string>
     <string name="routing_url">Адрес пакета (.zip)</string>
     <string name="routing_url_help">Вставьте ссылку на пакет маршрутов или импортируйте загруженный файл .zip.</string>
-    <string name="offline_packs_telegram_title">ZIP-архивы офлайн-карт и маршрутов</string>
-    <string name="offline_packs_telegram_summary">Найдите ZIP-архивы в нашей группе Telegram. Скачайте пакет карты или маршрутов и импортируйте его ниже.</string>
+    <string name="offline_packs_telegram_summary">Найдите ZIP-архивы офлайн-карт и маршрутов в нашей группе Telegram. Скачайте архив и импортируйте его в разделе «Карты и построение маршрутов».</string>
     <string name="routing_remove">Удалить</string>
     <string name="routing_allow_online">Разрешить онлайн-маршруты и поиск</string>
     <string name="routing_allow_online_summary">Используется, когда офлайн-карта или поисковый индекс не могут ответить. Отправляет старт и пункт назначения на router.project-osrm.org, а текст поиска — на сервер поиска адресов ниже.</string>

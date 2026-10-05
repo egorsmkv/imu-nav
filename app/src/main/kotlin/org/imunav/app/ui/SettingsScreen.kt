@@ -27,6 +27,7 @@ import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.filled.CellTower
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -373,8 +374,18 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                         headlineContent = { Text(stringResource(R.string.about_version, version)) },
                         supportingContent = { Text(stringResource(R.string.about_credits) + "\n\n" + stringResource(R.string.about_disclaimer)) },
                     )
+                }
+
+                SettingsGroup(
+                    title = stringResource(R.string.settings_group_links),
+                    summary = stringResource(R.string.settings_group_links_summary),
+                    icon = Icons.Filled.Info,
+                    initiallyExpanded = true,
+                ) {
+                    SettingsHelp(stringResource(R.string.offline_packs_telegram_summary))
                     ListItem(
                         headlineContent = { Text(stringResource(R.string.telegram_group)) },
+                        supportingContent = { Text(telegramGroupUrl) },
                         modifier = Modifier.clickable { uriHandler.openUri(telegramGroupUrl) },
                     )
                     DonationLink(stringResource(R.string.donate_monobank), BuildConfig.MONOBANK_DONATION_URL) { uriHandler.openUri(it) }

@@ -70,7 +70,7 @@ privatbankDonationUrl=
 ```
 
 Set each value to its public donation-page URL. Only HTTPS URLs are accepted; an empty value hides
-that bank's row in **Settings → About**. The Telegram group link in the English interface opens
+that bank's row in **Settings → Community links**. The Telegram group link in the English interface opens
 <https://t.me/imu_nav_en>; Ukrainian and Russian open <https://t.me/imu_nav>.
 
 The app uses MapLibre's OpenGL renderer for the broadest device compatibility. GPS, gyroscope,
