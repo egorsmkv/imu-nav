@@ -1,5 +1,7 @@
 # Routing and address search
 
+[Documentation index](../README.md)
+
 A routing pack lets the phone calculate routes and search addresses without internet. A map pack draws the streets; it is a different download. See the [glossary](GLOSSARY.md) if these terms are new.
 
 ## Use an offline routing pack

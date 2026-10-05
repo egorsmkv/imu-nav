@@ -1,5 +1,7 @@
 # Licences and provenance
 
+[Documentation index](../README.md)
+
 The project source code is MIT-licensed. Bundled map and cell data have their own terms, so check them before redistributing an APK or data pack.
 
 ## Check what you may share

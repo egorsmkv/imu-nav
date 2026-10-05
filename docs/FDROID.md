@@ -1,5 +1,7 @@
 # F-Droid publication
 
+[Documentation index](../README.md)
+
 This guide is for maintainers preparing an F-Droid release. The F-Droid APK is built from freely licensed source and is unsigned locally; F-Droid signs the copy it distributes.
 
 ## Prepare a release

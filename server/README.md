@@ -179,10 +179,10 @@ seven repetitions and uninstrumented release builds. All repetitions matched the
 rejected totals (15,840 / 160), contribution count (13,464), consensus count (6,342), and database
 fingerprint.
 
-| Upload size | Median wall time before → after | Median server CPU before → after |
-|---|---:|---:|
-| 1,000 rows per upload | 1,251 → 782 ms (38% less) | 775 → 373 ms (52% less) |
-| 100 rows per upload | 392 → 233 ms (41% less) | 252 → 126 ms (50% less) |
+| Upload size           | Median wall time before → after | Median server CPU before → after |
+| --------------------- | ------------------------------: | -------------------------------: |
+| 1,000 rows per upload |       1,251 → 782 ms (38% less) |          775 → 373 ms (52% less) |
+| 100 rows per upload   |         392 → 233 ms (41% less) |          252 → 126 ms (50% less) |
 
 Local gitignored evidence is in `captures/server-traffic-reviewed-{before,after}/`,
 `captures/server-traffic-reviewed-small-{before,after}/` and the hotpath captures under

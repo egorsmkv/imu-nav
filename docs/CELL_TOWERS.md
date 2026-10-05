@@ -1,5 +1,7 @@
 # Cell towers and sharing server
 
+[Documentation index](../README.md)
+
 The phone can estimate a rough position from nearby cell towers when GPS is unavailable. It needs a tower database for the area. Tower observations can also be shared with a server if you choose.
 
 ## Add tower data

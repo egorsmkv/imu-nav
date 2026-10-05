@@ -51,20 +51,20 @@ arrives once per second and cell fixes every five seconds. These are explicit sy
 not a reproduction of every Android power profile. Straight northbound routes start inside Ukraine;
 the reroute adds a small lateral deviation. Observations are generated before measurement.
 
-| Scenario | Behavior exercised |
-|---|---|
-| `driving` | Healthy GPS, cell inputs, OBD and ordinary history maintenance |
-| `jam` | Bad receiver conditions, GPS exclusion and recovery after AGC hysteresis |
-| `delayed` | GPS observed two seconds before delivery, with intervening OBD and cell inputs |
-| `stop` | GPS outage, confirmed stop hints and resumed motion without OBD |
-| `reroute` | Install a changed route halfway through a trip and discard old route history |
-| `walking` | Pedestrian hints through a GPS outage, without car OBD |
-| `lifecycle` | Eight full start/drive/drop cycles with fresh state |
-| `winding` | Global coarse-fix projection onto a winding 20 km route |
-| `parallel` | 40 m separated out-and-back sections with precise and ambiguous coarse fixes |
-| `crossing` | Figure-eight intersections, with accepted and rejected coarse projections |
-| `reacquisition` | Fixes far outside a small local search window force a global scan |
-| `sensor-burst` | 50 Hz OBD stress stream with two-second-delayed GPS, filling the 128-frame history limit |
+| Scenario        | Behavior exercised                                                                       |
+| --------------- | ---------------------------------------------------------------------------------------- |
+| `driving`       | Healthy GPS, cell inputs, OBD and ordinary history maintenance                           |
+| `jam`           | Bad receiver conditions, GPS exclusion and recovery after AGC hysteresis                 |
+| `delayed`       | GPS observed two seconds before delivery, with intervening OBD and cell inputs           |
+| `stop`          | GPS outage, confirmed stop hints and resumed motion without OBD                          |
+| `reroute`       | Install a changed route halfway through a trip and discard old route history             |
+| `walking`       | Pedestrian hints through a GPS outage, without car OBD                                   |
+| `lifecycle`     | Eight full start/drive/drop cycles with fresh state                                      |
+| `winding`       | Global coarse-fix projection onto a winding 20 km route                                  |
+| `parallel`      | 40 m separated out-and-back sections with precise and ambiguous coarse fixes             |
+| `crossing`      | Figure-eight intersections, with accepted and rejected coarse projections                |
+| `reacquisition` | Fixes far outside a small local search window force a global scan                        |
+| `sensor-burst`  | 50 Hz OBD stress stream with two-second-delayed GPS, filling the 128-frame history limit |
 
 `advanced` selects the five new cases; `all` includes every case. The four geometry cases call the
 public route APIs directly with one query per configured second. They measure route construction,
@@ -72,7 +72,7 @@ projection and ambiguity handling, not full navigation or position accuracy. The
 fields are zero by construction. The sensor-burst case uses full navigation with an intentionally
 high OBD rate; it does not represent the normal Android sensor cadence.
 
-Motion and walking inputs represent the *outputs* of upstream detectors; this is not raw IMU
+Motion and walking inputs represent the _outputs_ of upstream detectors; this is not raw IMU
 processing. Ground truth drives sensor synthesis only; the estimator receives observations through
 its public APIs. Route geometry and session state are rebuilt for every repetition. Streaming output
 fingerprints include covariance, drift, projection, trust decisions and acceptance flags; no growing
@@ -170,15 +170,15 @@ Results below are from this Linux x86-64 host using Rust `1.100.0-nightly (f7575
 Timing is the median of five repetitions after warm-up. MB means decimal **requested allocation
 bytes**, including reallocations; it is not resident or retained memory.
 
-| Scenario | Requested MB before → after | Median ms before → after | Time reduction |
-|---|---:|---:|---:|
-| Driving | 401.04 → 304.43 | 131.380 → 92.427 | 29.6% |
-| Jamming/recovery | 223.18 → 100.07 | 123.990 → 79.515 | 35.9% |
-| Delayed GPS | 434.55 → 346.26 | 348.419 → 225.588 | 35.3% |
-| Stop/resume | 223.17 → 100.07 | 122.307 → 78.864 | 35.5% |
-| Reroute | 400.55 → 304.05 | 159.288 → 116.053 | 27.1% |
-| Walking | 223.17 → 100.07 | 14.200 → 11.598 | 18.3% |
-| Eight session lifecycles | 3208.29 → 2435.47 | 1036.134 → 704.398 | 32.0% |
+| Scenario                 | Requested MB before → after | Median ms before → after | Time reduction |
+| ------------------------ | --------------------------: | -----------------------: | -------------: |
+| Driving                  |             401.04 → 304.43 |         131.380 → 92.427 |          29.6% |
+| Jamming/recovery         |             223.18 → 100.07 |         123.990 → 79.515 |          35.9% |
+| Delayed GPS              |             434.55 → 346.26 |        348.419 → 225.588 |          35.3% |
+| Stop/resume              |             223.17 → 100.07 |         122.307 → 78.864 |          35.5% |
+| Reroute                  |             400.55 → 304.05 |        159.288 → 116.053 |          27.1% |
+| Walking                  |             223.17 → 100.07 |          14.200 → 11.598 |          18.3% |
+| Eight session lifecycles |           3208.29 → 2435.47 |       1036.134 → 704.398 |          32.0% |
 
 Every deterministic outcome matched across all four passes. Before/after timing ranges did not
 intersect in these runs. A separate 120-second, 100,000-point driving stress run also matched outputs:
@@ -209,7 +209,6 @@ Core tests additionally check exact projection equivalence across crossings, rep
 parallel returns and different latitudes, plus full estimator rollback after invalid delayed GPS.
 The existing Kotlin blind-drive regression remains `p95=20 max=25 rms=10 m`.
 
-
 ## Additional scenarios and optimization (2026-10-03)
 
 A second investigation added winding routes, parallel returns, figure-eight crossings, global
@@ -232,20 +231,20 @@ Measurements use the same host, compiler and build flags as above, with seed 1, 
 10,000 route points and five timing repetitions. These improvements are **additional to** the earlier
 optimization. Allocation MB below means requested bytes, including reallocations.
 
-| Scenario | Requested MB before → after | Median ms before → after | Time reduction |
-|---|---:|---:|---:|
-| `driving` | 101.22 → 82.38 | 36.332 → 30.502 | 16.0% |
-| `jam` | 33.28 → 25.41 | 31.385 → 27.041 | 13.8% |
-| `delayed` | 115.02 → 97.60 | 81.162 → 69.010 | 15.0% |
-| `stop` | 33.28 → 25.40 | 31.319 → 25.924 | 17.2% |
-| `reroute` | 100.84 → 82.07 | 50.534 → 35.992 | 28.8% |
-| `walking` | 33.28 → 25.40 | 9.191 → 7.840 | 14.7% |
-| `lifecycle` | 809.77 → 659.00 | 288.198 → 240.410 | 16.6% |
-| `winding` | 0.08 → 0.08 | 187.042 → 115.527 | 38.2% |
-| `parallel` | 0.08 → 0.08 | 126.936 → 81.826 | 35.5% |
-| `crossing` | 0.08 → 0.08 | 162.233 → 80.267 | 50.5% |
-| `reacquisition` | 0.08 → 0.08 | 73.352 → 63.372 | 13.6% |
-| `sensor-burst` | 450.18 → 360.90 | 100.732 → 86.645 | 14.0% |
+| Scenario        | Requested MB before → after | Median ms before → after | Time reduction |
+| --------------- | --------------------------: | -----------------------: | -------------: |
+| `driving`       |              101.22 → 82.38 |          36.332 → 30.502 |          16.0% |
+| `jam`           |               33.28 → 25.41 |          31.385 → 27.041 |          13.8% |
+| `delayed`       |              115.02 → 97.60 |          81.162 → 69.010 |          15.0% |
+| `stop`          |               33.28 → 25.40 |          31.319 → 25.924 |          17.2% |
+| `reroute`       |              100.84 → 82.07 |          50.534 → 35.992 |          28.8% |
+| `walking`       |               33.28 → 25.40 |            9.191 → 7.840 |          14.7% |
+| `lifecycle`     |             809.77 → 659.00 |        288.198 → 240.410 |          16.6% |
+| `winding`       |                 0.08 → 0.08 |        187.042 → 115.527 |          38.2% |
+| `parallel`      |                 0.08 → 0.08 |         126.936 → 81.826 |          35.5% |
+| `crossing`      |                 0.08 → 0.08 |         162.233 → 80.267 |          50.5% |
+| `reacquisition` |                 0.08 → 0.08 |          73.352 → 63.372 |          13.6% |
+| `sensor-burst`  |             450.18 → 360.90 |         100.732 → 86.645 |          14.0% |
 
 All deterministic outputs matched across every pass. Of 600 parallel queries, 299 remained ambiguous;
 of 600 crossing queries, 201 remained ambiguous. All 600 reacquisition queries required global
@@ -288,13 +287,13 @@ same latitude bound. Candidates near the corridor still use the original project
 Uninstrumented before/after captures use the same Rust nightly, profiling build flags and host.
 All five deterministic outcomes matched; allocation calls and requested bytes were identical.
 
-| Scenario | Median before → after | Time reduction |
-|---|---:|---:|
-| Driving | 71.285 → 44.230 ms | 38.0% |
-| Jamming/recovery | 64.869 → 37.381 ms | 42.4% |
-| Delayed GPS | 177.638 → 98.312 ms | 44.7% |
-| Stop/resume | 62.554 → 35.543 ms | 43.2% |
-| Reroute | 80.572 → 51.857 ms | 35.6% |
+| Scenario         | Median before → after | Time reduction |
+| ---------------- | --------------------: | -------------: |
+| Driving          |    71.285 → 44.230 ms |          38.0% |
+| Jamming/recovery |    64.869 → 37.381 ms |          42.4% |
+| Delayed GPS      |   177.638 → 98.312 ms |          44.7% |
+| Stop/resume      |    62.554 → 35.543 ms |          43.2% |
+| Reroute          |    80.572 → 51.857 ms |          35.6% |
 
 The five-repetition timing ranges did not overlap. These are synthetic host results, not Android
 latency or navigation-accuracy claims. The existing exhaustive projection test covers loops,
@@ -328,12 +327,12 @@ Five timing repetitions followed a warm-up. Exact outcome fingerprints and alloc
 matched in all ten app-like and advanced cases.
 
 | App-like scenario | Median before → after | Time reduction |
-|---|---:|---:|
-| Driving | 44.263 → 34.069 ms | 23.0% |
-| Jamming/recovery | 37.245 → 27.412 ms | 26.4% |
-| Delayed GPS | 99.303 → 67.574 ms | 32.0% |
-| Stop/resume | 36.261 → 25.466 ms | 29.8% |
-| Reroute | 52.553 → 42.459 ms | 19.2% |
+| ----------------- | --------------------: | -------------: |
+| Driving           |    44.263 → 34.069 ms |          23.0% |
+| Jamming/recovery  |    37.245 → 27.412 ms |          26.4% |
+| Delayed GPS       |    99.303 → 67.574 ms |          32.0% |
+| Stop/resume       |    36.261 → 25.466 ms |          29.8% |
+| Reroute           |    52.553 → 42.459 ms |          19.2% |
 
 All app-like timing ranges were separate. Advanced medians fell 20–35% for winding, parallel and
 crossing geometry, and 19.9% for the sensor burst. Reacquisition was 2.3% slower, with overlapping
@@ -357,18 +356,18 @@ Both sides used the same Linux host, Rust nightly, frame-pointer flag, simulator
 timing repetitions. All ten deterministic outcomes matched. At 10,000 points, the index adds one
 allocation and about 15 KB of requested route storage per construction (two on reroute).
 
-| Scenario | Median before → after | Time reduction |
-|---|---:|---:|
-| Driving | 33.905 → 17.841 ms | 47.4% |
-| Jamming/recovery | 26.755 → 11.611 ms | 56.6% |
-| Delayed GPS | 66.669 → 22.550 ms | 66.2% |
-| Stop/resume | 25.123 → 11.496 ms | 54.2% |
-| Reroute | 42.990 → 21.692 ms | 49.5% |
-| Winding geometry | 59.809 → 6.055 ms | 89.9% |
-| Parallel geometry | 31.905 → 4.882 ms | 84.7% |
-| Crossing geometry | 30.036 → 5.784 ms | 80.7% |
-| Reacquisition | 66.207 → 63.619 ms | 3.9% |
-| Dense sensor burst | 47.494 → 33.263 ms | 30.0% |
+| Scenario           | Median before → after | Time reduction |
+| ------------------ | --------------------: | -------------: |
+| Driving            |    33.905 → 17.841 ms |          47.4% |
+| Jamming/recovery   |    26.755 → 11.611 ms |          56.6% |
+| Delayed GPS        |    66.669 → 22.550 ms |          66.2% |
+| Stop/resume        |    25.123 → 11.496 ms |          54.2% |
+| Reroute            |    42.990 → 21.692 ms |          49.5% |
+| Winding geometry   |     59.809 → 6.055 ms |          89.9% |
+| Parallel geometry  |     31.905 → 4.882 ms |          84.7% |
+| Crossing geometry  |     30.036 → 5.784 ms |          80.7% |
+| Reacquisition      |    66.207 → 63.619 ms |           3.9% |
+| Dense sensor burst |    47.494 → 33.263 ms |          30.0% |
 
 With the 100,000-point stress preset, a separate 600-second driving timing pass had the same
 output fingerprint and a 150.171 → 96.497 ms median (35.7% reduction). Its five-run ranges did

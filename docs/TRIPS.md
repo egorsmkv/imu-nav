@@ -1,5 +1,7 @@
 # Trips: history, recording and replay
 
+[Documentation index](../README.md)
+
 The app records a trip automatically while you navigate. Recordings contain your route, positions and sensor events; treat a shared file as private location data.
 
 ## Review or share a trip

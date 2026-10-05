@@ -1,14 +1,14 @@
 # Trips: history, recording, restore and replay
 
 > Detailed reference. For easy steps, see the [guide](../TRIPS.md) or the [glossary](../GLOSSARY.md).
-Every navigation is recorded to `files/trips/trip-<time>-<uuid>.rec.gz` in app storage — all fixes, IMU
-samples, satellite/AGC status, routes and the engine's own estimates (gzip text, flushed every 2 s).
-Opening, repairing, writing, closing and discarding recordings share one worker. Rapid stop/start
-actions use separate files; older timestamp-only filenames remain readable.
+> Every navigation is recorded to `files/trips/trip-<time>-<uuid>.rec.gz` in app storage — all fixes, IMU
+> samples, satellite/AGC status, routes and the engine's own estimates (gzip text, flushed every 2 s).
+> Opening, repairing, writing, closing and discarding recordings share one worker. Rapid stop/start
+> actions use separate files; older timestamp-only filenames remain readable.
 
 - **History** (clock icon on the map) lists trips with totals; a trip shows its trusted-GPS track and
   the engine's estimate on a map, distance, duration, moving time, time/distance without GPS and the
-  largest uncertainty. *Snap to roads* map-matches the drive with GraphHopper.
+  largest uncertainty. _Snap to roads_ map-matches the drive with GraphHopper.
 - **Share a trip:** open it in History and tap the share icon. Android's share menu sends a separate
   `.rec.gz` copy containing the route, positions and recorded sensor events, usable by the replay tool.
   The original stays in app storage. Preparing the attachment runs in the background; missing files
@@ -24,17 +24,22 @@ actions use separate files; older timestamp-only filenames remain readable.
   when offered (**Settings → Everyday settings → Battery**) so this is rare.
 - **Replay tool:** re-runs recordings through the engine on a computer, optionally hiding GPS after
   N seconds, and compares the engine against the real (trusted GPS) track:
+
   ```bash
   ./gradlew :replay:run --args="path/to/trips --hide-gps-after 60,300 --out replay-out"
   ```
+
   `--set key=value,...` overrides `Tuning` fields and `--ukraine` enables the service-area check.
   It writes `summary.txt` (median / p95 / max error with and without GPS), `errors-*.csv` per trip and
   `compare-*.geojson` (real vs. engine tracks) for any GeoJSON viewer.
+
 - **Native estimator comparison:** build the host JNI library and score the Rust estimator and
   Kotlin engine at the same trusted GPS timestamps (no Android SDK needed):
+
   ```bash
   ./gradlew -PnativeReplay :replay:run --args="path/to/trips --compare-native --hide-gps-after 30,120,300 --out native-replay-out"
   ```
+
   Each value starts a separate run that hides GPS after that many seconds until the trip ends.
   Reference GPS is classified separately and never enters either navigation estimator or its
   gyro-bias learner during the hidden interval. Reports include paired errors and native safety-radius

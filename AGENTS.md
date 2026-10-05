@@ -12,13 +12,13 @@ offline (GraphHopper packs). UI: Jetpack Compose + MapLibre, Ukrainian, English 
 
 ## Modules
 
-| Module | Kind | Contents |
-|---|---|---|
-| `:core` | pure Kotlin/JVM | the algorithm: trust classifier, navigation engine, speed fusion, cell positioning, trip recording/replay, search logic, shared OkHttp client (`core/net/Http.kt`). **No Android imports.** |
-| `:app` | Android app | Android glue and UI: `AppGraph` (manual DI, wires everything), `SensorHub`, `CellScanner`/`CellManager`, `NavService` (foreground service), `TripManager`, Compose screens in `ui/` |
-| `:routing` | JVM | GraphHopper integration used by both the phone (`OfflineGraph`, `PhoneGraphHopper`) and the desktop pack builder (`BuildGraph`, `SearchIndexBuilder`) |
-| `server/` | Rust app | persistent SQLite cell-sharing server (Axum HTTP/WebSocket, anti-poisoning consensus) |
-| `:replay` | JVM app | CLI that replays recorded trips (`.rec.gz`) through the engine and reports errors |
+| Module     | Kind            | Contents                                                                                                                                                                                    |
+| ---------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `:core`    | pure Kotlin/JVM | the algorithm: trust classifier, navigation engine, speed fusion, cell positioning, trip recording/replay, search logic, shared OkHttp client (`core/net/Http.kt`). **No Android imports.** |
+| `:app`     | Android app     | Android glue and UI: `AppGraph` (manual DI, wires everything), `SensorHub`, `CellScanner`/`CellManager`, `NavService` (foreground service), `TripManager`, Compose screens in `ui/`         |
+| `:routing` | JVM             | GraphHopper integration used by both the phone (`OfflineGraph`, `PhoneGraphHopper`) and the desktop pack builder (`BuildGraph`, `SearchIndexBuilder`)                                       |
+| `server/`  | Rust app        | persistent SQLite cell-sharing server (Axum HTTP/WebSocket, anti-poisoning consensus)                                                                                                       |
+| `:replay`  | JVM app         | CLI that replays recorded trips (`.rec.gz`) through the engine and reports errors                                                                                                           |
 
 Package root: `org.imunav.<module>`. Put new logic in `:core` whenever it does not need Android.
 
@@ -46,7 +46,7 @@ Requirements: JDK 17+, Android SDK platform 36. `adb` lives at `~/Library/Androi
    drive. A refactor must leave these numbers identical; an algorithm change must not make them worse
    without a stated reason. Check with:
    `grep -h -o "p95[^<]*" core/build/test-results/test/*.xml`
-3. UI or runtime changes: build the release APK and try it on the emulator/phone (see *Testing on a device*).
+3. UI or runtime changes: build the release APK and try it on the emulator/phone (see _Testing on a device_).
 4. User-visible strings exist in **both** `values/strings.xml` and `values-uk/strings.xml`.
 5. Update the relevant file in `docs/` when behaviour, settings, commands or dependencies change.
 
@@ -57,7 +57,7 @@ Requirements: JDK 17+, Android SDK platform 36. `adb` lives at `~/Library/Androi
   Prefer fixing over suppressing; any `@Suppress` needs a comment saying why.
 - The code is meant to be readable by junior developers:
   - descriptive names (no one-letter names except loop indices and `dt`/`s` conventions below),
-  - KDoc on every class and non-trivial function, explaining *why* and the concept, not restating the code,
+  - KDoc on every class and non-trivial function, explaining _why_ and the concept, not restating the code,
   - named constants instead of unexplained numbers in app code (thresholds belong in `Tuning` / `TrustConfig`),
   - imports instead of inline fully-qualified names, no `!!`.
 - Idiomatic Kotlin: `data class` for values, immutable state published via `StateFlow`

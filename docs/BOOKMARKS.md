@@ -1,5 +1,7 @@
 # Bookmarks
 
+[Documentation index](../README.md)
+
 Bookmarks keep places and routes on this phone so you can use them again, even without address search.
 
 ## Save and use a bookmark

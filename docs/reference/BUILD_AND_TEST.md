@@ -87,11 +87,11 @@ the definition of done — are in [`AGENTS.md`](../../AGENTS.md).
 ./gradlew spotlessApply   # auto-format Kotlin and Gradle files (ktlint)
 ```
 
-| Tool | Task | Config |
-|---|---|---|
-| **ktlint** (via Spotless) — formatting and style | `spotlessCheck` / `spotlessApply` | `.editorconfig` (IntelliJ style, 180 columns) |
-| **detekt** — complexity, exception handling, naming, bug patterns | `detekt` | `config/detekt.yml` (defaults + documented adjustments) |
-| **Android Lint** — API levels, resources, translations, Compose, manifest | `:app:lintFdroidRelease` / `:app:lintPlayRelease` | `app/lint.xml`; warnings are errors |
+| Tool                                                                      | Task                                              | Config                                                  |
+| ------------------------------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------------- |
+| **ktlint** (via Spotless) — formatting and style                          | `spotlessCheck` / `spotlessApply`                 | `.editorconfig` (IntelliJ style, 180 columns)           |
+| **detekt** — complexity, exception handling, naming, bug patterns         | `detekt`                                          | `config/detekt.yml` (defaults + documented adjustments) |
+| **Android Lint** — API levels, resources, translations, Compose, manifest | `:app:lintFdroidRelease` / `:app:lintPlayRelease` | `app/lint.xml`; warnings are errors                     |
 
 Reports land in `*/build/reports/detekt/` and `app/build/reports/lint-results-<variant>.html`.
 Exceptions are kept few and commented where they are configured; prefer fixing over suppressing.

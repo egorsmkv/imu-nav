@@ -1,5 +1,7 @@
 # Rust test coverage
 
+[Documentation index](../README.md)
+
 Coverage measures which Rust production lines ran during the native and server test suites. The native suite includes host JNI calls; these results do not measure Android-only code.
 
 ## Run and read the report

@@ -1,5 +1,7 @@
 # Landscape driving and Android Auto
 
+[Documentation index](../README.md)
+
 You can view a car trip on a compatible Android Auto screen. The phone and car screen share the same trip. Walking routes remain on the phone.
 
 ## Use the car screen

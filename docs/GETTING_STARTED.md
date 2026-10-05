@@ -1,5 +1,7 @@
 # Getting started
 
+[Documentation index](../README.md)
+
 IMU Nav can guide a trip when GPS becomes unreliable. It is a research prototype, not a safety system. You can finish setup with limited features and return to it later.
 
 ## Set up the app

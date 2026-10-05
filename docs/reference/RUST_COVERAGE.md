@@ -27,13 +27,13 @@ profiles are never reused. Build caches are isolated from ordinary Cargo builds.
 
 ## What is measured
 
-| Gate | Minimum production line coverage |
-|---|---:|
-| `imu-nav-core` | 95% |
-| Core trust classifier (`trust.rs`) | 95% |
-| `imu-nav-jni` | 85% |
-| `imu-nav-sim` | 95% |
-| `imu-nav-cell-server`, including `main.rs` | 90% |
+| Gate                                       | Minimum production line coverage |
+| ------------------------------------------ | -------------------------------: |
+| `imu-nav-core`                             |                              95% |
+| Core trust classifier (`trust.rs`)         |                              95% |
+| `imu-nav-jni`                              |                              85% |
+| `imu-nav-sim`                              |                              95% |
+| `imu-nav-cell-server`, including `main.rs` |                              90% |
 
 The denominator includes executable lines in handwritten Rust production files.
 Test modules live in separate files and are excluded, as are dependencies and

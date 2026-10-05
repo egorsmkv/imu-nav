@@ -13,13 +13,13 @@ usage-history entries. Scan frequency still follows the selected power profile.
 
 Tower locations come from four sources, each in its own table and looked up in this order:
 
-| Source | How it gets there |
-|---|---|
-| **Sync server** | Merged data downloaded from a cell-sharing server you configure (see below). |
-| **OpenCellID** | *Download OpenCellID* with your own API token, or *Import file* (`.csv` / `.csv.gz`). CC BY-SA 4.0. |
-| **Learned** | While GPS is GOOD (≤ 30 m), every visible cell's position is refined from the fix. |
-| **Mozilla** | *Download Mozilla data* streams the Mozilla Location Service final export (1.5 GB, public domain, March 2024) from archive.org, keeping only your region's MCCs; resumes after network drops, nothing large is stored. |
-| **Built-in** | Shipped inside the APK (`app/src/main/assets/cells/bundled-cells.csv.gz`, ~530k Ukrainian towers compiled from OpenCellID + Mozilla). Optional: choose **Install built-in towers** in onboarding (or reopen **Settings → Set up IMU Nav**) to import it (~20 s). After opting in, changed archives are imported on app updates. Lowest priority, so anything downloaded later wins. |
+| Source          | How it gets there                                                                                                                                                                                                                                                                                                                                                                   |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Sync server** | Merged data downloaded from a cell-sharing server you configure (see below).                                                                                                                                                                                                                                                                                                        |
+| **OpenCellID**  | _Download OpenCellID_ with your own API token, or _Import file_ (`.csv` / `.csv.gz`). CC BY-SA 4.0.                                                                                                                                                                                                                                                                                 |
+| **Learned**     | While GPS is GOOD (≤ 30 m), every visible cell's position is refined from the fix.                                                                                                                                                                                                                                                                                                  |
+| **Mozilla**     | _Download Mozilla data_ streams the Mozilla Location Service final export (1.5 GB, public domain, March 2024) from archive.org, keeping only your region's MCCs; resumes after network drops, nothing large is stored.                                                                                                                                                              |
+| **Built-in**    | Shipped inside the APK (`app/src/main/assets/cells/bundled-cells.csv.gz`, ~530k Ukrainian towers compiled from OpenCellID + Mozilla). Optional: choose **Install built-in towers** in onboarding (or reopen **Settings → Set up IMU Nav**) to import it (~20 s). After opting in, changed archives are imported on app updates. Lowest priority, so anything downloaded later wins. |
 
 All imports are filtered to the configured country codes (default `255`, Ukraine).
 
@@ -35,18 +35,22 @@ It stays on the device unless you explicitly share it. The file reveals approxim
 times: share only with trusted recipients.
 
 ### Updating the built-in database
-1. On a phone with the data you want (after *Download Mozilla data* / *Download OpenCellID* / syncs), open **Cells → Export database**.
+
+1. On a phone with the data you want (after _Download Mozilla data_ / _Download OpenCellID_ / syncs), open **Cells → Export database**.
    It writes every tower once — choosing the entry lookups would use — to `Android/data/org.imunav.app/files/cells-export.csv.gz`.
 2. Copy it into the project and rebuild:
+
    ```bash
    adb pull /sdcard/Android/data/org.imunav.app/files/cells-export.csv.gz app/src/main/assets/cells/bundled-cells.csv.gz
    ./gradlew :app:assembleRelease
    ```
+
 3. Installed apps re-import it once after updating (detected by the file's SHA-256).
 
 The compiled file contains OpenCellID data and is therefore distributed under CC BY-SA 4.0 (see `assets/cells/LICENSE.txt`).
 
 ## Cell-sharing server
+
 Phones upload towers they learned from trusted GPS — tower positions only, never the device track —
 and download everyone's merged data. Protocol (gzip CSV in OpenCellID columns):
 
@@ -102,7 +106,7 @@ SQLite migration source; re-import the original seed export when moving to this 
 [`server/README.md`](../../server/README.md) for the complete HTTP, management, and WebSocket API,
 including opt-in profiling and a loopback traffic simulator.
 In the app: **Cells → Sharing server**, enter the URL, register or sign in with email and password,
-then *Sync now* or enable automatic sync (every 6 h and after trips). Signing out still allows
+then _Sync now_ or enable automatic sync (every 6 h and after trips). Signing out still allows
 public downloads. Password-reset email needs SMTP configuration; see the server README.
 
 Main navigation thresholds live in `core/.../Tuning.kt` (defaults = factory preset) and `TrustConfig`.

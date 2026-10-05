@@ -9,6 +9,11 @@ IMU Nav is a research prototype, not a safety system.
 
 ## Documentation
 
+Start with [getting started](docs/GETTING_STARTED.md). Look up unfamiliar terms in the
+[glossary](docs/GLOSSARY.md). Each guide links to a detailed reference.
+
+### Use the app
+
 - [Getting started and network proxy](docs/GETTING_STARTED.md)
 - [Navigation and positioning](docs/NAVIGATION.md)
 - [Offline routing and address search](docs/ROUTING_AND_SEARCH.md)
@@ -16,14 +21,20 @@ IMU Nav is a research prototype, not a safety system.
 - [Bookmarks](docs/BOOKMARKS.md)
 - [Trip recording, history and replay](docs/TRIPS.md)
 - [Cell towers and sharing server](docs/CELL_TOWERS.md)
+
+### Build and verify
+
 - [Build, testing and performance checks](docs/BUILD_AND_TEST.md)
+- [F-Droid releases](docs/FDROID.md)
+- [Kotlin coverage](docs/KOTLIN_COVERAGE.md)
+- [Rust coverage](docs/RUST_COVERAGE.md)
+- [Native verification](docs/NATIVE_VERIFICATION.md)
+
+### Project information
+
 - [Status and limitations](docs/STATUS_AND_LIMITATIONS.md)
 - [Licences and provenance](docs/LICENCES.md)
 - [Glossary](docs/GLOSSARY.md)
-
-Specialized guides: [F-Droid releases](docs/FDROID.md), [Kotlin coverage](docs/KOTLIN_COVERAGE.md),
-[Rust coverage](docs/RUST_COVERAGE.md) and [native verification](docs/NATIVE_VERIFICATION.md).
-Each guide gives short steps and links to its detailed reference.
 
 ## Quick build
 

@@ -5,10 +5,10 @@ On older phones the app crashed as soon as it loaded a routing pack. The two sto
 here are copies of GraphHopper 11.0's (Apache License 2.0, © GraphHopper GmbH), with only
 those calls replaced:
 
-| Class | Upstream call | Available on Android | Replacement |
-|---|---|---|---|
-| `MMapDataAccess` | `ByteBuffer.get/put(int, byte[], int, int)` | 15 (API 35) | single-byte loop |
-| `RAMDataAccess` | `MethodHandles.byteArrayViewVarHandle` / `VarHandle` | 13 (API 33) | manual little-endian bytes |
+| Class            | Upstream call                                        | Available on Android | Replacement                |
+| ---------------- | ---------------------------------------------------- | -------------------- | -------------------------- |
+| `MMapDataAccess` | `ByteBuffer.get/put(int, byte[], int, int)`          | 15 (API 35)          | single-byte loop           |
+| `RAMDataAccess`  | `MethodHandles.byteArrayViewVarHandle` / `VarHandle` | 13 (API 33)          | manual little-endian bytes |
 
 The app build removes the originals from the GraphHopper jar (`StripPatchedGraphHopperClasses` in
 `app/build.gradle.kts`). Other newer JDK calls in GraphHopper (e.g. `Stream.toList()`) are

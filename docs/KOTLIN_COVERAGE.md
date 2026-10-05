@@ -1,5 +1,7 @@
 # Kotlin test coverage
 
+[Documentation index](../README.md)
+
 Coverage shows which Kotlin source lines ran during the test suites. A green line was exercised by a test; it does not mean every behaviour on that line is correct.
 
 ## Run and read the report

@@ -3,11 +3,11 @@
 The `native` Cargo workspace contains the route-constrained navigation code that Android runs
 through JNI. It has three crates:
 
-| Crate | Type | Purpose |
-|---|---|---|
-| [`imu-nav-core`](nav-core/) | Rust library | Android-independent navigation algorithms and state |
-| [`imu-nav-sim`](nav-sim/) | Host executable | Deterministic app-like workloads, heap/CPU profiling and optimization comparisons |
-| [`imu-nav-jni`](nav-jni/) | `cdylib` | JNI adapter that exposes `imu-nav-core` to Kotlin as `libimu_nav_jni.so` |
+| Crate                       | Type            | Purpose                                                                           |
+| --------------------------- | --------------- | --------------------------------------------------------------------------------- |
+| [`imu-nav-core`](nav-core/) | Rust library    | Android-independent navigation algorithms and state                               |
+| [`imu-nav-sim`](nav-sim/)   | Host executable | Deterministic app-like workloads, heap/CPU profiling and optimization comparisons |
+| [`imu-nav-jni`](nav-jni/)   | `cdylib`        | JNI adapter that exposes `imu-nav-core` to Kotlin as `libimu_nav_jni.so`          |
 
 The split keeps the algorithms deterministic and directly testable on the host. Android-specific
 array conversion, handle ownership and error codes stay in the JNI crate.
@@ -270,14 +270,14 @@ status codes.
 The exported functions are grouped by their Kotlin owners in
 `app/src/main/kotlin/org/imunav/app/nativecore/`:
 
-| Kotlin wrapper | Native state or operation |
-|---|---|
-| `NativeTrustEvaluator` | `TrustClassifier` and `JamDetector` lifecycle, AGC updates and fix verdicts |
-| `NativeRouteGeometry` | Route creation, destruction and point projection |
-| `NativeRouteFilter` | Low-level filter prediction, measurement updates, route installation and state reads |
-| `NativeNavigationEstimator` | Trip estimator lifecycle, ticks, OBD speed and route replacement |
-| `NativeNetworkTracker` | Network/cell gating, sample history and speed regression |
-| `NativeSpeedFusion` | Stateless inverse-variance speed fusion |
+| Kotlin wrapper              | Native state or operation                                                            |
+| --------------------------- | ------------------------------------------------------------------------------------ |
+| `NativeTrustEvaluator`      | `TrustClassifier` and `JamDetector` lifecycle, AGC updates and fix verdicts          |
+| `NativeRouteGeometry`       | Route creation, destruction and point projection                                     |
+| `NativeRouteFilter`         | Low-level filter prediction, measurement updates, route installation and state reads |
+| `NativeNavigationEstimator` | Trip estimator lifecycle, ticks, OBD speed and route replacement                     |
+| `NativeNetworkTracker`      | Network/cell gating, sample history and speed regression                             |
+| `NativeSpeedFusion`         | Stateless inverse-variance speed fusion                                              |
 
 Stateful objects live in synchronized Rust registries. Kotlin receives opaque integer handles, not
 native pointers. Invalid or already-destroyed handles return an error instead of dereferencing freed
@@ -375,14 +375,14 @@ use 40 m-accuracy cells with deterministic noise. The acceleration case rises fr
 recorded-style IMU stops/restarts; irregular cells alternate 5/10/5/15 s intervals. Separate error cases
 hold speed constant while cell bias ramps to 120 m or one tower fix jumps by 150 m.
 
-| Scenario | Prior speed experiment p95 / max (m) | Updated experiment p95 / max (m) | Position-only p95 / max (m) |
-|---|---|---|---|
-| Acceleration away from saved prior | 213 / 242 | 172 / 213 | 221 / 235 |
-| Gradual braking | 199 / 230 | 172 / 202 | 113 / 115 |
-| Repeated stops/restarts | 110 / 168 | 110 / 168 | 82 / 118 |
-| Acceleration with irregular cells | 1880 / 2042 | 1394 / 1502 | 2827 / 3101 |
-| Changing cell bias | 140 / 146 | 140 / 146 | 89 / 91 |
-| Isolated tower jump | 50 / 63 | 50 / 63 | 43 / 62 |
+| Scenario                           | Prior speed experiment p95 / max (m) | Updated experiment p95 / max (m) | Position-only p95 / max (m) |
+| ---------------------------------- | ------------------------------------ | -------------------------------- | --------------------------- |
+| Acceleration away from saved prior | 213 / 242                            | 172 / 213                        | 221 / 235                   |
+| Gradual braking                    | 199 / 230                            | 172 / 202                        | 113 / 115                   |
+| Repeated stops/restarts            | 110 / 168                            | 110 / 168                        | 82 / 118                    |
+| Acceleration with irregular cells  | 1880 / 2042                          | 1394 / 1502                      | 2827 / 3101                 |
+| Changing cell bias                 | 140 / 146                            | 140 / 146                        | 89 / 91                     |
+| Isolated tower jump                | 50 / 63                              | 50 / 63                          | 43 / 62                     |
 
 For acceleration, position error settles below 100 m at 125 s after the change versus 165 s before;
 gradual braking now settles at 255 s. Recovery requires at least 30 s below that threshold through
@@ -397,7 +397,6 @@ from 75 m with turns disabled to 65 m with the bounded correction (maximum error
 This synthetic gain is deliberately modest: one landmark does not fix an ongoing speed-model error.
 Phone swings, tilt-heavy movement, opposite yaw, missed turns and fresh-GPS cases must not introduce
 corrections. Use `--no-native-turns` with `--compare-native` for the corresponding recording A/B run.
-
 
 ## Native heap profiling (Linux host replay)
 
@@ -438,7 +437,6 @@ cargo test --manifest-path native/Cargo.toml --features heap-profile
 cargo clippy --manifest-path native/Cargo.toml --all-targets --features heap-profile -- -W clippy::pedantic -D warnings
 ./gradlew -PnativeHeapProfile :replay:test
 ```
-
 
 ## Synthetic native workload profiling
 

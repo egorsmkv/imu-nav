@@ -20,9 +20,9 @@ the F-Droid runtime graph.
 
 The F-Droid flavor differs in two intentional ways:
 
-* It is always unsigned. F-Droid builds and signs the APK with its own key. A local
+- It is always unsigned. F-Droid builds and signs the APK with its own key. A local
   `keystore.properties` is used only by the `play` flavor.
-* It never bundles the optional, locally generated routing/search pack. A Play build may include
+- It never bundles the optional, locally generated routing/search pack. A Play build may include
   `app/src/play/assets/routing/pack.zip` and `pack.json`; both are ignored by Git. F-Droid users can
   import or download a freely licensed pack from inside the app. All other app functionality is
   unchanged.
@@ -164,10 +164,10 @@ second clean unsigned build using `diffoscope`.
 
 The authoritative process and policy are documented by F-Droid:
 
-* <https://f-droid.org/docs/Submitting_to_F-Droid_Quick_Start_Guide/>
-* <https://f-droid.org/docs/Build_Metadata_Reference/>
-* <https://f-droid.org/docs/Inclusion_Policy/>
-* <https://f-droid.org/docs/Reproducible_Builds/>
+- <https://f-droid.org/docs/Submitting_to_F-Droid_Quick_Start_Guide/>
+- <https://f-droid.org/docs/Build_Metadata_Reference/>
+- <https://f-droid.org/docs/Inclusion_Policy/>
+- <https://f-droid.org/docs/Reproducible_Builds/>
 
 ## Submission
 
@@ -181,11 +181,11 @@ The authoritative process and policy are documented by F-Droid:
 
 ## Known blockers
 
-* The source repository is not anonymously accessible. F-Droid cannot clone a private repository;
+- The source repository is not anonymously accessible. F-Droid cannot clone a private repository;
   make it public and verify both the source and issue-tracker URLs first.
-* A public release tag matching `versionName` does not yet exist.
-* The F-Droid build has been designed to omit the untracked 400+ MB routing pack. Reviewers should
+- A public release tag matching `versionName` does not yet exist.
+- The F-Droid build has been designed to omit the untracked 400+ MB routing pack. Reviewers should
   still confirm that the tracked 8 MB CC BY-SA cell database and MapLibre's trusted-Maven native
   libraries satisfy the current scanner and inclusion review.
-* No authentic screenshots are present. Screenshots are recommended for the listing but are not a
+- No authentic screenshots are present. Screenshots are recommended for the listing but are not a
   build blocker; add only real captures from a tested build.
