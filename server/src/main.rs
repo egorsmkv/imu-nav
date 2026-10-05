@@ -131,6 +131,7 @@ async fn main() -> Result<()> {
         tracing::info!(path = %path.display(), accepted = result.accepted, rejected = result.rejected, "seed import");
     }
     let (published, contributions) = store.counts(&policy)?;
+    let cleanup_store = store.clone();
     let state = AppState::new(
         store,
         ServerConfig {
@@ -144,14 +145,35 @@ async fn main() -> Result<()> {
         .await
         .context("cannot bind server socket")?;
     tracing::info!(address = %listener.local_addr()?, published, contributions, min_devices = policy.min_devices, "cell server ready");
+    let cleanup = spawn_debug_cleanup(cleanup_store);
     axum::serve(
         listener,
         router(state).into_make_service_with_connect_info::<SocketAddr>(),
     )
     .with_graceful_shutdown(shutdown_signal())
     .await?;
+    cleanup.abort();
     tracing::info!("cell server stopped");
     Ok(())
+}
+
+/// Expire private diagnostics even when nobody opens the account pages.
+fn spawn_debug_cleanup(cleanup_store: CellStore) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(6 * 60 * 60));
+        loop {
+            interval.tick().await;
+            let store = cleanup_store.clone();
+            match tokio::task::spawn_blocking(move || store.prune_debug_sessions()).await {
+                Ok(Ok(removed)) if removed > 0 => {
+                    tracing::info!(removed, "expired diagnostic sessions removed");
+                }
+                Ok(Ok(_)) => {}
+                Ok(Err(error)) => tracing::warn!(%error, "diagnostic cleanup failed"),
+                Err(error) => tracing::warn!(%error, "diagnostic cleanup worker failed"),
+            }
+        }
+    })
 }
 
 /// Read one password without echo on a terminal; a pipe still supports scripted setup.

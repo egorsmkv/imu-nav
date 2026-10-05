@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.os.Build
 import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
@@ -20,6 +21,7 @@ import kotlinx.coroutines.launch
 import org.imunav.app.bookmarks.BookmarkDatabase
 import org.imunav.app.bookmarks.Bookmarks
 import org.imunav.app.cells.CellManager
+import org.imunav.app.diagnostics.DevDiagnostics
 import org.imunav.app.haptics.Haptics
 import org.imunav.app.maps.OfflineMap
 import org.imunav.app.nativecore.NativeEstimatorBridge
@@ -71,6 +73,7 @@ import org.imunav.core.nav.RussianPhrases
 import org.imunav.core.nav.UkrainianPhrases
 import org.imunav.core.route.TravelMode
 import org.imunav.core.speed.SpeedProfile
+import org.json.JSONObject
 import java.util.Locale
 
 /**
@@ -316,6 +319,9 @@ class AppGraph(private val context: Context) {
 
     /** Offline cell-tower positioning: tower database, scanning, downloads, sharing. */
     val cells = CellManager(context, scope, hub, tripLog::write)
+
+    /** Opt-in trip diagnostics use the same signed-in server but have separate local and server storage. */
+    val diagnostics = DevDiagnostics(context, cells)
 
     /** Owns the foreground service, trip recorder, native resources, engine, and OBD session as one transaction. */
     private val navigationSession =
@@ -656,6 +662,21 @@ class AppGraph(private val context: Context) {
     }
 
     init {
+        trips.onDiagnosticStart = { id ->
+            diagnostics.startTrip(
+                id,
+                JSONObject()
+                    .put("android_api", Build.VERSION.SDK_INT)
+                    .put("device", "${Build.MANUFACTURER} ${Build.MODEL}")
+                    .put("travel_mode", engine.mode.name)
+                    .put("navigation_method", navigationMethod.value.name)
+                    .put("estimator", engine.estimator.name)
+                    .put("power_mode", powerMode.value.name),
+            )
+        }
+        trips.onDiagnosticEvent = diagnostics::onEvent
+        trips.onDiagnosticEnd = diagnostics::endTrip
+        tripLog.onDiagnosticLine = diagnostics::onLog
         // The process was killed mid-trip (or the system restarted the sticky service): resume navigation.
         if (trips.restore()) {
             tripLog.startTrip()

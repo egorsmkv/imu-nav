@@ -71,6 +71,282 @@ async fn start_server_with_mail(policy: Policy, mail: Option<MailConfig>) -> Res
 }
 
 #[tokio::test]
+async fn debug_uploads_are_opt_in_ordered_private_and_replayable() -> Result<()> {
+    let server = start_server().await?;
+    let client = reqwest::Client::new();
+    let sessions = format!("{}/v1/debug/sessions", server.base_url);
+    let start = || {
+        client
+            .post(&sessions)
+            .bearer_auth(&server.token)
+            .json(&serde_json::json!({"client_id":"test-trip-1","context":{"app_version":"test","android_api":36}}))
+    };
+    assert_eq!(start().send().await?.status(), StatusCode::FORBIDDEN);
+    rusqlite::Connection::open(server.database.path())?.execute(
+        "INSERT INTO server_settings(key,value) VALUES ('debug_upload_enabled','1')",
+        [],
+    )?;
+    let created: serde_json::Value = start().send().await?.error_for_status()?.json().await?;
+    let id = created["id"].as_str().unwrap();
+    let path = format!("{sessions}/{id}");
+    let batch = serde_json::json!({"entries":[
+        {"kind":"event","elapsed_ms":123,"line":"X,123"},
+        {"kind":"log","elapsed_ms":124,"line":"12:00 [124] gps_state=LOST"}
+    ]});
+    let put = |seq| {
+        client
+            .put(format!("{path}/batches/{seq}"))
+            .bearer_auth(&server.token)
+            .json(&batch)
+    };
+    assert_eq!(put(1).send().await?.status(), StatusCode::CONFLICT);
+    assert_eq!(put(0).send().await?.status(), StatusCode::OK);
+    assert_eq!(put(0).send().await?.status(), StatusCode::OK);
+    assert_eq!(
+        client
+            .put(format!("{path}/batches/0"))
+            .bearer_auth(&server.token)
+            .json(
+                &serde_json::json!({"entries":[{"kind":"event","elapsed_ms":123,"line":"P,123"}]})
+            )
+            .send()
+            .await?
+            .status(),
+        StatusCode::CONFLICT
+    );
+    let status: serde_json::Value = client
+        .get(&path)
+        .bearer_auth(&server.token)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert_eq!(status["next_seq"], 1);
+    let resumed: serde_json::Value = start().send().await?.error_for_status()?.json().await?;
+    assert_eq!(resumed["id"], id);
+    assert_eq!(resumed["next_seq"], 1);
+    assert_eq!(
+        client
+            .post(format!("{path}/finish"))
+            .bearer_auth(&server.token)
+            .json(&serde_json::json!({"next_seq":2}))
+            .send()
+            .await?
+            .status(),
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        client
+            .post(format!("{path}/finish"))
+            .bearer_auth(&server.token)
+            .json(&serde_json::json!({"next_seq":1}))
+            .send()
+            .await?
+            .status(),
+        StatusCode::OK
+    );
+    check_debug_browser(&server, id).await?;
+    check_debug_storage(&server, id)?;
+    Ok(())
+}
+
+fn check_debug_storage(server: &TestServer, id: &str) -> Result<()> {
+    let connection = rusqlite::Connection::open(server.database.path())?;
+    let count: i64 = connection.query_row(
+        "SELECT COUNT(*) FROM debug_entries WHERE session_id=?1",
+        [id],
+        |row| row.get(0),
+    )?;
+    assert_eq!(count, 2);
+    let mut statement = connection
+        .prepare("SELECT line FROM debug_entries WHERE session_id=?1 AND kind='event'")?;
+    assert_eq!(
+        statement.query_row([id], |row| row.get::<_, String>(0))?,
+        "X,123"
+    );
+    drop(statement);
+    connection.execute("UPDATE debug_sessions SET created_s=0 WHERE id=?1", [id])?;
+    assert_eq!(
+        CellStore::open(server.database.path())?.prune_debug_sessions()?,
+        1
+    );
+    let remaining: i64 = connection.query_row(
+        "SELECT COUNT(*) FROM debug_entries WHERE session_id=?1",
+        [id],
+        |row| row.get(0),
+    )?;
+    assert_eq!(remaining, 0);
+    Ok(())
+}
+
+async fn check_debug_browser(server: &TestServer, id: &str) -> Result<()> {
+    let browser = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?;
+    let browser_login = browser
+        .post(format!("{}/login", server.base_url))
+        .form(&[
+            ("email", "admin@example.org"),
+            ("password", "correct horse battery staple"),
+        ])
+        .send()
+        .await?;
+    let cookie = browser_login.headers()["set-cookie"]
+        .to_str()?
+        .split(';')
+        .next()
+        .unwrap();
+    let detail = browser
+        .get(format!("{}/debug/{id}", server.base_url))
+        .header("cookie", cookie)
+        .send()
+        .await?;
+    assert_eq!(detail.status(), StatusCode::OK);
+    assert!(detail.text().await?.contains("X,123"));
+    let archive = browser
+        .get(format!("{}/debug/{id}/download/recording", server.base_url))
+        .header("cookie", cookie)
+        .send()
+        .await?
+        .error_for_status()?
+        .bytes()
+        .await?;
+    let mut decoded = String::new();
+    flate2::read::GzDecoder::new(archive.as_ref()).read_to_string(&mut decoded)?;
+    assert_eq!(decoded, "# blind-driver trip v1\nX,123\n");
+
+    let registration: serde_json::Value = browser
+        .post(format!("{}/v1/auth/register", server.base_url))
+        .json(&serde_json::json!({"email":"other@example.org","password":"another long password"}))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let other = registration["access_token"].as_str().unwrap();
+    assert_eq!(
+        browser
+            .get(format!("{}/v1/debug/sessions/{id}", server.base_url))
+            .bearer_auth(other)
+            .send()
+            .await?
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    let other_browser = browser
+        .post(format!("{}/login", server.base_url))
+        .form(&[
+            ("email", "other@example.org"),
+            ("password", "another long password"),
+        ])
+        .send()
+        .await?;
+    let other_cookie = other_browser.headers()["set-cookie"]
+        .to_str()?
+        .split(';')
+        .next()
+        .unwrap();
+    assert_eq!(
+        browser
+            .get(format!("{}/debug/{id}/download/recording", server.base_url))
+            .header("cookie", other_cookie)
+            .send()
+            .await?
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    check_debug_user_delete(server, &browser, other, other_cookie).await?;
+    Ok(())
+}
+
+async fn check_debug_user_delete(
+    server: &TestServer,
+    browser: &reqwest::Client,
+    token: &str,
+    cookie: &str,
+) -> Result<()> {
+    let created: serde_json::Value = browser
+        .post(format!("{}/v1/debug/sessions", server.base_url))
+        .bearer_auth(token)
+        .json(&serde_json::json!({"client_id":"other-trip","context":{}}))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let id = created["id"].as_str().unwrap();
+    let page = browser
+        .get(format!("{}/debug", server.base_url))
+        .header("cookie", cookie)
+        .send()
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
+    assert!(page.contains(id));
+    let csrf = page
+        .split("name=\"csrf\" value=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap();
+    assert_eq!(
+        browser
+            .post(format!("{}/debug/delete-all", server.base_url))
+            .header("cookie", cookie)
+            .form(&[("csrf", csrf), ("confirm", "WRONG")])
+            .send()
+            .await?
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        browser
+            .post(format!("{}/debug/delete-all", server.base_url))
+            .header("cookie", cookie)
+            .form(&[("csrf", csrf), ("confirm", "DELETE")])
+            .send()
+            .await?
+            .status(),
+        StatusCode::SEE_OTHER
+    );
+    assert_eq!(
+        browser
+            .get(format!("{}/v1/debug/sessions/{id}", server.base_url))
+            .bearer_auth(token)
+            .send()
+            .await?
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    Ok(())
+}
+
+#[test]
+fn older_debug_session_table_gets_client_ids() -> Result<()> {
+    let database = NamedTempFile::new()?;
+    let connection = rusqlite::Connection::open(database.path())?;
+    connection.execute_batch("CREATE TABLE debug_sessions (
+        id TEXT PRIMARY KEY, account_id INTEGER NOT NULL, context_json TEXT NOT NULL,
+        created_s INTEGER NOT NULL, updated_s INTEGER NOT NULL, finished_s INTEGER,
+        incomplete INTEGER NOT NULL DEFAULT 0, bytes INTEGER NOT NULL DEFAULT 0
+    );
+    INSERT INTO debug_sessions(id,account_id,context_json,created_s,updated_s) VALUES ('legacy',1,'{}',1,1);")?;
+    drop(connection);
+    CellStore::open(database.path())?;
+    let connection = rusqlite::Connection::open(database.path())?;
+    let client_id: String = connection.query_row(
+        "SELECT client_id FROM debug_sessions WHERE id='legacy'",
+        [],
+        |row| row.get(0),
+    )?;
+    assert_eq!(client_id, "legacy");
+    Ok(())
+}
+
+#[tokio::test]
 async fn browser_pages_serve_all_three_locales_under_their_csp() -> Result<()> {
     let server = start_server().await?;
     let client = reqwest::Client::new();

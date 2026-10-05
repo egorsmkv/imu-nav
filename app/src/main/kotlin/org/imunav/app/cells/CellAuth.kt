@@ -57,7 +57,7 @@ internal class CellAuth(context: Context) {
             clear()
             return null
         }
-        if (System.currentTimeMillis() < expiresAtMs - 30_000 && emailVerified && sharingEnabled) return access
+        if (System.currentTimeMillis() < expiresAtMs - 30_000) return access
         val refresh = decrypt(prefs.getString("refresh", null)) ?: run {
             clear()
             return null

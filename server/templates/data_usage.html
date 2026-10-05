@@ -46,7 +46,9 @@
     <h2>Accounts, logs, and retention</h2>
     <ul>
       <li>Accepted observations stay in the database until they are replaced or deleted; this server does not automatically expire them. The server uses IP addresses for rate limits and includes IP addresses and device IDs in upload log entries. Log and backup retention depends on whoever operates this server.</li>
-      <li>Trip recordings are not stored by this server. Signing out of the app stops authenticated uploads, while public tower downloads remain available.</li>
+      <li>Developer diagnostics are separate from tower sharing. They upload only when the user turns on Developer diagnostics in the app and an administrator has enabled uploads on this server. A diagnostic session includes raw trip events, precise location and sensor data, trip log lines, and a limited set of app, Android and navigation settings. Passwords and account tokens are excluded.</li>
+      <li>Diagnostic sessions expire after 30 days. Each session and account has a storage limit; an interrupted or full session may be incomplete. Administrators can inspect and download these sessions for debugging. They are never included in public tower downloads or tower consensus.</li>
+      <li>Turning Developer diagnostics off stops capture and clears unsent batches on the phone. Signing out stops authenticated uploads. Sessions already received remain until the user deletes them, closes their account, or the 30-day expiry runs.</li>
       <li>For a server outside your trusted network, use HTTPS through a reverse proxy before entering credentials or uploading observations.</li>
     </ul>
   </section>
@@ -55,6 +57,7 @@
     <h2>Review and remove your data</h2>
     <ul>
       <li><a href="/account">Sign in to your account panel</a> to review or download your own observations, pause future uploads, delete one observation or all of them, and close your account.</li>
+      <li><a href="/debug">Your diagnostic sessions</a> can be reviewed, downloaded, and deleted individually or all at once.</li>
       <li>Deleting observations recalculates shared tower positions. The server blocks those tower keys from being uploaded again by the same account; deleting all observations also pauses uploads. Closing the account removes its observations, sessions, and deletion markers.</li>
       <li>A tower may remain published if other devices or seed data still support it. Copies already downloaded or exported cannot be removed remotely; updated apps receive tower removals on a later sync when a tower is withdrawn.</li>
     </ul>

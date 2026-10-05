@@ -21,6 +21,8 @@ import java.util.Locale
  * [write] may be called from any thread.
  */
 class TripLog(context: Context, maxFileBytes: Long = 15L * 1024 * 1024) {
+    /** Optional sink for an explicitly enabled developer session. */
+    @Volatile var onDiagnosticLine: ((String, Long) -> Unit)? = null
     private val files = TripFileLog(File(context.filesDir, "logs"), maxFileBytes, { Log.w(TAG, "log_write_failed", it) })
 
     /** The last [MAX_RECENT] lines, for the UI. Guarded by `synchronized(tail)`. */
@@ -42,13 +44,15 @@ class TripLog(context: Context, maxFileBytes: Long = 15L * 1024 * 1024) {
 
     /** Log one line (any thread). */
     fun write(message: String) {
-        val line = "${LocalTime.now().format(TIME)} [${SystemClock.elapsedRealtime()}] $message"
+        val elapsedMs = SystemClock.elapsedRealtime()
+        val line = "${LocalTime.now().format(TIME)} [$elapsedMs] $message"
         Log.d(TAG, message)
         synchronized(tail) {
             tail.addLast(line)
             while (tail.size > MAX_RECENT) tail.removeFirst()
         }
         files.write(line)
+        onDiagnosticLine?.invoke(line, elapsedMs)
     }
 
     private companion object {

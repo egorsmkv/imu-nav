@@ -250,6 +250,21 @@
     <string name="action_reset_confirm">Скинути</string>
 
     <string name="sec_diagnostics">Діагностика</string>
+    <string name="dev_diagnostics">Діагностика для розробників</string>
+    <string name="dev_diagnostics_summary">Увімкніть перед поїздкою, щоб надсилати координати, дані датчиків, журнал і базові налаштування застосунку та пристрою на сервер вашого облікового запису. Працює через Wi-Fi або мобільну мережу. Вимкніть, щоб видалити ненадіслані дані.</string>
+    <string name="dev_diagnostics_status">Стан надсилання</string>
+    <string name="dev_status_waiting">Очікування наступної поїздки</string>
+    <string name="dev_status_sign_in">Спершу увійдіть на сервер обміну</string>
+    <string name="dev_status_recording">Запис і надсилання</string>
+    <string name="dev_status_queued">Очікування надсилання</string>
+    <string name="dev_status_uploading">Надсилання діагностики</string>
+    <string name="dev_status_uploaded">Діагностичну поїздку надіслано</string>
+    <string name="dev_status_queue_full">Локальну чергу заповнено; поїздка буде неповною</string>
+    <string name="dev_status_entry_large">Запис перевищує обмеження розміру</string>
+    <string name="dev_status_retrying">Повторна спроба надсилання</string>
+    <string name="dev_status_server_disabled">Адміністратор сервера не дозволив надсилання діагностики</string>
+    <string name="dev_status_quota_full">Досягнуто обмеження сховища діагностики на сервері</string>
+    <string name="dev_status_removed">Сеанс видалено з сервера</string>
     <string name="trip_log">Журнал поїздки</string>
     <string name="trip_log_summary">Пошук, фільтрування, копіювання та надсилання останніх діагностичних подій</string>
     <string name="trip_log_empty">Записів поки немає</string>

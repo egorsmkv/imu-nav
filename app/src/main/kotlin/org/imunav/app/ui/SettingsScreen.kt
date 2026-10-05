@@ -71,6 +71,7 @@ import org.imunav.app.BuildConfig
 import org.imunav.app.R
 import org.imunav.app.UiState
 import org.imunav.app.cells.CellSource
+import org.imunav.app.diagnostics.DiagnosticPhase
 import org.imunav.core.cells.Radio
 import java.text.NumberFormat
 
@@ -118,6 +119,7 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
         if (uri != null) mgr.importFile { context.contentResolver.openInputStream(uri) }
     }
     val routing by app.offlineRouting.status.collectAsStateWithLifecycle()
+    val diagnostics by app.diagnostics.status.collectAsStateWithLifecycle()
     var packUrl by remember { mutableStateOf(routing.packUrl) }
     val pickPack = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) app.offlineRouting.importZip { context.contentResolver.openInputStream(uri) }
@@ -358,6 +360,27 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                     // ---------------- Diagnostics
                     SectionHeader(stringResource(R.string.sec_diagnostics))
                     SwitchItem(stringResource(R.string.simulate_gps_loss), stringResource(R.string.simulate_gps_loss_summary), ui.simulateGpsLoss) { app.setSimulateGpsLoss(it) }
+                    SwitchItem(stringResource(R.string.dev_diagnostics), stringResource(R.string.dev_diagnostics_summary), diagnostics.enabled) { app.diagnostics.setEnabled(it) }
+                    if (diagnostics.enabled) {
+                        val phaseLabel = when (diagnostics.phase) {
+                            DiagnosticPhase.IDLE, DiagnosticPhase.WAITING -> R.string.dev_status_waiting
+                            DiagnosticPhase.SIGN_IN -> R.string.dev_status_sign_in
+                            DiagnosticPhase.RECORDING -> R.string.dev_status_recording
+                            DiagnosticPhase.QUEUED -> R.string.dev_status_queued
+                            DiagnosticPhase.UPLOADING -> R.string.dev_status_uploading
+                            DiagnosticPhase.UPLOADED -> R.string.dev_status_uploaded
+                            DiagnosticPhase.QUEUE_FULL -> R.string.dev_status_queue_full
+                            DiagnosticPhase.ENTRY_TOO_LARGE -> R.string.dev_status_entry_large
+                            DiagnosticPhase.RETRYING -> R.string.dev_status_retrying
+                            DiagnosticPhase.SERVER_DISABLED -> R.string.dev_status_server_disabled
+                            DiagnosticPhase.QUOTA_FULL -> R.string.dev_status_quota_full
+                            DiagnosticPhase.REMOVED -> R.string.dev_status_removed
+                        }
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.dev_diagnostics_status)) },
+                            supportingContent = { Text(stringResource(phaseLabel) + diagnostics.detail.takeIf { it.isNotBlank() }?.let { ": $it" }.orEmpty()) },
+                        )
+                    }
                     ListItem(
                         headlineContent = { Text(stringResource(R.string.trip_log)) },
                         supportingContent = { Text(stringResource(R.string.trip_log_summary)) },

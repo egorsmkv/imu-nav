@@ -25,7 +25,7 @@ Start with [getting started](docs/GETTING_STARTED.md). Look up unfamiliar terms 
 - [Offline routing and address search](docs/ROUTING_AND_SEARCH.md)
 - [Landscape driving and Android Auto](docs/ANDROID_AUTO.md)
 - [Bookmarks](docs/BOOKMARKS.md)
-- [Trip recording, history and replay](docs/TRIPS.md)
+- [Trip recording, history, replay and opt-in developer diagnostics](docs/TRIPS.md)
 - [Cell towers and sharing server](docs/CELL_TOWERS.md)
 
 ### Build and verify

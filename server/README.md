@@ -53,8 +53,9 @@ JavaScript applies the translations in the browser; API responses and exported f
 The `/account` panel filters the account's cell
 observations by device, MCC, and update time; pages through 100 results at a time; and downloads
 matching rows as gzip CSV. It can delete individual observations or all observations, pause and
-resume uploads, change password or email, revoke other sessions, and close the account. The server
-does not store trip recordings. Other accounts' and seed observations are never included in
+resume uploads, change password or email, revoke other sessions, and close the account. Optional
+developer diagnostics are kept separately at `/debug`, where a user can review, download, and
+delete their own sessions. Other accounts' and seed observations are never included in
 account exports or deletions. Deletion recalculates shared consensus and updates management WebSocket subscribers.
 Web pages show observation, session, tower, and administrator activity times in UTC. The account
 page accepts UTC date and time filters with second precision; existing links with Unix-second
@@ -75,6 +76,16 @@ tower totals, MCC and status filtering, paginated towers and observations, accou
 administrator actions, and the current anti-poisoning policy. Observations can be filtered by
 device, accounts by email, and audit entries by action. Forms use the browser session and CSRF token.
 The pages use Askama templates and Bootstrap 5.3.8 from the jsDelivr CDN.
+
+Open `/debug` from the admin panel to enable diagnostic uploads. The switch is off on a new or
+upgraded server. Users must also turn on **Developer diagnostics** in the app. The server accepts
+ordered, idempotent JSON batches at `/v1/debug/sessions`, separate from tower contributions.
+Administrators can inspect the timeline and download `.rec.gz` replay recordings, trip logs and
+context. A trip ID makes session creation safe to retry after a process restart. Users can access
+and remove only their own sessions. Sessions expire after 30 days and
+are deleted when an account closes. A batch is limited to 8 MiB, a session to 64 MiB, and an
+account to 256 MiB. A full or interrupted session may be incomplete. See `/data-usage` for the
+data fields and retention rules.
 
 For an active ordinary account, use **View as user** in the Accounts table to open its account
 panel without its password. The delegated browser session lasts at most one hour and depends on

@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">{% if !finished %}<meta http-equiv="refresh" content="5">{% endif %}
+<title>Diagnostic session · IMU Nav</title>
+<style>body{font:1rem system-ui;max-width:76rem;margin:2rem auto;padding:0 1rem;color:#172033}a{color:#174ea6}table{border-collapse:collapse;width:100%}td,th{padding:.4rem;border-bottom:1px solid #ddd;text-align:left;vertical-align:top}td:last-child{font: .85rem ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere}form{display:inline}button,input{padding:.4rem .7rem}nav{display:flex;gap:1rem}section{margin:2rem 0}</style>
+<nav><a href="/debug">All sessions</a><a href="/data-usage">Data Usage</a></nav><h1>Session {{ id }}</h1>
+<p>Account: {{ email }} · {% if incomplete %}Incomplete{% else %}{% if finished %}Finished{% else %}Receiving or interrupted{% endif %}{% endif %}. This page refreshes while a trip is active.</p>
+<p><a href="/debug/{{ id }}/download/recording">Download replay recording</a> · <a href="/debug/{{ id }}/download/logs">Download log</a> · <a href="/debug/{{ id }}/download/context">Download context</a></p>
+<form method="post" action="/debug/{{ id }}/delete"><input type="hidden" name="csrf" value="{{ csrf }}"><button>Delete session</button></form>
+<section><h2>Context</h2><pre>{{ context }}</pre></section>
+<section><h2>Timeline</h2><form method="get"><label>Search lines <input name="q" value="{{ q }}" maxlength="100"></label><button>Search</button></form>
+<table><thead><tr><th>Elapsed ms</th><th>Kind</th><th>Data</th></tr></thead><tbody>{% for entry in entries %}<tr><td>{{ entry.elapsed_ms }}</td><td>{{ entry.kind }}</td><td>{{ entry.line }}</td></tr>{% endfor %}</tbody></table>
+{% if page > 0 %}<a href="/debug/{{ id }}?q={{ q|urlencode }}&page={{ page - 1 }}">Previous</a>{% endif %} {% if has_next %}<a href="/debug/{{ id }}?q={{ q|urlencode }}&page={{ page + 1 }}">Next</a>{% endif %}
+</section><script src="/web-locale.js" defer></script></html>

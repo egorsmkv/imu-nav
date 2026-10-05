@@ -250,6 +250,21 @@
     <string name="action_reset_confirm">Сбросить</string>
 
     <string name="sec_diagnostics">Диагностика</string>
+    <string name="dev_diagnostics">Диагностика для разработчиков</string>
+    <string name="dev_diagnostics_summary">Включите перед поездкой, чтобы отправлять координаты, данные датчиков, журнал и основные настройки приложения и устройства на сервер вашей учётной записи. Работает через Wi-Fi или мобильную сеть. Выключите, чтобы удалить неотправленные данные.</string>
+    <string name="dev_diagnostics_status">Состояние отправки</string>
+    <string name="dev_status_waiting">Ожидание следующей поездки</string>
+    <string name="dev_status_sign_in">Сначала войдите на сервер обмена</string>
+    <string name="dev_status_recording">Запись и отправка</string>
+    <string name="dev_status_queued">Ожидание отправки</string>
+    <string name="dev_status_uploading">Отправка диагностики</string>
+    <string name="dev_status_uploaded">Диагностическая поездка отправлена</string>
+    <string name="dev_status_queue_full">Локальная очередь заполнена; поездка будет неполной</string>
+    <string name="dev_status_entry_large">Запись превышает ограничение размера</string>
+    <string name="dev_status_retrying">Повторная попытка отправки</string>
+    <string name="dev_status_server_disabled">Администратор сервера не разрешил отправку диагностики</string>
+    <string name="dev_status_quota_full">Достигнуто ограничение хранилища диагностики на сервере</string>
+    <string name="dev_status_removed">Сеанс удалён с сервера</string>
     <string name="trip_log">Журнал поездки</string>
     <string name="trip_log_summary">Поиск, фильтрация, копирование и отправка последних диагностических событий</string>
     <string name="trip_log_empty">Записей пока нет</string>

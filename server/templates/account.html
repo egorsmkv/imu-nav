@@ -39,7 +39,7 @@
   {% if !message.is_empty() %}<p class="notice" role="status">{{ message }}</p>{% endif %}
   <section class="card">
     <h1>My cell observations</h1>
-    <p>Only observations uploaded by your devices appear here. The server does not store trip recordings.</p>
+    <p>Only cell observations uploaded by your devices appear here. Opt-in developer diagnostics are listed separately.</p>
     {% if !email_verified %}
     <p class="warning">Verify your email to enable uploads and sharing. Check your inbox for a link. If it did not arrive, resend it below.</p>
     <form action="/account/email/resend" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Resend verification email</button></form>
@@ -51,6 +51,7 @@
     <form action="/account/sharing/resume" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><label for="resume-password">Password to resume sharing</label><input id="resume-password" name="password" type="password" autocomplete="current-password" required><button type="submit">Resume uploads</button></form>
     {% endif %}
   </section>
+  <section class="card"><h2>Developer diagnostics</h2><p>Review, download, or delete diagnostic trips that you chose to upload.</p><a class="button" href="/debug">Open my diagnostic sessions</a></section>
   <section class="card">
     <h2>Find and export observations</h2>
     <form action="/account" method="get" class="filters">
@@ -99,7 +100,7 @@
     {% for session in sessions %}<div class="row"><span>{{ session.label }} · expires <time {% if session.expires.valid %}datetime="{{ session.expires.datetime }}"{% endif %}>{{ session.expires.display }}</time>{% if session.current %} · current browser{% endif %}</span>{% if !session.current %}<form action="/account/sessions/revoke" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="session_id" value="{{ session.id }}"><button type="submit">Sign out</button></form>{% endif %}</div>{% endfor %}
     <form action="/account/sessions/revoke-others" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Sign out all other sessions</button></form>
   </section>
-  <section class="card"><h2>Close account</h2><p>Closing your account deletes your cell observations and sessions. This cannot be undone.</p><form action="/account/close" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><label for="close-password">Current password</label><input id="close-password" name="password" type="password" autocomplete="current-password" required><label for="close-confirm">Type DELETE ACCOUNT to confirm</label><input id="close-confirm" name="confirm" type="text" required pattern="DELETE ACCOUNT" autocomplete="off"><p><button class="danger" type="submit">Close my account</button></p></form></section>
+  <section class="card"><h2>Close account</h2><p>Closing your account deletes your cell observations, diagnostic trips, and sessions. This cannot be undone.</p><form action="/account/close" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><label for="close-password">Current password</label><input id="close-password" name="password" type="password" autocomplete="current-password" required><label for="close-confirm">Type DELETE ACCOUNT to confirm</label><input id="close-confirm" name="confirm" type="text" required pattern="DELETE ACCOUNT" autocomplete="off"><p><button class="danger" type="submit">Close my account</button></p></form></section>
   <footer><p><a href="/data-usage">How the server uses your data</a></p><p>IMU Nav is a research prototype, not a safety system.</p></footer>
 </main>
 <script src="/web-locale.js" defer></script>

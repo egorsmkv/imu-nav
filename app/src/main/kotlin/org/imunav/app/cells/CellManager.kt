@@ -149,6 +149,21 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
         prefs.edit { putString("device_id", it) }
     }
 
+    /** Reuse the signed-in cell-server session for opt-in diagnostics, on an I/O thread. */
+    fun diagnosticCredentials(expectedUrl: String? = null): Pair<String, String>? {
+        val url = prefs.getString("sync_url", "").orEmpty().trim().trimEnd('/')
+        if (expectedUrl != null && expectedUrl != url) return null
+        if (url.isBlank() || auth.email == null) return null
+        val token = auth.accessToken(url) ?: return null
+        return url to token
+    }
+
+    /** Current account server, captured when a diagnostic trip starts. */
+    fun diagnosticServerUrl(): String = prefs.getString("sync_url", "").orEmpty().trim().trimEnd('/')
+
+    /** Read the saved account directly so a trip can start before the next status refresh. */
+    fun diagnosticAccountEmail(): String? = auth.email
+
     /** The saved OpenCellID token, for pre-filling Settings fields. */
     fun savedToken(): String = prefs.getString("token", "").orEmpty()
 

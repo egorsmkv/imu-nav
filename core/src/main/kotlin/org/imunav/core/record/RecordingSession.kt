@@ -8,7 +8,13 @@ import java.util.UUID
 import java.util.concurrent.Executor
 
 /** A recording owns its file for its entire lifetime, with all I/O ordered on the supplied serial worker. */
-class RecordingSession(private val file: File, private val worker: Executor, append: Boolean, private val onFailure: (Throwable) -> Unit) {
+class RecordingSession(
+    private val file: File,
+    private val worker: Executor,
+    append: Boolean,
+    private val onRecorded: (TripEvent) -> Unit = {},
+    private val onFailure: (Throwable) -> Unit,
+) {
     private var recorder: TripRecorder? = null // Only accessed by the worker.
 
     init {
@@ -22,7 +28,12 @@ class RecordingSession(private val file: File, private val worker: Executor, app
 
     /** Queue against this session, even when the main thread has already started another trip. */
     fun record(event: TripEvent) = worker.execute {
-        runCatching { recorder?.record(event) }.onFailure(onFailure)
+        runCatching {
+            recorder?.let {
+                it.record(event)
+                onRecorded(event)
+            }
+        }.onFailure(onFailure)
     }
 
     /** Close after every queued event, then optionally discard this session's file. */

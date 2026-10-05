@@ -252,6 +252,21 @@
     <string name="action_reset_confirm">Reset</string>
 
     <string name="sec_diagnostics">Diagnostics</string>
+    <string name="dev_diagnostics">Developer diagnostics</string>
+    <string name="dev_diagnostics_summary">Turn on before a trip to send its location, sensors, trip log and basic app/device settings to your signed-in server for debugging. Uses Wi-Fi or mobile data. Turn off to discard unsent data.</string>
+    <string name="dev_diagnostics_status">Upload status</string>
+    <string name="dev_status_waiting">Waiting for the next trip</string>
+    <string name="dev_status_sign_in">Sign in to the sharing server first</string>
+    <string name="dev_status_recording">Recording and uploading</string>
+    <string name="dev_status_queued">Waiting to upload</string>
+    <string name="dev_status_uploading">Uploading diagnostics</string>
+    <string name="dev_status_uploaded">Diagnostic trip uploaded</string>
+    <string name="dev_status_queue_full">Local queue is full; this trip will be incomplete</string>
+    <string name="dev_status_entry_large">An entry exceeded the upload limit</string>
+    <string name="dev_status_retrying">Upload retrying</string>
+    <string name="dev_status_server_disabled">Server administrator has not enabled diagnostic uploads</string>
+    <string name="dev_status_quota_full">Server diagnostic storage limit reached</string>
+    <string name="dev_status_removed">Session was removed on the server</string>
     <string name="trip_log">Trip log</string>
     <string name="trip_log_summary">Search, filter, copy and share recent diagnostic events</string>
     <string name="trip_log_empty">No entries yet</string>

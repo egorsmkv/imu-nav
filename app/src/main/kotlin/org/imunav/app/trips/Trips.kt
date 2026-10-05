@@ -93,6 +93,10 @@ data class HistoryTotals(val trips: Int, val drivenM: Double, val durationS: Dou
  * stats, persists the active trip so it survives the app being killed, and keeps the history.
  */
 class TripManager(private val context: Context, private val hub: PositioningHub, private val engine: NavigationEngine, private val log: (String) -> Unit) {
+    /** Optional diagnostics sink; recording remains independent of upload availability. */
+    var onDiagnosticStart: ((String) -> Unit)? = null
+    var onDiagnosticEvent: ((TripEvent) -> Unit)? = null
+    var onDiagnosticEnd: ((String) -> Unit)? = null
     private val dir = File(context.filesDir, "trips").apply { mkdirs() }
     private val index = File(dir, "index.jsonl")
     private val activeFile = File(dir, "active.json")
@@ -142,6 +146,7 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
         this.mode = mode
         val stamp = RecordingSession.newId()
         id = stamp
+        onDiagnosticStart?.invoke(stamp)
         recordingName = "trip-$stamp.rec.gz"
         startWall = System.currentTimeMillis()
         this.destination = destination
@@ -234,14 +239,16 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
         if (summary.drivenM < 50 && summary.durationS < 120) {
             finished?.finish(discard = true)
             log("trip_discarded $tripId")
+            io.execute { onDiagnosticEnd?.invoke(tripId) }
             return
         }
         finished?.finish()
+        log("trip_end $tripId driven=${drivenM.toInt()}m blind=${blindS.toInt()}s")
         io.execute {
+            onDiagnosticEnd?.invoke(tripId)
             index.appendText(summary.toJson().toString() + "\n")
             _history.value = loadHistory()
         }
-        log("trip_end $tripId driven=${drivenM.toInt()}m blind=${blindS.toInt()}s")
     }
 
     // ------------------------------------------------------------------ surviving process death
@@ -259,7 +266,8 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
             return false
         }
         val restoredRoute = runCatching { RouteCodec.decode(o.getString("route")) }.getOrNull() ?: return false
-        id = o.getString("id")
+        val restoredId = o.getString("id")
+        id = restoredId
         recordingName = o.getString("recording")
         startWall = o.getLong("start")
         val restoredDestination = GeoPoint(o.getDouble("destLat"), o.getDouble("destLon"))
@@ -282,6 +290,7 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
         val now = SystemClock.elapsedRealtime()
         val estimator = NavigationEstimator.entries.firstOrNull { it.name == o.optString("estimator") } ?: NavigationEstimator.KOTLIN
         engine.start(restoredRoute, restoredDestination, waypoints, now, startAccuracyM = uncertainty, mode = mode, estimator = estimator)
+        onDiagnosticStart?.invoke(restoredId)
         engine.resumeAt(o.optDouble("s"))
         openRecorder(append = true)
         record(TripEvent.Start(now, restoredDestination, waypoints, uncertainty))
@@ -329,7 +338,13 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
     /** Open the recording file and route the positioning hub's raw inputs into it. */
     private fun openRecorder(append: Boolean) {
         recorder?.finish()
-        val next = RecordingSession(File(dir, recordingName), io, append) { log("trip_record_failed ${it.message}") }
+        val next = RecordingSession(
+            File(dir, recordingName),
+            io,
+            append,
+            onRecorded = { event -> onDiagnosticEvent?.invoke(event) },
+            onFailure = { log("trip_record_failed ${it.message}") },
+        )
         recorder = next
         hub.recorder = next::record
     }

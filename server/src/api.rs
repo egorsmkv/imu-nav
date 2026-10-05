@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use crate::admin;
 use crate::auth::{self, AuthRateLimits, MailConfig, SharedAuthLimits};
+use crate::debug;
 use crate::web;
 use crate::{
     CellKey, CellStore, CellTower, Consensus, CsvDecodeError, Policy, Radio, ServerEvent,
@@ -91,6 +92,7 @@ impl AppState {
 pub fn router(state: AppState) -> Router {
     Router::new()
         .merge(admin::router())
+        .merge(debug::router())
         .merge(auth::router())
         .merge(web::router())
         .route("/health", get(health))

@@ -167,6 +167,46 @@ fn initialize_schema(connection: &Connection) -> Result<()> {
          );
          CREATE INDEX IF NOT EXISTS password_resets_expiry ON password_resets(expires_s);",
     )?;
+    initialize_debug_schema(connection)?;
+    Ok(())
+}
+
+fn initialize_debug_schema(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        "CREATE TABLE IF NOT EXISTS debug_sessions (
+           id TEXT PRIMARY KEY, account_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+           client_id TEXT NOT NULL,
+           context_json TEXT NOT NULL, created_s INTEGER NOT NULL, updated_s INTEGER NOT NULL,
+           finished_s INTEGER, incomplete INTEGER NOT NULL DEFAULT 0, bytes INTEGER NOT NULL DEFAULT 0
+         );
+         CREATE INDEX IF NOT EXISTS debug_sessions_account ON debug_sessions(account_id,created_s);
+         CREATE INDEX IF NOT EXISTS debug_sessions_expiry ON debug_sessions(created_s);
+         CREATE TABLE IF NOT EXISTS debug_batches (
+           session_id TEXT NOT NULL REFERENCES debug_sessions(id) ON DELETE CASCADE,
+           seq INTEGER NOT NULL, digest TEXT NOT NULL, bytes INTEGER NOT NULL,
+           PRIMARY KEY(session_id,seq)
+         );
+         CREATE TABLE IF NOT EXISTS debug_entries (
+           session_id TEXT NOT NULL REFERENCES debug_sessions(id) ON DELETE CASCADE,
+           seq INTEGER NOT NULL, item INTEGER NOT NULL, kind TEXT NOT NULL,
+           elapsed_ms INTEGER NOT NULL, line TEXT NOT NULL,
+           PRIMARY KEY(session_id,seq,item)
+         );
+         CREATE INDEX IF NOT EXISTS debug_entries_kind ON debug_entries(session_id,kind,seq,item);",
+    )?;
+    let has_client_id = connection
+        .prepare("PRAGMA table_info(debug_sessions)")?
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?
+        .iter()
+        .any(|column| column == "client_id");
+    if !has_client_id {
+        connection.execute_batch(
+            "ALTER TABLE debug_sessions ADD COLUMN client_id TEXT NOT NULL DEFAULT '';
+            UPDATE debug_sessions SET client_id=id WHERE client_id='';",
+        )?;
+    }
+    connection.execute_batch("CREATE UNIQUE INDEX IF NOT EXISTS debug_sessions_client ON debug_sessions(account_id,client_id);")?;
     Ok(())
 }
 
@@ -223,6 +263,23 @@ impl CellStore {
         // SQLite WAL still serves readers while other writers wait for the atomic commit.
         connection.busy_timeout(std::time::Duration::from_secs(3600))?;
         Ok(connection)
+    }
+
+    /// Remove expired opt-in diagnostics, including their batches and events by foreign-key cascade.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the database cannot be opened or cleanup fails.
+    pub fn prune_debug_sessions(&self) -> Result<usize> {
+        let now_s = i64::try_from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)?
+                .as_secs(),
+        )?;
+        Ok(self.connection()?.execute(
+            "DELETE FROM debug_sessions WHERE created_s<?1",
+            [now_s - 30 * 24 * 60 * 60],
+        )?)
     }
 
     /// Account sharing and email status are checked again under the upload gate before writing.

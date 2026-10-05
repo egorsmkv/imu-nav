@@ -677,6 +677,13 @@ pub(crate) async fn audit_impersonated_requests(
     next: Next,
 ) -> Response {
     let action = match (request.method(), request.uri().path()) {
+        (&Method::GET, path) if path.starts_with("/debug/") && path.contains("/download/") => {
+            Some("impersonate_debug_download")
+        }
+        (&Method::POST, path) if path.starts_with("/debug/") && path.ends_with("/delete") => {
+            Some("impersonate_debug_delete")
+        }
+        (&Method::POST, "/debug/delete-all") => Some("impersonate_debug_delete_all"),
         (&Method::GET, "/account/export") => Some("impersonate_export"),
         (&Method::POST, "/account/logout") => Some("impersonate_logout"),
         (&Method::POST, "/account/password") => Some("impersonate_change_password"),

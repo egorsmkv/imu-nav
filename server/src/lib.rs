@@ -4,6 +4,7 @@ mod admin;
 mod api;
 mod auth;
 mod csv_format;
+mod debug;
 mod model;
 mod store;
 mod web;
