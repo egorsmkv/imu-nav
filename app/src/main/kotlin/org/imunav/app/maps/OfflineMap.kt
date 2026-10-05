@@ -10,6 +10,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -23,6 +24,7 @@ import org.imunav.core.util.PackFiles
 import org.imunav.core.util.ResourceAccess
 import org.json.JSONException
 import org.json.JSONObject
+import org.maplibre.android.MapLibre
 import org.maplibre.android.maps.Style
 import org.maplibre.android.offline.OfflineGeometryRegionDefinition
 import org.maplibre.android.offline.OfflineManager
@@ -80,6 +82,8 @@ data class MapPackInfo(val name: String, val builtAt: String, val sizeBytes: Lon
 data class OfflineMapStatus(
     /** The installed pack, if any. */
     val pack: MapPackInfo? = null,
+    /** The active pack is shipped in the Play APK and needs no extraction. */
+    val bundled: Boolean = false,
     /** Draw the map from the pack (instead of the online style) when one is installed. */
     val useOffline: Boolean = true,
     /** Save the map along each planned route while online. */
@@ -99,9 +103,9 @@ data class OfflineMapStatus(
 /**
  * Makes the drawn map (streets, labels) available without internet, in two ways:
  *
- * 1. **Map pack** — a zip with vector tiles for a whole country plus styles, icons and fonts
- *    (see `tools/make_map_pack.py`). Once installed, [styleJson] returns a style that reads
- *    everything from the phone's storage.
+ * 1. **Map pack** — a zip with vector tiles for a region plus styles, icons and fonts
+ *    (see `tools/make_map_pack.py`). Imported packs read from app storage; a bundled Play pack
+ *    reads directly from APK assets, without a second copy on the phone.
  * 2. **Route corridor** — when navigation starts without a pack, [saveCorridor] asks MapLibre to
  *    download the online map ~1 km either side of the route (zoom 10–14) into its offline database,
  *    so the map keeps drawing if the signal is lost on the way. The last few corridors are kept.
@@ -112,6 +116,7 @@ class OfflineMap(private val context: Context, private val scope: CoroutineScope
     private val current = File(root, "current")
     private val tasks = PackTasks(scope)
     private val resources = ResourceAccess()
+    private val bundledServer by lazy { BundledMapServer(context, log) }
 
     /** The pack's two styles with real paths filled in, read once when the pack loads. */
     @Volatile private var styles: Pair<String, String>? = null
@@ -126,20 +131,45 @@ class OfflineMap(private val context: Context, private val scope: CoroutineScope
     val status: StateFlow<OfflineMapStatus> = _status.asStateFlow()
 
     init {
+        scope.launch {
+            status.collectLatest { state ->
+                // The bundled PMTiles reader is on loopback, which MapLibre otherwise blocks
+                // when Android reports no external network. Restore normal detection outside it.
+                MapLibre.setConnected(if (state.bundled && state.useOffline) true else null)
+            }
+        }
         scope.launch { withContext(Dispatchers.IO) { loadInfo() } }
     }
 
     private fun str(id: Int, vararg args: Any) = context.getString(id, *args)
 
-    /** Read the installed pack's description and styles (IO thread). */
+    /** Prefer a user-installed pack, then the optional Play asset, without copying either. */
     private fun loadInfo() = resources.write {
-        val info = File(current, PACK_JSON).takeIf { it.exists() }?.let { MapPackInfo.parse(it.readText()) }
-        styles = info?.let {
-            val packUri = "file://${current.absolutePath}"
-            fun style(name: String) = File(current, name).readText().replace("{PACK_URI}", packUri)
-            style("style-light.json") to style("style-dark.json")
+        val installed = File(current, PACK_JSON).takeIf { it.exists() }?.let { MapPackInfo.parse(it.readText()) }
+        val bundled = if (installed == null && context.assets.list(BUNDLED_FOLDER)?.contains(PACK_JSON) == true) {
+            context.assets.open("$BUNDLED_FOLDER/$PACK_JSON").bufferedReader().use { MapPackInfo.parse(it.readText()) }
+        } else {
+            null
         }
-        _status.update { it.copy(pack = info) }
+        styles = when {
+            installed != null -> {
+                val packUri = "file://${current.absolutePath}"
+                fun style(name: String) = File(current, name).readText().replace("{PACK_URI}", packUri)
+                style("style-light.json") to style("style-dark.json")
+            }
+
+            bundled != null -> {
+                val packUri = "asset://$BUNDLED_FOLDER"
+                val tiles = "pmtiles://${bundledServer.tileUrl}"
+                fun style(name: String) = context.assets.open("$BUNDLED_FOLDER/$name").bufferedReader().use { it.readText() }
+                    .replace("{PACK_URI}", packUri)
+                    .replace("pmtiles://$packUri/tiles.pmtiles", tiles)
+                style("style-light.json") to style("style-dark.json")
+            }
+
+            else -> null
+        }
+        _status.update { it.copy(pack = installed ?: bundled, bundled = installed == null && bundled != null) }
     }
 
     /**
@@ -192,7 +222,7 @@ class OfflineMap(private val context: Context, private val scope: CoroutineScope
         withContext(Dispatchers.IO) { (open() ?: throw IOException("cannot open file")).use { install(it) } }
     }
 
-    /** Delete the installed pack (the online map is used again). */
+    /** Delete a user-installed pack; a bundled pack becomes active again if present. */
     fun remove() = runTask(str(R.string.routing_removing)) {
         withContext(Dispatchers.IO) {
             resources.write {
@@ -293,7 +323,7 @@ class OfflineMap(private val context: Context, private val scope: CoroutineScope
      */
     fun saveCorridor(route: Route, dark: Boolean) {
         val state = _status.value
-        if (!state.corridor || state.offlineInUse || route.geometry.size < 2) return
+        if (!state.corridor || route.geometry.size < 2 || (state.offlineInUse && route.geometry.all { state.pack?.covers(it) == true })) return
         val boxes = RouteCorridor.boxes(route, radiusM = CORRIDOR_RADIUS_M)
         val tiles = RouteCorridor.tileCount(boxes, CORRIDOR_MIN_ZOOM, CORRIDOR_MAX_ZOOM)
         if (tiles > MAX_CORRIDOR_TILES) {
@@ -414,6 +444,7 @@ class OfflineMap(private val context: Context, private val scope: CoroutineScope
 
     private companion object {
         const val PACK_JSON = "pack.json"
+        const val BUNDLED_FOLDER = "map"
         val REQUIRED_FILES = listOf("tiles.pmtiles", "style-light.json", "style-dark.json", PACK_JSON)
         const val KEY_USE_OFFLINE = "use_offline"
         const val KEY_CORRIDOR = "corridor"

@@ -79,7 +79,12 @@ internal fun OfflineMapSection(app: AppGraph, state: OfflineMapStatus) {
                 },
             )
         },
-        supportingContent = { if (pack == null) Text(stringResource(R.string.offline_map_none_hint)) },
+        supportingContent = {
+            when {
+                pack == null -> Text(stringResource(R.string.offline_map_none_hint))
+                state.bundled -> Text(stringResource(R.string.offline_map_bundled_hint))
+            }
+        },
         leadingContent = { Icon(Icons.Filled.Map, contentDescription = null) },
     )
     state.busy?.let { busy ->
@@ -106,7 +111,7 @@ internal fun OfflineMapSection(app: AppGraph, state: OfflineMapStatus) {
         OutlinedButton(onClick = { pickZip.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) }, enabled = state.busy == null) {
             Text(stringResource(R.string.routing_import))
         }
-        if (pack != null) {
+        if (pack != null && !state.bundled) {
             TextButton(onClick = { app.offlineMap.remove() }, enabled = state.busy == null) {
                 Text(stringResource(R.string.routing_remove), color = MaterialTheme.colorScheme.error)
             }

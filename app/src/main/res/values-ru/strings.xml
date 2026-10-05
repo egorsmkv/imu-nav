@@ -341,6 +341,7 @@
     <string name="sec_offline_map">Офлайн-карта</string>
     <string name="offline_map_none">Офлайн-карта не установлена</string>
     <string name="offline_map_none_hint">Карта загружается из интернета (OpenFreeMap). Установите пакет карты, чтобы видеть улицы без подключения.</string>
+    <string name="offline_map_bundled_hint">Входит в приложение. Импортируйте или загрузите другую карту, чтобы заменить её.</string>
     <string name="offline_map_pack">%1$s · %2$d МБ · создано %3$s</string>
     <string name="offline_map_url">Адрес пакета карты (.zip)</string>
     <string name="offline_map_url_help">Вставьте ссылку на пакет карты или импортируйте загруженный файл .zip.</string>

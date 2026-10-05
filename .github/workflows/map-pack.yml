@@ -1,0 +1,200 @@
+name: Offline map pack
+
+on:
+  pull_request:
+    paths:
+      - 'tools/make_map_pack.py'
+      - 'tools/verify_map_pack.py'
+      - 'tools/tests/test_map_pack.py'
+      - '.github/workflows/map-pack.yml'
+  workflow_dispatch:
+    inputs:
+      osm_url:
+        description: HTTPS URL of the Ukraine OSM PBF extract
+        required: true
+        default: https://download.geofabrik.de/europe/ukraine-latest.osm.pbf
+      osm_sha256:
+        description: Expected OSM SHA-256, if known; a mismatch fails the build
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  PLANETILER_VERSION: v0.10.2
+
+jobs:
+  fixture:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Test map pack tools
+        run: python3 -m unittest discover -s tools/tests -p test_map_pack.py -v
+      - name: Install pinned Planetiler
+        run: curl --fail --location --retry 3 "https://github.com/onthegomap/planetiler/releases/download/${PLANETILER_VERSION}/planetiler.jar" -o planetiler.jar
+      - name: Build a small regional pack
+        run: |
+          python3 tools/make_map_pack.py --prepare-resources build/map-resources
+          curl --fail --location --retry 3 \
+            https://github.com/onthegomap/planetiler/raw/main/planetiler-core/src/test/resources/natural_earth_vector.sqlite.zip \
+            -o build/monaco-natural-earth.zip
+          layers=$(python3 tools/make_map_pack.py --print-layers --resources-dir build/map-resources)
+          java -Xmx5g -jar planetiler.jar --area=monaco --download --output=build/monaco.pmtiles \
+            --maxzoom=14 --tile-compression=gzip --only-layers="$layers" --languages=en,uk,ru \
+            --exclude-ids=true --threads=2 --storage=mmap --tmpdir=build/map-tmp \
+            --water-polygons-path=build/monaco-water.zip \
+            --water-polygons-url=https://github.com/onthegomap/planetiler/raw/main/planetiler-core/src/test/resources/water-polygons-split-3857.zip \
+            --natural-earth-path=build/monaco-natural-earth.zip
+          python3 tools/make_map_pack.py --tiles build/monaco.pmtiles --name Monaco --out build/map-monaco.zip \
+            --resources-dir build/map-resources --assets-dir build/map-assets
+          python3 tools/verify_map_pack.py build/map-monaco.zip --assets-dir build/map-assets
+
+  map:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Check available capacity
+        run: |
+          df -h .
+          free -h
+          python3 -m unittest discover -s tools/tests -p test_map_pack.py -v
+      - name: Install pinned Planetiler
+        run: |
+          curl --fail --location --retry 3 "https://github.com/onthegomap/planetiler/releases/download/${PLANETILER_VERSION}/planetiler.jar" -o planetiler.jar
+          sha256sum planetiler.jar
+      - name: Download source extract and styles
+        env:
+          OSM_URL: ${{ inputs.osm_url }}
+          OSM_SHA256: ${{ inputs.osm_sha256 }}
+        run: |
+          mkdir -p build/map-source
+          curl --fail --location --retry 3 "$OSM_URL" -o build/map-source/ukraine.osm.pbf
+          actual=$(sha256sum build/map-source/ukraine.osm.pbf | cut -d' ' -f1)
+          if [[ -n "$OSM_SHA256" && "$actual" != "$OSM_SHA256" ]]; then
+            echo "OSM SHA-256 mismatch: expected $OSM_SHA256, received $actual" >&2
+            exit 1
+          fi
+          echo "OSM_SHA256_ACTUAL=$actual" >> "$GITHUB_ENV"
+          python3 tools/make_map_pack.py --prepare-resources build/map-resources
+          df -h .
+      - name: Build detailed Ukraine PMTiles
+        run: |
+          layers=$(python3 tools/make_map_pack.py --print-layers --resources-dir build/map-resources)
+          /usr/bin/time -v -o build/map-build-time.txt java -Xmx5g -jar planetiler.jar \
+            --osm-path=build/map-source/ukraine.osm.pbf --download --output=build/ukraine.pmtiles \
+            --maxzoom=14 --tile-compression=gzip --only-layers="$layers" --languages=en,uk,ru \
+            --exclude-ids=true --threads=2 \
+            --storage=mmap --tmpdir=build/map-tmp
+          df -h .
+      - name: Package and validate one map for both delivery paths
+        run: |
+          mkdir -p dist
+          python3 tools/make_map_pack.py --tiles build/ukraine.pmtiles --name Ukraine \
+            --out dist/map-ukraine.zip --resources-dir build/map-resources \
+            --assets-dir app/src/play/assets/map --source-sha256 "$OSM_SHA256_ACTUAL"
+          python3 tools/verify_map_pack.py dist/map-ukraine.zip --assets-dir app/src/play/assets/map
+          sha256sum dist/map-ukraine.zip > dist/map-ukraine.zip.sha256
+          python3 - <<'PY'
+          import hashlib, json, os, re
+          from pathlib import Path
+          files = [Path('build/map-source/ukraine.osm.pbf'), Path('build/ukraine.pmtiles'), Path('dist/map-ukraine.zip')]
+          timing = Path('build/map-build-time.txt').read_text()
+          peak = re.search(r'Maximum resident set size \(kbytes\):\s*(\d+)', timing)
+          if peak is None:
+              raise SystemExit('Planetiler peak memory was not recorded')
+          with Path('planetiler.jar').open('rb') as jar:
+              jar_sha256 = hashlib.file_digest(jar, 'sha256').hexdigest()
+          report = {'osm_url': os.environ['OSM_URL'], 'osm_sha256': os.environ['OSM_SHA256_ACTUAL'],
+                    'planetiler_version': os.environ['PLANETILER_VERSION'],
+                    'planetiler_sha256': jar_sha256,
+                    'peak_rss_kb': int(peak.group(1)),
+                    'files_bytes': {str(path): path.stat().st_size for path in files}}
+          Path('dist/map-build.json').write_text(json.dumps(report, indent=2) + '\n')
+          print(json.dumps(report, indent=2))
+          PY
+          df -h .
+        env:
+          OSM_URL: ${{ inputs.osm_url }}
+      - name: Report runner capacity and outputs
+        if: always()
+        run: |
+          df -h .
+          free -h
+          du -sh build/map-source build/map-resources build/map-tmp build/ukraine.pmtiles dist app/src/play/assets/map 2>/dev/null || true
+      - name: Upload map for manual server publication
+        uses: actions/upload-artifact@v4
+        with:
+          name: map-ukraine-${{ github.run_id }}
+          path: |
+            dist/map-ukraine.zip
+            dist/map-ukraine.zip.sha256
+            dist/map-build.json
+          compression-level: 0
+          retention-days: 30
+
+  android:
+    if: github.event_name == 'workflow_dispatch'
+    needs: map
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: map-ukraine-${{ github.run_id }}
+          path: dist
+      - name: Stage bundled map without keeping a second ZIP copy
+        run: |
+          mkdir -p app/src/play/assets/map
+          unzip -q dist/map-ukraine.zip -d app/src/play/assets/map
+          python3 tools/verify_map_pack.py dist/map-ukraine.zip --assets-dir app/src/play/assets/map
+          rm dist/map-ukraine.zip
+          df -h .
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Install Android build tools
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.3.13750724'
+      - name: Install Rust Android targets
+        run: rustup toolchain install nightly-2026-09-25 --profile minimal --target aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build Play benchmark APK with the bundled map
+        env:
+          RUSTUP_TOOLCHAIN: nightly-2026-09-25
+        run: ./gradlew --no-daemon :app:assemblePlayBenchmark
+      - name: Check APK size and bundled PMTiles storage
+        run: |
+          python3 - <<'PY'
+          import zipfile
+          from pathlib import Path
+          apk = next(Path('app/build/outputs/apk/play/benchmark').glob('*.apk'))
+          with zipfile.ZipFile(apk) as archive:
+              tile = archive.getinfo('assets/map/tiles.pmtiles')
+              assert tile.compress_type == zipfile.ZIP_STORED
+              assert archive.read('assets/map/pack.json')
+          print(f'APK bytes={apk.stat().st_size} PMTiles bytes={tile.file_size}')
+          if apk.stat().st_size > 500_000_000:
+              raise SystemExit('Bundled APK exceeds the 500 MB distribution budget; keep detail and use a larger delivery mechanism.')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: imu-nav-play-benchmark-map-${{ github.run_id }}
+          path: app/build/outputs/apk/play/benchmark/*.apk
+          compression-level: 0
+          retention-days: 14

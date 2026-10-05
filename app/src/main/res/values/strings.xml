@@ -343,6 +343,7 @@
     <string name="sec_offline_map">Offline map</string>
     <string name="offline_map_none">No offline map installed</string>
     <string name="offline_map_none_hint">The map is drawn from the internet (OpenFreeMap). Install a map pack to see streets without a connection.</string>
+    <string name="offline_map_bundled_hint">Included in this app. Import or download another map to replace it.</string>
     <string name="offline_map_pack">%1$s · %2$d MB · built %3$s</string>
     <string name="offline_map_url">Map pack URL (.zip)</string>
     <string name="offline_map_url_help">Paste a map-pack link, or import a downloaded .zip file.</string>

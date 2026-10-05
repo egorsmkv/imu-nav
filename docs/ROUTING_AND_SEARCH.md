@@ -30,3 +30,14 @@ A full Ukraine build needs about 10 GB of RAM; other regions vary. Download the 
 ```
 
 Import the resulting ZIP in the app. For road heights, pack bundling and matching the phone's routing rules, see the [detailed routing reference](reference/ROUTING_AND_SEARCH.md).
+
+## Build an offline display map in CI
+
+Open **Actions → Offline map pack → Run workflow** to build a detailed Ukraine map. Download the
+`map-ukraine` artifact after the workflow succeeds. It contains `map-ukraine.zip` for manual upload
+to your HTTPS server and a checksum; the separate Play benchmark APK artifact includes that same
+map. Enter your uploaded ZIP URL in **Settings → Offline map** on builds without a bundled map.
+
+The Play APK reads its included map through an on-device range reader, with no first-run copy. F-Droid builds can import or
+download the ZIP. See the [detailed routing reference](reference/ROUTING_AND_SEARCH.md) for the
+build inputs, size report, and local commands.

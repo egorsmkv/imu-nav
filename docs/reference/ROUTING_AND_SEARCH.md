@@ -55,6 +55,38 @@ Android cannot compile GraphHopper's custom models at runtime (Janino generates 
 `PhoneGraphHopper` builds the same weighting from plain code; `GraphSpec` holds everything the
 builder and the phone must agree on, and `OfflineGraphTest` checks both give identical routes.
 
+## Offline display map build and distribution
+
+**Actions → Offline map pack → Run workflow** builds a Ukraine display map from a Geofabrik OSM
+extract. The workflow records the extract SHA-256, Planetiler version and JAR SHA-256, source and
+output sizes, and peak build memory. You can supply an expected extract checksum to reject a changed
+download. The OpenFreeMap light and dark styles, sprites, and fonts are snapshotted before generating
+tiles; Planetiler emits only the vector layers those styles use, keeps English, Ukrainian and Russian
+name translations, and omits unused feature IDs. Street geometry stays at zoom 14 with gzip-compressed
+MVT tiles in PMTiles v3. If the standard hosted runner runs out of RAM or disk, the job fails and reports
+capacity instead of lowering street detail.
+
+The `map-ukraine` CI artifact contains `map-ukraine.zip`, its checksum, and `map-build.json`.
+Download it within the artifact retention period and upload the ZIP to your HTTPS host yourself.
+The app's **Settings → Offline map → Download** field accepts its URL; import also accepts the ZIP.
+CI builds a Play benchmark APK with the identical map files under `assets/map/`. MapLibre reads its
+uncompressed PMTiles APK asset through an on-device loopback range reader, so installation needs no
+second copy. A user-imported map
+takes precedence; removing it restores the bundled map. F-Droid builds remain unbundled.
+
+For a local build, first generate a PMTiles archive with Planetiler and then run:
+
+```bash
+python3 tools/make_map_pack.py --prepare-resources build/map-resources
+python3 tools/make_map_pack.py --print-layers --resources-dir build/map-resources
+python3 tools/make_map_pack.py --tiles ukraine.pmtiles --name Ukraine --out dist/map-ukraine.zip \
+  --resources-dir build/map-resources --assets-dir app/src/play/assets/map
+python3 tools/verify_map_pack.py dist/map-ukraine.zip --assets-dir app/src/play/assets/map
+```
+
+The Play asset folder is gitignored. Check APK size before distribution: a map and a bundled routing
+pack both add to the base package, and their combined size may exceed the limit of your app store.
+
 ## Address search
 
 Routing packs also contain `search.db`, an SQLite FTS4 index of settlements, streets and house

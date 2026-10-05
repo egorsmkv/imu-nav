@@ -111,8 +111,9 @@ android {
     }
 
     androidResources {
-        // A Play-only bundled routing pack is already a zip; store it as-is so first-start unpacking is fast.
+        // PMTiles has compressed tiles and must be seekable inside the APK; routing zips are already compressed.
         noCompress += "zip"
+        noCompress += "pmtiles"
     }
 
     packaging {
