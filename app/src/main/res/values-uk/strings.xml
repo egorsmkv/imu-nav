@@ -270,6 +270,7 @@
     <string name="about_credits">Дані вишок: учасники OpenCellID (CC BY-SA 4.0) і Mozilla Location Service (суспільне надбання). Карти й дані маршрутів © учасники OpenStreetMap (ODbL), OpenFreeMap. Маршрути: GraphHopper, OSRM. Вихідний код: ліцензія MIT.</string>
     <string name="about_disclaimer">Дослідницький прототип. Ніколи не покладайтеся на нього як на систему безпеки.</string>
     <string name="telegram_group">Група в Telegram</string>
+    <string name="telegram_group_url">https://t.me/imu_nav</string>
     <string name="proxy_title">Мережевий проксі</string>
     <string name="proxy_summary">Онлайн-карти, маршрути, пошук, завантаження та обмін вежами</string>
     <string name="proxy_hint">Оберіть спосіб підключення застосунку до інтернету. Власний проксі діє для HTTP-запитів застосунку, але не для служб геолокації Android чи інших застосунків. Якщо власний проксі не працює, пряме з’єднання не використовується.</string>

@@ -14,7 +14,8 @@ be enabled later, including through Android Settings when the permission dialog 
 
 Choose the UI and voice language directly in onboarding: phone default, Ukrainian, English or Russian.
 The selection is saved and the checklist stays open when the language changes.
-The **Telegram group** link opens <https://t.me/imu_nav> from onboarding as well as Settings.
+The **Telegram group** link opens <https://t.me/imu_nav_en> in English and
+<https://t.me/imu_nav> in Ukrainian or Russian, from onboarding as well as Settings.
 
 The bundled routing/address-search archive is **optional**: it is not unpacked until you tap **Install
 built-in routing pack**, and the work then continues in the background. The built-in cell tower database

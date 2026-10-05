@@ -93,6 +93,7 @@ private fun setupPermissions(): List<SetupPermission> = buildList {
 fun OnboardingScreen(app: AppGraph, onPermissionsChanged: () -> Unit, onContinue: () -> Unit, onSettings: () -> Unit) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
+    val telegramGroupUrl = stringResource(R.string.telegram_group_url)
     val activity = context as Activity
     val preferences = remember(context) { context.getSharedPreferences("setup", Context.MODE_PRIVATE) }
     val permissionItems = remember { setupPermissions() }
@@ -283,7 +284,7 @@ fun OnboardingScreen(app: AppGraph, onPermissionsChanged: () -> Unit, onContinue
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    TextButton(onClick = { uriHandler.openUri(TELEGRAM_GROUP_URL) }) { Text(stringResource(R.string.telegram_group)) }
+                    TextButton(onClick = { uriHandler.openUri(telegramGroupUrl) }) { Text(stringResource(R.string.telegram_group)) }
                 }
             }
             Surface(

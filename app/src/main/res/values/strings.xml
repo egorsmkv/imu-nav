@@ -272,6 +272,7 @@
     <string name="about_credits">Cell data: OpenCellID contributors (CC BY-SA 4.0) and Mozilla Location Service (public domain). Maps and routing data © OpenStreetMap contributors (ODbL), OpenFreeMap. Routing: GraphHopper, OSRM. Source code: MIT licence.</string>
     <string name="about_disclaimer">Research prototype. Never rely on it as a safety system.</string>
     <string name="telegram_group">Telegram group</string>
+    <string name="telegram_group_url">https://t.me/imu_nav_en</string>
     <string name="proxy_title">Network proxy</string>
     <string name="proxy_summary">Online maps, routing, search, downloads and cell sync</string>
     <string name="proxy_hint">Choose how the app connects to the internet. Custom proxies apply to app HTTP traffic, not Android location services or other apps. A failed custom proxy does not fall back to a direct connection.</string>

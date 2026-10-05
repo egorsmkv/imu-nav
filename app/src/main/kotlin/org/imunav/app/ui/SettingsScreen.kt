@@ -74,7 +74,6 @@ import org.imunav.core.cells.Radio
 import java.text.NumberFormat
 
 private val RADIO_CHOICES = listOf(Radio.GSM to "2G", Radio.UMTS to "3G", Radio.LTE to "4G", Radio.NR to "5G")
-internal const val TELEGRAM_GROUP_URL = "https://t.me/imu_nav"
 
 /**
  * Settings: language, map start, battery, offline routing, cell towers, sharing server and diagnostics.
@@ -85,6 +84,7 @@ internal const val TELEGRAM_GROUP_URL = "https://t.me/imu_nav"
 fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: () -> Unit, onSetup: () -> Unit) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
+    val telegramGroupUrl = stringResource(R.string.telegram_group_url)
     val c = ui.cells
     val mgr = app.cells
     val busy = c.busy != null
@@ -375,7 +375,7 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                     )
                     ListItem(
                         headlineContent = { Text(stringResource(R.string.telegram_group)) },
-                        modifier = Modifier.clickable { uriHandler.openUri(TELEGRAM_GROUP_URL) },
+                        modifier = Modifier.clickable { uriHandler.openUri(telegramGroupUrl) },
                     )
                     DonationLink(stringResource(R.string.donate_monobank), BuildConfig.MONOBANK_DONATION_URL) { uriHandler.openUri(it) }
                     DonationLink(stringResource(R.string.donate_privatbank), BuildConfig.PRIVATBANK_DONATION_URL) { uriHandler.openUri(it) }
