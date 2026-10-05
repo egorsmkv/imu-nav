@@ -1,0 +1,5 @@
+target/
+*.sqlite3*
+config.toml
+.env
+.env.*

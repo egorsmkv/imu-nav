@@ -1,0 +1,52 @@
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: imu_nav
+      POSTGRES_USER: imu_nav
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U imu_nav -d imu_nav"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  server:
+    build:
+      context: ./server
+    restart: unless-stopped
+    init: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      CELLS_DATABASE_URL: postgresql://imu_nav:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/imu_nav?sslmode=disable
+      CELLS_PUBLIC_URL: ${CELLS_PUBLIC_URL:?Set the public HTTPS URL in .env}
+      CELLS_SMTP_HOST: ${CELLS_SMTP_HOST:?Set the SMTP host in .env}
+      CELLS_SMTP_USERNAME: ${CELLS_SMTP_USERNAME:?Set the SMTP username in .env}
+      CELLS_SMTP_PASSWORD: ${CELLS_SMTP_PASSWORD:?Set the SMTP password in .env}
+      CELLS_SMTP_FROM: ${CELLS_SMTP_FROM:?Set the SMTP sender in .env}
+    volumes:
+      - ./server/config.production.toml:/etc/imu-nav/config.toml:ro
+    ports:
+      - "127.0.0.1:8080:8080"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=1g
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  postgres_data:

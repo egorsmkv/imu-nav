@@ -5,6 +5,7 @@ native/target/
 server/target/
 server/*.sqlite3*
 server/config.toml
+.env
 local.properties
 .idea/
 *.iml
