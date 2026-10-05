@@ -85,6 +85,8 @@ JaCoCo version changes require an explicit baseline refresh. Keep compiler,
 variant, exclusions and test selection consistent when comparing measurements.
 
 The `Kotlin coverage` workflow verifies the committed floors on pull requests and
-pushes to `main`, and uploads reports even when a gate fails. It is separate from
+pushes to `main`, and uploads reports even when a gate fails. Before coverage, the
+workflow runs `:core:serverApiTest` against a temporary local Rust server; that
+integration test does not contribute to the coverage totals. Coverage is separate from
 `./gradlew check`; normal tests, formatting, detekt and Android lint remain
 required independently.

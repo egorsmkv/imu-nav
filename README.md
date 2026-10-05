@@ -469,6 +469,8 @@ cargo test --manifest-path server/Cargo.toml # persistent HTTP/WebSocket cell se
 The Kotlin server API test builds the Rust server, starts it on loopback with a temporary SQLite
 database, and checks account sessions plus the app's tower upload, download, and removal calls.
 It runs as part of `./gradlew check`; `:core:test` remains the fast JVM-only suite.
+The Kotlin coverage CI workflow also runs this integration test on pull requests and pushes to
+`main`, before collecting coverage.
 
 **Native formal verification.** Run `python3 tools/verify_native.py` after installing pinned Kani 0.68.0.
 The runner prints progress every 30 seconds and records cancellation diagnostics. CI caches the

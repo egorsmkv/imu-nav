@@ -31,6 +31,10 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Test coverage validation
         run: python3 -m unittest discover -s tools/tests -v
+      - name: Verify Kotlin client against Rust cell server
+        env:
+          RUSTUP_TOOLCHAIN: nightly-2026-09-25
+        run: ./gradlew --no-daemon :core:serverApiTest
       - name: Collect and verify Kotlin coverage
         env:
           RUSTUP_TOOLCHAIN: nightly-2026-09-25
@@ -49,4 +53,5 @@ jobs:
             build/kotlin-coverage/runs/**/report.xml
             build/kotlin-coverage/runs/**/classes.txt
             build/kotlin-coverage/runs/**/html/**
+            core/build/test-results/serverApiTest/**
           retention-days: 14
