@@ -48,6 +48,9 @@ struct Options {
     /// Trust X-Forwarded-For from the reverse proxy connected to this process.
     #[arg(long)]
     trust_proxy: bool,
+    /// Mark browser session cookies Secure when TLS terminates at a reverse proxy.
+    #[arg(long)]
+    secure_cookies: bool,
     #[arg(long)]
     min_devices: Option<usize>,
     #[arg(long)]
@@ -142,6 +145,7 @@ fn main() -> Result<()> {
             mail,
             policy: policy.clone(),
             trust_proxy: settings.trust_proxy,
+            secure_cookies: settings.secure_cookies,
         },
     )?;
     let address = SocketAddr::new(settings.bind, settings.port);

@@ -12,9 +12,9 @@ use crate::debug;
 use crate::web;
 use crate::{
     CellKey, CellStore, CellTower, Consensus, CsvDecodeError, Policy, Radio, ServerEvent,
-    decode_towers, encode_towers,
+    decode_towers,
 };
-use axum::body::Bytes;
+use axum::body::{Body, Bytes};
 use axum::extract::ws::{Message, WebSocket};
 use axum::extract::{ConnectInfo, MatchedPath, Path, Query, Request, State, WebSocketUpgrade};
 use axum::http::{HeaderMap, StatusCode, header};
@@ -25,13 +25,16 @@ use axum::{Json, Router};
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::io::{self, Write};
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
-use tokio::sync::broadcast;
+use tokio::sync::{Mutex as AsyncMutex, Semaphore, broadcast, mpsc};
 
 const MAX_UPLOAD_BYTES: usize = 20 * 1024 * 1024;
+const DOWNLOAD_CHUNK_BYTES: usize = 64 * 1024;
+const HEALTH_CACHE_LIFETIME: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// Startup settings; policy is the initial value until a saved policy overrides it.
 #[derive(Clone)]
@@ -40,6 +43,8 @@ pub struct ServerConfig {
     pub policy: Policy,
     /// Honor the first `X-Forwarded-For` address. Enable only behind a trusted reverse proxy.
     pub trust_proxy: bool,
+    /// Require HTTPS when browsers send session cookies; set this behind a TLS proxy.
+    pub secure_cookies: bool,
 }
 
 /// Shared application state used by HTTP requests and WebSocket connections.
@@ -54,6 +59,8 @@ pub struct AppState {
     pub(crate) write_gate: Arc<tokio::sync::RwLock<()>>,
     pub(crate) activation_gate: Arc<tokio::sync::RwLock<()>>,
     pub(crate) job: Arc<Mutex<admin::JobState>>,
+    downloads: Arc<Semaphore>,
+    health_cache: Arc<AsyncMutex<Option<(Instant, usize)>>>,
 }
 
 impl AppState {
@@ -80,6 +87,8 @@ impl AppState {
             write_gate: Arc::new(tokio::sync::RwLock::new(())),
             activation_gate: Arc::new(tokio::sync::RwLock::new(())),
             job: Arc::new(Mutex::new(admin::JobState::recovered(prior_job))),
+            downloads: Arc::new(Semaphore::new(2)),
+            health_cache: Arc::new(AsyncMutex::new(None)),
         })
     }
 
@@ -169,9 +178,17 @@ impl From<tokio::task::JoinError> for ApiError {
 
 async fn health(State(state): State<AppState>) -> Result<String, ApiError> {
     let _visibility = state.activation_gate.read().await;
+    let mut cache = state.health_cache.lock().await;
+    if let Some((updated, published)) = *cache
+        && updated.elapsed() < HEALTH_CACHE_LIFETIME
+    {
+        return Ok(format!("ok {published}\n"));
+    }
     let policy = state.policy();
-    let counts = run_db(move || state.store.counts(&policy)).await?;
-    Ok(format!("ok {}\n", counts.0))
+    let store = state.store.clone();
+    let published = run_db(move || store.counts(&policy)).await?.0;
+    *cache = Some((Instant::now(), published));
+    Ok(format!("ok {published}\n"))
 }
 
 #[derive(Serialize)]
@@ -293,49 +310,107 @@ async fn download_cells(
     State(state): State<AppState>,
     Query(query): Query<TowerQuery>,
 ) -> Result<Response, ApiError> {
-    let _visibility = state.activation_gate.read().await;
+    let visibility = state.activation_gate.clone().read_owned().await;
     let store = state.store.clone();
     let policy = state.policy();
     let mccs = query.mccs()?;
     let since = query.since.unwrap_or(0).max(0);
-    let body = run_db(move || {
-        let towers = store.query(mccs.as_ref(), since, None, &policy)?;
-        Ok(encode_towers(&towers)?)
+    stream_public_export(state, "application/gzip", move |output| {
+        store.write_published_gzip(output, mccs.as_ref(), since, &policy, || drop(visibility))
     })
-    .await?;
-    Ok(([(header::CONTENT_TYPE, "application/gzip")], body).into_response())
 }
 
 async fn download_removals(
     State(state): State<AppState>,
     Query(query): Query<TowerQuery>,
 ) -> Result<Response, ApiError> {
-    let _visibility = state.activation_gate.read().await;
+    let visibility = state.activation_gate.clone().read_owned().await;
     let sync_time = auth::now_s();
     let store = state.store.clone();
     let mccs = query.mccs()?;
     let since = query.since.unwrap_or(0).max(0);
-    let body = run_db(move || {
-        let mut writer = csv::Writer::from_writer(Vec::new());
-        writer.write_record(["radio", "mcc", "mnc", "area", "cid"])?;
-        for key in store.removals(mccs.as_ref(), since)? {
-            writer.write_record([
-                key.radio.to_string(),
-                key.mcc.to_string(),
-                key.mnc.to_string(),
-                key.area.to_string(),
-                key.cid.to_string(),
-            ])?;
-        }
-        Ok(writer.into_inner()?)
-    })
-    .await?;
-    let mut response = ([(header::CONTENT_TYPE, "text/csv; charset=utf-8")], body).into_response();
+    let mut response = stream_public_export(state, "text/csv; charset=utf-8", move |output| {
+        store.write_removals_csv(output, mccs.as_ref(), since, || drop(visibility))
+    })?;
     response.headers_mut().insert(
         "x-cell-sync-time",
         sync_time.to_string().parse().expect("epoch seconds header"),
     );
     Ok(response)
+}
+
+/// Give each public export one of two worker slots and a fixed-size output buffer.
+fn stream_public_export(
+    state: AppState,
+    content_type: &'static str,
+    export: impl FnOnce(ChannelWriter) -> anyhow::Result<()> + Send + 'static,
+) -> Result<Response, ApiError> {
+    let permit = state
+        .downloads
+        .try_acquire_owned()
+        .map_err(|_| ApiError(StatusCode::TOO_MANY_REQUESTS, "DOWNLOAD_BUSY"))?;
+    let (sender, receiver) = mpsc::channel(4);
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        let failure_sender = sender.clone();
+        if let Err(error) = export(ChannelWriter::new(sender))
+            && !failure_sender.is_closed()
+        {
+            tracing::error!(%error, "public export failed");
+            let _ = failure_sender.blocking_send(Err(io::Error::other("public export failed")));
+        }
+    });
+    let stream = futures_util::stream::unfold(receiver, |mut receiver| async {
+        receiver.recv().await.map(|chunk| (chunk, receiver))
+    });
+    Ok((
+        [(header::CONTENT_TYPE, content_type)],
+        Body::from_stream(stream),
+    )
+        .into_response())
+}
+
+/// A blocking CSV/gzip writer that stops immediately when its HTTP reader disappears.
+struct ChannelWriter {
+    sender: mpsc::Sender<io::Result<Bytes>>,
+    buffer: Vec<u8>,
+}
+
+impl ChannelWriter {
+    fn new(sender: mpsc::Sender<io::Result<Bytes>>) -> Self {
+        Self {
+            sender,
+            buffer: Vec::with_capacity(DOWNLOAD_CHUNK_BYTES),
+        }
+    }
+}
+
+impl Write for ChannelWriter {
+    fn write(&mut self, mut input: &[u8]) -> io::Result<usize> {
+        let length = input.len();
+        while !input.is_empty() {
+            let count = (DOWNLOAD_CHUNK_BYTES - self.buffer.len()).min(input.len());
+            self.buffer.extend_from_slice(&input[..count]);
+            input = &input[count..];
+            if self.buffer.len() == DOWNLOAD_CHUNK_BYTES {
+                self.flush()?;
+            }
+        }
+        Ok(length)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        if !self.buffer.is_empty() {
+            let chunk = Bytes::from(std::mem::replace(
+                &mut self.buffer,
+                Vec::with_capacity(DOWNLOAD_CHUNK_BYTES),
+            ));
+            self.sender
+                .blocking_send(Ok(chunk))
+                .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "download disconnected"))?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Serialize)]

@@ -17,6 +17,7 @@ const SEED_DEVICE: &str = "seed";
 const MANUAL_DEVICE: &str = "manual";
 const SEED_WEIGHT: f64 = 200.0;
 const SEED_VOTE: f64 = 3.0;
+const EXPORT_PAGE_SIZE: usize = 512;
 
 // Parents precede children so PostgreSQL verifies all foreign keys during the copy.
 const MIGRATION_TABLES: &[(&str, &str)] = &[
@@ -668,6 +669,96 @@ impl CellStore {
         self.query_internal(mccs, since_s, limit, Some(policy), false)
     }
 
+    /// Write a consistent published snapshot without retaining the full response in memory.
+    pub(crate) fn write_published_gzip<W: std::io::Write>(
+        &self,
+        output: W,
+        mccs: Option<&HashSet<i64>>,
+        since_s: i64,
+        policy: &Policy,
+        on_snapshot: impl FnOnce(),
+    ) -> Result<()> {
+        let mut connection = self.connection()?;
+        let transaction = connection.read_transaction()?;
+        let encoder = GzEncoder::new(output, Compression::default());
+        let mut writer = csv::WriterBuilder::new()
+            .has_headers(false)
+            .from_writer(encoder);
+        writer.write_record(crate::csv_format::HEADER)?;
+        let sorted_mccs = mccs.map(|mccs| {
+            let mut sorted = mccs.iter().copied().collect::<Vec<_>>();
+            sorted.sort_unstable();
+            sorted
+        });
+        let mut cursor: Option<(i64, String, i64, i64, i64, i64)> = None;
+        let mut on_snapshot = Some(on_snapshot);
+        loop {
+            let mut sql = String::from("SELECT radio,mcc,mnc,area,cid,lat,lon,range_m,samples,devices,seeded,updated_s
+                FROM consensus WHERE updated_s>=? AND (seeded=1 OR devices>=?)
+                AND NOT EXISTS (SELECT 1 FROM tower_moderation m WHERE m.radio=consensus.radio AND m.mcc=consensus.mcc
+                AND m.mnc=consensus.mnc AND m.area=consensus.area AND m.cid=consensus.cid AND m.quarantined=1)");
+            let mut values = vec![
+                Value::Integer(since_s),
+                Value::Integer(i64::try_from(policy.min_devices)?),
+            ];
+            if let Some(mccs) = &sorted_mccs {
+                sql.push_str(" AND mcc IN (");
+                sql.push_str(
+                    &std::iter::repeat_n("?", mccs.len())
+                        .collect::<Vec<_>>()
+                        .join(","),
+                );
+                sql.push(')');
+                values.extend(mccs.iter().copied().map(Value::Integer));
+            }
+            if let Some((updated, radio, mcc, mnc, area, cid)) = &cursor {
+                sql.push_str(" AND (updated_s,radio,mcc,mnc,area,cid)>(?,?,?,?,?,?)");
+                values.extend([
+                    Value::Integer(*updated),
+                    Value::Text(radio.clone()),
+                    Value::Integer(*mcc),
+                    Value::Integer(*mnc),
+                    Value::Integer(*area),
+                    Value::Integer(*cid),
+                ]);
+            }
+            sql.push_str(" ORDER BY updated_s,radio,mcc,mnc,area,cid LIMIT ?");
+            values.push(Value::Integer(i64::try_from(EXPORT_PAGE_SIZE)?));
+            let mut statement = transaction.prepare(&sql)?;
+            let page = statement
+                .query_map(params_from_iter(values), row_to_consensus)?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            if let Some(release) = on_snapshot.take() {
+                release();
+            }
+            if page.is_empty() {
+                break;
+            }
+            for item in &page {
+                crate::csv_format::write_tower_record(&mut writer, item)?;
+            }
+            let last = page.last().expect("nonempty page");
+            cursor = Some((
+                last.updated_s,
+                last.tower.key.radio.to_string(),
+                last.tower.key.mcc,
+                last.tower.key.mnc,
+                last.tower.key.area,
+                last.tower.key.cid,
+            ));
+            if page.len() < EXPORT_PAGE_SIZE {
+                break;
+            }
+        }
+        let encoder = writer
+            .into_inner()
+            .map_err(csv::IntoInnerError::into_error)?;
+        let mut output = encoder.finish()?;
+        std::io::Write::flush(&mut output)?;
+        transaction.commit()?;
+        Ok(())
+    }
+
     /// Return published and pending consensuses for authenticated management clients.
     ///
     /// # Errors
@@ -1182,6 +1273,95 @@ impl CellStore {
         Ok(statement
             .query_map(params_from_iter(values), row_to_key)?
             .collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Stream withdrawn keys from one database snapshot in the existing CSV order.
+    pub(crate) fn write_removals_csv<W: std::io::Write>(
+        &self,
+        output: W,
+        mccs: Option<&HashSet<i64>>,
+        since_s: i64,
+        on_snapshot: impl FnOnce(),
+    ) -> Result<()> {
+        let mut connection = self.connection()?;
+        let transaction = connection.read_transaction()?;
+        let mut writer = csv::Writer::from_writer(output);
+        writer.write_record(["radio", "mcc", "mnc", "area", "cid"])?;
+        let sorted_mccs = mccs.map(|mccs| {
+            let mut sorted = mccs.iter().copied().collect::<Vec<_>>();
+            sorted.sort_unstable();
+            sorted
+        });
+        let mut cursor: Option<(i64, String, i64, i64, i64, i64)> = None;
+        let mut on_snapshot = Some(on_snapshot);
+        loop {
+            let mut sql = String::from(
+                "SELECT radio,mcc,mnc,area,cid,updated_s FROM tower_removals WHERE updated_s>=?",
+            );
+            let mut values = vec![Value::Integer(since_s)];
+            if let Some(mccs) = &sorted_mccs {
+                sql.push_str(" AND mcc IN (");
+                sql.push_str(
+                    &std::iter::repeat_n("?", mccs.len())
+                        .collect::<Vec<_>>()
+                        .join(","),
+                );
+                sql.push(')');
+                values.extend(mccs.iter().copied().map(Value::Integer));
+            }
+            if let Some((updated, radio, mcc, mnc, area, cid)) = &cursor {
+                sql.push_str(" AND (updated_s,radio,mcc,mnc,area,cid)>(?,?,?,?,?,?)");
+                values.extend([
+                    Value::Integer(*updated),
+                    Value::Text(radio.clone()),
+                    Value::Integer(*mcc),
+                    Value::Integer(*mnc),
+                    Value::Integer(*area),
+                    Value::Integer(*cid),
+                ]);
+            }
+            sql.push_str(" ORDER BY updated_s,radio,mcc,mnc,area,cid LIMIT ?");
+            values.push(Value::Integer(i64::try_from(EXPORT_PAGE_SIZE)?));
+            let mut statement = transaction.prepare(&sql)?;
+            let page = statement
+                .query_map(params_from_iter(values), |row| {
+                    Ok((row_to_key(row)?, row.get::<_, i64>(5)?))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            if let Some(release) = on_snapshot.take() {
+                release();
+            }
+            if page.is_empty() {
+                break;
+            }
+            for (key, _) in &page {
+                writer.write_record([
+                    key.radio.to_string(),
+                    key.mcc.to_string(),
+                    key.mnc.to_string(),
+                    key.area.to_string(),
+                    key.cid.to_string(),
+                ])?;
+            }
+            let (last, updated) = page.last().expect("nonempty page");
+            cursor = Some((
+                *updated,
+                last.radio.to_string(),
+                last.mcc,
+                last.mnc,
+                last.area,
+                last.cid,
+            ));
+            if page.len() < EXPORT_PAGE_SIZE {
+                break;
+            }
+        }
+        let mut output = writer
+            .into_inner()
+            .map_err(csv::IntoInnerError::into_error)?;
+        std::io::Write::flush(&mut output)?;
+        transaction.commit()?;
+        Ok(())
     }
 }
 

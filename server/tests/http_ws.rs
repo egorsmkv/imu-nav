@@ -43,6 +43,7 @@ async fn start_server_with_mail(policy: Policy, mail: Option<MailConfig>) -> Res
             mail,
             policy,
             trust_proxy: false,
+            secure_cookies: false,
         },
     )?;
     let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?;
@@ -68,6 +69,118 @@ async fn start_server_with_mail(policy: Policy, mail: Option<MailConfig>) -> Res
         database,
         token,
     })
+}
+
+#[tokio::test]
+async fn browser_cookie_is_secure_behind_tls_proxy_without_ip_header_trust() -> Result<()> {
+    let server = start_server().await?;
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?;
+    let login = || {
+        client.post(format!("{}/login", server.base_url)).form(&[
+            ("email", "admin@example.org"),
+            ("password", "correct horse battery staple"),
+        ])
+    };
+    let local = login().send().await?;
+    assert!(!local.headers()["set-cookie"].to_str()?.contains("; Secure"));
+    let proxied = login().header("x-forwarded-proto", "https").send().await?;
+    assert!(
+        proxied.headers()["set-cookie"]
+            .to_str()?
+            .contains("; Secure")
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn basic_admin_auth_limits_normalized_attempts_before_a_valid_password() -> Result<()> {
+    let server = start_server().await?;
+    let client = reqwest::Client::new();
+    let url = format!("{}/v1/towers", server.base_url);
+    for email in [
+        "admin@example.org",
+        "ADMIN@EXAMPLE.ORG",
+        " admin@example.org ",
+        "Admin@Example.Org",
+        "admin@example.org",
+    ] {
+        let response = client
+            .get(&url)
+            .basic_auth(email, Some("incorrect password"))
+            .send()
+            .await?;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+    let blocked = client
+        .get(&url)
+        .basic_auth("admin@example.org", Some("correct horse battery staple"))
+        .send()
+        .await?;
+    assert_eq!(blocked.status(), StatusCode::TOO_MANY_REQUESTS);
+    Ok(())
+}
+
+#[tokio::test]
+async fn public_exports_page_past_512_rows_without_changing_the_wire_format() -> Result<()> {
+    let server = start_server().await?;
+    let store = CellStore::open(server.database.path())?;
+    let policy = Policy::default();
+    let towers = (1..=600)
+        .map(|cid| CellTower {
+            key: CellKey {
+                radio: Radio::Lte,
+                mcc: 255,
+                mnc: 1,
+                area: 100,
+                cid,
+            },
+            lat: 50.45,
+            lon: 30.52,
+            range_m: 500.0,
+            samples: 3,
+        })
+        .collect::<Vec<_>>();
+    store.seed(&towers, 100, &policy)?;
+    let expected = encode_towers(&store.query(None, 0, None, &policy)?)?;
+    let downloaded = reqwest::Client::new()
+        .get(format!(
+            "{}/v1/cells.csv.gz?mcc=255&since=0",
+            server.base_url
+        ))
+        .send()
+        .await?
+        .error_for_status()?
+        .bytes()
+        .await?;
+    let mut actual_csv = String::new();
+    flate2::read::GzDecoder::new(downloaded.as_ref()).read_to_string(&mut actual_csv)?;
+    let mut expected_csv = String::new();
+    flate2::read::GzDecoder::new(expected.as_slice()).read_to_string(&mut expected_csv)?;
+    assert_eq!(actual_csv, expected_csv);
+    let connection = rusqlite::Connection::open(server.database.path())?;
+    for cid in 1..=600 {
+        connection.execute("INSERT INTO tower_removals(radio,mcc,mnc,area,cid,updated_s) VALUES ('LTE',255,1,100,?1,100)", [cid])?;
+    }
+    let removals = reqwest::Client::new()
+        .get(format!(
+            "{}/v1/cells/removals.csv?mcc=255&since=0",
+            server.base_url
+        ))
+        .send()
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
+    assert_eq!(removals.lines().count(), 601);
+    assert!(
+        removals
+            .lines()
+            .last()
+            .is_some_and(|line| line.starts_with("LTE,255,1,100,600"))
+    );
+    Ok(())
 }
 
 #[tokio::test]

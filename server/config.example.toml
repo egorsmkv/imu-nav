@@ -4,6 +4,8 @@
 bind = "127.0.0.1"
 port = 8080
 trust_proxy = false
+# Set true when public HTTPS terminates at a reverse proxy. Keep false for LAN HTTP.
+secure_cookies = false
 # public_url = "https://cells.example.org"
 
 [database]

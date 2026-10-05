@@ -344,12 +344,10 @@ pub(crate) async fn admin_account(
                 .map(|(a, b)| (a.to_owned(), b.to_owned()))
         });
     if let Some((email, password)) = basic {
-        let store = state.store.clone();
-        let email_for_lookup = email.clone();
-        let account = run_db(move || login_account(&store, &email_for_lookup, &password)).await?;
-        if let Some(account) = account.filter(|account| account.admin) {
-            return Ok(account);
-        }
+        // Charge every Basic request before Argon2, including successful logins. Normalize the
+        // identity so case and surrounding whitespace cannot reset the per-account budget.
+        let normalized = normalize_email(&email).ok();
+        let limited_email = normalized.as_deref().unwrap_or("<invalid>");
         state
             .auth_limits
             .lock()
@@ -357,8 +355,17 @@ pub(crate) async fn admin_account(
             .check(
                 "admin",
                 &client_ip(peer, headers, state.config.trust_proxy),
-                &email,
+                limited_email,
             )?;
+        let Some(email) = normalized else {
+            return Err(ApiError(StatusCode::UNAUTHORIZED, "UNAUTHORIZED"));
+        };
+        let store = state.store.clone();
+        let email_for_lookup = email.clone();
+        let account = run_db(move || login_account(&store, &email_for_lookup, &password)).await?;
+        if let Some(account) = account.filter(|account| account.admin) {
+            return Ok(account);
+        }
         return Err(ApiError(StatusCode::UNAUTHORIZED, "UNAUTHORIZED"));
     }
     let account = bearer_account(state, headers).await?;
@@ -901,6 +908,7 @@ mod tests {
                 mail: None,
                 policy: Policy::default(),
                 trust_proxy: false,
+                secure_cookies: false,
             },
         )
         .unwrap();
@@ -967,6 +975,7 @@ mod tests {
                 mail: None,
                 policy: Policy::default(),
                 trust_proxy: false,
+                secure_cookies: false,
             },
         )
         .unwrap();

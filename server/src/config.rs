@@ -24,6 +24,7 @@ struct ServerFile {
     port: Option<u16>,
     public_url: Option<String>,
     trust_proxy: Option<bool>,
+    secure_cookies: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -84,6 +85,7 @@ pub(crate) struct Settings {
     pub(crate) smtp_password: Option<String>,
     pub(crate) smtp_from: Option<String>,
     pub(crate) trust_proxy: bool,
+    pub(crate) secure_cookies: bool,
     pub(crate) min_devices: usize,
     pub(crate) max_samples: i64,
     pub(crate) area: String,
@@ -91,15 +93,7 @@ pub(crate) struct Settings {
 
 impl Settings {
     pub(crate) fn load(options: &Options) -> Result<Self> {
-        let file = if let Some(path) = &options.config {
-            let text = std::fs::read_to_string(path)
-                .with_context(|| format!("cannot read configuration file {}", path.display()))?;
-            // TOML parser diagnostics may quote a secret, so report the path without the input.
-            toml::from_str::<ConfigFile>(&text)
-                .map_err(|_| anyhow!("invalid TOML configuration in {}", path.display()))?
-        } else {
-            ConfigFile::default()
-        };
+        let file = load_file(options.config.as_deref())?;
         let server = file.server.unwrap_or_default();
         let mail = file.mail.unwrap_or_default();
         let policy = file.policy.unwrap_or_default();
@@ -183,6 +177,7 @@ impl Settings {
             smtp_password: options.smtp_password.clone().or(mail.password),
             smtp_from: options.smtp_from.clone().or(mail.from),
             trust_proxy: options.trust_proxy || server.trust_proxy.unwrap_or(false),
+            secure_cookies: options.secure_cookies || server.secure_cookies.unwrap_or(false),
             min_devices: options.min_devices.or(policy.min_devices).unwrap_or(2),
             max_samples: options.max_samples.or(policy.max_samples).unwrap_or(50),
             area,
@@ -193,6 +188,17 @@ impl Settings {
         );
         Ok(settings)
     }
+}
+
+fn load_file(path: Option<&Path>) -> Result<ConfigFile> {
+    let Some(path) = path else {
+        return Ok(ConfigFile::default());
+    };
+    let text = std::fs::read_to_string(path)
+        .with_context(|| format!("cannot read configuration file {}", path.display()))?;
+    // TOML parser diagnostics may quote a secret, so report the path without the input.
+    toml::from_str::<ConfigFile>(&text)
+        .map_err(|_| anyhow!("invalid TOML configuration in {}", path.display()))
 }
 
 fn resolve_config_path(config: Option<&Path>, path: PathBuf) -> PathBuf {
@@ -216,7 +222,7 @@ mod tests {
         let path = directory.path().join("config.toml");
         std::fs::write(
             &path,
-            "[server]\nport = 9000\n[database]\nbackend = 'sqlite'\npath = 'local.sqlite3'\n[policy]\narea = 'ukraine'\n",
+            "[server]\nport = 9000\nsecure_cookies = true\n[database]\nbackend = 'sqlite'\npath = 'local.sqlite3'\n[policy]\narea = 'ukraine'\n",
         )?;
         let options = Options::try_parse_from([
             "server",
@@ -228,6 +234,7 @@ mod tests {
         let settings = Settings::load(&options)?;
         assert_eq!(settings.port, 9001);
         assert_eq!(settings.area, "ukraine");
+        assert!(settings.secure_cookies);
         assert!(
             matches!(settings.database, DatabaseSettings::Sqlite(ref path) if path == &directory.path().join("local.sqlite3"))
         );

@@ -42,7 +42,7 @@ pub enum ImportError {
     Decode(#[from] CsvDecodeError),
 }
 
-const HEADER: [&str; 14] = [
+pub(crate) const HEADER: [&str; 14] = [
     "radio",
     "mcc",
     "net",
@@ -134,29 +134,38 @@ pub fn encode_towers(towers: &[crate::Consensus]) -> Result<Vec<u8>, CsvEncodeEr
         .from_writer(encoder);
     writer.write_record(HEADER)?;
     for consensus in towers {
-        let tower = &consensus.tower;
-        writer.write_record([
-            tower.key.radio.to_string(),
-            tower.key.mcc.to_string(),
-            tower.key.mnc.to_string(),
-            tower.key.area.to_string(),
-            tower.key.cid.to_string(),
-            String::new(),
-            format!("{:.7}", tower.lon),
-            format!("{:.7}", tower.lat),
-            tower.range_m.trunc().to_string(),
-            tower.samples.to_string(),
-            "1".to_owned(),
-            consensus.updated_s.to_string(),
-            consensus.updated_s.to_string(),
-            String::new(),
-        ])?;
+        write_tower_record(&mut writer, consensus)?;
     }
     writer.flush()?;
     let encoder = writer
         .into_inner()
         .map_err(csv::IntoInnerError::into_error)?;
     Ok(encoder.finish()?)
+}
+
+/// Keep streamed and in-memory downloads identical after decompression.
+pub(crate) fn write_tower_record<W: std::io::Write>(
+    writer: &mut csv::Writer<W>,
+    consensus: &crate::Consensus,
+) -> Result<(), csv::Error> {
+    let tower = &consensus.tower;
+    writer.write_record([
+        tower.key.radio.to_string(),
+        tower.key.mcc.to_string(),
+        tower.key.mnc.to_string(),
+        tower.key.area.to_string(),
+        tower.key.cid.to_string(),
+        String::new(),
+        format!("{:.7}", tower.lon),
+        format!("{:.7}", tower.lat),
+        tower.range_m.trunc().to_string(),
+        tower.samples.to_string(),
+        "1".to_owned(),
+        consensus.updated_s.to_string(),
+        consensus.updated_s.to_string(),
+        String::new(),
+    ])?;
+    Ok(())
 }
 
 /// Read all bytes from an import file before parsing it with the shared decoder.

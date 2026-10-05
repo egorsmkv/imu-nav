@@ -8,6 +8,7 @@ fn rate_and_identity_limits_expire_only_after_their_windows() {
         ServerConfig {
             mail: None,
             trust_proxy: false,
+            secure_cookies: false,
             policy: Policy {
                 max_uploads_per_hour_per_device: 1,
                 max_uploads_per_hour_per_ip: 2,
@@ -75,6 +76,82 @@ fn proxy_headers_and_device_ids_are_validated() {
     }
 }
 
+#[test]
+fn export_writer_stops_when_client_disconnects() {
+    let (sender, receiver) = mpsc::channel(1);
+    drop(receiver);
+    let mut writer = ChannelWriter::new(sender);
+    let error = writer
+        .write_all(&vec![b'x'; DOWNLOAD_CHUNK_BYTES])
+        .unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::BrokenPipe);
+}
+
+#[tokio::test]
+async fn public_export_slots_are_bounded() {
+    let file = tempfile::NamedTempFile::new().unwrap();
+    let state = AppState::new(
+        CellStore::open(file.path()).unwrap(),
+        ServerConfig {
+            mail: None,
+            policy: Policy::default(),
+            trust_proxy: false,
+            secure_cookies: false,
+        },
+    )
+    .unwrap();
+    let _first = state.downloads.clone().acquire_owned().await.unwrap();
+    let _second = state.downloads.clone().acquire_owned().await.unwrap();
+    assert_eq!(
+        stream_public_export(state, "application/gzip", |_| Ok(()))
+            .unwrap_err()
+            .0,
+        StatusCode::TOO_MANY_REQUESTS
+    );
+}
+
+#[tokio::test]
+async fn health_count_is_cached_until_its_short_ttl_expires() {
+    let file = tempfile::NamedTempFile::new().unwrap();
+    let store = CellStore::open(file.path()).unwrap();
+    let state = AppState::new(
+        store.clone(),
+        ServerConfig {
+            mail: None,
+            policy: Policy::default(),
+            trust_proxy: false,
+            secure_cookies: false,
+        },
+    )
+    .unwrap();
+    assert_eq!(health(State(state.clone())).await.unwrap(), "ok 0\n");
+    store
+        .seed(
+            &[CellTower {
+                key: CellKey {
+                    radio: Radio::Lte,
+                    mcc: 255,
+                    mnc: 1,
+                    area: 100,
+                    cid: 200,
+                },
+                lat: 50.45,
+                lon: 30.52,
+                range_m: 500.0,
+                samples: 3,
+            }],
+            100,
+            &Policy::default(),
+        )
+        .unwrap();
+    assert_eq!(health(State(state.clone())).await.unwrap(), "ok 0\n");
+    *state.health_cache.lock().await = Some((
+        Instant::now().checked_sub(HEALTH_CACHE_LIFETIME).unwrap(),
+        0,
+    ));
+    assert_eq!(health(State(state)).await.unwrap(), "ok 1\n");
+}
+
 #[tokio::test]
 async fn database_errors_and_panics_become_server_errors() {
     assert_eq!(
@@ -103,6 +180,7 @@ async fn slow_websocket_consumers_receive_resync_then_live_events() {
             mail: None,
             policy: Policy::default(),
             trust_proxy: false,
+            secure_cookies: false,
         },
     )
     .unwrap();

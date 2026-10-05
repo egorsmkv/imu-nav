@@ -131,6 +131,25 @@ impl Connection {
         self.transaction_with_behavior(TransactionBehavior::Immediate)
     }
 
+    /// Keep paged public exports on one consistent snapshot without taking the writer lock.
+    pub(crate) fn read_transaction(&mut self) -> rusqlite::Result<Transaction<'_>> {
+        match self {
+            Self::Sqlite(connection) => Ok(Transaction::Sqlite(Some(
+                connection.transaction_with_behavior(TransactionBehavior::Deferred)?,
+            ))),
+            Self::Postgres(connection) => {
+                connection
+                    .borrow_mut()
+                    .batch_execute("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+                    .map_err(pg_error)?;
+                Ok(Transaction::Postgres {
+                    connection,
+                    committed: false,
+                })
+            }
+        }
+    }
+
     pub(crate) fn transaction_with_behavior(
         &mut self,
         behavior: TransactionBehavior,

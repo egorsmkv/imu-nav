@@ -7,6 +7,7 @@ use imu_nav_cell_server::{
 };
 use postgres_native_tls::MakeTlsConnector;
 use reqwest::StatusCode;
+use std::io::Read;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -169,6 +170,7 @@ async fn api_auth_upload_and_private_diagnostics_use_postgres() -> Result<()> {
                     mail: None,
                     policy: Policy::default(),
                     trust_proxy: false,
+                    secure_cookies: false,
                 },
             )?;
             Ok(Some((state, url)))
@@ -190,6 +192,7 @@ async fn api_auth_upload_and_private_diagnostics_use_postgres() -> Result<()> {
     exercise_api(&base, &url).await?;
     exercise_browser(&base).await?;
     exercise_admin_mutations(&base).await?;
+    exercise_paged_public_exports(&base, &url).await?;
     task.abort();
     Ok(())
 }
@@ -411,5 +414,37 @@ async fn exercise_admin_mutations(base: &str) -> Result<()> {
     assert_eq!(hidden.status(), StatusCode::NO_CONTENT);
     let removed = client.delete(&tower).bearer_auth(token).send().await?;
     assert_eq!(removed.status(), StatusCode::NO_CONTENT);
+    Ok(())
+}
+
+async fn exercise_paged_public_exports(base: &str, url: &str) -> Result<()> {
+    let url = url.to_owned();
+    tokio::task::spawn_blocking(move || -> Result<()> {
+        let mut connection = postgres_client(&url)?;
+        connection.batch_execute("INSERT INTO consensus(radio,mcc,mnc,area,cid,lat,lon,range_m,samples,devices,seeded,updated_s)
+            SELECT 'LTE',255,1,100,1000 + id,50.45,30.52,500.0,3,2,1,100 FROM generate_series(1,600) AS id;
+            INSERT INTO tower_removals(radio,mcc,mnc,area,cid,updated_s)
+            SELECT 'LTE',255,1,100,1000 + id,100 FROM generate_series(1,600) AS id;")?;
+        Ok(())
+    }).await??;
+    let client = reqwest::Client::new();
+    let compressed = client
+        .get(format!("{base}/v1/cells.csv.gz?mcc=255&since=0"))
+        .send()
+        .await?
+        .error_for_status()?
+        .bytes()
+        .await?;
+    let mut csv = String::new();
+    flate2::read::GzDecoder::new(compressed.as_ref()).read_to_string(&mut csv)?;
+    assert!(csv.lines().count() >= 601);
+    let removals = client
+        .get(format!("{base}/v1/cells/removals.csv?mcc=255&since=0"))
+        .send()
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
+    assert!(removals.lines().count() >= 601);
     Ok(())
 }

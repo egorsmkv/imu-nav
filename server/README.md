@@ -79,8 +79,17 @@ shared API key: users register with email and password in the Android app, and o
 users can upload. Existing apps can continue downloading published towers but cannot upload.
 `--trust-proxy` honors the first `X-Forwarded-For` address for per-IP limits and must
 only be enabled when direct access to the server port is blocked.
+For public HTTPS behind a reverse proxy, set `server.secure_cookies = true` in TOML or pass
+`--secure-cookies`. This marks browser sessions `Secure` without trusting forwarded client IPs.
+The server also recognizes `X-Forwarded-Proto: https` for the cookie flag; have the proxy replace
+that header. Direct LAN HTTP browser login remains available when secure cookies are disabled,
+but it sends credentials and sessions without transport encryption.
 `--bind 127.0.0.1` restricts the listener to loopback for local testing; the default remains
 `0.0.0.0` for existing deployments.
+
+Public cell downloads are streamed from consistent database snapshots in bounded pages; at most
+two run at once, and excess requests receive HTTP 429. The `/health` body remains `ok <count>`,
+with counts cached for up to 30 seconds to keep frequent checks cheap.
 
 ## Browser account pages
 

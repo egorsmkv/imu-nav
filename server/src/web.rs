@@ -674,11 +674,11 @@ async fn start_session(
 }
 
 pub(crate) fn secure_cookie(state: &AppState, uri: &Uri, headers: &HeaderMap) -> bool {
-    uri.scheme_str() == Some("https")
-        || state.config.trust_proxy
-            && headers
-                .get("x-forwarded-proto")
-                .is_some_and(|value| value == "https")
+    state.config.secure_cookies
+        || uri.scheme_str() == Some("https")
+        || headers
+            .get("x-forwarded-proto")
+            .is_some_and(|value| value == "https")
 }
 
 pub(crate) fn set_session_cookie(
