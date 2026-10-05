@@ -1,10 +1,11 @@
 use anyhow::Result;
 use futures_util::StreamExt;
 use imu_nav_cell_server::{
-    AppState, CellKey, CellStore, CellTower, Consensus, Policy, Radio, ServerConfig, create_admin,
-    decode_towers, encode_towers, router,
+    AppState, CellKey, CellStore, CellTower, Consensus, MailConfig, Policy, Radio, ServerConfig,
+    create_admin, decode_towers, encode_towers, router,
 };
 use reqwest::StatusCode;
+use std::io::Read;
 use std::net::{Ipv4Addr, SocketAddr};
 use tempfile::NamedTempFile;
 use tokio::io::AsyncWriteExt;
@@ -29,13 +30,17 @@ async fn start_server() -> Result<TestServer> {
 }
 
 async fn start_server_with_policy(policy: Policy) -> Result<TestServer> {
+    start_server_with_mail(policy, None).await
+}
+
+async fn start_server_with_mail(policy: Policy, mail: Option<MailConfig>) -> Result<TestServer> {
     let database = NamedTempFile::new()?;
     let store = CellStore::open(database.path())?;
     create_admin(&store, "admin@example.org", "correct horse battery staple")?;
     let state = AppState::new(
         store,
         ServerConfig {
-            mail: None,
+            mail,
             policy,
             trust_proxy: false,
         },
@@ -327,6 +332,16 @@ async fn browser_account_pages_show_and_delete_only_owned_contributions() -> Res
     let body = panel.text().await?;
     assert!(body.contains(&first_device));
     assert!(!body.contains(&second_device));
+    let export = browser
+        .get(format!("{}/account/export?mcc=255", server.base_url))
+        .header("cookie", &first_cookie)
+        .send()
+        .await?;
+    assert_eq!(export.status(), StatusCode::OK);
+    let mut csv = String::new();
+    flate2::read::GzDecoder::new(export.bytes().await?.as_ref()).read_to_string(&mut csv)?;
+    assert!(csv.contains(&first_device));
+    assert!(!csv.contains(&second_device));
     let csrf = body
         .split("name=\"csrf\" value=\"")
         .nth(1)
@@ -378,6 +393,32 @@ async fn browser_account_pages_show_and_delete_only_owned_contributions() -> Res
             .contains(&second_device)
     );
 
+    let blocked_upload = browser
+        .post(format!("{}/v1/cells", server.base_url))
+        .bearer_auth(first_login["access_token"].as_str().unwrap())
+        .header("x-device-id", "device-first")
+        .body(upload_body(tower(50.400))?)
+        .send()
+        .await?;
+    assert_eq!(blocked_upload.status(), StatusCode::OK);
+    assert_eq!(
+        blocked_upload.json::<serde_json::Value>().await?["rejected"],
+        1
+    );
+    assert_eq!(
+        browser
+            .post(format!(
+                "{}/account/contributions/delete-all",
+                server.base_url
+            ))
+            .header("cookie", &first_cookie)
+            .form(&[("csrf", csrf.as_str()), ("confirm", "DELETE")])
+            .send()
+            .await?
+            .status(),
+        StatusCode::SEE_OTHER
+    );
+    assert_eq!(store.consensus(&tower(50.4).key)?.unwrap().devices, 1);
     assert_eq!(
         browser
             .post(format!("{}/v1/cells", server.base_url))
@@ -387,22 +428,8 @@ async fn browser_account_pages_show_and_delete_only_owned_contributions() -> Res
             .send()
             .await?
             .status(),
-        StatusCode::OK
+        StatusCode::FORBIDDEN
     );
-    assert_eq!(
-        browser
-            .post(format!(
-                "{}/account/contributions/delete-all",
-                server.base_url
-            ))
-            .header("cookie", &first_cookie)
-            .form(&[("csrf", csrf.as_str())])
-            .send()
-            .await?
-            .status(),
-        StatusCode::SEE_OTHER
-    );
-    assert_eq!(store.consensus(&tower(50.4).key)?.unwrap().devices, 1);
     let first_panel = browser
         .get(format!("{}/account", server.base_url))
         .header("cookie", &first_cookie)
@@ -410,7 +437,7 @@ async fn browser_account_pages_show_and_delete_only_owned_contributions() -> Res
         .await?
         .text()
         .await?;
-    assert!(first_panel.contains("No observations have been uploaded"));
+    assert!(first_panel.contains("No observations match this page and filter"));
     assert_eq!(
         browser
             .post(format!("{}/account/logout", server.base_url))
@@ -1439,6 +1466,574 @@ async fn health_bad_uploads_and_management_validation() -> Result<()> {
             .await?
             .status(),
         StatusCode::BAD_REQUEST
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn browser_account_controls_pause_revoke_change_password_and_close() -> Result<()> {
+    let server = start_server().await?;
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?;
+    let signup = client
+        .post(format!("{}/signup", server.base_url))
+        .form(&[
+            ("email", "owner@example.org"),
+            ("password", "owner long password"),
+        ])
+        .send()
+        .await?;
+    assert_eq!(signup.status(), StatusCode::SEE_OTHER);
+    let cookie = signup.headers()["set-cookie"]
+        .to_str()?
+        .split(';')
+        .next()
+        .unwrap()
+        .to_owned();
+    let panel = client
+        .get(format!("{}/account", server.base_url))
+        .header("cookie", &cookie)
+        .send()
+        .await?
+        .text()
+        .await?;
+    let csrf = panel
+        .split("name=\"csrf\" value=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap()
+        .to_owned();
+    let app_login = client
+        .post(format!("{}/v1/auth/login", server.base_url))
+        .json(&serde_json::json!({"email":"owner@example.org","password":"owner long password"}))
+        .send()
+        .await?
+        .json::<serde_json::Value>()
+        .await?;
+    let app_token = app_login["access_token"].as_str().unwrap();
+    assert_eq!(
+        client
+            .post(format!("{}/account/sharing/pause", server.base_url))
+            .header("cookie", &cookie)
+            .form(&[("csrf", csrf.as_str())])
+            .send()
+            .await?
+            .status(),
+        StatusCode::SEE_OTHER
+    );
+    assert_eq!(
+        client
+            .post(format!("{}/v1/cells", server.base_url))
+            .bearer_auth(app_token)
+            .header("x-device-id", "owner-phone")
+            .body(upload_body(tower(50.4))?)
+            .send()
+            .await?
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        client
+            .post(format!("{}/account/sharing/resume", server.base_url))
+            .header("cookie", &cookie)
+            .form(&[("csrf", csrf.as_str()), ("password", "wrong")])
+            .send()
+            .await?
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        client
+            .post(format!("{}/account/sharing/resume", server.base_url))
+            .header("cookie", &cookie)
+            .form(&[("csrf", csrf.as_str()), ("password", "owner long password")])
+            .send()
+            .await?
+            .status(),
+        StatusCode::SEE_OTHER
+    );
+    assert_eq!(
+        client
+            .post(format!("{}/v1/cells", server.base_url))
+            .bearer_auth(app_token)
+            .header("x-device-id", "owner-phone")
+            .body(upload_body(tower(50.4))?)
+            .send()
+            .await?
+            .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        client
+            .post(format!(
+                "{}/account/sessions/revoke-others",
+                server.base_url
+            ))
+            .header("cookie", &cookie)
+            .form(&[("csrf", csrf.as_str())])
+            .send()
+            .await?
+            .status(),
+        StatusCode::SEE_OTHER
+    );
+    assert_eq!(
+        client
+            .get(format!("{}/v1/auth/me", server.base_url))
+            .bearer_auth(app_token)
+            .send()
+            .await?
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        client
+            .post(format!("{}/account/password", server.base_url))
+            .header("cookie", &cookie)
+            .form(&[
+                ("csrf", csrf.as_str()),
+                ("current_password", "owner long password"),
+                ("new_password", "new owner password")
+            ])
+            .send()
+            .await?
+            .status(),
+        StatusCode::SEE_OTHER
+    );
+    assert_eq!(
+        client
+            .post(format!("{}/v1/auth/login", server.base_url))
+            .json(
+                &serde_json::json!({"email":"owner@example.org","password":"owner long password"})
+            )
+            .send()
+            .await?
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        client
+            .post(format!("{}/account/close", server.base_url))
+            .header("cookie", &cookie)
+            .form(&[
+                ("csrf", csrf.as_str()),
+                ("password", "new owner password"),
+                ("confirm", "DELETE ACCOUNT")
+            ])
+            .send()
+            .await?
+            .status(),
+        StatusCode::SEE_OTHER
+    );
+    assert_eq!(
+        client
+            .get(format!("{}/account", server.base_url))
+            .header("cookie", &cookie)
+            .send()
+            .await?
+            .status(),
+        StatusCode::SEE_OTHER
+    );
+    assert_eq!(
+        client
+            .post(format!("{}/v1/auth/login", server.base_url))
+            .json(&serde_json::json!({"email":"owner@example.org","password":"new owner password"}))
+            .send()
+            .await?
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert!(
+        CellStore::open(server.database.path())?
+            .consensus(&tower(50.4).key)?
+            .is_none()
+    );
+    let connection = rusqlite::Connection::open(server.database.path())?;
+    for table in [
+        "users",
+        "auth_tokens",
+        "account_deleted_keys",
+        "email_verifications",
+        "password_resets",
+    ] {
+        let column = if table == "users" {
+            "id"
+        } else if table == "account_deleted_keys" {
+            "account_id"
+        } else {
+            "user_id"
+        };
+        let sql = format!("SELECT COUNT(*) FROM {table} WHERE {column}=?1");
+        let count: i64 = connection.query_row(
+            &sql,
+            [app_login["account"]["id"].as_i64().unwrap()],
+            |row| row.get(0),
+        )?;
+        assert_eq!(count, 0, "account closure left {table} rows");
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn browser_account_forms_validate_filters_and_destructive_actions() -> Result<()> {
+    let server = start_server().await?;
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?;
+    assert_eq!(
+        client
+            .get(format!("{}/", server.base_url))
+            .send()
+            .await?
+            .status(),
+        StatusCode::SEE_OTHER
+    );
+    assert_eq!(
+        client
+            .get(format!("{}/forgot-password", server.base_url))
+            .send()
+            .await?
+            .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        client
+            .post(format!("{}/forgot-password", server.base_url))
+            .form(&[("email", "owner@example.org")])
+            .send()
+            .await?
+            .status(),
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    assert_eq!(
+        client
+            .post(format!("{}/forgot-password", server.base_url))
+            .form(&[("email", "not-an-email")])
+            .send()
+            .await?
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        client
+            .get(format!("{}/account/export", server.base_url))
+            .send()
+            .await?
+            .status(),
+        StatusCode::SEE_OTHER
+    );
+    let signup = client
+        .post(format!("{}/signup", server.base_url))
+        .form(&[
+            ("email", "filters@example.org"),
+            ("password", "filters safe password"),
+        ])
+        .send()
+        .await?;
+    let cookie = signup.headers()["set-cookie"]
+        .to_str()?
+        .split(';')
+        .next()
+        .unwrap()
+        .to_owned();
+    let panel = client
+        .get(format!("{}/account", server.base_url))
+        .header("cookie", &cookie)
+        .send()
+        .await?
+        .text()
+        .await?;
+    let csrf = panel
+        .split("name=\"csrf\" value=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap()
+        .to_owned();
+    for path in [
+        "/account?mcc=0",
+        "/account?from_s=10&to_s=1",
+        "/account?page=18446744073709551615",
+    ] {
+        assert_eq!(
+            client
+                .get(format!("{}{}", server.base_url, path))
+                .header("cookie", &cookie)
+                .send()
+                .await?
+                .status(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+    assert_eq!(
+        client
+            .get(format!("{}/account?mcc=&from_s=&to_s=", server.base_url))
+            .header("cookie", &cookie)
+            .send()
+            .await?
+            .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        client
+            .get(format!("{}/account/export?mcc=0", server.base_url))
+            .header("cookie", &cookie)
+            .send()
+            .await?
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        client
+            .post(format!("{}/account/password", server.base_url))
+            .header("cookie", &cookie)
+            .form(&[
+                ("csrf", "bad"),
+                ("current_password", "filters safe password"),
+                ("new_password", "another safe password")
+            ])
+            .send()
+            .await?
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        client
+            .post(format!("{}/account/password", server.base_url))
+            .header("cookie", &cookie)
+            .form(&[
+                ("csrf", csrf.as_str()),
+                ("current_password", "filters safe password"),
+                ("new_password", "short")
+            ])
+            .send()
+            .await?
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        client
+            .post(format!("{}/account/password", server.base_url))
+            .header("cookie", &cookie)
+            .form(&[
+                ("csrf", csrf.as_str()),
+                ("current_password", "wrong"),
+                ("new_password", "another safe password")
+            ])
+            .send()
+            .await?
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        client
+            .post(format!("{}/account/email", server.base_url))
+            .header("cookie", &cookie)
+            .form(&[
+                ("csrf", csrf.as_str()),
+                ("password", "filters safe password"),
+                ("email", "new@example.org")
+            ])
+            .send()
+            .await?
+            .status(),
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    assert_eq!(
+        client
+            .post(format!("{}/account/email/resend", server.base_url))
+            .header("cookie", &cookie)
+            .form(&[("csrf", csrf.as_str())])
+            .send()
+            .await?
+            .status(),
+        StatusCode::SEE_OTHER
+    );
+    assert_eq!(
+        client
+            .post(format!(
+                "{}/account/contributions/delete-all",
+                server.base_url
+            ))
+            .header("cookie", &cookie)
+            .form(&[("csrf", csrf.as_str()), ("confirm", "NO")])
+            .send()
+            .await?
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        client
+            .post(format!("{}/account/close", server.base_url))
+            .header("cookie", &cookie)
+            .form(&[
+                ("csrf", csrf.as_str()),
+                ("password", "filters safe password"),
+                ("confirm", "NO")
+            ])
+            .send()
+            .await?
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        client
+            .post(format!("{}/account/close", server.base_url))
+            .header("cookie", &cookie)
+            .form(&[
+                ("csrf", csrf.as_str()),
+                ("password", "wrong"),
+                ("confirm", "DELETE ACCOUNT")
+            ])
+            .send()
+            .await?
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn browser_verification_and_recovery_paths_gate_unverified_uploads() -> Result<()> {
+    let mail = MailConfig {
+        public_url: "https://example.org".to_owned(),
+        smtp_host: "invalid host".to_owned(),
+        smtp_username: "test".to_owned(),
+        smtp_password: "test".to_owned(),
+        smtp_from: "IMU Nav <no-reply@example.org>".to_owned(),
+    };
+    let server = start_server_with_mail(Policy::default(), Some(mail)).await?;
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?;
+    assert_eq!(
+        client
+            .get(format!("{}/verify-email", server.base_url))
+            .send()
+            .await?
+            .status(),
+        StatusCode::OK
+    );
+    let signup = client
+        .post(format!("{}/signup", server.base_url))
+        .form(&[
+            ("email", "unverified@example.org"),
+            ("password", "unverified password"),
+        ])
+        .send()
+        .await?;
+    assert_eq!(signup.status(), StatusCode::SEE_OTHER);
+    let cookie = signup.headers()["set-cookie"]
+        .to_str()?
+        .split(';')
+        .next()
+        .unwrap()
+        .to_owned();
+    let panel = client
+        .get(format!("{}/account", server.base_url))
+        .header("cookie", &cookie)
+        .send()
+        .await?
+        .text()
+        .await?;
+    assert!(panel.contains("Verify your email"));
+    let csrf = panel
+        .split("name=\"csrf\" value=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap()
+        .to_owned();
+    let login = client
+        .post(format!("{}/v1/auth/login", server.base_url))
+        .json(
+            &serde_json::json!({"email":"unverified@example.org","password":"unverified password"}),
+        )
+        .send()
+        .await?
+        .json::<serde_json::Value>()
+        .await?;
+    assert_eq!(login["account"]["email_verified"], false);
+    assert_eq!(
+        client
+            .post(format!("{}/v1/cells", server.base_url))
+            .bearer_auth(login["access_token"].as_str().unwrap())
+            .header("x-device-id", "phone")
+            .body(upload_body(tower(50.4))?)
+            .send()
+            .await?
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        client
+            .post(format!("{}/account/sharing/resume", server.base_url))
+            .header("cookie", &cookie)
+            .form(&[("csrf", csrf.as_str()), ("password", "unverified password")])
+            .send()
+            .await?
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        client
+            .post(format!("{}/account/email/resend", server.base_url))
+            .header("cookie", &cookie)
+            .form(&[("csrf", csrf.as_str())])
+            .send()
+            .await?
+            .status(),
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    assert_eq!(
+        client
+            .post(format!("{}/account/email", server.base_url))
+            .header("cookie", &cookie)
+            .form(&[
+                ("csrf", csrf.as_str()),
+                ("password", "wrong"),
+                ("email", "new@example.org")
+            ])
+            .send()
+            .await?
+            .status(),
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        client
+            .post(format!("{}/account/email", server.base_url))
+            .header("cookie", &cookie)
+            .form(&[
+                ("csrf", csrf.as_str()),
+                ("password", "unverified password"),
+                ("email", "new@example.org")
+            ])
+            .send()
+            .await?
+            .status(),
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    assert_eq!(
+        client
+            .post(format!("{}/forgot-password", server.base_url))
+            .form(&[("email", "missing@example.org")])
+            .send()
+            .await?
+            .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        client
+            .post(format!("{}/forgot-password", server.base_url))
+            .form(&[("email", "unverified@example.org")])
+            .send()
+            .await?
+            .status(),
+        StatusCode::SERVICE_UNAVAILABLE
     );
     Ok(())
 }

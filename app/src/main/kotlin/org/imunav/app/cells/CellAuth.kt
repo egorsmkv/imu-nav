@@ -24,6 +24,16 @@ internal class CellAuth(context: Context) {
     private var expiresAtMs = 0L
 
     val email: String? get() = prefs.getString("email", null)
+    val emailVerified: Boolean get() = prefs.getBoolean("email_verified", true)
+    val sharingEnabled: Boolean get() = prefs.getBoolean("sharing_enabled", true)
+
+    /** Cache a server-side upload restriction until the next session refresh checks it again. */
+    fun markUploadBlocked(body: String) {
+        prefs.edit {
+            if (body.contains("EMAIL_UNVERIFIED")) putBoolean("email_verified", false)
+            if (body.contains("SHARING_DISABLED")) putBoolean("sharing_enabled", false)
+        }
+    }
 
     /** A changed server cannot receive a token issued by the previous server. */
     fun clear() {
@@ -47,7 +57,7 @@ internal class CellAuth(context: Context) {
             clear()
             return null
         }
-        if (System.currentTimeMillis() < expiresAtMs - 30_000) return access
+        if (System.currentTimeMillis() < expiresAtMs - 30_000 && emailVerified && sharingEnabled) return access
         val refresh = decrypt(prefs.getString("refresh", null)) ?: run {
             clear()
             return null
@@ -82,6 +92,8 @@ internal class CellAuth(context: Context) {
         prefs.edit {
             putString("url", url.trim().trimEnd('/'))
             putString("email", body.getJSONObject("account").getString("email"))
+            putBoolean("email_verified", body.getJSONObject("account").optBoolean("email_verified", true))
+            putBoolean("sharing_enabled", body.getJSONObject("account").optBoolean("sharing_enabled", true))
             putString("refresh", encrypted)
         }
         access = body.getString("access_token")

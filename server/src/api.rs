@@ -158,6 +158,7 @@ async fn upload_cells(
     body: Bytes,
 ) -> Result<Json<UploadResponse>, ApiError> {
     let account = auth::bearer_account(&state, &headers).await?;
+    check_upload_permission(&state, account.id).await?;
     let ip = client_ip(peer, &headers, state.config.trust_proxy);
     let device = headers
         .get("x-device-id")
@@ -185,6 +186,7 @@ async fn upload_cells(
         })?;
     let store = state.store.clone();
     let _write_guard = state.write_gate.read().await;
+    check_upload_permission(&state, account.id).await?;
     let policy = state.policy();
     let device_for_log = device.clone();
     let (result, changed) =
@@ -206,6 +208,18 @@ async fn upload_cells(
         accepted: result.accepted,
         rejected: result.rejected,
     }))
+}
+
+async fn check_upload_permission(state: &AppState, account_id: i64) -> Result<(), ApiError> {
+    let store = state.store.clone();
+    let (sharing, verified) = run_db(move || store.account_sharing_status(account_id)).await?;
+    if !verified {
+        return Err(ApiError(StatusCode::FORBIDDEN, "EMAIL_UNVERIFIED"));
+    }
+    if !sharing {
+        return Err(ApiError(StatusCode::FORBIDDEN, "SHARING_DISABLED"));
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]

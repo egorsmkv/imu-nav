@@ -4,6 +4,7 @@ pub(crate) mod management;
 use crate::model::{distance_m, plausible};
 use crate::{CellKey, CellTower, Consensus, Policy, Radio, UploadResult};
 use anyhow::{Context, Result};
+use flate2::{Compression, write::GzEncoder};
 use rusqlite::types::{Type, Value};
 use rusqlite::{
     Connection, OptionalExtension, Transaction, TransactionBehavior, params, params_from_iter,
@@ -59,6 +60,15 @@ pub(crate) struct OwnContribution {
 pub(crate) struct OwnContributionPage {
     pub rows: Vec<OwnContribution>,
     pub total: usize,
+}
+
+/// Account-owned observation filters shared by the table and personal export.
+#[derive(Clone, Default)]
+pub(crate) struct OwnFilter {
+    pub device: String,
+    pub mcc: Option<i64>,
+    pub from_s: Option<i64>,
+    pub to_s: Option<i64>,
 }
 
 /// The consensus change caused by removing an account observation.
@@ -132,7 +142,19 @@ impl CellStore {
             "CREATE TABLE IF NOT EXISTS users (
                id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE,
                password_hash TEXT NOT NULL, admin INTEGER NOT NULL DEFAULT 0,
-               suspended INTEGER NOT NULL DEFAULT 0
+               suspended INTEGER NOT NULL DEFAULT 0,
+               sharing_enabled INTEGER NOT NULL DEFAULT 1,
+               email_verified INTEGER NOT NULL DEFAULT 1
+             );
+             CREATE TABLE IF NOT EXISTS account_deleted_keys (
+               account_id INTEGER NOT NULL,
+               radio TEXT NOT NULL,mcc INTEGER NOT NULL,mnc INTEGER NOT NULL,
+               area INTEGER NOT NULL,cid INTEGER NOT NULL,device TEXT NOT NULL,
+               PRIMARY KEY(account_id,radio,mcc,mnc,area,cid,device)
+             );
+             CREATE TABLE IF NOT EXISTS email_verifications (
+               token_hash TEXT PRIMARY KEY,user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+               email TEXT NOT NULL,expires_s INTEGER NOT NULL
              );
              CREATE TABLE IF NOT EXISTS auth_tokens (
                token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -147,15 +169,28 @@ impl CellStore {
              );
              CREATE INDEX IF NOT EXISTS password_resets_expiry ON password_resets(expires_s);",
         )?;
-        let has_suspended = connection
+        let user_columns = connection
             .prepare("PRAGMA table_info(users)")?
             .query_map([], |row| row.get::<_, String>(1))?
-            .collect::<rusqlite::Result<Vec<_>>>()?
-            .iter()
-            .any(|column| column == "suspended");
-        if !has_suspended {
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        if !user_columns.iter().any(|column| column == "suspended") {
             connection.execute(
                 "ALTER TABLE users ADD COLUMN suspended INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+        }
+        if !user_columns
+            .iter()
+            .any(|column| column == "sharing_enabled")
+        {
+            connection.execute(
+                "ALTER TABLE users ADD COLUMN sharing_enabled INTEGER NOT NULL DEFAULT 1",
+                [],
+            )?;
+        }
+        if !user_columns.iter().any(|column| column == "email_verified") {
+            connection.execute(
+                "ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 1",
                 [],
             )?;
         }
@@ -165,10 +200,66 @@ impl CellStore {
     pub(crate) fn connection(&self) -> Result<Connection> {
         let connection = Connection::open(&self.path)
             .with_context(|| format!("cannot open {}", self.path.display()))?;
+        connection.execute_batch("PRAGMA foreign_keys=ON")?;
         // National seed imports and policy recalculations may hold the writer slot for minutes.
         // SQLite WAL still serves readers while other writers wait for the atomic commit.
         connection.busy_timeout(std::time::Duration::from_secs(3600))?;
         Ok(connection)
+    }
+
+    /// Account sharing and email status are checked again under the upload gate before writing.
+    pub(crate) fn account_sharing_status(&self, account_id: i64) -> Result<(bool, bool)> {
+        Ok(self.connection()?.query_row(
+            "SELECT sharing_enabled,email_verified FROM users WHERE id=?1",
+            [account_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?)
+    }
+
+    pub(crate) fn set_account_sharing(&self, account_id: i64, enabled: bool) -> Result<bool> {
+        Ok(self.connection()?.execute(
+            "UPDATE users SET sharing_enabled=?1 WHERE id=?2 AND (email_verified=1 OR ?1=0)",
+            params![enabled, account_id],
+        )? > 0)
+    }
+
+    /// Remove an ordinary account and all its observations, tokens, and deletion markers atomically.
+    pub(crate) fn close_own_account(
+        &self,
+        account_id: i64,
+        policy: &Policy,
+    ) -> Result<Option<Vec<OwnContributionChange>>> {
+        let mut connection = self.connection()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let ordinary: bool = transaction.query_row(
+            "SELECT COALESCE((SELECT admin=0 FROM users WHERE id=?1),0)",
+            [account_id],
+            |row| row.get(0),
+        )?;
+        if !ordinary {
+            return Ok(None);
+        }
+        let pattern = account_device_pattern(account_id);
+        let keys = {
+            let mut statement = transaction.prepare(
+                "SELECT DISTINCT radio,mcc,mnc,area,cid FROM contributions WHERE device GLOB ?1",
+            )?;
+            statement
+                .query_map([&pattern], row_to_key)?
+                .collect::<rusqlite::Result<Vec<_>>>()?
+        };
+        transaction.execute("DELETE FROM contributions WHERE device GLOB ?1", [&pattern])?;
+        let changes = keys
+            .iter()
+            .map(|key| update_consensus_after_deletion(&transaction, key, policy))
+            .collect::<Result<Vec<_>>>()?;
+        transaction.execute(
+            "DELETE FROM account_deleted_keys WHERE account_id=?1",
+            [account_id],
+        )?;
+        transaction.execute("DELETE FROM users WHERE id=?1", [account_id])?;
+        transaction.commit()?;
+        Ok(Some(changes))
     }
 
     /// Merge one device's upload atomically and return all changed consensuses for live management.
@@ -192,12 +283,41 @@ impl CellStore {
         let mut accepted = 0;
         let mut rejected = 0;
         let mut changed_keys = BTreeSet::new();
+        let account_id = device
+            .strip_prefix("account:")
+            .and_then(|value| value.split_once(':'))
+            .and_then(|(id, _)| id.parse::<i64>().ok());
+        if let Some(id) = account_id {
+            let allowed: bool = transaction.query_row(
+                "SELECT COALESCE((SELECT sharing_enabled=1 AND email_verified=1 FROM users WHERE id=?1),1)",
+                [id], |row| row.get(0),
+            )?;
+            if !allowed {
+                return Ok((
+                    UploadResult {
+                        accepted: 0,
+                        rejected: towers.len(),
+                    },
+                    Vec::new(),
+                ));
+            }
+        }
 
         // One connection handles the batch; cached statements avoid recompiling identical SQL
         // for each tower while keeping the same transaction and per-device movement checks.
         for tower in towers {
+            let blocked = if let Some(id) = account_id {
+                transaction.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM account_deleted_keys WHERE account_id=?1 AND radio=?2 AND mcc=?3 AND mnc=?4 AND area=?5 AND cid=?6 AND device IN (?7,'*'))",
+                    params![id, tower.key.radio.to_string(), tower.key.mcc, tower.key.mnc, tower.key.area, tower.key.cid, device],
+                    |row| row.get::<_, bool>(0),
+                )?
+            } else {
+                false
+            };
             if !plausible(tower, policy)
                 || !Self::accepts_movement(&transaction, device, tower, policy)?
+                || blocked
             {
                 rejected += 1;
                 continue;
@@ -477,24 +597,36 @@ impl CellStore {
     pub(crate) fn own_contributions(
         &self,
         account_id: i64,
+        filter: &OwnFilter,
         limit: usize,
         offset: usize,
     ) -> Result<OwnContributionPage> {
         let connection = self.connection()?;
         let pattern = account_device_pattern(account_id);
+        let device = device_filter_pattern(&filter.device);
         let total: i64 = connection.query_row(
-            "SELECT COUNT(*) FROM contributions WHERE device GLOB ?1",
-            [&pattern],
+            "SELECT COUNT(*) FROM contributions WHERE device GLOB ?1 AND device LIKE ?2 ESCAPE '\\'
+             AND (?3 IS NULL OR mcc=?3) AND (?4 IS NULL OR updated_s>=?4) AND (?5 IS NULL OR updated_s<=?5)",
+            params![pattern, device, filter.mcc, filter.from_s, filter.to_s],
             |row| row.get(0),
         )?;
         let mut statement = connection.prepare(
             "SELECT radio,mcc,mnc,area,cid,device,lat,lon,range_m,samples,updated_s
-             FROM contributions WHERE device GLOB ?1
-             ORDER BY updated_s DESC,radio,mcc,mnc,area,cid,device LIMIT ?2 OFFSET ?3",
+             FROM contributions WHERE device GLOB ?1 AND device LIKE ?2 ESCAPE '\\'
+             AND (?3 IS NULL OR mcc=?3) AND (?4 IS NULL OR updated_s>=?4) AND (?5 IS NULL OR updated_s<=?5)
+             ORDER BY updated_s DESC,radio,mcc,mnc,area,cid,device LIMIT ?6 OFFSET ?7",
         )?;
         let rows = statement
             .query_map(
-                params![pattern, i64::try_from(limit)?, i64::try_from(offset)?],
+                params![
+                    pattern,
+                    device,
+                    filter.mcc,
+                    filter.from_s,
+                    filter.to_s,
+                    i64::try_from(limit)?,
+                    i64::try_from(offset)?
+                ],
                 row_to_own_contribution,
             )?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -502,6 +634,64 @@ impl CellStore {
             rows,
             total: usize::try_from(total)?,
         })
+    }
+
+    /// Stream only the account's matching observations into a portable gzip CSV.
+    pub(crate) fn export_own_to_path(
+        &self,
+        account_id: i64,
+        filter: &OwnFilter,
+        path: &Path,
+    ) -> Result<()> {
+        let connection = self.connection()?;
+        let encoder = GzEncoder::new(std::fs::File::create(path)?, Compression::default());
+        let mut writer = csv::Writer::from_writer(encoder);
+        writer.write_record([
+            "radio",
+            "mcc",
+            "mnc",
+            "area",
+            "cid",
+            "device",
+            "lat",
+            "lon",
+            "range_m",
+            "samples",
+            "updated_s",
+        ])?;
+        let mut statement = connection.prepare("SELECT radio,mcc,mnc,area,cid,device,lat,lon,range_m,samples,updated_s
+            FROM contributions WHERE device GLOB ?1 AND device LIKE ?2 ESCAPE '\\'
+            AND (?3 IS NULL OR mcc=?3) AND (?4 IS NULL OR updated_s>=?4) AND (?5 IS NULL OR updated_s<=?5)
+            ORDER BY updated_s DESC,radio,mcc,mnc,area,cid,device")?;
+        let pattern = account_device_pattern(account_id);
+        let mut rows = statement.query(params![
+            pattern,
+            device_filter_pattern(&filter.device),
+            filter.mcc,
+            filter.from_s,
+            filter.to_s
+        ])?;
+        while let Some(row) = rows.next()? {
+            writer.write_record([
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?.to_string(),
+                row.get::<_, i64>(2)?.to_string(),
+                row.get::<_, i64>(3)?.to_string(),
+                row.get::<_, i64>(4)?.to_string(),
+                row.get::<_, String>(5)?,
+                row.get::<_, f64>(6)?.to_string(),
+                row.get::<_, f64>(7)?.to_string(),
+                row.get::<_, f64>(8)?.to_string(),
+                row.get::<_, i64>(9)?.to_string(),
+                row.get::<_, i64>(10)?.to_string(),
+            ])?;
+        }
+        writer.flush()?;
+        writer
+            .into_inner()
+            .map_err(|error| error.into_error())?
+            .finish()?;
+        Ok(())
     }
 
     /// Delete one account-owned device observation and recalculate that cell's consensus.
@@ -530,6 +720,10 @@ impl CellStore {
         if removed == 0 {
             return Ok(None);
         }
+        transaction.execute(
+            "INSERT OR IGNORE INTO account_deleted_keys(account_id,radio,mcc,mnc,area,cid,device) VALUES (?1,?2,?3,?4,?5,?6,?7)",
+            params![account_id, key.radio.to_string(), key.mcc, key.mnc, key.area, key.cid, device],
+        )?;
         let change = update_consensus_after_deletion(&transaction, key, policy)?;
         transaction.commit()?;
         Ok(Some(change))
@@ -552,6 +746,15 @@ impl CellStore {
                 .query_map([&pattern], row_to_key)?
                 .collect::<rusqlite::Result<Vec<_>>>()?
         };
+        transaction.execute(
+            "INSERT OR IGNORE INTO account_deleted_keys(account_id,radio,mcc,mnc,area,cid,device)
+             SELECT DISTINCT ?1,radio,mcc,mnc,area,cid,'*' FROM contributions WHERE device GLOB ?2",
+            params![account_id, pattern],
+        )?;
+        transaction.execute(
+            "UPDATE users SET sharing_enabled=0 WHERE id=?1",
+            [account_id],
+        )?;
         transaction.execute("DELETE FROM contributions WHERE device GLOB ?1", [&pattern])?;
         let changes = keys
             .iter()
@@ -606,6 +809,15 @@ impl CellStore {
 
 fn account_device_pattern(account_id: i64) -> String {
     format!("account:{account_id}:*")
+}
+
+fn device_filter_pattern(value: &str) -> String {
+    let escaped = value
+        .trim()
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
+    format!("%{escaped}%")
 }
 
 fn row_to_key(row: &rusqlite::Row<'_>) -> rusqlite::Result<CellKey> {

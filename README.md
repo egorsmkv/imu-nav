@@ -415,8 +415,12 @@ Create the first admin with `--data cells.sqlite3 --create-admin admin@example.o
 standard input). Put the server behind a TLS reverse proxy for use outside your own network;
 account sign-in in the app requires HTTPS outside local loopback development (including the
 emulator's `10.0.2.2` host alias). Public downloads still work without signing in.
-Browser users can register at `/signup`, sign in at `/login`, and review or delete their own
-uploaded cell observations at `/account`; the panel updates shared consensus after deletion.
+Browser users can register at `/signup`, sign in at `/login`, and manage their uploaded cell
+observations at `/account`. The panel filters and exports the account's observations, supports
+individual or full deletion, pauses uploads, changes credentials, revokes sessions, and closes the
+account. Deleted cell keys cannot be reuploaded by the same account. The server stores cell
+observations only, not trip recordings. Email verification and browser password recovery use the
+configured SMTP server; local deployments without SMTP verify new accounts immediately.
 Administrators sign in through `/login` and are directed to `/admin`. Tower deletion requires
 quarantine first; the panel also supports account suspension and atomic seed imports and policy
 recalculation. The dashboard pages through towers, accounts, audit activity, and observations;
@@ -709,7 +713,8 @@ GraphHopper stack plus
 | Rusqlite + SQLite | 0.40 / bundled | persistent cell server database | MIT / public domain |
 | Argon2, Rand, SHA-2 | 0.5 / 0.9 / 0.10 | password hashes and opaque account tokens | MIT or MIT/Apache 2.0 |
 | rpassword | 7.5 | hidden administrator password prompt on the cell server | Apache 2.0 |
-| Lettre | 0.11 | password-reset email over SMTP | MIT |
+| Lettre | 0.11 | password-reset and email-verification messages over SMTP | MIT |
+| time | 0.3 | UTC timestamps in the cell server account panel | MIT / Apache 2.0 |
 
 The sharing server also uses Serde, CSV, Flate2, Clap and Tracing (MIT or MIT/Apache 2.0).
 The desktop simulation uses Clap, Serde/serde_json, Anyhow, Flate2 and tikv-jemalloc-ctl

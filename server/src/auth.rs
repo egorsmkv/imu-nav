@@ -26,6 +26,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 const ACCESS_LIFETIME: i64 = 15 * 60;
 const REFRESH_LIFETIME: i64 = 30 * 24 * 60 * 60;
 const RESET_LIFETIME: i64 = 30 * 60;
+const VERIFY_LIFETIME: i64 = 24 * 60 * 60;
 
 /// Optional mail delivery for self-service password recovery.
 #[derive(Clone)]
@@ -42,6 +43,8 @@ pub struct Account {
     pub id: i64,
     pub email: String,
     pub admin: bool,
+    pub email_verified: bool,
+    pub sharing_enabled: bool,
 }
 
 #[derive(Serialize)]
@@ -72,6 +75,11 @@ struct EmailBody {
 struct ResetBody {
     token: String,
     password: String,
+}
+
+#[derive(Deserialize)]
+struct VerifyBody {
+    token: String,
 }
 
 #[derive(Serialize)]
@@ -132,6 +140,21 @@ pub(crate) fn router() -> Router<AppState> {
         .route("/v1/auth/password-reset/request", post(request_reset))
         .route("/v1/auth/password-reset/confirm", post(confirm_reset))
         .route("/reset-password", get(reset_page))
+        .route("/v1/auth/email/confirm", post(confirm_email))
+        .route("/verify-email", get(verify_page))
+}
+
+async fn verify_page() -> Response {
+    let page = r#"<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Verify IMU Nav email</title><body><h1>Verify email</h1><p id="result" role="status">Checking your link…</p><p><a href="/login">Sign in</a></p><script>const token=new URLSearchParams(location.hash.slice(1)).get('token');history.replaceState(null,'','/verify-email');if(token){fetch('/v1/auth/email/confirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token})}).then(response=>{document.getElementById('result').textContent=response.ok?'Email verified. You can return to the app or sign in.':'Link expired or invalid. Request another link from your account panel.'}).catch(()=>{document.getElementById('result').textContent='Could not contact the server. Please try again.'})}else{document.getElementById('result').textContent='Missing verification token.'}</script></body></html>"#;
+    let mut response = Html(page).into_response();
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, "no-store".parse().expect("header"));
+    response
+        .headers_mut()
+        .insert("referrer-policy", "no-referrer".parse().expect("header"));
+    response.headers_mut().insert(header::CONTENT_SECURITY_POLICY, "default-src 'none'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; base-uri 'none'".parse().expect("header"));
+    response
 }
 
 async fn reset_page() -> Response {
@@ -269,9 +292,9 @@ pub(crate) fn account_for_token(
 ) -> anyhow::Result<Option<(Account, String)>> {
     let connection = store.connection()?;
     connection.query_row(
-        "SELECT users.id,users.email,users.admin,auth_tokens.session_id FROM auth_tokens JOIN users ON users.id=auth_tokens.user_id WHERE token_hash=?1 AND kind=?2 AND expires_s>?3 AND users.suspended=0",
+        "SELECT users.id,users.email,users.admin,auth_tokens.session_id,users.email_verified,users.sharing_enabled FROM auth_tokens JOIN users ON users.id=auth_tokens.user_id WHERE token_hash=?1 AND kind=?2 AND expires_s>?3 AND users.suspended=0",
         params![digest(raw), kind, now_s()],
-        |row| Ok((Account { id: row.get(0)?, email: row.get(1)?, admin: row.get(2)? }, row.get(3)?)),
+        |row| Ok((Account { id: row.get(0)?, email: row.get(1)?, admin: row.get(2)?, email_verified: row.get(4)?, sharing_enabled: row.get(5)? }, row.get(3)?)),
     ).optional().map_err(Into::into)
 }
 
@@ -341,7 +364,7 @@ pub(crate) fn login_account(
     let connection = store.connection()?;
     let result: Option<(Account, String)> = connection
         .query_row(
-            "SELECT id,email,admin,password_hash FROM users WHERE email=?1 AND suspended=0",
+            "SELECT id,email,admin,password_hash,email_verified,sharing_enabled FROM users WHERE email=?1 AND suspended=0",
             [email.trim().to_ascii_lowercase()],
             |row| {
                 Ok((
@@ -349,6 +372,8 @@ pub(crate) fn login_account(
                         id: row.get(0)?,
                         email: row.get(1)?,
                         admin: row.get(2)?,
+                        email_verified: row.get(4)?,
+                        sharing_enabled: row.get(5)?,
                     },
                     row.get(3)?,
                 ))
@@ -359,22 +384,181 @@ pub(crate) fn login_account(
 }
 
 /// Create an account once, returning none when its normalized email already exists.
+#[cfg(test)]
 pub(crate) fn register_account(
     store: &CellStore,
     email: &str,
     password: &str,
 ) -> anyhow::Result<Option<Account>> {
+    register_account_with_verification(store, email, password, true)
+}
+
+pub(crate) fn register_account_with_verification(
+    store: &CellStore,
+    email: &str,
+    password: &str,
+    verified: bool,
+) -> anyhow::Result<Option<Account>> {
     let hash = hash_password(password)?;
     let connection = store.connection()?;
     let count = connection.execute(
-        "INSERT OR IGNORE INTO users(email,password_hash,admin) VALUES (?1,?2,0)",
-        params![email, hash],
+        "INSERT OR IGNORE INTO users(email,password_hash,admin,email_verified) VALUES (?1,?2,0,?3)",
+        params![email, hash, verified],
     )?;
     Ok((count > 0).then(|| Account {
         id: connection.last_insert_rowid(),
         email: email.to_owned(),
         admin: false,
+        email_verified: verified,
+        sharing_enabled: true,
     }))
+}
+
+pub(crate) fn verify_account_password(
+    store: &CellStore,
+    account_id: i64,
+    password: &str,
+) -> anyhow::Result<bool> {
+    let hash: Option<String> = store
+        .connection()?
+        .query_row(
+            "SELECT password_hash FROM users WHERE id=?1 AND suspended=0",
+            [account_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(hash.is_some_and(|hash| verify_password(password, &hash)))
+}
+
+pub(crate) fn change_account_password(
+    store: &CellStore,
+    account_id: i64,
+    current: &str,
+    replacement: &str,
+    keep_token: &str,
+) -> anyhow::Result<bool> {
+    let mut connection = store.connection()?;
+    let transaction = connection.transaction()?;
+    let hash: Option<String> = transaction
+        .query_row(
+            "SELECT password_hash FROM users WHERE id=?1",
+            [account_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if !hash.is_some_and(|hash| verify_password(current, &hash)) {
+        return Ok(false);
+    }
+    let new_hash = hash_password(replacement)?;
+    transaction.execute(
+        "UPDATE users SET password_hash=?1 WHERE id=?2",
+        params![new_hash, account_id],
+    )?;
+    transaction.execute(
+        "DELETE FROM auth_tokens WHERE user_id=?1 AND token_hash<>?2",
+        params![account_id, digest(keep_token)],
+    )?;
+    transaction.execute("DELETE FROM password_resets WHERE user_id=?1", [account_id])?;
+    transaction.commit()?;
+    Ok(true)
+}
+
+pub(crate) fn create_email_verification(
+    store: &CellStore,
+    account_id: i64,
+    email: &str,
+) -> anyhow::Result<Option<String>> {
+    let mut connection = store.connection()?;
+    let transaction = connection.transaction()?;
+    let existing: bool = transaction.query_row(
+        "SELECT EXISTS(SELECT 1 FROM users WHERE email=?1 AND id<>?2)",
+        params![email, account_id],
+        |row| row.get(0),
+    )?;
+    if existing {
+        return Ok(None);
+    }
+    transaction.execute(
+        "DELETE FROM email_verifications WHERE user_id=?1",
+        [account_id],
+    )?;
+    let raw = token();
+    transaction.execute(
+        "INSERT INTO email_verifications(token_hash,user_id,email,expires_s) VALUES (?1,?2,?3,?4)",
+        params![digest(&raw), account_id, email, now_s() + VERIFY_LIFETIME],
+    )?;
+    transaction.commit()?;
+    Ok(Some(raw))
+}
+
+pub(crate) fn send_verification_mail(
+    mail: &MailConfig,
+    recipient: &str,
+    raw: &str,
+) -> anyhow::Result<()> {
+    let url = format!(
+        "{}/verify-email#token={raw}",
+        mail.public_url.trim_end_matches('/')
+    );
+    let message = Message::builder()
+        .from(mail.smtp_from.parse()?)
+        .to(recipient.parse()?)
+        .subject("Verify your IMU Nav email")
+        .body(format!(
+            "Open this link within 24 hours to verify your IMU Nav email:\n{url}\n"
+        ))?;
+    SmtpTransport::relay(&mail.smtp_host)?
+        .credentials(Credentials::new(
+            mail.smtp_username.clone(),
+            mail.smtp_password.clone(),
+        ))
+        .build()
+        .send(&message)?;
+    Ok(())
+}
+
+async fn confirm_email(
+    State(state): State<AppState>,
+    Json(body): Json<VerifyBody>,
+) -> Result<Json<OkResponse>, ApiError> {
+    let store = state.store.clone();
+    let verified = run_db(move || {
+        let mut connection = store.connection()?;
+        let transaction = connection.transaction()?;
+        let target: Option<(i64, String)> = transaction.query_row(
+            "SELECT user_id,email FROM email_verifications WHERE token_hash=?1 AND expires_s>?2",
+            params![digest(&body.token), now_s()], |row| Ok((row.get(0)?, row.get(1)?)),
+        ).optional()?;
+        let Some((user_id, email)) = target else {
+            return Ok(false);
+        };
+        let current: String =
+            transaction.query_row("SELECT email FROM users WHERE id=?1", [user_id], |row| {
+                row.get(0)
+            })?;
+        if current != email {
+            let changed = transaction.execute(
+                "UPDATE OR IGNORE users SET email=?1,email_verified=1 WHERE id=?2",
+                params![email, user_id],
+            )?;
+            if changed == 0 {
+                return Ok(false);
+            }
+            transaction.execute("DELETE FROM auth_tokens WHERE user_id=?1", [user_id])?;
+        } else {
+            transaction.execute("UPDATE users SET email_verified=1 WHERE id=?1", [user_id])?;
+        }
+        transaction.execute(
+            "DELETE FROM email_verifications WHERE user_id=?1",
+            [user_id],
+        )?;
+        transaction.commit()?;
+        Ok(true)
+    })
+    .await?;
+    verified
+        .then_some(Json(OkResponse { status: "ok" }))
+        .ok_or(ApiError(StatusCode::BAD_REQUEST, "INVALID_VERIFICATION"))
 }
 
 async fn register(
@@ -387,15 +571,33 @@ async fn register(
     validate_password(&body.password)?;
     rate_limit(&state, "register", peer, &headers, &email)?;
     let store = state.store.clone();
+    let mail = state.config.mail.clone();
     let result = run_db(move || {
-        register_account(&store, &email, &body.password)?
-            .map(|account| issue_session(&store, account, None))
-            .transpose()
+        let Some(account) =
+            register_account_with_verification(&store, &email, &body.password, mail.is_none())?
+        else {
+            return Ok(None);
+        };
+        let verification = if mail.is_some() {
+            create_email_verification(&store, account.id, &account.email)?
+        } else {
+            None
+        };
+        Ok(Some((issue_session(&store, account, None)?, verification)))
     })
     .await?;
-    result
-        .map(Json)
-        .ok_or(ApiError(StatusCode::CONFLICT, "EMAIL_EXISTS"))
+    let Some((session, verification)) = result else {
+        return Err(ApiError(StatusCode::CONFLICT, "EMAIL_EXISTS"));
+    };
+    if let (Some(raw), Some(mail)) = (verification, state.config.mail.clone()) {
+        let email = session.account.email.clone();
+        if let Err(error) =
+            tokio::task::spawn_blocking(move || send_verification_mail(&mail, &email, &raw)).await?
+        {
+            tracing::error!(%error, "verification email failed");
+        }
+    }
+    Ok(Json(session))
 }
 
 async fn login(
@@ -500,8 +702,18 @@ async fn request_reset(
     headers: HeaderMap,
     Json(body): Json<EmailBody>,
 ) -> Result<Json<OkResponse>, ApiError> {
-    let email = normalize_email(&body.email)?;
-    rate_limit(&state, "reset", peer, &headers, &email)?;
+    request_password_reset(&state, peer, &headers, &body.email).await?;
+    Ok(Json(OkResponse { status: "ok" }))
+}
+
+pub(crate) async fn request_password_reset(
+    state: &AppState,
+    peer: SocketAddr,
+    headers: &HeaderMap,
+    raw_email: &str,
+) -> Result<(), ApiError> {
+    let email = normalize_email(raw_email)?;
+    rate_limit(state, "reset", peer, headers, &email)?;
     let Some(mail) = state.config.mail.clone() else {
         return Err(ApiError(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -531,7 +743,7 @@ async fn request_reset(
     if let Some((recipient, raw)) = reset {
         tokio::task::spawn_blocking(move || send_reset_mail(&mail, &recipient, &raw)).await??;
     }
-    Ok(Json(OkResponse { status: "ok" }))
+    Ok(())
 }
 
 fn send_reset_mail(mail: &MailConfig, recipient: &str, raw: &str) -> anyhow::Result<()> {
@@ -720,6 +932,95 @@ mod tests {
             .unwrap()
             .1,
             "INVALID_RESET_TOKEN"
+        );
+    }
+
+    #[tokio::test]
+    async fn verification_is_one_use_and_email_change_revokes_sessions() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let store = CellStore::open(file.path()).unwrap();
+        let account = register_account_with_verification(
+            &store,
+            "first@example.org",
+            "long safe password",
+            false,
+        )
+        .unwrap()
+        .unwrap();
+        let state = AppState::new(
+            store.clone(),
+            crate::ServerConfig {
+                mail: None,
+                policy: Policy::default(),
+                trust_proxy: false,
+            },
+        )
+        .unwrap();
+        let signup_token = create_email_verification(&store, account.id, &account.email)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            store.account_sharing_status(account.id).unwrap(),
+            (true, false)
+        );
+        let _ = confirm_email(
+            State(state.clone()),
+            Json(VerifyBody {
+                token: signup_token.clone(),
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            store.account_sharing_status(account.id).unwrap(),
+            (true, true)
+        );
+        assert_eq!(
+            confirm_email(
+                State(state.clone()),
+                Json(VerifyBody {
+                    token: signup_token
+                })
+            )
+            .await
+            .err()
+            .unwrap()
+            .1,
+            "INVALID_VERIFICATION"
+        );
+        let old_session = issue_session(
+            &store,
+            login_account(&store, &account.email, "long safe password")
+                .unwrap()
+                .unwrap(),
+            None,
+        )
+        .unwrap();
+        let new_email_token = create_email_verification(&store, account.id, "second@example.org")
+            .unwrap()
+            .unwrap();
+        let _ = confirm_email(
+            State(state),
+            Json(VerifyBody {
+                token: new_email_token,
+            }),
+        )
+        .await
+        .unwrap();
+        assert!(
+            account_for_token(&store, &old_session.access_token, "access")
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            login_account(&store, "first@example.org", "long safe password")
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            login_account(&store, "second@example.org", "long safe password")
+                .unwrap()
+                .is_some()
         );
     }
 }

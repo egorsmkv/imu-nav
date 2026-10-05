@@ -184,7 +184,7 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
         }
         prefs.edit { putLong("last_upload_ms", 0) }
         refresh()
-        str(R.string.auth_signed_in)
+        if (auth.emailVerified) str(R.string.auth_signed_in) else str(R.string.auth_verify_email)
     }
 
     /** Ask the server to send a one-use recovery link. */
@@ -396,7 +396,12 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
         runTask(str(R.string.task_syncing)) {
             val started = System.currentTimeMillis()
             val (uploaded, downloaded) = transfers.sync(url, deviceId(), mccSet(), started)
-            val msg = str(R.string.task_sync_done, uploaded, downloaded)
+            val msg = when {
+                auth.email == null -> str(R.string.task_sync_download_only, downloaded)
+                !auth.emailVerified -> str(R.string.task_sync_unverified, downloaded)
+                !auth.sharingEnabled -> str(R.string.task_sync_paused, downloaded)
+                else -> str(R.string.task_sync_done, uploaded, downloaded)
+            }
             prefs.edit {
                 putLong("last_sync_ms", started)
                 putString("last_sync_msg", "$msg (${DateFormat.getDateTimeInstance().format(Date(started))})")

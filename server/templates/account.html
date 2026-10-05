@@ -2,26 +2,32 @@
 <html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>My observations · IMU Nav</title>
+<title>My account · IMU Nav</title>
 <style>
   :root { font-family: system-ui, sans-serif; color: #172033; background: #f4f6fa; }
   body { margin: 0; }
   header { background: #172033; color: white; padding: 1rem max(1rem, calc((100vw - 76rem)/2)); display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
-  header strong { font-size: 1.2rem; }
   header span { color: #dbe5f7; }
   main { max-width: 76rem; margin: 2rem auto; padding: 0 1rem; }
   .card { background: white; border: 1px solid #dce2ec; border-radius: .8rem; padding: 1.25rem; margin-bottom: 1rem; }
-  h1 { margin: 0 0 .5rem; }
+  h1, h2 { margin-top: 0; }
   p { line-height: 1.5; color: #536176; }
+  label { display: block; margin: .6rem 0 .3rem; }
+  input { box-sizing: border-box; max-width: 100%; padding: .5rem; border: 1px solid #aeb9ca; border-radius: .4rem; font: inherit; }
+  input[type=text], input[type=email], input[type=password], input[type=number] { width: min(100%, 22rem); }
+  button, .button { display: inline-block; padding: .55rem .75rem; border: 1px solid #174ea6; border-radius: .45rem; background: white; color: #174ea6; font: inherit; cursor: pointer; text-decoration: none; }
+  .danger { color: #a22521; border-color: #a22521; }
+  .quiet { color: white; border-color: #8397b8; background: transparent; }
+  .actions, .filters { display: flex; flex-wrap: wrap; gap: .75rem; align-items: end; }
+  .notice { color: #075c30; background: #e5f7ed; border: 1px solid #8acaac; padding: .75rem; border-radius: .45rem; }
+  .warning { color: #7b2c09; background: #fff4e4; padding: .75rem; border-radius: .45rem; }
   .table-wrap { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; text-align: left; }
   th, td { padding: .65rem; border-bottom: 1px solid #e5e9f0; white-space: nowrap; }
   th { color: #536176; font-size: .85rem; }
-  button { padding: .5rem .7rem; border: 1px solid #bf3f3a; border-radius: .45rem; background: white; color: #a22521; font: inherit; cursor: pointer; }
-  .danger { background: #a22521; color: white; }
-  .quiet { color: #dbe5f7; border-color: #8397b8; background: transparent; }
-  .actions { display: flex; justify-content: space-between; gap: 1rem; align-items: center; flex-wrap: wrap; }
-  nav { display: flex; gap: 1rem; margin: 1rem 0; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: 1rem; }
+  .grid .card { margin: 0; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin: .6rem 0; }
   footer { margin: 2rem 0; font-size: .9rem; }
 </style>
 <header>
@@ -29,52 +35,70 @@
   <form action="/account/logout" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="quiet" type="submit">Sign out</button></form>
 </header>
 <main>
+  {% if !message.is_empty() %}<p class="notice" role="status">{{ message }}</p>{% endif %}
   <section class="card">
-    <h1>My recorded observations</h1>
-    <p>{{ total }} contributions from devices linked to this account. Deleting a contribution updates the shared tower estimate; other accounts' observations remain.</p>
-    {% if total > 0 %}
-    <div class="actions">
-      <span>Page {{ page + 1 }}</span>
-      <form action="/account/contributions/delete-all" method="post">
-        <input type="hidden" name="csrf" value="{{ csrf }}">
-        <button class="danger" type="submit">Delete all my contributions</button>
-      </form>
-    </div>
+    <h1>My cell observations</h1>
+    <p>Only observations uploaded by your devices appear here. The server does not store trip recordings.</p>
+    {% if !email_verified %}
+    <p class="warning">Verify your email to enable uploads and sharing. Check your inbox for a link. If it did not arrive, resend it below.</p>
+    <form action="/account/email/resend" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Resend verification email</button></form>
+    {% endif %}
+    <p>Sharing is {% if !email_verified %}<strong>waiting for email verification</strong>{% else %}{% if sharing_enabled %}<strong>active</strong>{% else %}<strong>paused</strong>{% endif %}{% endif %}.</p>
+    {% if sharing_enabled %}
+    <form action="/account/sharing/pause" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Pause uploads</button></form>
+    {% else %}
+    <form action="/account/sharing/resume" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><label for="resume-password">Password to resume sharing</label><input id="resume-password" name="password" type="password" autocomplete="current-password" required><button type="submit">Resume uploads</button></form>
     {% endif %}
   </section>
+  <section class="card">
+    <h2>Find and export observations</h2>
+    <form action="/account" method="get" class="filters">
+      <div><label for="device">Device ID contains</label><input id="device" name="device" type="text" maxlength="100" value="{{ filter_device }}"></div>
+      <div><label for="mcc">Mobile country code</label><input id="mcc" name="mcc" type="number" min="1" max="999" value="{{ filter_mcc }}"></div>
+      <div><label for="from-s">Updated after (Unix seconds)</label><input id="from-s" name="from_s" type="number" min="0" value="{{ filter_from }}"></div>
+      <div><label for="to-s">Updated before (Unix seconds)</label><input id="to-s" name="to_s" type="number" min="0" value="{{ filter_to }}"></div>
+      <button type="submit">Apply filters</button><a class="button" href="/account">Clear</a>
+    </form>
+    <form action="/account/export" method="get" class="row">
+      <input type="hidden" name="device" value="{{ filter_device }}"><input type="hidden" name="mcc" value="{{ filter_mcc }}"><input type="hidden" name="from_s" value="{{ filter_from }}"><input type="hidden" name="to_s" value="{{ filter_to }}">
+      <button type="submit">Download filtered CSV.gz</button><span>{{ total }} matching observations</span>
+    </form>
+  </section>
   <section class="card table-wrap">
-    {% if rows.is_empty() %}
-    {% if total == 0 %}<p>No observations have been uploaded by this account.</p>{% else %}<p>No observations on this page. Use the previous page link.</p>{% endif %}
-    {% else %}
+    {% if rows.is_empty() %}<p>No observations match this page and filter.</p>{% else %}
     <table>
-      <thead><tr><th>Radio</th><th>MCC</th><th>MNC</th><th>Area</th><th>Cell ID</th><th>Device</th><th>Latitude</th><th>Longitude</th><th>Range (m)</th><th>Samples</th><th>Updated (Unix seconds)</th><th></th></tr></thead>
+      <thead><tr><th>Radio</th><th>MCC</th><th>MNC</th><th>Area</th><th>Cell ID</th><th>Device</th><th>Latitude</th><th>Longitude</th><th>Range (m)</th><th>Samples</th><th>Updated (UTC)</th><th></th></tr></thead>
       <tbody>
-      {% for row in rows %}
-      <tr>
-        <td>{{ row.radio }}</td><td>{{ row.mcc }}</td><td>{{ row.mnc }}</td><td>{{ row.area }}</td><td>{{ row.cid }}</td>
-        <td>{{ row.device }}</td><td>{{ row.lat }}</td><td>{{ row.lon }}</td><td>{{ row.range_m }}</td><td>{{ row.samples }}</td><td>{{ row.updated_s }}</td>
-        <td>
-          <form action="/account/contributions/delete" method="post">
-            <input type="hidden" name="csrf" value="{{ csrf }}">
-            <input type="hidden" name="radio" value="{{ row.radio }}">
-            <input type="hidden" name="mcc" value="{{ row.mcc }}">
-            <input type="hidden" name="mnc" value="{{ row.mnc }}">
-            <input type="hidden" name="area" value="{{ row.area }}">
-            <input type="hidden" name="cid" value="{{ row.cid }}">
-            <input type="hidden" name="device" value="{{ row.device }}">
-            <button type="submit" aria-label="Delete observation for cell {{ row.cid }}">Delete</button>
-          </form>
-        </td>
-      </tr>
-      {% endfor %}
+      {% for row in rows %}<tr>
+        <td>{{ row.radio }}</td><td>{{ row.mcc }}</td><td>{{ row.mnc }}</td><td>{{ row.area }}</td><td>{{ row.cid }}</td><td title="{{ row.device }}">{{ row.device_label }}</td><td>{{ row.lat }}</td><td>{{ row.lon }}</td><td>{{ row.range_m }}</td><td>{{ row.samples }}</td><td>{{ row.updated_text }}</td>
+        <td><form action="/account/contributions/delete" method="post">
+          <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="radio" value="{{ row.radio }}"><input type="hidden" name="mcc" value="{{ row.mcc }}"><input type="hidden" name="mnc" value="{{ row.mnc }}"><input type="hidden" name="area" value="{{ row.area }}"><input type="hidden" name="cid" value="{{ row.cid }}"><input type="hidden" name="device" value="{{ row.device }}">
+          <button class="danger" type="submit" aria-label="Delete observation for cell {{ row.cid }}">Delete</button>
+        </form></td>
+      </tr>{% endfor %}
       </tbody>
     </table>
     {% endif %}
+    <div class="actions">
+      {% if has_previous %}<form action="/account" method="get"><input type="hidden" name="page" value="{{ previous_page }}"><input type="hidden" name="device" value="{{ filter_device }}"><input type="hidden" name="mcc" value="{{ filter_mcc }}"><input type="hidden" name="from_s" value="{{ filter_from }}"><input type="hidden" name="to_s" value="{{ filter_to }}"><button type="submit">Previous page</button></form>{% endif %}
+      <span>Page {{ page + 1 }}</span>
+      {% if has_next %}<form action="/account" method="get"><input type="hidden" name="page" value="{{ next_page }}"><input type="hidden" name="device" value="{{ filter_device }}"><input type="hidden" name="mcc" value="{{ filter_mcc }}"><input type="hidden" name="from_s" value="{{ filter_from }}"><input type="hidden" name="to_s" value="{{ filter_to }}"><button type="submit">Next page</button></form>{% endif %}
+    </div>
   </section>
-  <nav aria-label="Pages">
-    {% if has_previous %}<a href="/account?page={{ previous_page }}">Previous page</a>{% endif %}
-    {% if has_next %}<a href="/account?page={{ next_page }}">Next page</a>{% endif %}
-  </nav>
+  <section class="card">
+    <h2>Delete all my observations</h2>
+    <p>This removes all of your currently stored cell observations, updates shared tower estimates, and pauses uploads. Previously deleted tower keys remain blocked from future uploads by this account.</p>
+    <form action="/account/contributions/delete-all" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><label for="delete-confirm">Type DELETE to confirm</label><input id="delete-confirm" name="confirm" type="text" required pattern="DELETE" autocomplete="off"><button class="danger" type="submit">Delete all observations</button></form>
+  </section>
+  <div class="grid">
+    <section class="card"><h2>Change password</h2><form action="/account/password" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><label for="current-password">Current password</label><input id="current-password" name="current_password" type="password" autocomplete="current-password" required><label for="new-password">New password (12–256 characters)</label><input id="new-password" name="new_password" type="password" autocomplete="new-password" minlength="12" maxlength="256" required><p><button type="submit">Change password</button></p></form></section>
+    <section class="card"><h2>Change email</h2><p>We send a confirmation link to your new address. You remain signed in until confirmation.</p><form action="/account/email" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><label for="new-email">New email</label><input id="new-email" name="email" type="email" autocomplete="email" required maxlength="254"><label for="email-password">Current password</label><input id="email-password" name="password" type="password" autocomplete="current-password" required><p><button type="submit">Send confirmation link</button></p></form></section>
+  </div>
+  <section class="card"><h2>Signed-in sessions</h2><p>Sign out devices you no longer use. This browser is marked as current.</p>
+    {% for session in sessions %}<div class="row"><span>{{ session.label }} · expires {{ session.expires }}{% if session.current %} · current browser{% endif %}</span>{% if !session.current %}<form action="/account/sessions/revoke" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="session_id" value="{{ session.id }}"><button type="submit">Sign out</button></form>{% endif %}</div>{% endfor %}
+    <form action="/account/sessions/revoke-others" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Sign out all other sessions</button></form>
+  </section>
+  <section class="card"><h2>Close account</h2><p>Closing your account deletes your cell observations and sessions. This cannot be undone.</p><form action="/account/close" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><label for="close-password">Current password</label><input id="close-password" name="password" type="password" autocomplete="current-password" required><label for="close-confirm">Type DELETE ACCOUNT to confirm</label><input id="close-confirm" name="confirm" type="text" required pattern="DELETE ACCOUNT" autocomplete="off"><p><button class="danger" type="submit">Close my account</button></p></form></section>
   <footer><p>IMU Nav is a research prototype, not a safety system.</p></footer>
 </main>
 </html>

@@ -218,6 +218,7 @@
     <string name="auth_sign_out">Вийти</string>
     <string name="auth_account">Ви увійшли як %1$s</string>
     <string name="auth_signed_in">Вхід виконано</string>
+    <string name="auth_verify_email">Вхід виконано. Підтвердьте адресу пошти перед надсиланням вишок.</string>
     <string name="auth_signed_out">Вихід виконано</string>
     <string name="auth_reset_sent">Якщо обліковий запис існує, посилання для скидання надіслано</string>
     <string name="auth_invalid_input">Перевірте адресу пошти й використайте пароль щонайменше з 12 символів</string>
@@ -308,6 +309,9 @@
     <string name="task_uploading">Надсилаємо вишки: %1$d…</string>
     <string name="task_downloading_shared">Завантажуємо спільні вишки…</string>
     <string name="task_sync_done">Синхронізація: вишок надіслано %1$d, отримано %2$d</string>
+    <string name="task_sync_unverified">Потрібно підтвердити пошту; отримано %1$d вишок без надсилання</string>
+    <string name="task_sync_paused">Обмін призупинено в кабінеті; отримано %1$d вишок без надсилання</string>
+    <string name="task_sync_download_only">Отримано %1$d вишок; увійдіть, щоб надіслати власні</string>
     <string name="task_sync_no_url">Спершу вкажіть адресу сервера</string>
     <string name="task_exporting">Експорт… вишок: %1$d</string>
     <string name="task_exported">Експортовано вишок: %1$d (%2$d КБ)</string>

@@ -35,14 +35,19 @@ only be enabled when direct access to the server port is blocked.
 
 ## Browser account pages
 
-Open `/signup` to create an account or `/login` to sign in. The `/account` panel lists the
-observations uploaded by that account's devices, 100 per page, with controls to delete one
-observation or all of the account's observations. Other accounts' and seed observations are not
-shown or removed. Each deletion recalculates the affected tower consensus and updates management
-WebSocket subscribers. Sign out on the panel revokes the browser session.
+Open `/signup` to create an account or `/login` to sign in. `/forgot-password` requests a reset
+email when SMTP is configured. The `/account` panel filters the account's cell observations by
+device, MCC, and update time; pages through 100 results at a time; and downloads matching rows as
+gzip CSV. It can delete individual observations or all observations, pause and resume uploads,
+change password or email, revoke other sessions, and close the account. The server does not store
+trip recordings. Other accounts' and seed observations are never included in account exports or
+deletions. Deletion recalculates shared consensus and updates management WebSocket subscribers.
+Deleted cell keys remain blocked for that account so a phone with an old local copy cannot
+silently reupload them. Deleting all also pauses uploads; resuming needs the account password.
 
-Browser sessions use a seven-day, HttpOnly, SameSite=Strict cookie. Delete and sign-out forms
-require a session-specific form token. The Android JSON token endpoints remain separate. Serve
+Browser sessions use a seven-day, HttpOnly, SameSite=Strict cookie. Account forms require a
+session-specific form token; destructive actions require typed confirmation. The Android JSON
+token endpoints remain separate. Serve
 the browser pages through HTTPS before entering real credentials; the direct HTTP listener is
 intended for local development or a trusted reverse proxy.
 
@@ -111,8 +116,12 @@ Password recovery needs all five environment variables: `CELLS_PUBLIC_URL` (an H
 `CELLS_SMTP_HOST`, `CELLS_SMTP_USERNAME`, `CELLS_SMTP_PASSWORD`, and `CELLS_SMTP_FROM`. The app
 calls `POST /v1/auth/password-reset/request` with an email. The one-use email link opens a
 server-hosted form and expires after 30 minutes. A successful reset revokes every session for
-that account. Registration does not verify email ownership. If SMTP is unconfigured, recovery
-requests return `503 MAIL_UNAVAILABLE`.
+that account. With SMTP configured, new accounts must confirm a one-use link within 24 hours
+before uploading cell observations; the account panel can resend it. Email changes also require
+confirmation at the new address and revoke all sessions on completion. Without SMTP, registration
+remains immediately verified for local deployments, while recovery and email changes are unavailable
+(`503 MAIL_UNAVAILABLE` for recovery). The account JSON includes `email_verified` and
+`sharing_enabled`, and uploads return 403 while either condition blocks sharing.
 
 ## Seed import and checks
 

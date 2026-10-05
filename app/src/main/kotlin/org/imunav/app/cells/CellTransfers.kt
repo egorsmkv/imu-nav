@@ -11,6 +11,7 @@ import org.imunav.core.cells.CellKey
 import org.imunav.core.cells.CellSyncClient
 import org.imunav.core.cells.CellTower
 import org.imunav.core.cells.ResumableHttpInputStream
+import org.imunav.core.net.HttpException
 import java.io.File
 import java.io.InputStream
 import java.security.MessageDigest
@@ -108,12 +109,32 @@ internal class CellTransfers(
 
     /** Upload learned towers and then import the shared snapshot into its own source. */
     suspend fun sync(url: String, deviceId: String, mccs: Set<Int>, startedMs: Long): Pair<Int, Int> = withContext(Dispatchers.IO) {
-        val accessToken = if (auth.email != null) auth.accessToken(url) else null
+        val accessToken = if (auth.email != null) {
+            try {
+                auth.accessToken(url)
+            } catch (error: HttpException) {
+                if (error.code != 401) throw error
+                null
+            }
+        } else {
+            null
+        }
         val client = CellSyncClient(url, accessToken, deviceId)
         val pending = db.learnedSince(prefs.getLong("last_upload_ms", 0))
-        val uploaded = if (accessToken != null) {
+        val uploaded = if (accessToken != null && auth.emailVerified && auth.sharingEnabled) {
             progress(context.getString(R.string.task_uploading, pending.size))
-            client.upload(pending).also { prefs.edit { putLong("last_upload_ms", startedMs) } }
+            try {
+                client.upload(pending).also { prefs.edit { putLong("last_upload_ms", startedMs) } }
+            } catch (error: HttpException) {
+                if (error.code == 401) {
+                    auth.clear()
+                    0
+                } else {
+                    if (error.code != 403 || !(error.bodyStart.contains("SHARING_DISABLED") || error.bodyStart.contains("EMAIL_UNVERIFIED"))) throw error
+                    auth.markUploadBlocked(error.bodyStart)
+                    0
+                }
+            }
         } else {
             0
         }
