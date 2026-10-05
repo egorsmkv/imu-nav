@@ -146,11 +146,11 @@
     <string name="settings_expand_section">Expand section</string>
     <string name="settings_collapse_section">Collapse section</string>
     <string name="sec_navigation_method">Navigation without GPS</string>
-    <string name="navigation_method_title">Fallback method</string>
-    <string name="navigation_estimator_title">Navigation estimator</string>
-    <string name="navigation_estimator_kotlin">Kotlin (default)</string>
-    <string name="navigation_estimator_native">Native Kalman (experimental)</string>
-    <string name="navigation_estimator_summary">Choose before starting a trip. Native Kalman drives position, speed and guidance for driving and walking. Walking uses GPS and steps × learned stride; without steps it uses fresh motion evidence, otherwise holds without fresh GPS. OBD and cell/turn corrections are car-only. It replaces the fallback method and terrain snaps. Accuracy improvement is not guaranteed; this is a research prototype, not a safety system.</string>
+    <string name="navigation_method_title">Classic fallback method</string>
+    <string name="navigation_estimator_title">Position estimator</string>
+    <string name="navigation_estimator_kotlin">Classic navigation</string>
+    <string name="navigation_estimator_native">Kalman filter (default)</string>
+    <string name="navigation_estimator_summary">Choose before starting a trip. The Kalman filter estimates position and speed for driving and walking. Walking uses GPS and steps × learned stride; without steps it uses fresh motion evidence, otherwise holds without fresh GPS. OBD and cell/turn corrections are car-only. Classic navigation uses the fallback method below and terrain snaps. Accuracy improvement is not guaranteed; this is a research prototype, not a safety system.</string>
     <string name="navigation_estimator_locked">Stop navigation to change the estimator.</string>
     <string name="inertial_experiment_title">Inertial ESKF shadow (experimental)</string>
     <string name="inertial_experiment_summary">Mounted-phone driving only. Records raw sensors and runs a separate inertial filter for replay comparison. Does not change navigation or support walking. Requires trusted GPS and orientation to start; uses more battery and storage. Accuracy is unproven. Research prototype, not a safety system. Change between trips.</string>
@@ -159,7 +159,8 @@
     <string name="navigation_method_hybrid">Hybrid</string>
     <string name="navigation_method_dr_summary">Uses speed, motion sensors and route knowledge. Cell fixes do not correct the position.</string>
     <string name="navigation_method_cells_summary">Uses coarse cell-tower positions projected onto the route and holds between scans.</string>
-    <string name="navigation_method_hybrid_summary">Combines continuous dead reckoning with cell and network corrections. Recommended.</string>
+    <string name="navigation_method_hybrid_summary">Combines continuous dead reckoning with cell and network corrections.</string>
+    <string name="navigation_method_classic_only">Available only with Classic navigation.</string>
     <string name="voice_title">Spoken directions</string>
     <string name="voice_summary">Speak turns, GPS status and route changes during navigation.</string>
     <string name="haptics_title">Haptic feedback</string>

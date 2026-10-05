@@ -118,6 +118,7 @@ internal fun EverydaySettings(app: AppGraph, ui: UiState, context: Context, save
                             },
                         ),
                     )
+                    if (selectedEstimator == NavigationEstimator.NATIVE_KALMAN) Text(stringResource(R.string.navigation_method_classic_only))
                 }
             },
         )

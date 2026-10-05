@@ -59,8 +59,9 @@
   After a false stop, returning GOOD GPS or OBD speed can also be checked against the saved cruising
   speed, so valid highway-speed readings are not locked out by the near-zero stop model. Both models
   retain innovation gates; recovering speed does not erase accumulated position error.
-  **Settings → Everyday settings → Navigation without GPS → Navigation estimator** now offers
-  **Kotlin (default)** and **Native Kalman (experimental)**. Select before starting navigation;
+  **Settings → Everyday settings → Navigation without GPS → Position estimator** offers
+  **Classic navigation** and **Kalman filter (default)**. Kalman is selected when no estimator
+  preference has been saved; an existing explicit choice is preserved. Select before starting navigation;
   changes are locked during a trip. Native mode owns position, speed, uncertainty and the
   state used by guidance for both driving and walking. Walking uses step cadence × learned stride;
   only fresh GOOD GPS whose position and speed were accepted can calibrate that stride. Fresh GPS
@@ -69,7 +70,7 @@
   Step/IMU expiry also bounds prediction across long tick gaps. OBD, car turn matching and coarse
   cell-position/speed corrections remain car-only. Existing step events (`P`) feed walking replay;
   `--no-native-motion` disables car stop/resume hints, not walking step evidence.
-  Native mode replaces the Kotlin fallback method
+  Kalman mode replaces Classic navigation's fallback method
   and its terrain/compass/signal snaps; shared guidance and GPS/network deviation checks remain.
   This is a route-constrained linear Kalman filter, not a full inertial EKF. Better real-drive accuracy
   is not yet established; the app remains a research prototype, not a safety system.
@@ -78,7 +79,7 @@
   Legacy Kotlin-only replay rejects native-selected trips instead of silently testing the wrong
   algorithm; use the paired `--compare-native` command above to evaluate their raw inputs (this is
   an A/B experiment, not exact reproduction of live guidance). Cell-speed learning remains off.
-  With Kotlin selected, the native estimator still runs only as a shadow comparison.
+  With Classic navigation selected, the native estimator still runs only as a shadow comparison.
   A separate **Inertial ESKF shadow (experimental)** switch in the same settings section is off by
   default and locked during navigation/planning. It runs alongside either position owner, **only for
   mounted-phone driving**; it never changes the marker, route, speed display or guidance. Walking is

@@ -144,11 +144,11 @@
     <string name="settings_expand_section">Развернуть раздел</string>
     <string name="settings_collapse_section">Свернуть раздел</string>
     <string name="sec_navigation_method">Навигация без GPS</string>
-    <string name="navigation_method_title">Резервный метод</string>
-    <string name="navigation_estimator_title">Алгоритм навигации</string>
-    <string name="navigation_estimator_kotlin">Kotlin (по умолчанию)</string>
-    <string name="navigation_estimator_native">Native Kalman (экспериментальный)</string>
-    <string name="navigation_estimator_summary">Выберите перед началом маршрута. Native Kalman определяет положение, скорость и подсказки для авто и пешком. Пешком использует GPS и шаги × изученную длину шага; без шагов — свежие данные о движении, а без них и свежего GPS удерживает позицию. OBD и поправки от вышек и поворотов — только для авто. Заменяет резервный метод и привязку к рельефу. Улучшение точности не гарантировано; это исследовательский прототип, а не система безопасности.</string>
+    <string name="navigation_method_title">Резервный метод классической навигации</string>
+    <string name="navigation_estimator_title">Оценка положения</string>
+    <string name="navigation_estimator_kotlin">Классическая навигация</string>
+    <string name="navigation_estimator_native">Фильтр Калмана (по умолчанию)</string>
+    <string name="navigation_estimator_summary">Выберите перед началом маршрута. Фильтр Калмана определяет положение и скорость для авто и пешком. Пешком использует GPS и шаги × изученную длину шага; без шагов — свежие данные о движении, а без них и свежего GPS удерживает позицию. OBD и поправки от вышек и поворотов — только для авто. Классическая навигация использует резервный метод ниже и привязку к рельефу. Улучшение точности не гарантировано; это исследовательский прототип, а не система безопасности.</string>
     <string name="navigation_estimator_locked">Остановите навигацию, чтобы изменить алгоритм.</string>
     <string name="inertial_experiment_title">Инерциальный ESKF в фоновом сравнении</string>
     <string name="inertial_experiment_summary">Эксперимент только для авто с закреплённым телефоном. Записывает сырые данные датчиков и запускает отдельный инерциальный фильтр для сравнения записей. Не меняет навигацию и не поддерживает ходьбу. Для запуска нужны надёжный GPS и ориентация; увеличивает расход заряда и памяти. Точность не доказана. Исследовательский прототип, не система безопасности. Меняйте между поездками.</string>
@@ -157,7 +157,8 @@
     <string name="navigation_method_hybrid">Гибридный</string>
     <string name="navigation_method_dr_summary">Использует скорость, датчики движения и данные маршрута. Позиции по вышкам не вносят поправки.</string>
     <string name="navigation_method_cells_summary">Использует приблизительные позиции по вышкам, привязанные к маршруту, и удерживает позицию между сканированиями.</string>
-    <string name="navigation_method_hybrid_summary">Сочетает непрерывное счисление пути с поправками по вышкам и сети. Рекомендуется.</string>
+    <string name="navigation_method_hybrid_summary">Сочетает непрерывное счисление пути с поправками по вышкам и сети.</string>
+    <string name="navigation_method_classic_only">Доступно только для классической навигации.</string>
     <string name="voice_title">Голосовые подсказки</string>
     <string name="voice_summary">Озвучивать повороты, состояние GPS и изменения маршрута во время навигации.</string>
     <string name="haptics_title">Тактильный отклик</string>
