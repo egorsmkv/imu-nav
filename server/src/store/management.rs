@@ -30,6 +30,7 @@ pub(crate) struct JobRecord {
     pub kind: String,
     pub status: String,
     pub processed: usize,
+    pub rejected: usize,
 }
 
 impl CellStore {
@@ -41,7 +42,7 @@ impl CellStore {
         )?;
         connection
             .query_row(
-                "SELECT id,kind,status,processed FROM admin_jobs ORDER BY id DESC LIMIT 1",
+                "SELECT j.id,j.kind,j.status,j.processed,(SELECT COUNT(*) FROM admin_import_rejections r WHERE r.job_id=j.id) FROM admin_jobs j ORDER BY j.id DESC LIMIT 1",
                 [],
                 |row| {
                     Ok(JobRecord {
@@ -49,6 +50,7 @@ impl CellStore {
                         kind: row.get(1)?,
                         status: row.get(2)?,
                         processed: usize::try_from(row.get::<_, i64>(3)?).unwrap_or(0),
+                        rejected: usize::try_from(row.get::<_, i64>(4)?).unwrap_or(0),
                     })
                 },
             )
@@ -73,12 +75,25 @@ impl CellStore {
         Ok(())
     }
     /// Import trusted seeds one row at a time. A cancelled or failed transaction publishes nothing.
+    #[cfg(test)]
     pub(crate) fn import_seeds(
         &self,
         path: &Path,
         policy: &Policy,
         cancel: &AtomicBool,
         progress: &AtomicUsize,
+    ) -> Result<Option<UploadResult>> {
+        self.import_seeds_report(path, policy, cancel, progress, None, &AtomicUsize::new(0))
+    }
+
+    pub(crate) fn import_seeds_report(
+        &self,
+        path: &Path,
+        policy: &Policy,
+        cancel: &AtomicBool,
+        progress: &AtomicUsize,
+        job_id: Option<i64>,
+        rejected_progress: &AtomicUsize,
     ) -> Result<Option<UploadResult>> {
         anyhow::ensure!(
             std::fs::metadata(path)?.len() <= 512 * 1024 * 1024,
@@ -105,11 +120,28 @@ impl CellStore {
         transaction.execute_batch("CREATE TEMP TABLE IF NOT EXISTS import_keys (
             radio TEXT NOT NULL,mcc INTEGER NOT NULL,mnc INTEGER NOT NULL,area INTEGER NOT NULL,cid INTEGER NOT NULL,
             PRIMARY KEY(radio,mcc,mnc,area,cid)); DELETE FROM import_keys;")?;
-        for record in reader.records() {
+        for (index, record) in reader.records().enumerate() {
             if cancel.load(Ordering::Relaxed) {
                 return Ok(None);
             }
-            let record = record?;
+            let row_number = i64::try_from(index + 1)?;
+            let record = match record {
+                Ok(record) => record,
+                Err(error) => {
+                    rejected += 1;
+                    rejected_progress.store(rejected, Ordering::Relaxed);
+                    if let Some(job_id) = job_id {
+                        transaction.execute("INSERT INTO admin_import_rejections(job_id,row_number,reason,input) VALUES (?1,?2,?3,'')",
+                            params![job_id, row_number, format!("CSV error: {error}")])?;
+                    }
+                    anyhow::ensure!(
+                        accepted + rejected <= 2_000_000,
+                        "import exceeds two million rows"
+                    );
+                    progress.store(accepted + rejected, Ordering::Relaxed);
+                    continue;
+                }
+            };
             if record
                 .get(0)
                 .is_some_and(|value| value.eq_ignore_ascii_case("radio"))
@@ -128,6 +160,16 @@ impl CellStore {
                 accepted += 1;
             } else {
                 rejected += 1;
+                rejected_progress.store(rejected, Ordering::Relaxed);
+                if let Some(job_id) = job_id {
+                    let reason = if crate::csv_format::parse_tower(&record).is_none() {
+                        "Invalid OpenCellID row"
+                    } else {
+                        "Rejected by current coordinate or range policy"
+                    };
+                    transaction.execute("INSERT INTO admin_import_rejections(job_id,row_number,reason,input) VALUES (?1,?2,?3,?4)",
+                        params![job_id, row_number, reason, record.iter().collect::<Vec<_>>().join(",")])?;
+                }
             }
             anyhow::ensure!(
                 accepted + rejected <= 2_000_000,
@@ -149,6 +191,13 @@ impl CellStore {
             let key = row_to_key(row)?;
             let consensus = recompute(&transaction, &key, policy)?;
             save_consensus(&transaction, &consensus)?;
+            let hidden: bool = transaction.query_row(
+                "SELECT COALESCE((SELECT quarantined FROM tower_moderation WHERE radio=?1 AND mcc=?2 AND mnc=?3 AND area=?4 AND cid=?5),0)",
+                params![key.radio.to_string(), key.mcc, key.mnc, key.area, key.cid], |row| row.get(0),
+            )?;
+            if !hidden {
+                clear_removal(&transaction, &key)?;
+            }
         }
         drop(keys);
         drop(key_statement);
@@ -157,6 +206,29 @@ impl CellStore {
         }
         transaction.commit()?;
         Ok(Some(UploadResult { accepted, rejected }))
+    }
+
+    pub(crate) fn export_rejections_to_path(&self, job_id: i64, path: &Path) -> Result<()> {
+        let connection = self.connection()?;
+        let mut writer = csv::Writer::from_path(path)?;
+        writer.write_record(["row_number", "reason", "input"])?;
+        let mut statement = connection.prepare("SELECT row_number,reason,input FROM admin_import_rejections WHERE job_id=?1 ORDER BY row_number")?;
+        let mut rows = statement.query([job_id])?;
+        while let Some(row) = rows.next()? {
+            writer.write_record([row.get::<_, i64>(0)?.to_string(), row.get(1)?, row.get(2)?])?;
+        }
+        writer.flush()?;
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn rejection_count(&self, job_id: i64) -> Result<usize> {
+        let count: i64 = self.connection()?.query_row(
+            "SELECT COUNT(*) FROM admin_import_rejections WHERE job_id=?1",
+            [job_id],
+            |row| row.get(0),
+        )?;
+        Ok(usize::try_from(count)?)
     }
 
     /// Stream one admin export to a file without collecting the database in memory.
@@ -247,6 +319,7 @@ impl CellStore {
         Ok(())
     }
 
+    #[cfg(test)]
     pub(crate) fn recent_audit(&self) -> Result<Vec<AuditEntry>> {
         let connection = self.connection()?;
         let mut statement = connection.prepare(
@@ -264,6 +337,36 @@ impl CellStore {
             .collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
+    pub(crate) fn audit_page(
+        &self,
+        action: &str,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<AuditEntry>> {
+        let connection = self.connection()?;
+        let mut statement = connection.prepare(
+            "SELECT actor_id,action,target,at_s FROM admin_audit WHERE action LIKE ?1 ORDER BY id DESC LIMIT ?2 OFFSET ?3",
+        )?;
+        Ok(statement
+            .query_map(
+                params![
+                    format!("%{}%", action.trim()),
+                    i64::try_from(limit)?,
+                    i64::try_from(offset)?
+                ],
+                |row| {
+                    Ok(AuditEntry {
+                        actor_id: row.get(0)?,
+                        action: row.get(1)?,
+                        target: row.get(2)?,
+                        at_s: row.get(3)?,
+                    })
+                },
+            )?
+            .collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    #[cfg(test)]
     pub(crate) fn accounts(&self, email: &str) -> Result<Vec<ManagedAccount>> {
         let connection = self.connection()?;
         let mut statement = connection
@@ -277,6 +380,35 @@ impl CellStore {
                     suspended: row.get(3)?,
                 })
             })?
+            .collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    pub(crate) fn account_page(
+        &self,
+        email: &str,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<ManagedAccount>> {
+        let connection = self.connection()?;
+        let mut statement = connection.prepare(
+            "SELECT id,email,admin,suspended FROM users WHERE email LIKE ?1 ORDER BY id DESC LIMIT ?2 OFFSET ?3",
+        )?;
+        Ok(statement
+            .query_map(
+                params![
+                    format!("%{}%", email.trim()),
+                    i64::try_from(limit)?,
+                    i64::try_from(offset)?
+                ],
+                |row| {
+                    Ok(ManagedAccount {
+                        id: row.get(0)?,
+                        email: row.get(1)?,
+                        admin: row.get(2)?,
+                        suspended: row.get(3)?,
+                    })
+                },
+            )?
             .collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
@@ -343,6 +475,7 @@ impl CellStore {
         actor: i64,
         key: &CellKey,
         quarantined: bool,
+        policy: &Policy,
     ) -> Result<bool> {
         let mut connection = self.connection()?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -355,6 +488,21 @@ impl CellStore {
         transaction.execute("INSERT INTO tower_moderation(radio,mcc,mnc,area,cid,quarantined) VALUES (?1,?2,?3,?4,?5,?6)
              ON CONFLICT(radio,mcc,mnc,area,cid) DO UPDATE SET quarantined=excluded.quarantined",
             params![key.radio.to_string(),key.mcc,key.mnc,key.area,key.cid,quarantined])?;
+        if quarantined {
+            record_removal(&transaction, key)?;
+        } else {
+            transaction.execute(
+                "UPDATE consensus SET updated_s=?6 WHERE radio=?1 AND mcc=?2 AND mnc=?3 AND area=?4 AND cid=?5",
+                params![key.radio.to_string(), key.mcc, key.mnc, key.area, key.cid, now_s()],
+            )?;
+            let published: bool = transaction.query_row(
+                "SELECT COALESCE((SELECT seeded=1 OR devices>=?6 FROM consensus WHERE radio=?1 AND mcc=?2 AND mnc=?3 AND area=?4 AND cid=?5),0)",
+                params![key.radio.to_string(), key.mcc, key.mnc, key.area, key.cid, i64::try_from(policy.min_devices)?], |row| row.get(0),
+            )?;
+            if published {
+                clear_removal(&transaction, key)?;
+            }
+        }
         audit_in_transaction(
             &transaction,
             actor,
@@ -386,6 +534,7 @@ impl CellStore {
             "DELETE FROM consensus WHERE radio=?1 AND mcc=?2 AND mnc=?3 AND area=?4 AND cid=?5",
             params![key.radio.to_string(), key.mcc, key.mnc, key.area, key.cid],
         )?;
+        record_removal(&transaction, key)?;
         audit_in_transaction(&transaction, actor, "delete_tower", &key_text(key))?;
         transaction.commit()?;
         Ok(removed > 0)
@@ -408,18 +557,40 @@ impl CellStore {
              params![tower.key.radio.to_string(),tower.key.mcc,tower.key.mnc,tower.key.area,tower.key.cid,tower.lat,tower.lon,tower.range_m,tower.samples,now_s()])?;
         let consensus = recompute(&transaction, &tower.key, policy)?;
         save_consensus(&transaction, &consensus)?;
+        let hidden: bool = transaction.query_row(
+            "SELECT COALESCE((SELECT quarantined FROM tower_moderation WHERE radio=?1 AND mcc=?2 AND mnc=?3 AND area=?4 AND cid=?5),0)",
+            params![tower.key.radio.to_string(), tower.key.mcc, tower.key.mnc, tower.key.area, tower.key.cid], |row| row.get(0),
+        )?;
+        if !hidden {
+            clear_removal(&transaction, &tower.key)?;
+        }
         audit_in_transaction(&transaction, actor, "correct_tower", &key_text(&tower.key))?;
         transaction.commit()?;
         Ok(Some(consensus))
     }
 
-    pub(crate) fn tower_contributions(&self, key: &CellKey) -> Result<Vec<OwnContribution>> {
+    pub(crate) fn tower_contribution_page(
+        &self,
+        key: &CellKey,
+        device: &str,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<OwnContribution>> {
         let connection = self.connection()?;
         let mut statement = connection.prepare("SELECT radio,mcc,mnc,area,cid,device,lat,lon,range_m,samples,updated_s FROM contributions
-             WHERE radio=?1 AND mcc=?2 AND mnc=?3 AND area=?4 AND cid=?5 ORDER BY updated_s DESC LIMIT 500")?;
+             WHERE radio=?1 AND mcc=?2 AND mnc=?3 AND area=?4 AND cid=?5 AND device LIKE ?6 ORDER BY updated_s DESC,device LIMIT ?7 OFFSET ?8")?;
         Ok(statement
             .query_map(
-                params![key.radio.to_string(), key.mcc, key.mnc, key.area, key.cid],
+                params![
+                    key.radio.to_string(),
+                    key.mcc,
+                    key.mnc,
+                    key.area,
+                    key.cid,
+                    format!("%{}%", device.trim()),
+                    i64::try_from(limit)?,
+                    i64::try_from(offset)?
+                ],
                 row_to_own_contribution,
             )?
             .collect::<rusqlite::Result<Vec<_>>>()?)
@@ -479,8 +650,29 @@ impl CellStore {
                 return Ok(false);
             }
             let key = row_to_key(row)?;
-            let consensus = recompute(&transaction, &key, policy)?;
-            save_consensus(&transaction, &consensus)?;
+            let hidden: bool = transaction.query_row(
+                "SELECT COALESCE((SELECT quarantined FROM tower_moderation WHERE radio=?1 AND mcc=?2 AND mnc=?3 AND area=?4 AND cid=?5),0)",
+                params![key.radio.to_string(), key.mcc, key.mnc, key.area, key.cid], |row| row.get(0),
+            )?;
+            match recompute_filtered(&transaction, &key, policy)? {
+                Some(mut consensus) => {
+                    // Force incremental clients to receive the result even if the input rows are old.
+                    consensus.updated_s = consensus.updated_s.max(now_s());
+                    save_consensus(&transaction, &consensus)?;
+                    if hidden || !(consensus.seeded || consensus.devices >= policy.min_devices) {
+                        record_removal(&transaction, &key)?;
+                    } else {
+                        clear_removal(&transaction, &key)?;
+                    }
+                }
+                None => {
+                    transaction.execute(
+                        "DELETE FROM consensus WHERE radio=?1 AND mcc=?2 AND mnc=?3 AND area=?4 AND cid=?5",
+                        params![key.radio.to_string(), key.mcc, key.mnc, key.area, key.cid],
+                    )?;
+                    record_removal(&transaction, &key)?;
+                }
+            }
             index += 1;
             progress.store(index, Ordering::Relaxed);
         }

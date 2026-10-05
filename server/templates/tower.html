@@ -72,9 +72,9 @@
             {% else %}<p>Quarantine hides this tower from public downloads before deletion.</p><form method="post" action="{{ tower.detail_path }}/quarantine"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-warning">Quarantine tower</button></form>{% endif %}
         </div></section></div>
     </div>
-    <section class="card mt-4"><div class="card-header"><h2 class="h5 mb-0">Observations</h2></div><div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Device</th><th>Latitude</th><th>Longitude</th><th>Range</th><th>Samples</th><th>Updated</th><th>Action</th></tr></thead><tbody>
+    <section class="card mt-4"><div class="card-header d-flex justify-content-between"><h2 class="h5 mb-0">Observations</h2><form method="get" action="{{ tower.detail_path }}"><input name="device" aria-label="Filter by device" placeholder="Filter device" value="{{ device_filter }}"><button class="btn btn-outline-secondary btn-sm">Search</button></form></div><div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Device</th><th>Latitude</th><th>Longitude</th><th>Range</th><th>Samples</th><th>Updated</th><th>Action</th></tr></thead><tbody>
         {% for observation in observations %}<tr><td>{{ observation.device }}</td><td>{{ observation.lat }}</td><td>{{ observation.lon }}</td><td>{{ observation.range_m }}</td><td>{{ observation.samples }}</td><td>{{ observation.updated_s }}</td><td><form method="post" action="{{ tower.detail_path }}/observations/delete"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="device" value="{{ observation.device }}"><button class="btn btn-outline-danger btn-sm">Remove</button></form></td></tr>{% endfor %}
-    </tbody></table></div></section>
+    </tbody></table></div><form class="card-footer d-flex align-items-center gap-2" method="get" action="{{ tower.detail_path }}"><input type="hidden" name="device" value="{{ device_filter }}">{% if observation_page > 1 %}<button class="btn btn-outline-secondary btn-sm" name="page" value="{{ observation_previous }}">Previous</button>{% endif %}<span>Observation page {{ observation_page }}</span>{% if observation_has_next %}<button class="btn btn-outline-secondary btn-sm" name="page" value="{{ observation_next }}">Next</button>{% endif %}</form></section>
 </main>
 </body>
 </html>

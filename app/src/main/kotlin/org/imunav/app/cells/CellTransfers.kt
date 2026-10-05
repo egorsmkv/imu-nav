@@ -7,6 +7,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import org.imunav.app.R
+import org.imunav.core.cells.CellKey
 import org.imunav.core.cells.CellSyncClient
 import org.imunav.core.cells.CellTower
 import org.imunav.core.cells.ResumableHttpInputStream
@@ -119,10 +120,16 @@ internal class CellTransfers(
 
         progress(context.getString(R.string.task_downloading_shared))
         val batch = ArrayList<CellTower>()
-        val since = prefs.getLong("last_download_s", 0)
+        val removals = ArrayList<CellKey>()
+        val replaceSnapshot = !prefs.getBoolean("shared_removal_sync_v1", false)
+        val since = if (replaceSnapshot) 0 else prefs.getLong("last_download_s", 0)
+        val removalDownload = client.downloadRemovals(mccs, since) { removals += it }
         client.download(mccs, since) { batch += it }
-        db.upsert(CellSource.SHARED, batch)
-        prefs.edit { putLong("last_download_s", startedMs / 1000 - 60) }
+        db.applySharedSync(removals, batch, replaceSnapshot)
+        prefs.edit {
+            putLong("last_download_s", (removalDownload.serverEpochS ?: startedMs / 1000) - 60)
+            putBoolean("shared_removal_sync_v1", true)
+        }
         uploaded to batch.size
     }
 

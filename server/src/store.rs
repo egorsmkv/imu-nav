@@ -112,6 +112,17 @@ impl CellStore {
                id INTEGER PRIMARY KEY, kind TEXT NOT NULL, status TEXT NOT NULL,
                processed INTEGER NOT NULL DEFAULT 0, started_s INTEGER NOT NULL,
                finished_s INTEGER
+             );
+             CREATE TABLE IF NOT EXISTS tower_removals (
+               radio TEXT NOT NULL, mcc INTEGER NOT NULL, mnc INTEGER NOT NULL,
+               area INTEGER NOT NULL, cid INTEGER NOT NULL, updated_s INTEGER NOT NULL,
+               PRIMARY KEY (radio,mcc,mnc,area,cid)
+             );
+             CREATE INDEX IF NOT EXISTS tower_removals_sync ON tower_removals(mcc,updated_s);
+             CREATE TABLE IF NOT EXISTS admin_import_rejections (
+               job_id INTEGER NOT NULL REFERENCES admin_jobs(id) ON DELETE CASCADE,
+               row_number INTEGER NOT NULL, reason TEXT NOT NULL, input TEXT NOT NULL,
+               PRIMARY KEY(job_id,row_number)
              );",
         )?;
         connection.execute_batch(
@@ -226,6 +237,16 @@ impl CellStore {
         for key in changed_keys {
             let consensus = recompute(&transaction, &key, policy)?;
             save_consensus(&transaction, &consensus)?;
+            if consensus.seeded || consensus.devices >= policy.min_devices {
+                let hidden: bool = transaction.query_row(
+                    "SELECT COALESCE((SELECT quarantined FROM tower_moderation WHERE radio=?1 AND mcc=?2 AND mnc=?3 AND area=?4 AND cid=?5),0)",
+                    params![key.radio.to_string(), key.mcc, key.mnc, key.area, key.cid],
+                    |row| row.get(0),
+                )?;
+                if !hidden {
+                    clear_removal(&transaction, &key)?;
+                }
+            }
             changed.push(consensus);
         }
         transaction.commit()?;
@@ -311,6 +332,57 @@ impl CellStore {
         self.query_internal(mccs, 0, Some(limit), None, true)
     }
 
+    /// Page through all consensuses, including pending and moderated towers.
+    pub(crate) fn admin_tower_page(
+        &self,
+        mccs: Option<&HashSet<i64>>,
+        status: &str,
+        limit: usize,
+        offset: usize,
+        policy: &Policy,
+    ) -> Result<Vec<Consensus>> {
+        let connection = self.connection()?;
+        let mut sql = String::from(
+            "SELECT c.radio,c.mcc,c.mnc,c.area,c.cid,c.lat,c.lon,c.range_m,c.samples,c.devices,c.seeded,c.updated_s FROM consensus c WHERE 1=1",
+        );
+        let mut values = Vec::new();
+        if let Some(mccs) = mccs {
+            sql.push_str(" AND c.mcc IN (");
+            sql.push_str(
+                &std::iter::repeat_n("?", mccs.len())
+                    .collect::<Vec<_>>()
+                    .join(","),
+            );
+            sql.push(')');
+            values.extend(mccs.iter().copied().map(Value::Integer));
+        }
+        let hidden = "EXISTS (SELECT 1 FROM tower_moderation m WHERE m.radio=c.radio AND m.mcc=c.mcc AND m.mnc=c.mnc AND m.area=c.area AND m.cid=c.cid AND m.quarantined=1)";
+        match status {
+            "quarantined" => sql.push_str(&format!(" AND {hidden}")),
+            "seeded" => sql.push_str(&format!(" AND NOT {hidden} AND c.seeded=1")),
+            "published" => {
+                sql.push_str(&format!(
+                    " AND NOT {hidden} AND c.seeded=0 AND c.devices>=?"
+                ));
+                values.push(Value::Integer(i64::try_from(policy.min_devices)?));
+            }
+            "pending" => {
+                sql.push_str(&format!(" AND NOT {hidden} AND c.seeded=0 AND c.devices<?"));
+                values.push(Value::Integer(i64::try_from(policy.min_devices)?));
+            }
+            _ => {}
+        }
+        sql.push_str(
+            " ORDER BY c.updated_s DESC,c.radio,c.mcc,c.mnc,c.area,c.cid LIMIT ? OFFSET ?",
+        );
+        values.push(Value::Integer(i64::try_from(limit)?));
+        values.push(Value::Integer(i64::try_from(offset)?));
+        let mut statement = connection.prepare(&sql)?;
+        Ok(statement
+            .query_map(params_from_iter(values), row_to_consensus)?
+            .collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
     #[cfg_attr(feature = "profiling", hotpath::measure(impl_type = "CellStore"))]
     fn query_internal(
         &self,
@@ -394,6 +466,9 @@ impl CellStore {
             "DELETE FROM consensus WHERE radio=?1 AND mcc=?2 AND mnc=?3 AND area=?4 AND cid=?5",
             params![key.radio.to_string(), key.mcc, key.mnc, key.area, key.cid],
         )?;
+        if removed > 0 {
+            record_removal(&transaction, key)?;
+        }
         transaction.commit()?;
         Ok(removed > 0)
     }
@@ -573,15 +648,95 @@ fn update_consensus_after_deletion(
             "DELETE FROM consensus WHERE radio=?1 AND mcc=?2 AND mnc=?3 AND area=?4 AND cid=?5",
             params![key.radio.to_string(), key.mcc, key.mnc, key.area, key.cid],
         )?;
+        record_removal(transaction, key)?;
         return Ok(OwnContributionChange::Removed(key.clone()));
     }
-    let consensus = recompute(transaction, key, policy)?;
+    let Some(mut consensus) = recompute_filtered(transaction, key, policy)? else {
+        transaction.execute(
+            "DELETE FROM consensus WHERE radio=?1 AND mcc=?2 AND mnc=?3 AND area=?4 AND cid=?5",
+            params![key.radio.to_string(), key.mcc, key.mnc, key.area, key.cid],
+        )?;
+        record_removal(transaction, key)?;
+        return Ok(OwnContributionChange::Removed(key.clone()));
+    };
+    consensus.updated_s = consensus.updated_s.max(crate::auth::now_s());
     save_consensus(transaction, &consensus)?;
+    // The publication threshold may no longer be met after a contributor leaves.
+    if !consensus.seeded && consensus.devices < policy.min_devices {
+        record_removal(transaction, key)?;
+    } else {
+        let hidden: bool = transaction.query_row(
+            "SELECT COALESCE((SELECT quarantined FROM tower_moderation WHERE radio=?1 AND mcc=?2 AND mnc=?3 AND area=?4 AND cid=?5),0)",
+            params![key.radio.to_string(), key.mcc, key.mnc, key.area, key.cid],
+            |row| row.get(0),
+        )?;
+        if !hidden {
+            clear_removal(transaction, key)?;
+        }
+    }
     Ok(OwnContributionChange::Updated(consensus))
+}
+
+fn record_removal(transaction: &Transaction<'_>, key: &CellKey) -> Result<()> {
+    transaction.execute(
+        "INSERT INTO tower_removals(radio,mcc,mnc,area,cid,updated_s) VALUES (?1,?2,?3,?4,?5,?6)
+         ON CONFLICT(radio,mcc,mnc,area,cid) DO UPDATE SET updated_s=excluded.updated_s",
+        params![
+            key.radio.to_string(),
+            key.mcc,
+            key.mnc,
+            key.area,
+            key.cid,
+            crate::auth::now_s()
+        ],
+    )?;
+    Ok(())
+}
+
+fn clear_removal(transaction: &Transaction<'_>, key: &CellKey) -> Result<()> {
+    transaction.execute(
+        "DELETE FROM tower_removals WHERE radio=?1 AND mcc=?2 AND mnc=?3 AND area=?4 AND cid=?5",
+        params![key.radio.to_string(), key.mcc, key.mnc, key.area, key.cid],
+    )?;
+    Ok(())
+}
+
+impl CellStore {
+    /// Return keys that were withdrawn from public sync since the requested epoch second.
+    pub fn removals(&self, mccs: Option<&HashSet<i64>>, since_s: i64) -> Result<Vec<CellKey>> {
+        let connection = self.connection()?;
+        let mut sql =
+            String::from("SELECT radio,mcc,mnc,area,cid FROM tower_removals WHERE updated_s>=?");
+        let mut values = vec![Value::Integer(since_s)];
+        if let Some(mccs) = mccs {
+            sql.push_str(" AND mcc IN (");
+            sql.push_str(
+                &std::iter::repeat_n("?", mccs.len())
+                    .collect::<Vec<_>>()
+                    .join(","),
+            );
+            sql.push(')');
+            values.extend(mccs.iter().copied().map(Value::Integer));
+        }
+        sql.push_str(" ORDER BY updated_s,radio,mcc,mnc,area,cid");
+        let mut statement = connection.prepare(&sql)?;
+        Ok(statement
+            .query_map(params_from_iter(values), row_to_key)?
+            .collect::<rusqlite::Result<Vec<_>>>()?)
+    }
 }
 
 #[cfg_attr(feature = "profiling", hotpath::measure)]
 fn recompute(transaction: &Transaction<'_>, key: &CellKey, policy: &Policy) -> Result<Consensus> {
+    recompute_filtered(transaction, key, policy)?
+        .ok_or_else(|| anyhow::anyhow!("cannot recompute a cell without valid contributions"))
+}
+
+fn recompute_filtered(
+    transaction: &Transaction<'_>,
+    key: &CellKey,
+    policy: &Policy,
+) -> Result<Option<Consensus>> {
     let mut statement = transaction.prepare_cached(
         "SELECT device,lat,lon,range_m,samples,updated_s FROM contributions
          WHERE radio=?1 AND mcc=?2 AND mnc=?3 AND area=?4 AND cid=?5",
@@ -601,8 +756,20 @@ fn recompute(transaction: &Transaction<'_>, key: &CellKey, policy: &Policy) -> R
             },
         )?
         .collect::<rusqlite::Result<Vec<_>>>()?;
+    contributions.retain(|contribution| {
+        plausible(
+            &CellTower {
+                key: key.clone(),
+                lat: contribution.lat,
+                lon: contribution.lon,
+                range_m: contribution.range_m,
+                samples: contribution.samples,
+            },
+            policy,
+        )
+    });
     if contributions.is_empty() {
-        anyhow::bail!("cannot recompute a cell without contributions");
+        return Ok(None);
     }
     for contribution in &mut contributions {
         if contribution.device != SEED_DEVICE && contribution.device != MANUAL_DEVICE {
@@ -610,7 +777,7 @@ fn recompute(transaction: &Transaction<'_>, key: &CellKey, policy: &Policy) -> R
         }
     }
 
-    Ok(consensus::calculate(key, &contributions, policy))
+    Ok(Some(consensus::calculate(key, &contributions, policy)))
 }
 
 #[cfg_attr(feature = "profiling", hotpath::measure)]

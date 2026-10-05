@@ -9,9 +9,9 @@ use axum::extract::{DefaultBodyLimit, Multipart, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
-use axum::{Form, Router};
+use axum::{Form, Json, Router};
 use futures_util::StreamExt;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -23,7 +23,9 @@ pub(crate) struct JobState {
     pub id: Option<i64>,
     pub kind: String,
     pub status: String,
+    pub phase: String,
     pub processed: Arc<AtomicUsize>,
+    pub rejected: Arc<AtomicUsize>,
     pub cancel: Arc<AtomicBool>,
 }
 
@@ -36,15 +38,20 @@ impl JobState {
             id: Some(record.id),
             kind: record.kind,
             status: record.status,
+            phase: "finished".to_owned(),
             processed: Arc::new(AtomicUsize::new(record.processed)),
+            rejected: Arc::new(AtomicUsize::new(record.rejected)),
             cancel: Arc::new(AtomicBool::new(false)),
         }
     }
 }
 
 const DEFAULT_LIMIT: usize = 100;
-const MAX_LIMIT: usize = 1_000;
-const CONTENT_SECURITY_POLICY: &str = "default-src 'none'; style-src https://cdn.jsdelivr.net; base-uri 'none'; frame-ancestors 'none'; form-action 'self'";
+const MAX_LIMIT: usize = 200;
+const ACCOUNT_PAGE_SIZE: usize = 50;
+const AUDIT_PAGE_SIZE: usize = 50;
+const OBSERVATION_PAGE_SIZE: usize = 100;
+const CONTENT_SECURITY_POLICY: &str = "default-src 'none'; style-src https://cdn.jsdelivr.net; script-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'";
 
 /// Add authenticated operational pages and form actions.
 pub(crate) fn router() -> Router<AppState> {
@@ -78,6 +85,9 @@ pub(crate) fn router() -> Router<AppState> {
         .route("/admin/accounts/{id}/restore", post(restore_account))
         .route("/admin/policy", post(update_policy))
         .route("/admin/jobs/cancel", post(cancel_job))
+        .route("/admin/jobs/status", get(job_status))
+        .route("/admin/jobs/{id}/rejections.csv", get(export_rejections))
+        .route("/admin/admin.js", get(admin_script))
         .route("/admin/export/{kind}", get(export))
         .route(
             "/admin/import",
@@ -92,6 +102,11 @@ struct AdminQuery {
     limit: Option<usize>,
     key: Option<String>,
     email: Option<String>,
+    status: Option<String>,
+    tower_page: Option<usize>,
+    account_page: Option<usize>,
+    audit_page: Option<usize>,
+    audit_action: Option<String>,
 }
 
 impl AdminQuery {
@@ -122,6 +137,16 @@ impl AdminQuery {
     fn limit(&self) -> usize {
         self.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT)
     }
+
+    fn page(value: Option<usize>) -> usize {
+        value.unwrap_or(1).clamp(1, 1_000_000)
+    }
+}
+
+#[derive(Default, Deserialize)]
+struct DetailQuery {
+    page: Option<usize>,
+    device: Option<String>,
 }
 
 /// Fully formatted row passed to Askama so templates stay presentation-only.
@@ -197,6 +222,20 @@ struct AdminTemplate {
     mcc: String,
     has_mcc_filter: bool,
     limit: usize,
+    status: String,
+    tower_page: usize,
+    tower_previous: usize,
+    tower_next: usize,
+    tower_has_next: bool,
+    account_page: usize,
+    account_previous: usize,
+    account_next: usize,
+    account_has_next: bool,
+    audit_page: usize,
+    audit_previous: usize,
+    audit_next: usize,
+    audit_has_next: bool,
+    audit_action: String,
     email: String,
     towers: Vec<TowerRow>,
     csrf: String,
@@ -206,6 +245,9 @@ struct AdminTemplate {
     job_kind: String,
     job_status: String,
     job_processed: usize,
+    job_rejected: usize,
+    job_phase: String,
+    job_id: i64,
 }
 
 /// Askama context for tower details and moderation controls.
@@ -216,6 +258,11 @@ struct TowerTemplate {
     minimum_devices: usize,
     csrf: String,
     observations: Vec<crate::store::OwnContribution>,
+    observation_page: usize,
+    observation_previous: usize,
+    observation_next: usize,
+    observation_has_next: bool,
+    device_filter: String,
 }
 
 /// Render summary cards and the newest consensus rows with management controls.
@@ -254,13 +301,29 @@ async fn dashboard(
     }
     let mccs = query.mccs()?;
     let limit = query.limit();
+    let status = query.status.clone().unwrap_or_default();
+    if !["", "seeded", "published", "pending", "quarantined"].contains(&status.as_str()) {
+        return Err(AdminError::bad_request("Unknown tower status."));
+    }
+    let tower_page = AdminQuery::page(query.tower_page);
+    let account_page = AdminQuery::page(query.account_page);
+    let audit_page = AdminQuery::page(query.audit_page);
     let store = state.store.clone();
     let policy = state.policy();
     let policy_for_query = policy.clone();
     let account_filter = query.email.clone().unwrap_or_default();
+    let audit_action = query.audit_action.clone().unwrap_or_default();
+    let audit_filter = audit_action.clone();
+    let status_for_query = status.clone();
     let (counts, towers, accounts, audit) = run_db(move || {
         let counts = store.management_counts(&policy_for_query)?;
-        let towers = store.query_recent_all(mccs.as_ref(), limit)?;
+        let towers = store.admin_tower_page(
+            mccs.as_ref(),
+            &status_for_query,
+            limit + 1,
+            (tower_page - 1) * limit,
+            &policy_for_query,
+        )?;
         let rows = towers
             .into_iter()
             .map(|tower| {
@@ -271,20 +334,34 @@ async fn dashboard(
         Ok((
             counts,
             rows,
-            store.accounts(&account_filter)?,
-            store.recent_audit()?,
+            store.account_page(
+                &account_filter,
+                ACCOUNT_PAGE_SIZE + 1,
+                (account_page - 1) * ACCOUNT_PAGE_SIZE,
+            )?,
+            store.audit_page(
+                &audit_filter,
+                AUDIT_PAGE_SIZE + 1,
+                (audit_page - 1) * AUDIT_PAGE_SIZE,
+            )?,
         ))
     })
     .await?;
+    let tower_has_next = towers.len() > limit;
+    let account_has_next = accounts.len() > ACCOUNT_PAGE_SIZE;
+    let audit_has_next = audit.len() > AUDIT_PAGE_SIZE;
     let minimum_devices = policy.min_devices;
     let mcc = query.mcc.unwrap_or_default();
     let has_mcc_filter = !mcc.trim().is_empty();
-    let (job_kind, job_status, job_processed) = {
+    let (job_kind, job_status, job_processed, job_rejected, job_phase, job_id) = {
         let job = state.job.lock().map_err(|_| AdminError::internal())?;
         (
             job.kind.clone(),
             job.status.clone(),
             job.processed.load(Ordering::Relaxed),
+            job.rejected.load(Ordering::Relaxed),
+            job.phase.clone(),
+            job.id,
         )
     };
     render(&AdminTemplate {
@@ -296,15 +373,32 @@ async fn dashboard(
         mcc,
         has_mcc_filter,
         limit,
+        status,
+        tower_page,
+        tower_previous: tower_page.saturating_sub(1),
+        tower_next: tower_page + 1,
+        tower_has_next,
+        account_page,
+        account_previous: account_page.saturating_sub(1),
+        account_next: account_page + 1,
+        account_has_next,
+        audit_page,
+        audit_previous: audit_page.saturating_sub(1),
+        audit_next: audit_page + 1,
+        audit_has_next,
+        audit_action,
         email: query.email.unwrap_or_default(),
-        towers,
+        towers: towers.into_iter().take(limit).collect(),
         csrf: web::csrf_token(&raw),
-        accounts,
-        audit,
+        accounts: accounts.into_iter().take(ACCOUNT_PAGE_SIZE).collect(),
+        audit: audit.into_iter().take(AUDIT_PAGE_SIZE).collect(),
         policy,
         job_kind,
         job_status,
         job_processed,
+        job_rejected,
+        job_phase,
+        job_id: job_id.unwrap_or(0),
     })
 }
 
@@ -313,27 +407,45 @@ async fn tower_detail(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(path): Path<(String, i64, i64, i64, i64)>,
+    Query(query): Query<DetailQuery>,
 ) -> Result<Response, AdminError> {
     let (_, raw) = admin_session(&state, &headers).await?;
     let _visibility = state.activation_gate.read().await;
     let key = path_key(path)?;
+    let page = AdminQuery::page(query.page);
+    let device_filter = query.device.unwrap_or_default();
+    let device_for_query = device_filter.clone();
     let store = state.store.clone();
     let detail = run_db(move || {
         Ok((
             store.consensus(&key)?,
             store.quarantined(&key)?,
-            store.tower_contributions(&key)?,
+            store.tower_contribution_page(
+                &key,
+                &device_for_query,
+                OBSERVATION_PAGE_SIZE + 1,
+                (page - 1) * OBSERVATION_PAGE_SIZE,
+            )?,
         ))
     })
     .await?;
     let (consensus, quarantined, observations) = detail;
+    let observation_has_next = observations.len() > OBSERVATION_PAGE_SIZE;
     let consensus = consensus.ok_or_else(AdminError::not_found)?;
     let minimum_devices = state.policy().min_devices;
     render(&TowerTemplate {
         tower: TowerRow::new(&consensus, minimum_devices, quarantined),
         minimum_devices,
         csrf: web::csrf_token(&raw),
-        observations,
+        observations: observations
+            .into_iter()
+            .take(OBSERVATION_PAGE_SIZE)
+            .collect(),
+        observation_page: page,
+        observation_previous: page.saturating_sub(1),
+        observation_next: page + 1,
+        observation_has_next,
+        device_filter,
     })
 }
 
@@ -462,7 +574,9 @@ async fn set_quarantine(
     let _guard = state.write_gate.read().await;
     let store = state.store.clone();
     let target = key.clone();
-    let changed = run_db(move || store.set_quarantined(account.id, &target, hidden)).await?;
+    let policy = state.policy();
+    let changed =
+        run_db(move || store.set_quarantined(account.id, &target, hidden, &policy)).await?;
     if !changed {
         return Err(AdminError::not_found());
     }
@@ -603,8 +717,10 @@ async fn begin_job(
         job.id = None;
         job.kind = kind.to_owned();
         job.status = "running".to_owned();
+        job.phase = "processing".to_owned();
         job.cancel = Arc::new(AtomicBool::new(false));
         job.processed = Arc::new(AtomicUsize::new(0));
+        job.rejected = Arc::new(AtomicUsize::new(0));
         (job.cancel.clone(), job.processed.clone())
     };
     let store = state.store.clone();
@@ -632,7 +748,13 @@ async fn finish_job(state: &AppState, result: Result<bool, ApiError>) {
     };
     let (id, processed) = {
         let job = state.job.lock().expect("job lock");
-        (job.id, job.processed.load(Ordering::Relaxed))
+        let processed = if job.phase == "uploading" {
+            job.processed.store(0, Ordering::Relaxed);
+            0
+        } else {
+            job.processed.load(Ordering::Relaxed)
+        };
+        (job.id, processed)
     };
     if let Some(id) = id {
         let store = state.store.clone();
@@ -643,7 +765,9 @@ async fn finish_job(state: &AppState, result: Result<bool, ApiError>) {
             tracing::error!(code = %error.0, "cannot save admin job status");
         }
     }
-    state.job.lock().expect("job lock").status = status;
+    let mut job = state.job.lock().expect("job lock");
+    job.status = status;
+    job.phase = "finished".to_owned();
 }
 
 async fn update_policy(
@@ -706,6 +830,84 @@ async fn cancel_job(
     Ok(redirect("/admin"))
 }
 
+#[derive(Serialize)]
+struct JobStatus {
+    id: Option<i64>,
+    kind: String,
+    status: String,
+    phase: String,
+    processed: usize,
+    rejected: usize,
+}
+
+async fn job_status(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<JobStatus>, AdminError> {
+    admin_session(&state, &headers).await?;
+    let job = state.job.lock().map_err(|_| AdminError::internal())?;
+    Ok(Json(JobStatus {
+        id: job.id,
+        kind: job.kind.clone(),
+        status: job.status.clone(),
+        phase: job.phase.clone(),
+        processed: job.processed.load(Ordering::Relaxed),
+        rejected: job.rejected.load(Ordering::Relaxed),
+    }))
+}
+
+async fn admin_script(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, AdminError> {
+    admin_session(&state, &headers).await?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, "text/javascript; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-store"),
+        ],
+        include_str!("admin.js"),
+    )
+        .into_response())
+}
+
+async fn export_rejections(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+) -> Result<Response, AdminError> {
+    admin_session(&state, &headers).await?;
+    let temporary = tempfile::NamedTempFile::new()
+        .map_err(|_| AdminError::internal())?
+        .into_temp_path();
+    let path = temporary.to_path_buf();
+    let store = state.store.clone();
+    run_db(move || store.export_rejections_to_path(id, &path)).await?;
+    let file = tokio::fs::File::open(&temporary)
+        .await
+        .map_err(|_| AdminError::internal())?;
+    let stream = ReaderStream::new(file).map(move |chunk| {
+        let _keep = &temporary;
+        chunk
+    });
+    let mut response = Body::from_stream(stream).into_response();
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        "text/csv; charset=utf-8".parse().expect("static header"),
+    );
+    response.headers_mut().insert(
+        header::CONTENT_DISPOSITION,
+        format!("attachment; filename=\"import-{id}-rejections.csv\"")
+            .parse()
+            .map_err(|_| AdminError::internal())?,
+    );
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        "no-store".parse().expect("static header"),
+    );
+    Ok(response)
+}
+
 async fn import(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -732,35 +934,70 @@ async fn import(
     if field.name() != Some("file") {
         return Err(AdminError::bad_request("Missing import file."));
     }
-    let temporary = tempfile::NamedTempFile::new()
-        .map_err(|_| AdminError::internal())?
-        .into_temp_path();
-    let mut file = tokio::fs::File::create(&temporary)
-        .await
-        .map_err(|_| AdminError::internal())?;
-    let mut bytes = 0usize;
-    while let Some(chunk) = field
-        .chunk()
-        .await
-        .map_err(|_| AdminError::bad_request("Invalid import file."))?
-    {
-        bytes += chunk.len();
-        if bytes > 512 * 1024 * 1024 {
-            return Err(AdminError::bad_request("Import exceeds 512 MiB."));
-        }
-        file.write_all(&chunk)
+    let (cancel, progress) = begin_job(&state, "seed import").await?;
+    let (id, rejected) = {
+        let mut job = state.job.lock().map_err(|_| AdminError::internal())?;
+        job.phase = "uploading".to_owned();
+        (job.id, job.rejected.clone())
+    };
+    let staging = async {
+        let temporary = tempfile::NamedTempFile::new()
+            .map_err(|_| AdminError::internal())?
+            .into_temp_path();
+        let mut file = tokio::fs::File::create(&temporary)
             .await
             .map_err(|_| AdminError::internal())?;
+        let mut bytes = 0usize;
+        while let Some(chunk) = field
+            .chunk()
+            .await
+            .map_err(|_| AdminError::bad_request("Invalid import file."))?
+        {
+            if cancel.load(Ordering::Relaxed) {
+                return Err(AdminError::conflict("Import cancelled."));
+            }
+            bytes += chunk.len();
+            if bytes > 512 * 1024 * 1024 {
+                return Err(AdminError::bad_request("Import exceeds 512 MiB."));
+            }
+            file.write_all(&chunk)
+                .await
+                .map_err(|_| AdminError::internal())?;
+            progress.store(bytes, Ordering::Relaxed);
+        }
+        if cancel.load(Ordering::Relaxed) {
+            return Err(AdminError::conflict("Import cancelled."));
+        }
+        file.flush().await.map_err(|_| AdminError::internal())?;
+        Ok::<_, AdminError>(temporary)
     }
-    file.flush().await.map_err(|_| AdminError::internal())?;
-    drop(file);
-    let (cancel, progress) = begin_job(&state, "seed import").await?;
+    .await;
+    let temporary = match staging {
+        Ok(temporary) => temporary,
+        Err(error) => {
+            let cancelled = cancel.load(Ordering::Relaxed);
+            finish_job(
+                &state,
+                if cancelled {
+                    Ok(false)
+                } else {
+                    Err(ApiError(error.status, error.message))
+                },
+            )
+            .await;
+            return Err(error);
+        }
+    };
+    progress.store(0, Ordering::Relaxed);
+    state.job.lock().map_err(|_| AdminError::internal())?.phase = "processing".to_owned();
     tokio::spawn(async move {
         let _guard = state.write_gate.write().await;
         let store = state.store.clone();
         let policy = state.policy();
-        let result =
-            run_db(move || store.import_seeds(&temporary, &policy, &cancel, &progress)).await;
+        let result = run_db(move || {
+            store.import_seeds_report(&temporary, &policy, &cancel, &progress, id, &rejected)
+        })
+        .await;
         if let Ok(Some(result)) = &result {
             let _ = state.store.audit(
                 account.id,

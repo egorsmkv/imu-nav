@@ -159,15 +159,18 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
     /** Save the sharing-server and country settings from the Settings screen. */
     fun saveSettings(syncUrl: String, autoSync: Boolean, mccs: String) {
         val serverChanged = prefs.getString("sync_url", "").orEmpty().trimEnd('/') != syncUrl.trim().trimEnd('/')
+        val countries = mccs.trim().ifEmpty { "255" }
+        val countriesChanged = prefs.getString("mccs", "255") != countries
         if (serverChanged) auth.clear()
         prefs.edit {
             putString("sync_url", syncUrl.trim())
             putBoolean("auto_sync", autoSync)
-            putString("mccs", mccs.trim().ifEmpty { "255" })
+            putString("mccs", countries)
             if (serverChanged) {
                 putLong("last_upload_ms", 0)
                 putLong("last_download_s", 0)
             }
+            if (serverChanged || countriesChanged) putBoolean("shared_removal_sync_v1", false)
         }
         refresh()
     }
@@ -364,6 +367,7 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
             prefs.edit {
                 remove("bundled_sha256")
                 putLong("last_download_s", 0) // next sync downloads the full shared dataset again
+                putBoolean("shared_removal_sync_v1", false)
             }
             if (deleteLearned) prefs.edit { putLong("last_upload_ms", 0) }
             log("cells_reset learned_deleted=$deleteLearned")

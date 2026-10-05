@@ -419,7 +419,12 @@ Browser users can register at `/signup`, sign in at `/login`, and review or dele
 uploaded cell observations at `/account`; the panel updates shared consensus after deletion.
 Administrators sign in through `/login` and are directed to `/admin`. Tower deletion requires
 quarantine first; the panel also supports account suspension and atomic seed imports and policy
-recalculation. Saved policy values override CLI defaults on later starts.
+recalculation. The dashboard pages through towers, accounts, audit activity, and observations;
+imports show live staging/progress, can be cancelled, and provide a rejected-row CSV report.
+Phones now receive tower removals on their next sync when a shared tower is quarantined, deleted,
+or withdrawn by policy. Recalculation applies Ukraine-only and maximum-range rules to stored
+observations; maximum-jump checks still apply to new uploads because earlier positions are not
+retained. Saved policy values override CLI defaults on later starts.
 The old Kotlin server's internal contribution gzip is not a
 SQLite migration source; re-import the original seed export when moving to this server. See
 [`server/README.md`](server/README.md) for the complete HTTP, management, and WebSocket API,

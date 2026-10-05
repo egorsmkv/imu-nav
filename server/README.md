@@ -49,8 +49,9 @@ intended for local development or a trusted reverse proxy.
 ## Administrator panel
 
 Sign in at `/login` with an administrator account; the browser opens `/admin`. The panel shows
-tower totals, MCC filtering, tower details and observations, account status, recent administrator
-actions, and the current anti-poisoning policy. Forms use the browser session and CSRF token.
+tower totals, MCC and status filtering, paginated towers and observations, account status,
+administrator actions, and the current anti-poisoning policy. Observations can be filtered by
+device, accounts by email, and audit entries by action. Forms use the browser session and CSRF token.
 The pages use Askama templates and Bootstrap 5.3.8 from the jsDelivr CDN.
 
 Administrators can correct a tower position, remove individual observations, quarantine or restore
@@ -63,11 +64,17 @@ retaining existing observations. The acting administrator and final active admin
 suspended.
 
 The panel accepts OpenCellID CSV/gzip seed imports up to 512 MiB compressed, 1 GiB decoded, and
-two million rows. Imports are streamed to a temporary file and applied in one cancellable SQLite
+two million rows. Upload staging and import progress update automatically, and administrators can
+cancel during either phase. Rejected rows are available as a CSV report after a successful import.
+Imports are streamed to a temporary file and applied in one cancellable SQLite
 transaction. It can export all consensuses (including quarantine status) and raw observations as
 gzip CSV; exports omit account emails and credentials. Policy changes are persisted and activate
 after an atomic full recalculation. During the apply transaction, public reads continue against
 committed data and writes wait. Job progress and cancellation are available on the dashboard.
+Recalculation filters stored observations against the new Ukraine-only and maximum-range rules;
+relaxing those rules can restore the stored observations. Maximum-jump checks apply when a device
+uploads an observation: the database retains only its latest observation per tower, so earlier
+movement cannot be reconstructed during recalculation.
 Interrupted jobs roll back; they do not resume after restart. CLI policy values initialize new
 databases and saved policy overrides them on later starts.
 
@@ -75,6 +82,11 @@ databases and saved policy overrides them on later starts.
 
 - `POST /v1/cells` accepts the app's plain or gzip OpenCellID CSV and requires `X-Device-Id`.
 - `GET /v1/cells.csv.gz?mcc=255&since=0` streams confirmed towers to existing apps.
+- `GET /v1/cells/removals.csv?mcc=255&since=0` returns exact keys withdrawn by quarantine,
+  deletion, or publication policy. Updated apps apply these removals to their shared-tower source
+  during sync. The `X-Cell-Sync-Time` response header supplies a server-side cursor. On the first
+  sync after upgrading, the app replaces its prior shared snapshot to remove older stale entries.
+  Restored or republished towers receive a new update timestamp.
 - `GET /v1/towers?mcc=255&since=0&limit=500` returns published and pending consensus as JSON;
   `GET /v1/towers/{radio}/{mcc}/{mnc}/{area}/{cid}` returns one tower.
 - `PUT /v1/towers/{radio}/{mcc}/{mnc}/{area}/{cid}` creates or updates a manual correction. Its JSON

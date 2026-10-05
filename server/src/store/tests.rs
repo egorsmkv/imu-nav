@@ -77,3 +77,28 @@ fn seed_is_published_immediately_and_delete_is_durable() -> Result<()> {
     assert_eq!(CellStore::open(file.path())?.counts(&policy)?, (0, 0));
     Ok(())
 }
+
+#[test]
+fn deleting_an_observation_updates_incremental_sync() -> Result<()> {
+    let file = NamedTempFile::new()?;
+    let store = CellStore::open(file.path())?;
+    let policy = Policy::default();
+    let item = tower(44, 50.3, 30.4, 5);
+    store.contribute("account:1:phone", std::slice::from_ref(&item), 10, &policy)?;
+    store.contribute("account:2:phone", std::slice::from_ref(&item), 11, &policy)?;
+    assert_eq!(store.query(None, 0, None, &policy)?.len(), 1);
+    store.delete_own_contribution(2, &item.key, "account:2:phone", &policy)?;
+    assert!(store.query(None, 0, None, &policy)?.is_empty());
+    assert_eq!(store.removals(None, 0)?, vec![item.key.clone()]);
+    store.contribute(
+        "account:3:phone",
+        std::slice::from_ref(&item),
+        crate::auth::now_s(),
+        &policy,
+    )?;
+    assert_eq!(store.query(None, 0, None, &policy)?.len(), 1);
+    assert!(store.removals(None, 0)?.is_empty());
+    store.delete_own_contribution(1, &item.key, "account:1:phone", &policy)?;
+    assert_eq!(store.removals(None, 0)?, vec![item.key]);
+    Ok(())
+}

@@ -76,7 +76,7 @@ fn manual_correction_import_and_quarantine() -> Result<()> {
             .lat,
         50.8
     );
-    store.set_quarantined(1, &original.key, true)?;
+    store.set_quarantined(1, &original.key, true, &policy)?;
     assert!(store.query(None, 0, None, &policy)?.is_empty());
     store.contribute("account:2:phone", &[tower(1, 50.4)], 100, &policy)?;
     assert!(store.query(None, 0, None, &policy)?.is_empty());
@@ -86,7 +86,7 @@ fn manual_correction_import_and_quarantine() -> Result<()> {
     assert!(store.consensus(&original.key)?.is_none());
     store.contribute("account:2:phone", &[tower(1, 50.4)], 101, &policy)?;
     assert!(store.query(None, 0, None, &policy)?.is_empty());
-    store.set_quarantined(1, &original.key, false)?;
+    store.set_quarantined(1, &original.key, false, &policy)?;
     assert!(store.query(None, 0, None, &policy)?.is_empty());
     Ok(())
 }
@@ -257,7 +257,7 @@ fn exports_include_quarantine_but_not_credentials() -> Result<()> {
     let store = CellStore::open(database.path())?;
     let item = tower(1, 50.4);
     store.seed(std::slice::from_ref(&item), 1, &Policy::default())?;
-    store.set_quarantined(1, &item.key, true)?;
+    store.set_quarantined(1, &item.key, true, &Policy::default())?;
     store.export_to_path(export.path(), false)?;
     let mut plain = String::new();
     GzDecoder::new(std::fs::File::open(export.path())?).read_to_string(&mut plain)?;
@@ -268,5 +268,135 @@ fn exports_include_quarantine_but_not_credentials() -> Result<()> {
     GzDecoder::new(std::fs::File::open(export.path())?).read_to_string(&mut plain)?;
     assert!(plain.contains("device"));
     assert!(!plain.contains("password_hash"));
+    Ok(())
+}
+
+#[test]
+fn removals_follow_quarantine_delete_and_restore() -> Result<()> {
+    let database = NamedTempFile::new()?;
+    let store = CellStore::open(database.path())?;
+    let policy = Policy::default();
+    let item = tower(7, 50.4);
+    store.seed(std::slice::from_ref(&item), 1, &policy)?;
+    assert!(store.removals(None, 0)?.is_empty());
+    store.set_quarantined(1, &item.key, true, &policy)?;
+    assert_eq!(store.removals(None, 0)?, vec![item.key.clone()]);
+    assert!(store.delete_quarantined(1, &item.key)?);
+    store.set_quarantined(1, &item.key, false, &policy)?;
+    assert_eq!(store.removals(None, 0)?, vec![item.key.clone()]);
+    store.seed(std::slice::from_ref(&item), 2, &policy)?;
+    assert!(store.removals(None, 0)?.is_empty());
+    store.set_quarantined(1, &item.key, true, &policy)?;
+    store.set_quarantined(1, &item.key, false, &policy)?;
+    assert!(store.removals(None, 0)?.is_empty());
+    assert!(store.consensus(&item.key)?.unwrap().updated_s >= auth::now_s() - 1);
+    Ok(())
+}
+
+#[test]
+fn policy_filters_historical_rows_and_recovers_when_relaxed() -> Result<()> {
+    let database = NamedTempFile::new()?;
+    let store = CellStore::open(database.path())?;
+    let original = Policy::default();
+    let outside = tower(8, 54.0);
+    let wide = CellTower {
+        range_m: 20_000.0,
+        ..tower(9, 50.4)
+    };
+    store.seed(&[outside.clone(), wide.clone()], 1, &original)?;
+    let restricted = Policy {
+        ukraine_only: true,
+        max_range_m: 1_000.0,
+        ..original.clone()
+    };
+    let gate = tokio::sync::RwLock::new(());
+    let active = std::sync::RwLock::new(original.clone());
+    assert!(store.apply_policy_live(
+        &restricted,
+        &AtomicBool::new(false),
+        &AtomicUsize::new(0),
+        &gate,
+        &active
+    )?);
+    assert!(store.query(None, 0, None, &restricted)?.is_empty());
+    assert!(store.consensus(&outside.key)?.is_none());
+    assert!(store.consensus(&wide.key)?.is_none());
+    assert_eq!(store.removals(None, 0)?.len(), 2);
+    assert!(store.apply_policy_live(
+        &original,
+        &AtomicBool::new(false),
+        &AtomicUsize::new(0),
+        &gate,
+        &active
+    )?);
+    assert_eq!(store.query(None, 0, None, &original)?.len(), 2);
+    assert!(store.removals(None, 0)?.is_empty());
+    Ok(())
+}
+
+#[test]
+fn import_report_records_rejected_rows() -> Result<()> {
+    let database = NamedTempFile::new()?;
+    let import = NamedTempFile::new()?;
+    let report = NamedTempFile::new()?;
+    let store = CellStore::open(database.path())?;
+    std::fs::write(
+        import.path(),
+        "radio,mcc,net,area,cell,unit,lon,lat,range,samples\nLTE,255,1,10,1,,30.5,50.4,500,5\nLTE,255,1,10,2,,30.5,54,500,5\ninvalid,row\n",
+    )?;
+    let policy = Policy {
+        ukraine_only: true,
+        ..Policy::default()
+    };
+    let id = store.start_admin_job("seed import")?;
+    let rejected = AtomicUsize::new(0);
+    let result = store
+        .import_seeds_report(
+            import.path(),
+            &policy,
+            &AtomicBool::new(false),
+            &AtomicUsize::new(0),
+            Some(id),
+            &rejected,
+        )?
+        .unwrap();
+    assert_eq!((result.accepted, result.rejected), (1, 2));
+    assert_eq!(rejected.load(Ordering::Relaxed), 2);
+    store.export_rejections_to_path(id, report.path())?;
+    let csv = std::fs::read_to_string(report.path())?;
+    assert!(csv.contains("Rejected by current coordinate or range policy"));
+    assert!(csv.contains("Invalid OpenCellID row"));
+    assert_eq!(store.rejection_count(id)?, 2);
+    Ok(())
+}
+
+#[test]
+fn management_lists_page_beyond_old_caps_and_filter_status() -> Result<()> {
+    let database = NamedTempFile::new()?;
+    let store = CellStore::open(database.path())?;
+    let policy = Policy::default();
+    let towers = (1..=105).map(|cid| tower(cid, 50.4)).collect::<Vec<_>>();
+    store.seed(&towers, 1, &policy)?;
+    assert_eq!(
+        store.admin_tower_page(None, "", 100, 0, &policy)?.len(),
+        100
+    );
+    assert_eq!(
+        store.admin_tower_page(None, "", 100, 100, &policy)?.len(),
+        5
+    );
+    store.set_quarantined(1, &towers[0].key, true, &policy)?;
+    assert_eq!(
+        store
+            .admin_tower_page(None, "quarantined", 100, 0, &policy)?
+            .len(),
+        1
+    );
+    assert_eq!(
+        store
+            .admin_tower_page(None, "seeded", 200, 0, &policy)?
+            .len(),
+        104
+    );
     Ok(())
 }

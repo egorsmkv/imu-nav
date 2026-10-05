@@ -107,9 +107,10 @@ object CellMerge {
 /**
  * Client for a cell-sharing server (see the `server` module).
  *
- * The protocol has two calls:
+ * The protocol has three calls:
  *  - `POST {base}/v1/cells` — upload a gzip CSV of towers this phone learned; answers `{"accepted":N}`
  *  - `GET  {base}/v1/cells.csv.gz?mcc=255&since=<epoch s>` — download merged towers changed since then
+ *  - `GET  {base}/v1/cells/removals.csv?mcc=255&since=<epoch s>` — withdraw removed shared towers
  *
  * Only tower positions are exchanged — never where the phone has been.
  *
@@ -152,6 +153,37 @@ class CellSyncClient(baseUrl: String, private val apiKey: String? = null, privat
             successBody(response).byteStream().use { CellCsv.read(it, onTower) }
         }
     }
+
+    /** Download exact tower keys withdrawn by server moderation or publication policy. */
+    fun downloadRemovals(mccs: Collection<Int>, sinceEpochS: Long, onKey: (CellKey) -> Unit): RemovalDownload {
+        val url = "$base/v1/cells/removals.csv?mcc=${mccs.joinToString(",")}&since=$sinceEpochS"
+        return http.newCall(newRequest(url).get().build()).execute().use { response ->
+            val serverEpochS = response.header("X-Cell-Sync-Time")?.toLongOrNull()
+            var count = 0L
+            successBody(response).charStream().buffered().useLines { lines ->
+                val rows = lines.iterator()
+                if (!rows.hasNext() || rows.next() != "radio,mcc,mnc,area,cid") throw IOException("invalid tower removal header")
+                while (rows.hasNext()) {
+                    val line = rows.next()
+                    val fields = line.split(',')
+                    if (fields.size != 5) throw IOException("invalid tower removal row")
+                    val key = CellKey(
+                        Radio.valueOf(fields[0]),
+                        fields[1].toInt(),
+                        fields[2].toInt(),
+                        fields[3].toInt(),
+                        fields[4].toLong(),
+                    )
+                    onKey(key)
+                    count++
+                }
+            }
+            RemovalDownload(count, serverEpochS)
+        }
+    }
+
+    /** The server timestamp is captured before the removal query, so later changes remain in the next sync window. */
+    data class RemovalDownload(val count: Long, val serverEpochS: Long?)
 
     /** A request builder with our authentication headers already set. */
     private fun newRequest(url: String): Request.Builder = Request.Builder().url(url).apply {

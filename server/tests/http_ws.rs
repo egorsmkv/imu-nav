@@ -7,6 +7,7 @@ use imu_nav_cell_server::{
 use reqwest::StatusCode;
 use std::net::{Ipv4Addr, SocketAddr};
 use tempfile::NamedTempFile;
+use tokio::io::AsyncWriteExt;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::HeaderValue;
 
@@ -728,7 +729,7 @@ async fn admin_pages_use_session_and_render_controls() -> Result<()> {
             .get("content-security-policy")
             .and_then(|value| value.to_str().ok()),
         Some(
-            "default-src 'none'; style-src https://cdn.jsdelivr.net; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+            "default-src 'none'; style-src https://cdn.jsdelivr.net; script-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
         )
     );
     let dashboard_html = dashboard.text().await?;
@@ -737,6 +738,32 @@ async fn admin_pages_use_session_and_render_controls() -> Result<()> {
     assert!(dashboard_html.contains("/admin/towers/LTE/255/1/1864/99"));
     assert!(dashboard_html.contains("Seed import and exports"));
     assert!(dashboard_html.contains("Save and recalculate"));
+    assert!(dashboard_html.contains("name=\"status\""));
+    assert!(dashboard_html.contains("Page 1 of matching towers"));
+    let script = client
+        .get(format!("{}/admin/admin.js", server.base_url))
+        .header("cookie", &cookie)
+        .send()
+        .await?;
+    assert_eq!(script.status(), StatusCode::OK);
+    assert!(script.text().await?.contains("XMLHttpRequest"));
+    let job = client
+        .get(format!("{}/admin/jobs/status", server.base_url))
+        .header("cookie", &cookie)
+        .send()
+        .await?;
+    assert_eq!(job.status(), StatusCode::OK);
+    assert!(job.json::<serde_json::Value>().await?["status"].is_string());
+    let filtered = client
+        .get(format!(
+            "{}/admin?status=seeded&tower_page=2&limit=1",
+            server.base_url
+        ))
+        .header("cookie", &cookie)
+        .send()
+        .await?;
+    assert_eq!(filtered.status(), StatusCode::OK);
+    assert!(filtered.text().await?.contains("Page 2"));
 
     let detail = client
         .get(format!(
@@ -752,6 +779,31 @@ async fn admin_pages_use_session_and_render_controls() -> Result<()> {
     assert!(detail_html.contains("50.4500000"));
     assert!(detail_html.contains("Manual correction"));
     assert!(detail_html.contains("Quarantine tower"));
+    let observation_page = client
+        .get(format!(
+            "{}/admin/towers/LTE/255/1/1864/99?page=2",
+            server.base_url
+        ))
+        .header("cookie", &cookie)
+        .send()
+        .await?;
+    assert!(
+        observation_page
+            .text()
+            .await?
+            .contains("Observation page 2")
+    );
+    let filtered_observations = client
+        .get(format!(
+            "{}/admin/towers/LTE/255/1/1864/99?device=missing",
+            server.base_url
+        ))
+        .header("cookie", &cookie)
+        .send()
+        .await?
+        .text()
+        .await?;
+    assert!(!filtered_observations.contains("value=\"manual\""));
 
     let invalid_csrf = client
         .post(format!(
@@ -810,6 +862,16 @@ async fn admin_pages_use_session_and_render_controls() -> Result<()> {
         .send()
         .await?;
     assert_eq!(quarantine.status(), StatusCode::SEE_OTHER);
+    let removals = client
+        .get(format!(
+            "{}/v1/cells/removals.csv?mcc=255&since=0",
+            server.base_url
+        ))
+        .send()
+        .await?;
+    assert!(removals.headers().get("x-cell-sync-time").is_some());
+    let removals = removals.text().await?;
+    assert!(removals.contains("LTE,255,1,1864,99"));
     let hidden = client
         .get(format!("{}/v1/cells.csv.gz", server.base_url))
         .send()
@@ -825,6 +887,16 @@ async fn admin_pages_use_session_and_render_controls() -> Result<()> {
         .send()
         .await?;
     assert_eq!(restore.status(), StatusCode::SEE_OTHER);
+    let removals = client
+        .get(format!(
+            "{}/v1/cells/removals.csv?mcc=255&since=0",
+            server.base_url
+        ))
+        .send()
+        .await?
+        .text()
+        .await?;
+    assert!(!removals.contains("LTE,255,1,1864,99"));
     let visible = client
         .get(format!("{}/v1/cells.csv.gz", server.base_url))
         .send()
@@ -880,6 +952,33 @@ async fn admin_pages_use_session_and_render_controls() -> Result<()> {
         .send()
         .await?;
     assert_eq!(invalid_filter.status(), StatusCode::BAD_REQUEST);
+    let invalid_status = client
+        .get(format!("{}/admin?status=unknown", server.base_url))
+        .header("cookie", &cookie)
+        .send()
+        .await?;
+    assert_eq!(invalid_status.status(), StatusCode::BAD_REQUEST);
+    let account_page = client
+        .get(format!(
+            "{}/admin?account_page=2&audit_page=2",
+            server.base_url
+        ))
+        .header("cookie", &cookie)
+        .send()
+        .await?;
+    assert_eq!(account_page.status(), StatusCode::OK);
+    assert!(account_page.text().await?.contains("Page 2"));
+    let audit_filter = client
+        .get(format!(
+            "{}/admin?audit_action=quarantine_tower",
+            server.base_url
+        ))
+        .header("cookie", &cookie)
+        .send()
+        .await?
+        .text()
+        .await?;
+    assert!(audit_filter.contains("<td>quarantine_tower</td>"));
     Ok(())
 }
 
@@ -985,7 +1084,7 @@ async fn admin_policy_import_export_and_account_actions_work() -> Result<()> {
 
     let boundary = "imu-nav-test-boundary";
     let body = format!(
-        "--{boundary}\r\nContent-Disposition: form-data; name=\"csrf\"\r\n\r\n{csrf}\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"seeds.csv\"\r\nContent-Type: text/csv\r\n\r\nLTE,255,1,1864,99,,30.52,50.45,700,20\n\r\n--{boundary}--\r\n"
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"csrf\"\r\n\r\n{csrf}\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"seeds.csv\"\r\nContent-Type: text/csv\r\n\r\nLTE,255,1,1864,99,,30.52,50.45,700,20\ninvalid,row\n\r\n--{boundary}--\r\n"
     );
     let response = client
         .post(format!("{}/admin/import", server.base_url))
@@ -998,6 +1097,33 @@ async fn admin_policy_import_export_and_account_actions_work() -> Result<()> {
         .send()
         .await?;
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    let mut report_job = None;
+    for _ in 0..100 {
+        let status = client
+            .get(format!("{}/admin/jobs/status", server.base_url))
+            .header("cookie", &cookie)
+            .send()
+            .await?
+            .json::<serde_json::Value>()
+            .await?;
+        if status["status"] == "complete" {
+            assert_eq!(status["rejected"], 1);
+            report_job = status["id"].as_i64();
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    let report_job = report_job.expect("import finished");
+    let report = client
+        .get(format!(
+            "{}/admin/jobs/{report_job}/rejections.csv",
+            server.base_url
+        ))
+        .header("cookie", &cookie)
+        .send()
+        .await?;
+    assert_eq!(report.status(), StatusCode::OK);
+    assert!(report.text().await?.contains("Invalid OpenCellID row"));
     for _ in 0..100 {
         if store
             .consensus(&CellKey {
@@ -1071,6 +1197,98 @@ async fn admin_policy_import_export_and_account_actions_work() -> Result<()> {
         .send()
         .await?;
     assert_eq!(restore.status(), StatusCode::SEE_OTHER);
+    Ok(())
+}
+
+#[tokio::test]
+async fn administrator_can_cancel_while_upload_is_staging() -> Result<()> {
+    let server = start_server().await?;
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?;
+    let login = client
+        .post(format!("{}/login", server.base_url))
+        .form(&[
+            ("email", "admin@example.org"),
+            ("password", "correct horse battery staple"),
+        ])
+        .send()
+        .await?;
+    let cookie = login.headers()["set-cookie"]
+        .to_str()?
+        .split(';')
+        .next()
+        .unwrap()
+        .to_owned();
+    let dashboard = client
+        .get(format!("{}/admin", server.base_url))
+        .header("cookie", &cookie)
+        .send()
+        .await?
+        .text()
+        .await?;
+    let csrf = dashboard
+        .split("name=\"csrf\" value=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap();
+    let host = server.base_url.trim_start_matches("http://");
+    let mut socket = tokio::net::TcpStream::connect(host).await?;
+    let boundary = "staging-cancel-test";
+    let prefix = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"csrf\"\r\n\r\n{csrf}\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"slow.csv\"\r\nContent-Type: text/csv\r\n\r\n"
+    );
+    let head = format!(
+        "POST /admin/import HTTP/1.1\r\nHost: {host}\r\nCookie: {cookie}\r\nContent-Type: multipart/form-data; boundary={boundary}\r\nContent-Length: {}\r\n\r\n",
+        prefix.len() + 100_000
+    );
+    socket.write_all(head.as_bytes()).await?;
+    socket.write_all(prefix.as_bytes()).await?;
+    socket
+        .write_all(b"LTE,255,1,1864,1,,30.5,50.4,500,5\n")
+        .await?;
+    let mut saw_upload = false;
+    for _ in 0..100 {
+        let status = client
+            .get(format!("{}/admin/jobs/status", server.base_url))
+            .header("cookie", &cookie)
+            .send()
+            .await?
+            .json::<serde_json::Value>()
+            .await?;
+        if status["phase"] == "uploading" {
+            saw_upload = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert!(saw_upload);
+    let cancelled = client
+        .post(format!("{}/admin/jobs/cancel", server.base_url))
+        .header("cookie", &cookie)
+        .form(&[("csrf", csrf)])
+        .send()
+        .await?;
+    assert_eq!(cancelled.status(), StatusCode::SEE_OTHER);
+    drop(socket);
+    let mut finished = false;
+    for _ in 0..100 {
+        let status = client
+            .get(format!("{}/admin/jobs/status", server.base_url))
+            .header("cookie", &cookie)
+            .send()
+            .await?
+            .json::<serde_json::Value>()
+            .await?;
+        if status["status"] == "cancelled" {
+            finished = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert!(finished);
     Ok(())
 }
 

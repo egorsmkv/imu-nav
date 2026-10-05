@@ -95,6 +95,7 @@ pub fn router(state: AppState) -> Router {
         .route("/health", get(health))
         .route("/v1/cells", post(upload_cells))
         .route("/v1/cells.csv.gz", get(download_cells))
+        .route("/v1/cells/removals.csv", get(download_removals))
         .route("/v1/towers", get(list_towers))
         .route(
             "/v1/towers/{radio}/{mcc}/{mnc}/{area}/{cid}",
@@ -249,6 +250,38 @@ async fn download_cells(
     Ok(([(header::CONTENT_TYPE, "application/gzip")], body).into_response())
 }
 
+async fn download_removals(
+    State(state): State<AppState>,
+    Query(query): Query<TowerQuery>,
+) -> Result<Response, ApiError> {
+    let _visibility = state.activation_gate.read().await;
+    let sync_time = auth::now_s();
+    let store = state.store.clone();
+    let mccs = query.mccs()?;
+    let since = query.since.unwrap_or(0).max(0);
+    let body = run_db(move || {
+        let mut writer = csv::Writer::from_writer(Vec::new());
+        writer.write_record(["radio", "mcc", "mnc", "area", "cid"])?;
+        for key in store.removals(mccs.as_ref(), since)? {
+            writer.write_record([
+                key.radio.to_string(),
+                key.mcc.to_string(),
+                key.mnc.to_string(),
+                key.area.to_string(),
+                key.cid.to_string(),
+            ])?;
+        }
+        Ok(writer.into_inner()?)
+    })
+    .await?;
+    let mut response = ([(header::CONTENT_TYPE, "text/csv; charset=utf-8")], body).into_response();
+    response.headers_mut().insert(
+        "x-cell-sync-time",
+        sync_time.to_string().parse().expect("epoch seconds header"),
+    );
+    Ok(response)
+}
+
 #[derive(Serialize)]
 struct TowerList {
     towers: Vec<Consensus>,
@@ -361,7 +394,10 @@ async fn quarantine_tower(
     let _guard = state.write_gate.read().await;
     let store = state.store.clone();
     let target = key.clone();
-    if !run_db(move || store.set_quarantined(account.id, &target, update.quarantined)).await? {
+    let policy = state.policy();
+    if !run_db(move || store.set_quarantined(account.id, &target, update.quarantined, &policy))
+        .await?
+    {
         return Err(ApiError(StatusCode::NOT_FOUND, "NOT_FOUND"));
     }
     if update.quarantined {

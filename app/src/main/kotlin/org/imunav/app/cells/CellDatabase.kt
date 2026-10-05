@@ -206,6 +206,26 @@ class CellDatabase(context: Context) :
         }
     }
 
+    /** Apply one completed sync atomically, so a failed download never advances local tower state. */
+    fun applySharedSync(removals: Collection<CellKey>, towers: Collection<CellTower>, replace: Boolean = false) {
+        val db = writableDatabase
+        db.transaction {
+            if (replace) db.execSQL("DELETE FROM shared")
+            for (key in removals) {
+                db.execSQL(
+                    "DELETE FROM shared WHERE radio=? AND mcc=? AND mnc=? AND area=? AND cid=?",
+                    arrayOf<Any>(key.radio.ordinal, key.mcc, key.mnc, key.area, key.cid),
+                )
+            }
+            for (tower in towers) {
+                db.execSQL(
+                    "INSERT OR REPLACE INTO shared (radio,mcc,mnc,area,cid,lat,lon,range,samples) VALUES (?,?,?,?,?,?,?,?,?)",
+                    arrayOf<Any>(tower.key.radio.ordinal, tower.key.mcc, tower.key.mnc, tower.key.area, tower.key.cid, tower.lat, tower.lon, tower.rangeM, tower.samples),
+                )
+            }
+        }
+    }
+
     /**
      * Write every known tower once, choosing per cell the source that lookups would use
      * (declaration order of [CellSource]), as gzip CSV in OpenCellID columns.

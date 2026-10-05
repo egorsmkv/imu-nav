@@ -1,6 +1,9 @@
 package org.imunav.core
 
 import com.sun.net.httpserver.HttpServer
+import org.imunav.core.cells.CellKey
+import org.imunav.core.cells.CellSyncClient
+import org.imunav.core.cells.Radio
 import org.imunav.core.cells.ResumableHttpInputStream
 import org.imunav.core.net.Http
 import org.imunav.core.net.HttpException
@@ -52,6 +55,25 @@ class HttpTest {
         val e = assertFailsWith<HttpException> { Http.getText("$baseUrl/fail") }
         assertEquals(404, e.code)
         assertTrue("no such route" in e.message.orEmpty())
+    }
+
+    @Test
+    fun syncClientReadsRemovalKeysAndIncrementalQuery() {
+        var query: String? = null
+        server.createContext("/v1/cells/removals.csv") { exchange ->
+            query = exchange.requestURI.rawQuery
+            exchange.responseHeaders.add("X-Cell-Sync-Time", "456")
+            val body = "radio,mcc,mnc,area,cid\nLTE,255,1,1864,99\nNR,255,2,7,12345678901\n".toByteArray()
+            exchange.sendResponseHeaders(200, body.size.toLong())
+            exchange.responseBody.use { it.write(body) }
+        }
+        val keys = ArrayList<CellKey>()
+        val download = CellSyncClient(baseUrl).downloadRemovals(listOf(255), 123) { keys += it }
+        assertEquals(2, download.count)
+        assertEquals(456, download.serverEpochS)
+        assertEquals("mcc=255&since=123", query)
+        assertEquals(CellKey(Radio.LTE, 255, 1, 1864, 99), keys[0])
+        assertEquals(CellKey(Radio.NR, 255, 2, 7, 12345678901), keys[1])
     }
 
     @Test
