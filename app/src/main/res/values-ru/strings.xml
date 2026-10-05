@@ -397,6 +397,8 @@
     <string name="routing_import">Импорт пакета</string>
     <string name="routing_url">Адрес пакета (.zip)</string>
     <string name="routing_url_help">Вставьте ссылку на пакет маршрутов или импортируйте загруженный файл .zip.</string>
+    <string name="offline_packs_telegram_title">ZIP-архивы офлайн-карт и маршрутов</string>
+    <string name="offline_packs_telegram_summary">Найдите ZIP-архивы в нашей группе Telegram. Скачайте пакет карты или маршрутов и импортируйте его ниже.</string>
     <string name="routing_remove">Удалить</string>
     <string name="routing_allow_online">Разрешить онлайн-маршруты и поиск</string>
     <string name="routing_allow_online_summary">Используется, когда офлайн-карта или поисковый индекс не могут ответить. Отправляет старт и пункт назначения на router.project-osrm.org, а текст поиска — на сервер поиска адресов ниже.</string>
