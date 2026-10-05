@@ -1,7 +1,7 @@
 //! Exercise the shipped executable, including SQLite import and graceful profile flushing.
 #![cfg(unix)]
 use imu_nav_cell_server::{CellStore, create_admin};
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
 use std::time::Duration;
@@ -151,5 +151,52 @@ fn rejects_invalid_policy_missing_import_and_unwritable_database() -> anyhow::Re
         .arg(directory.path())
         .output()?;
     assert!(!output.status.success());
+    Ok(())
+}
+
+#[test]
+fn admin_setup_prompts_and_finishes_after_one_password_line() -> anyhow::Result<()> {
+    let directory = tempfile::tempdir()?;
+    let database = directory.path().join("cells.sqlite3");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_imu-nav-cell-server"))
+        .arg("--data")
+        .arg(&database)
+        .args(["--create-admin", "admin@example.org"])
+        .env("CELLS_LOG_LEVEL", "debug")
+        .env_remove("RUST_LOG")
+        .env("NO_COLOR", "1")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()?;
+    let mut input = child.stdin.take().unwrap();
+    input.write_all(b"correct horse battery staple\n")?;
+    input.flush()?;
+    // Keep stdin open: the command must finish after Enter, without waiting for Ctrl-D.
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
+        }
+        if std::time::Instant::now() >= deadline {
+            child.kill()?;
+            child.wait()?;
+            anyhow::bail!("administrator setup waited for end-of-file");
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    let mut output = String::new();
+    child.stdout.take().unwrap().read_to_string(&mut output)?;
+    assert!(status.success());
+    assert!(output.contains("waiting for one administrator password line"));
+    assert!(output.contains("administrator password received"));
+    assert!(output.contains("administrator account created"));
+    assert!(!output.contains("correct horse battery staple"));
+    let connection = rusqlite::Connection::open(database)?;
+    let admins: i64 =
+        connection.query_row("SELECT COUNT(*) FROM users WHERE admin=1", [], |row| {
+            row.get(0)
+        })?;
+    assert_eq!(admins, 1);
+    drop(input);
     Ok(())
 }

@@ -3,7 +3,7 @@ use clap::Parser;
 use imu_nav_cell_server::{
     AppState, CellStore, MailConfig, Policy, ServerConfig, create_admin, router,
 };
-use std::io::Read;
+use std::io::IsTerminal;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -13,6 +13,9 @@ use tracing_subscriber::EnvFilter;
 #[derive(Parser)]
 #[command(version, about)]
 struct Options {
+    /// Default tracing level; `RUST_LOG` overrides this for per-module filters.
+    #[arg(long, env = "CELLS_LOG_LEVEL", default_value = "info", value_parser = ["error", "warn", "info", "debug", "trace"])]
+    log_level: String,
     /// Network interface to listen on; use 127.0.0.1 for a local traffic simulation.
     #[arg(long, default_value_t = IpAddr::V4(Ipv4Addr::UNSPECIFIED))]
     bind: IpAddr,
@@ -20,7 +23,7 @@ struct Options {
     port: u16,
     #[arg(long, default_value = "cells.sqlite3")]
     data: PathBuf,
-    /// Create an admin locally; read its password from standard input, then exit.
+    /// Create an admin locally; prompt on a terminal or read one line from standard input.
     #[arg(long)]
     create_admin: Option<String>,
     #[arg(long, env = "CELLS_PUBLIC_URL")]
@@ -54,12 +57,14 @@ struct Options {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let options = Options::parse();
     tracing_subscriber::fmt()
         .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| EnvFilter::new(&options.log_level)),
         )
         .init();
-    let options = Options::parse();
+    tracing::info!(data = %options.data.display(), "opening cell database");
     #[cfg(feature = "profiling")]
     let _profile_guard = options.profile_output.as_ref().map(|path| {
         hotpath::HotpathGuardBuilder::new("imu-nav-cell-server")
@@ -75,11 +80,14 @@ async fn main() -> Result<()> {
     };
     let store = CellStore::open(&options.data)?;
     if let Some(email) = options.create_admin.as_deref() {
-        let mut password = String::new();
-        std::io::stdin().read_to_string(&mut password)?;
-        create_admin(&store, email, password.trim_end_matches(['\n', '\r']))?;
+        tracing::info!("administrator setup started");
+        let password = read_admin_password()?;
+        tracing::debug!("administrator password received; creating account");
+        create_admin(&store, email, &password)?;
+        tracing::info!("administrator account created");
         return Ok(());
     }
+    tracing::info!(bind = %options.bind, port = options.port, area = %options.area, "starting cell server");
     let mail = match (
         options.public_url,
         options.smtp_host,
@@ -140,7 +148,25 @@ async fn main() -> Result<()> {
     )
     .with_graceful_shutdown(shutdown_signal())
     .await?;
+    tracing::info!("cell server stopped");
     Ok(())
+}
+
+/// Read one password without echo on a terminal; a pipe still supports scripted setup.
+fn read_admin_password() -> Result<String> {
+    if std::io::stdin().is_terminal() {
+        tracing::info!("waiting for administrator password on terminal");
+        return rpassword::prompt_password("Administrator password (12–256 characters): ")
+            .context("cannot read administrator password from terminal");
+    }
+    tracing::info!("waiting for one administrator password line on standard input");
+    let mut password = String::new();
+    let length = std::io::stdin().read_line(&mut password)?;
+    anyhow::ensure!(
+        length > 0,
+        "no administrator password provided on standard input"
+    );
+    Ok(password.trim_end_matches(['\n', '\r']).to_owned())
 }
 
 async fn shutdown_signal() {

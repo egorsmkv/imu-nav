@@ -699,6 +699,7 @@ GraphHopper stack plus
 | jemalloc_pprof | 0.9 | optional Linux native heap export to pprof | Apache 2.0 |
 | Rusqlite + SQLite | 0.40 / bundled | persistent cell server database | MIT / public domain |
 | Argon2, Rand, SHA-2 | 0.5 / 0.9 / 0.10 | password hashes and opaque account tokens | MIT or MIT/Apache 2.0 |
+| rpassword | 7.5 | hidden administrator password prompt on the cell server | Apache 2.0 |
 | Lettre | 0.11 | password-reset email over SMTP | MIT |
 
 The sharing server also uses Serde, CSV, Flate2, Clap and Tracing (MIT or MIT/Apache 2.0).

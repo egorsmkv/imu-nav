@@ -10,18 +10,26 @@ server/target/release/imu-nav-cell-server --port 8080 --data cells.sqlite3 \
     --min-devices 2 --area ukraine --trust-proxy
 ```
 
-Create the first administrator locally (the password is read from standard input):
+Create the first administrator locally with the same database path used by the running server:
 
 ```bash
 server/target/release/imu-nav-cell-server --data cells.sqlite3 --create-admin admin@example.org
 ```
 
+The command logs its progress and prompts for a hidden password in a terminal. Enter a 12–256
+character password and press **Enter**; Ctrl-D is no longer needed. When standard input is a pipe,
+the command reads one line instead. It never logs the password. For example, if the server uses
+`--data server/cells.sqlite3`, use that exact path for administrator setup too.
+
+Set `CELLS_LOG_LEVEL=debug` or pass `--log-level debug` to see setup and startup details.
+`RUST_LOG` takes precedence and also accepts module filters, for example
+`RUST_LOG=imu_nav_cell_server=debug,info`. The default level is `info`.
+
 Put the server behind a TLS reverse proxy for public deployments. Accounts replace the former
 shared API key: users register with email and password in the Android app, and only signed-in
 users can upload. Existing apps can continue downloading published towers but cannot upload.
 `--trust-proxy` honors the first `X-Forwarded-For` address for per-IP limits and must
-only be enabled when direct access to the server port is blocked. Run with `RUST_LOG=debug` for more
-detailed operational logs.
+only be enabled when direct access to the server port is blocked.
 `--bind 127.0.0.1` restricts the listener to loopback for local testing; the default remains
 `0.0.0.0` for existing deployments.
 
