@@ -5,7 +5,10 @@ implementation of the approach used by the BlindDriver app: instead of trusting 
 classifies every fix, and when GPS is unusable it dead-reckons **along the planned route** using
 the phone's IMU, network location and map knowledge. Offline maps, routes and cell data use regional packs.
 
-The detailed Ukraine offline display map can be built once with the [Offline map pack CI workflow](docs/ROUTING_AND_SEARCH.md#build-an-offline-display-map-in-ci) for both a downloadable ZIP and a Play APK asset.
+The [offline routing pack CI workflow](docs/ROUTING_AND_SEARCH.md#build-an-offline-routing-pack-in-ci)
+builds an importable archive for offline routes and address search. The separate
+[offline map pack CI workflow](docs/ROUTING_AND_SEARCH.md#build-an-offline-display-map-in-ci)
+produces the streets shown on screen.
 
 IMU Nav is a research prototype, not a safety system.
 

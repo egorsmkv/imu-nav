@@ -14,6 +14,19 @@ import kotlin.test.assertTrue
  */
 class PackSmokeTest {
     @Test
+    fun packagedGraphLoadsWithPhoneRules() {
+        val dir = System.getenv("GRAPH_DIR")?.let(::File)
+        assumeTrue("GRAPH_DIR not set", dir != null && File(dir, "properties").exists())
+        OfflineGraph.load(dir!!).use { graph ->
+            assertTrue(graph.supports(TravelMode.CAR))
+            assertTrue(graph.supports(TravelMode.FOOT))
+        }
+        JdbcSearchDb(File(dir, SearchIndexBuilder.FILE)).use { search ->
+            search.places("zzzz", 1) // An empty lookup still checks the imported FTS schema.
+        }
+    }
+
+    @Test
     fun longRoutesOnRealPack() {
         val dir = System.getenv("GRAPH_DIR")?.let(::File)
         assumeTrue("GRAPH_DIR not set", dir != null && File(dir, "properties").exists())

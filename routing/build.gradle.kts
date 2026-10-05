@@ -43,6 +43,9 @@ tasks.test {
     maxHeapSize = "2g"
 }
 
-tasks.named<JavaExec>("run") { classpath += builder }
+tasks.named<JavaExec>("run") {
+    workingDir = rootProject.projectDir
+    classpath += builder
+}
 tasks.named<CreateStartScripts>("startScripts") { classpath = classpath!! + builder }
 distributions { main { contents { from(builder) { into("lib") } } } }

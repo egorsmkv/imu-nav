@@ -51,6 +51,16 @@ Packs can also be installed at runtime with **Import pack** (the `.zip`) or **Do
 zip is unpacked while it streams, and interrupted downloads resume. The graph is memory-mapped, so
 large regions do not need a large heap.
 
+**CI archive:** **Actions → Offline routing pack → Run workflow** runs the routing builder on a
+Geofabrik Ukraine extract by default. The workflow accepts a different one-word pack name and HTTPS
+`.osm.pbf` URL, with an optional expected SHA-256. It builds car and foot profiles with `search.db`
+and no elevation tiles, validates the flat ZIP layout and metadata, extracts it, and opens the graph
+with `PhoneGraphHopper`. Pull requests affecting the builder or workflow run the same checks on a
+small Monaco extract. The downloadable GitHub artifact contains `routing-<name>.zip`, its SHA-256
+file and `routing-build.json` with the source URL and checksum, source commit, pack metadata, sizes
+and peak build memory. Extract the artifact first; import its inner routing ZIP in the app or upload
+that ZIP to an HTTPS host for the app's Download field. The workflow does not deploy it.
+
 Android cannot compile GraphHopper's custom models at runtime (Janino generates JVM bytecode), so
 `PhoneGraphHopper` builds the same weighting from plain code; `GraphSpec` holds everything the
 builder and the phone must agree on, and `OfflineGraphTest` checks both give identical routes.

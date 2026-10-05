@@ -1,0 +1,154 @@
+name: Offline routing pack
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/routing-pack.yml'
+      - 'routing/**'
+      - 'tools/verify_routing_pack.py'
+  workflow_dispatch:
+    inputs:
+      pack_name:
+        description: One-word pack name (letters, digits, underscore or hyphen)
+        required: true
+        default: Ukraine
+      osm_url:
+        description: HTTPS URL of the regional OSM PBF extract
+        required: true
+        default: https://download.geofabrik.de/europe/ukraine-latest.osm.pbf
+      osm_sha256:
+        description: Expected OSM SHA-256; leave blank to record the downloaded file's checksum
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  fixture:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Download small Monaco extract
+        run: |
+          mkdir -p build/routing-source
+          curl --fail --location --retry 3 --proto '=https' --proto-redir '=https' \
+            https://download.geofabrik.de/europe/monaco-latest.osm.pbf \
+            --output build/routing-source/monaco.osm.pbf
+      - name: Build and verify importable archive
+        run: |
+          ./gradlew --no-daemon :routing:run \
+            --args="--osm build/routing-source/monaco.osm.pbf --out build/routing-work/graph --name Monaco"
+          python3 tools/verify_routing_pack.py build/routing-work/graph.zip
+          mkdir -p build/routing-import
+          unzip -q build/routing-work/graph.zip -d build/routing-import
+          GRAPH_DIR="$PWD/build/routing-import" ./gradlew --no-daemon :routing:test \
+            --tests 'org.imunav.routing.PackSmokeTest.packagedGraphLoadsWithPhoneRules' --rerun-tasks
+
+  build:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      PACK_NAME: ${{ inputs.pack_name }}
+      OSM_URL: ${{ inputs.osm_url }}
+      OSM_SHA256: ${{ inputs.osm_sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Validate inputs and report runner capacity
+        run: |
+          if [[ ! "$PACK_NAME" =~ ^[A-Za-z][A-Za-z0-9_-]{0,31}$ ]]; then
+            echo 'Pack name must be one word starting with a letter.' >&2
+            exit 1
+          fi
+          if [[ -n "$OSM_SHA256" && ! "$OSM_SHA256" =~ ^[0-9a-fA-F]{64}$ ]]; then
+            echo 'Expected OSM SHA-256 must contain 64 hexadecimal digits.' >&2
+            exit 1
+          fi
+          echo "PACK_SLUG=${PACK_NAME,,}" >> "$GITHUB_ENV"
+          df -h .
+          free -h
+      - name: Download and verify source extract
+        run: |
+          mkdir -p build/routing-source
+          curl --fail --location --retry 3 --proto '=https' --proto-redir '=https' \
+            "$OSM_URL" --output "build/routing-source/$PACK_SLUG.osm.pbf"
+          actual=$(sha256sum "build/routing-source/$PACK_SLUG.osm.pbf" | cut -d' ' -f1)
+          if [[ -n "$OSM_SHA256" && "$actual" != "${OSM_SHA256,,}" ]]; then
+            echo "OSM SHA-256 mismatch: expected $OSM_SHA256, received $actual" >&2
+            exit 1
+          fi
+          echo "OSM_SHA256_ACTUAL=$actual" >> "$GITHUB_ENV"
+      - name: Build car, foot and address-search pack
+        run: |
+          /usr/bin/time -v -o build/routing-build-time.txt ./gradlew --no-daemon :routing:run \
+            --args="--osm build/routing-source/$PACK_SLUG.osm.pbf --out build/routing-work/graph --name $PACK_NAME"
+          mkdir -p dist
+          mv build/routing-work/graph.zip "dist/routing-$PACK_SLUG.zip"
+      - name: Check archive and phone graph loader
+        run: |
+          python3 tools/verify_routing_pack.py "dist/routing-$PACK_SLUG.zip"
+          rm -rf build/routing-work/graph
+          mkdir -p build/routing-import
+          unzip -q "dist/routing-$PACK_SLUG.zip" -d build/routing-import
+          GRAPH_DIR="$PWD/build/routing-import" ./gradlew --no-daemon :routing:test \
+            --tests 'org.imunav.routing.PackSmokeTest.packagedGraphLoadsWithPhoneRules' --rerun-tasks
+      - name: Record checksums and build details
+        run: |
+          (cd dist && sha256sum "routing-$PACK_SLUG.zip" > "routing-$PACK_SLUG.zip.sha256")
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import re
+          import zipfile
+          from pathlib import Path
+
+          archive = Path('dist') / f"routing-{os.environ['PACK_SLUG']}.zip"
+          timing = Path('build/routing-build-time.txt').read_text()
+          peak = re.search(r'Maximum resident set size \(kbytes\):\s*(\d+)', timing)
+          with zipfile.ZipFile(archive) as pack:
+              info = json.loads(pack.read('pack.json'))
+          with archive.open('rb') as stream:
+              archive_sha256 = hashlib.file_digest(stream, 'sha256').hexdigest()
+          report = {
+              'source_url': os.environ['OSM_URL'],
+              'source_sha256': os.environ['OSM_SHA256_ACTUAL'],
+              'source_bytes': (Path('build/routing-source') / f"{os.environ['PACK_SLUG']}.osm.pbf").stat().st_size,
+              'archive_sha256': archive_sha256,
+              'archive_bytes': archive.stat().st_size,
+              'peak_rss_kb': int(peak.group(1)) if peak else None,
+              'source_commit': os.environ['GITHUB_SHA'],
+              'pack': info,
+          }
+          Path('dist/routing-build.json').write_text(json.dumps(report, indent=2) + '\n')
+          print(json.dumps(report, indent=2))
+          PY
+      - name: Report remaining runner capacity
+        if: always()
+        run: |
+          df -h .
+          free -h
+          du -sh build/routing-source build/routing-work build/routing-import dist 2>/dev/null || true
+      - name: Upload archive for app import or server publication
+        uses: actions/upload-artifact@v4
+        with:
+          name: routing-pack-${{ github.run_id }}
+          path: |
+            dist/routing-*.zip
+            dist/routing-*.zip.sha256
+            dist/routing-build.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30

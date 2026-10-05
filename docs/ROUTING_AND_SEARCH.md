@@ -31,6 +31,24 @@ A full Ukraine build needs about 10 GB of RAM; other regions vary. Download the 
 
 Import the resulting ZIP in the app. For road heights, pack bundling and matching the phone's routing rules, see the [detailed routing reference](reference/ROUTING_AND_SEARCH.md).
 
+## Build an offline routing pack in CI
+
+Open **Actions → Offline routing pack → Run workflow**. The defaults build a Ukraine pack with car
+and foot routes plus offline address search. For another region, enter a one-word pack name and an
+HTTPS link to its `.osm.pbf` extract. You can enter the extract's SHA-256 checksum to reject a
+changed download.
+
+After the workflow succeeds, download the `routing-pack-...` artifact and unzip that GitHub artifact.
+Import the `routing-<name>.zip` inside it through **Settings → Maps and route planning → Offline
+routing → Import pack**. You can also upload that ZIP to your own HTTPS server and enter its URL in
+the app's **Download** field. The artifact also includes a checksum and build details. CI does not
+publish the archive to a server.
+
+The workflow checks the ZIP and opens its extracted graph with the phone's routing rules before
+uploading it. It uses a hosted runner and may need a larger runner for a region that exceeds its
+memory or disk. See the [detailed routing reference](reference/ROUTING_AND_SEARCH.md) for the build
+steps.
+
 ## Build an offline display map in CI
 
 Open **Actions → Offline map pack → Run workflow** to build a detailed Ukraine map. Download the
