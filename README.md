@@ -463,7 +463,12 @@ is outside the Android SDK. Android builds compile and package the Rust estimato
 ./gradlew :app:assemblePlayBenchmark # release speed + freeze diagnostics, installs as org.imunav.app.bench
 cargo test --manifest-path native/Cargo.toml # native estimator and covariance tests
 cargo test --manifest-path server/Cargo.toml # persistent HTTP/WebSocket cell server tests
+./gradlew :core:serverApiTest # Kotlin cell-sync client against a temporary local Rust server
 ```
+
+The Kotlin server API test builds the Rust server, starts it on loopback with a temporary SQLite
+database, and checks account sessions plus the app's tower upload, download, and removal calls.
+It runs as part of `./gradlew check`; `:core:test` remains the fast JVM-only suite.
 
 **Native formal verification.** Run `python3 tools/verify_native.py` after installing pinned Kani 0.68.0.
 The runner prints progress every 30 seconds and records cancellation diagnostics. CI caches the

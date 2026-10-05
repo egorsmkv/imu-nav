@@ -25,4 +25,20 @@ dependencies {
 
 tasks.test {
     useJUnit()
+    exclude("**/CellServerApiIntegrationTest.class")
+}
+
+val serverApiTest = tasks.register<Test>("serverApiTest") {
+    group = "verification"
+    description = "Runs the app's Kotlin cell-sync client against a temporary Rust server"
+    dependsOn(rootProject.tasks.named("buildCellServerForKotlinTest"))
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    include("**/CellServerApiIntegrationTest.class")
+    systemProperty("cellServerBinary", rootProject.file("server/target/debug/imu-nav-cell-server").absolutePath)
+    useJUnit()
+}
+
+tasks.named("check") {
+    dependsOn(serverApiTest)
 }

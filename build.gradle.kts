@@ -73,6 +73,15 @@ val serverRustTest = tasks.register<Exec>("serverRustTest") {
     inputs.files(fileTree("server") { exclude("target/**") })
 }
 
+val buildCellServerForKotlinTest = tasks.register<Exec>("buildCellServerForKotlinTest") {
+    group = "verification"
+    description = "Builds the local cell server used by Kotlin API integration tests"
+    commandLine("cargo", "build", "--manifest-path", "server/Cargo.toml", "--bin", "imu-nav-cell-server")
+    environment("CARGO_TARGET_DIR", file("server/target").absolutePath)
+    inputs.files(fileTree("server") { exclude("target/**") })
+    outputs.file(file("server/target/debug/imu-nav-cell-server"))
+}
+
 val serverRustClippy = tasks.register<Exec>("serverRustClippy") {
     group = "verification"
     description = "Runs pedantic static analysis for the Rust cell-sharing server"
