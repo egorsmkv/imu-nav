@@ -20,3 +20,16 @@ fn invalid_policy_is_rejected_before_serving_requests() {
         Err(PolicyError::NotFinite("max_jump_m"))
     ));
 }
+
+#[test]
+#[cfg(target_pointer_width = "64")]
+fn publication_threshold_must_fit_sqlite_integer() {
+    let policy = Policy {
+        min_devices: usize::MAX,
+        ..Policy::default()
+    };
+    assert!(matches!(
+        policy.validate(),
+        Err(PolicyError::TooLarge("min_devices"))
+    ));
+}

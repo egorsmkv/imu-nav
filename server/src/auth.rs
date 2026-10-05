@@ -269,7 +269,7 @@ pub(crate) fn account_for_token(
 ) -> anyhow::Result<Option<(Account, String)>> {
     let connection = store.connection()?;
     connection.query_row(
-        "SELECT users.id,users.email,users.admin,auth_tokens.session_id FROM auth_tokens JOIN users ON users.id=auth_tokens.user_id WHERE token_hash=?1 AND kind=?2 AND expires_s>?3",
+        "SELECT users.id,users.email,users.admin,auth_tokens.session_id FROM auth_tokens JOIN users ON users.id=auth_tokens.user_id WHERE token_hash=?1 AND kind=?2 AND expires_s>?3 AND users.suspended=0",
         params![digest(raw), kind, now_s()],
         |row| Ok((Account { id: row.get(0)?, email: row.get(1)?, admin: row.get(2)? }, row.get(3)?)),
     ).optional().map_err(Into::into)
@@ -341,7 +341,7 @@ pub(crate) fn login_account(
     let connection = store.connection()?;
     let result: Option<(Account, String)> = connection
         .query_row(
-            "SELECT id,email,admin,password_hash FROM users WHERE email=?1",
+            "SELECT id,email,admin,password_hash FROM users WHERE email=?1 AND suspended=0",
             [email.trim().to_ascii_lowercase()],
             |row| {
                 Ok((
@@ -567,7 +567,7 @@ async fn confirm_reset(
         let transaction = connection.transaction()?;
         let user_id: Option<i64> = transaction
             .query_row(
-                "SELECT user_id FROM password_resets WHERE token_hash=?1 AND expires_s>?2",
+                "SELECT password_resets.user_id FROM password_resets JOIN users ON users.id=password_resets.user_id WHERE token_hash=?1 AND expires_s>?2 AND users.suspended=0",
                 params![digest(&body.token), now_s()],
                 |row| row.get(0),
             )

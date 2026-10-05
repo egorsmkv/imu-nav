@@ -254,7 +254,7 @@ async fn start_session(
             && headers
                 .get("x-forwarded-proto")
                 .is_some_and(|value| value == "https");
-    let mut response = redirect("/account");
+    let mut response = redirect(if account.admin { "/admin" } else { "/account" });
     response.headers_mut().insert(
         header::SET_COOKIE,
         format!(
@@ -268,7 +268,7 @@ async fn start_session(
 }
 
 /// Resolve only a valid, unexpired browser token from an `HttpOnly` cookie.
-async fn web_account(
+pub(crate) async fn web_account(
     state: &AppState,
     headers: &HeaderMap,
 ) -> Result<Option<(Account, String)>, ApiError> {
@@ -392,7 +392,8 @@ async fn delete_one(
         cid: form.cid,
     };
     let store = state.store.clone();
-    let policy = state.config.policy.clone();
+    let _write_guard = state.write_gate.read().await;
+    let policy = state.policy();
     let change =
         run_db(move || store.delete_own_contribution(account.id, &key, &form.device, &policy))
             .await?;
@@ -416,7 +417,8 @@ async fn delete_all(
         return Ok(error_page(StatusCode::FORBIDDEN, "Invalid form token."));
     }
     let store = state.store.clone();
-    let policy = state.config.policy.clone();
+    let _write_guard = state.write_gate.read().await;
+    let policy = state.policy();
     let changes = run_db(move || store.delete_all_own_contributions(account.id, &policy)).await?;
     for change in changes {
         publish_change(&state, change);
@@ -432,7 +434,7 @@ fn publish_change(state: &AppState, change: OwnContributionChange) {
     let _ = state.events.send(event);
 }
 
-fn csrf_token(raw: &str) -> String {
+pub(crate) fn csrf_token(raw: &str) -> String {
     auth::digest(&format!("web-csrf:{raw}"))
 }
 

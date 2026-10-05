@@ -72,13 +72,14 @@ async fn main() -> Result<()> {
             .output_path(path)
             .build()
     });
-    let policy = Policy {
+    let default_policy = Policy {
         min_devices: options.min_devices,
         max_samples_per_device: options.max_samples,
         ukraine_only: options.area == "ukraine",
         ..Policy::default()
     };
     let store = CellStore::open(&options.data)?;
+    let policy = store.stored_policy()?.unwrap_or(default_policy);
     if let Some(email) = options.create_admin.as_deref() {
         tracing::info!("administrator setup started");
         let password = read_admin_password()?;

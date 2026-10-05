@@ -10,8 +10,8 @@ use crate::admin;
 use crate::auth::{self, AuthRateLimits, MailConfig, SharedAuthLimits};
 use crate::web;
 use crate::{
-    CellKey, CellStore, CellTower, Consensus, CsvDecodeError, Policy, PolicyError, Radio,
-    ServerEvent, decode_towers, encode_towers,
+    CellKey, CellStore, CellTower, Consensus, CsvDecodeError, Policy, Radio, ServerEvent,
+    decode_towers, encode_towers,
 };
 use axum::body::Bytes;
 use axum::extract::ws::{Message, WebSocket};
@@ -25,13 +25,13 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast;
 
 const MAX_UPLOAD_BYTES: usize = 20 * 1024 * 1024;
 
-/// Runtime server settings not stored in SQLite.
+/// Startup settings; policy is the initial value until a saved policy overrides it.
 #[derive(Clone)]
 pub struct ServerConfig {
     pub mail: Option<MailConfig>,
@@ -48,6 +48,10 @@ pub struct AppState {
     pub(crate) events: broadcast::Sender<ServerEvent>,
     limits: Arc<Mutex<Limits>>,
     pub(crate) auth_limits: SharedAuthLimits,
+    pub(crate) policy: Arc<RwLock<Policy>>,
+    pub(crate) write_gate: Arc<tokio::sync::RwLock<()>>,
+    pub(crate) activation_gate: Arc<tokio::sync::RwLock<()>>,
+    pub(crate) job: Arc<Mutex<admin::JobState>>,
 }
 
 impl AppState {
@@ -56,8 +60,13 @@ impl AppState {
     /// # Errors
     ///
     /// Returns an error for invalid limits or consensus thresholds.
-    pub fn new(store: CellStore, config: ServerConfig) -> Result<Self, PolicyError> {
+    pub fn new(store: CellStore, config: ServerConfig) -> anyhow::Result<Self> {
         config.policy.validate()?;
+        let active_policy = store
+            .stored_policy()?
+            .unwrap_or_else(|| config.policy.clone());
+        active_policy.validate()?;
+        let prior_job = store.recover_admin_job()?;
         let (events, _) = broadcast::channel(1_024);
         Ok(Self {
             store,
@@ -65,7 +74,15 @@ impl AppState {
             events,
             limits: Arc::new(Mutex::new(Limits::default())),
             auth_limits: Arc::new(Mutex::new(AuthRateLimits::default())),
+            policy: Arc::new(RwLock::new(active_policy)),
+            write_gate: Arc::new(tokio::sync::RwLock::new(())),
+            activation_gate: Arc::new(tokio::sync::RwLock::new(())),
+            job: Arc::new(Mutex::new(admin::JobState::recovered(prior_job))),
         })
+    }
+
+    pub(crate) fn policy(&self) -> Policy {
+        self.policy.read().expect("policy lock poisoned").clone()
     }
 }
 
@@ -82,6 +99,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/v1/towers/{radio}/{mcc}/{mnc}/{area}/{cid}",
             get(get_tower).put(put_tower).delete(delete_tower),
+        )
+        .route(
+            "/v1/towers/{radio}/{mcc}/{mnc}/{area}/{cid}/quarantine",
+            post(quarantine_tower),
         )
         .route("/v1/events", get(websocket_events))
         .layer(axum::extract::DefaultBodyLimit::max(MAX_UPLOAD_BYTES))
@@ -116,7 +137,8 @@ impl From<tokio::task::JoinError> for ApiError {
 }
 
 async fn health(State(state): State<AppState>) -> Result<String, ApiError> {
-    let policy = state.config.policy.clone();
+    let _visibility = state.activation_gate.read().await;
+    let policy = state.policy();
     let counts = run_db(move || state.store.counts(&policy)).await?;
     Ok(format!("ok {}\n", counts.0))
 }
@@ -146,7 +168,7 @@ async fn upload_cells(
         return Err(ApiError(StatusCode::BAD_REQUEST, "BAD_DEVICE"));
     }
     enforce_limits(&state, &ip, &device)?;
-    let row_limit = state.config.policy.max_rows_per_upload;
+    let row_limit = state.policy().max_rows_per_upload;
     let towers = tokio::task::spawn_blocking(move || decode_towers(&body, row_limit))
         .await
         .map_err(ApiError::from)?
@@ -161,12 +183,15 @@ async fn upload_cells(
             }
         })?;
     let store = state.store.clone();
-    let policy = state.config.policy.clone();
+    let _write_guard = state.write_gate.read().await;
+    let policy = state.policy();
     let device_for_log = device.clone();
     let (result, changed) =
         run_db(move || store.contribute(&device, &towers, now_s(), &policy)).await?;
     for tower in changed {
-        let _ = state.events.send(ServerEvent::TowerUpserted { tower });
+        if !state.store.quarantined(&tower.tower.key)? {
+            let _ = state.events.send(ServerEvent::TowerUpserted { tower });
+        }
     }
     tracing::info!(
         device = device_for_log,
@@ -211,8 +236,9 @@ async fn download_cells(
     State(state): State<AppState>,
     Query(query): Query<TowerQuery>,
 ) -> Result<Response, ApiError> {
+    let _visibility = state.activation_gate.read().await;
     let store = state.store.clone();
-    let policy = state.config.policy.clone();
+    let policy = state.policy();
     let mccs = query.mccs()?;
     let since = query.since.unwrap_or(0).max(0);
     let body = run_db(move || {
@@ -273,7 +299,7 @@ async fn put_tower(
     Path(path): Path<(String, i64, i64, i64, i64)>,
     Json(update): Json<TowerUpdate>,
 ) -> Result<Json<Consensus>, ApiError> {
-    auth::admin_account(&state, &headers, peer).await?;
+    let account = auth::admin_account(&state, &headers, peer).await?;
     let key = path_key(path)?;
     let tower = CellTower {
         key,
@@ -283,15 +309,16 @@ async fn put_tower(
         samples: update.samples,
     };
     let store = state.store.clone();
-    let policy = state.config.policy.clone();
-    let (_, changed) = run_db(move || store.seed(&[tower], now_s(), &policy)).await?;
-    let consensus = changed
-        .into_iter()
-        .next()
+    let _write_guard = state.write_gate.read().await;
+    let policy = state.policy();
+    let consensus = run_db(move || store.correct_tower(account.id, &tower, &policy))
+        .await?
         .ok_or(ApiError(StatusCode::BAD_REQUEST, "INVALID_TOWER"))?;
-    let _ = state.events.send(ServerEvent::TowerUpserted {
-        tower: consensus.clone(),
-    });
+    if !state.store.quarantined(&consensus.tower.key)? {
+        let _ = state.events.send(ServerEvent::TowerUpserted {
+            tower: consensus.clone(),
+        });
+    }
     Ok(Json(consensus))
 }
 
@@ -301,18 +328,47 @@ async fn delete_tower(
     headers: HeaderMap,
     Path(path): Path<(String, i64, i64, i64, i64)>,
 ) -> Result<StatusCode, ApiError> {
-    auth::admin_account(&state, &headers, peer).await?;
+    let account = auth::admin_account(&state, &headers, peer).await?;
     let key = path_key(path)?;
     let store = state.store.clone();
+    let _guard = state.write_gate.read().await;
     let deleted = run_db({
         let key = key.clone();
-        move || store.delete(&key)
+        move || store.delete_quarantined(account.id, &key)
     })
     .await?;
     if !deleted {
-        return Err(ApiError(StatusCode::NOT_FOUND, "NOT_FOUND"));
+        return Err(ApiError(StatusCode::CONFLICT, "QUARANTINE_REQUIRED"));
     }
     let _ = state.events.send(ServerEvent::TowerDeleted { key });
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+struct QuarantineUpdate {
+    quarantined: bool,
+}
+
+async fn quarantine_tower(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Path(path): Path<(String, i64, i64, i64, i64)>,
+    Json(update): Json<QuarantineUpdate>,
+) -> Result<StatusCode, ApiError> {
+    let account = auth::admin_account(&state, &headers, peer).await?;
+    let key = path_key(path)?;
+    let _guard = state.write_gate.read().await;
+    let store = state.store.clone();
+    let target = key.clone();
+    if !run_db(move || store.set_quarantined(account.id, &target, update.quarantined)).await? {
+        return Err(ApiError(StatusCode::NOT_FOUND, "NOT_FOUND"));
+    }
+    if update.quarantined {
+        let _ = state.events.send(ServerEvent::TowerDeleted { key });
+    } else if let Some(tower) = state.store.consensus(&key)? {
+        let _ = state.events.send(ServerEvent::TowerUpserted { tower });
+    }
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -331,11 +387,13 @@ async fn websocket_events(
 async fn stream_events(mut socket: WebSocket, state: AppState) {
     // Subscribe before the initial count so updates committed during that query remain queued.
     let mut events = state.events.subscribe();
-    let policy = state.config.policy.clone();
+    let visibility = state.activation_gate.read().await;
+    let policy = state.policy();
     let store = state.store.clone();
     let published = run_db(move || store.counts(&policy))
         .await
         .map_or(0, |counts| counts.0);
+    drop(visibility);
     if send_event(&mut socket, &ServerEvent::Ready { published })
         .await
         .is_err()

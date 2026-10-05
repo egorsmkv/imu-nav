@@ -104,7 +104,7 @@ pub fn decode_towers(bytes: &[u8], limit: usize) -> Result<Vec<CellTower>, CsvDe
     Ok(towers)
 }
 
-fn parse_tower(row: &csv::StringRecord) -> Option<CellTower> {
+pub(crate) fn parse_tower(row: &csv::StringRecord) -> Option<CellTower> {
     Some(CellTower {
         key: CellKey {
             radio: Radio::from_str(row.get(0)?).ok()?,

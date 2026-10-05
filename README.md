@@ -388,7 +388,7 @@ and download everyone's merged data. Protocol (gzip CSV in OpenCellID columns):
 - `GET /v1/cells.csv.gz?mcc=255&since=<epoch seconds>` — incremental download
 - `GET /v1/towers` plus `PUT` / `DELETE /v1/towers/{radio}/{mcc}/{mnc}/{area}/{cid}` — JSON management API
 - `GET /v1/events` — WebSocket stream of tower upserts and deletions for realtime management tools
-- `GET /admin` — read-only, server-rendered management dashboard and tower details
+- `GET /admin` — administrator dashboard for tower moderation, accounts, imports, exports, and policy
 - `GET /health`
 
 The Rust reference server in `server/` persists per-device contributions and materialized consensus
@@ -417,6 +417,9 @@ account sign-in in the app requires HTTPS outside local loopback development (in
 emulator's `10.0.2.2` host alias). Public downloads still work without signing in.
 Browser users can register at `/signup`, sign in at `/login`, and review or delete their own
 uploaded cell observations at `/account`; the panel updates shared consensus after deletion.
+Administrators sign in through `/login` and are directed to `/admin`. Tower deletion requires
+quarantine first; the panel also supports account suspension and atomic seed imports and policy
+recalculation. Saved policy values override CLI defaults on later starts.
 The old Kotlin server's internal contribution gzip is not a
 SQLite migration source; re-import the original seed export when moving to this server. See
 [`server/README.md`](server/README.md) for the complete HTTP, management, and WebSocket API,
@@ -693,6 +696,7 @@ GraphHopper stack plus
 | Protocol Buffers (Java) | 3.12.2 | `.osm.pbf` decoding | BSD 3-Clause |
 | SQLite JDBC | 3.53.4.0 | writing the search index | Apache 2.0 |
 | Axum + Tokio | 0.8 / 1.x | cell server HTTP/WebSocket runtime | MIT |
+| Tokio Util, Tempfile | 0.7 / 3.x | streamed administrator exports and temporary imports | MIT |
 | tikv-jemallocator / jemalloc | 0.7 / 5.3.1 | optional Linux native replay heap allocator | MIT / Apache 2.0; jemalloc BSD 2-Clause |
 | pprof-rs | 0.15 | native simulation CPU profiles and flamegraphs (desktop only) | Apache 2.0 |
 | hotpath-rs | 0.28.4 | optional native-core and cell-server function timing | MIT |

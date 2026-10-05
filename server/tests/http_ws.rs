@@ -642,6 +642,19 @@ async fn management_api_is_authenticated_and_broadcasts_deletes() -> Result<()> 
         .bearer_auth(&server.token)
         .send()
         .await?;
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    let response = client
+        .post(format!("{}{}{}", server.base_url, path, "/quarantine"))
+        .bearer_auth(&server.token)
+        .json(&serde_json::json!({"quarantined":true}))
+        .send()
+        .await?;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    let response = client
+        .delete(format!("{}{}", server.base_url, path))
+        .bearer_auth(&server.token)
+        .send()
+        .await?;
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
     let response = client
         .get(format!("{}/v1/towers", server.base_url))
@@ -658,22 +671,41 @@ async fn management_api_is_authenticated_and_broadcasts_deletes() -> Result<()> 
 }
 
 #[tokio::test]
-async fn read_only_admin_pages_use_browser_auth_and_render_towers() -> Result<()> {
+async fn admin_pages_use_session_and_render_controls() -> Result<()> {
     let server = start_server().await?;
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?;
 
     let unauthorized = client
         .get(format!("{}/admin", server.base_url))
         .send()
         .await?;
-    assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(unauthorized.status(), StatusCode::SEE_OTHER);
     assert_eq!(
         unauthorized
             .headers()
-            .get("www-authenticate")
+            .get("location")
             .and_then(|value| value.to_str().ok()),
-        Some("Basic realm=\"IMU Nav admin\", charset=\"UTF-8\"")
+        Some("/login")
     );
+
+    let login = client
+        .post(format!("{}/login", server.base_url))
+        .form(&[
+            ("email", "admin@example.org"),
+            ("password", "correct horse battery staple"),
+        ])
+        .send()
+        .await?;
+    assert_eq!(login.status(), StatusCode::SEE_OTHER);
+    assert_eq!(login.headers()["location"], "/admin");
+    let cookie = login.headers()["set-cookie"]
+        .to_str()?
+        .split(';')
+        .next()
+        .unwrap()
+        .to_owned();
 
     let path = "/v1/towers/LTE/255/1/1864/99";
     let response = client
@@ -686,7 +718,7 @@ async fn read_only_admin_pages_use_browser_auth_and_render_towers() -> Result<()
 
     let dashboard = client
         .get(format!("{}/admin?mcc=255&limit=10", server.base_url))
-        .basic_auth("admin@example.org", Some("correct horse battery staple"))
+        .header("cookie", &cookie)
         .send()
         .await?;
     assert_eq!(dashboard.status(), StatusCode::OK);
@@ -703,29 +735,342 @@ async fn read_only_admin_pages_use_browser_auth_and_render_towers() -> Result<()
     assert!(dashboard_html.contains("Management dashboard"));
     assert!(dashboard_html.contains("bootstrap@5.3.8"));
     assert!(dashboard_html.contains("/admin/towers/LTE/255/1/1864/99"));
-    assert!(dashboard_html.contains("Read only"));
-    assert!(!dashboard_html.contains("Delete"));
+    assert!(dashboard_html.contains("Seed import and exports"));
+    assert!(dashboard_html.contains("Save and recalculate"));
 
     let detail = client
         .get(format!(
             "{}/admin/towers/LTE/255/1/1864/99",
             server.base_url
         ))
-        .basic_auth("admin@example.org", Some("correct horse battery staple"))
+        .header("cookie", &cookie)
         .send()
         .await?;
     assert_eq!(detail.status(), StatusCode::OK);
     let detail_html = detail.text().await?;
     assert!(detail_html.contains("Tower LTE 255-1 / 1864 / 99"));
     assert!(detail_html.contains("50.4500000"));
-    assert!(!detail_html.contains("Delete"));
+    assert!(detail_html.contains("Manual correction"));
+    assert!(detail_html.contains("Quarantine tower"));
+
+    let invalid_csrf = client
+        .post(format!(
+            "{}/admin/towers/LTE/255/1/1864/99/quarantine",
+            server.base_url
+        ))
+        .header("cookie", &cookie)
+        .form(&[("csrf", "invalid")])
+        .send()
+        .await?;
+    assert_eq!(invalid_csrf.status(), StatusCode::FORBIDDEN);
+    let csrf = dashboard_html
+        .split("name=\"csrf\" value=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap();
+    let correction = client
+        .post(format!(
+            "{}/admin/towers/LTE/255/1/1864/99/correct",
+            server.base_url
+        ))
+        .header("cookie", &cookie)
+        .form(&[
+            ("csrf", csrf),
+            ("lat", "50.46"),
+            ("lon", "30.52"),
+            ("range_m", "700"),
+            ("samples", "20"),
+        ])
+        .send()
+        .await?;
+    assert_eq!(correction.status(), StatusCode::SEE_OTHER);
+    let seed_store = CellStore::open(server.database.path())?;
+    let mut seeded = tower(50.45);
+    seeded.key.cid = 99;
+    seed_store.seed(&[seeded], 10, &Policy::default())?;
+    let observation = client
+        .post(format!(
+            "{}/admin/towers/LTE/255/1/1864/99/observations/delete",
+            server.base_url
+        ))
+        .header("cookie", &cookie)
+        .form(&[("csrf", csrf), ("device", "manual")])
+        .send()
+        .await?;
+    assert_eq!(observation.status(), StatusCode::SEE_OTHER);
+    let quarantine = client
+        .post(format!(
+            "{}/admin/towers/LTE/255/1/1864/99/quarantine",
+            server.base_url
+        ))
+        .header("cookie", &cookie)
+        .form(&[("csrf", csrf)])
+        .send()
+        .await?;
+    assert_eq!(quarantine.status(), StatusCode::SEE_OTHER);
+    let hidden = client
+        .get(format!("{}/v1/cells.csv.gz", server.base_url))
+        .send()
+        .await?;
+    assert!(decode_towers(&hidden.bytes().await?, 10)?.is_empty());
+    let restore = client
+        .post(format!(
+            "{}/admin/towers/LTE/255/1/1864/99/restore",
+            server.base_url
+        ))
+        .header("cookie", &cookie)
+        .form(&[("csrf", csrf)])
+        .send()
+        .await?;
+    assert_eq!(restore.status(), StatusCode::SEE_OTHER);
+    let visible = client
+        .get(format!("{}/v1/cells.csv.gz", server.base_url))
+        .send()
+        .await?;
+    assert_eq!(decode_towers(&visible.bytes().await?, 10)?.len(), 1);
+    let again = client
+        .post(format!(
+            "{}/admin/towers/LTE/255/1/1864/99/quarantine",
+            server.base_url
+        ))
+        .header("cookie", &cookie)
+        .form(&[("csrf", csrf)])
+        .send()
+        .await?;
+    assert_eq!(again.status(), StatusCode::SEE_OTHER);
+    let premature = client
+        .post(format!(
+            "{}/admin/towers/LTE/255/1/1864/99/delete",
+            server.base_url
+        ))
+        .header("cookie", &cookie)
+        .form(&[("csrf", csrf), ("confirm", "wrong")])
+        .send()
+        .await?;
+    assert_eq!(premature.status(), StatusCode::BAD_REQUEST);
+    let deleted = client
+        .post(format!(
+            "{}/admin/towers/LTE/255/1/1864/99/delete",
+            server.base_url
+        ))
+        .header("cookie", &cookie)
+        .form(&[("csrf", csrf), ("confirm", "DELETE")])
+        .send()
+        .await?;
+    assert_eq!(deleted.status(), StatusCode::SEE_OTHER);
+    let self_suspend = client
+        .post(format!("{}/admin/accounts/1/suspend", server.base_url))
+        .header("cookie", &cookie)
+        .form(&[("csrf", csrf)])
+        .send()
+        .await?;
+    assert_eq!(self_suspend.status(), StatusCode::CONFLICT);
+    let lookup = client
+        .get(format!("{}/admin?key=LTE:255:1:1864:99", server.base_url))
+        .header("cookie", &cookie)
+        .send()
+        .await?;
+    assert_eq!(lookup.status(), StatusCode::SEE_OTHER);
 
     let invalid_filter = client
         .get(format!("{}/admin?mcc=invalid", server.base_url))
-        .basic_auth("admin@example.org", Some("correct horse battery staple"))
+        .header("cookie", &cookie)
         .send()
         .await?;
     assert_eq!(invalid_filter.status(), StatusCode::BAD_REQUEST);
+    Ok(())
+}
+
+#[tokio::test]
+async fn admin_policy_import_export_and_account_actions_work() -> Result<()> {
+    let server = start_server().await?;
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?;
+    let login = client
+        .post(format!("{}/login", server.base_url))
+        .form(&[
+            ("email", "admin@example.org"),
+            ("password", "correct horse battery staple"),
+        ])
+        .send()
+        .await?;
+    let cookie = login.headers()["set-cookie"]
+        .to_str()?
+        .split(';')
+        .next()
+        .unwrap()
+        .to_owned();
+    let dashboard = client
+        .get(format!("{}/admin", server.base_url))
+        .header("cookie", &cookie)
+        .send()
+        .await?
+        .text()
+        .await?;
+    let csrf = dashboard
+        .split("name=\"csrf\" value=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap()
+        .to_owned();
+
+    let policy = [
+        ("csrf", csrf.as_str()),
+        ("max_samples_per_device", "50"),
+        ("min_devices", "3"),
+        ("outlier_min_m", "1000"),
+        ("max_jump_m", "5000"),
+        ("max_range_m", "50000"),
+        ("max_rows_per_upload", "20000"),
+        ("max_uploads_per_hour_per_device", "30"),
+        ("max_uploads_per_hour_per_ip", "120"),
+        ("max_devices_per_ip_per_day", "5"),
+        ("ukraine_only", "on"),
+    ];
+    let response = client
+        .post(format!("{}/admin/policy", server.base_url))
+        .header("cookie", &cookie)
+        .form(&policy)
+        .send()
+        .await?;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    let store = CellStore::open(server.database.path())?;
+    for _ in 0..100 {
+        if store.stored_policy()?.is_some() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert_eq!(store.stored_policy()?.unwrap().min_devices, 3);
+    let mut completed = false;
+    for _ in 0..100 {
+        let page = client
+            .get(format!("{}/admin", server.base_url))
+            .header("cookie", &cookie)
+            .send()
+            .await?
+            .text()
+            .await?;
+        if page.contains("policy recalculation: complete") {
+            completed = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert!(completed);
+    let invalid = [
+        ("csrf", csrf.as_str()),
+        ("max_samples_per_device", "50"),
+        ("min_devices", "0"),
+        ("outlier_min_m", "1000"),
+        ("max_jump_m", "5000"),
+        ("max_range_m", "50000"),
+        ("max_rows_per_upload", "20000"),
+        ("max_uploads_per_hour_per_device", "30"),
+        ("max_uploads_per_hour_per_ip", "120"),
+        ("max_devices_per_ip_per_day", "5"),
+    ];
+    let rejected = client
+        .post(format!("{}/admin/policy", server.base_url))
+        .header("cookie", &cookie)
+        .form(&invalid)
+        .send()
+        .await?;
+    assert_eq!(rejected.status(), StatusCode::BAD_REQUEST);
+
+    let boundary = "imu-nav-test-boundary";
+    let body = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"csrf\"\r\n\r\n{csrf}\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"seeds.csv\"\r\nContent-Type: text/csv\r\n\r\nLTE,255,1,1864,99,,30.52,50.45,700,20\n\r\n--{boundary}--\r\n"
+    );
+    let response = client
+        .post(format!("{}/admin/import", server.base_url))
+        .header("cookie", &cookie)
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(body)
+        .send()
+        .await?;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    for _ in 0..100 {
+        if store
+            .consensus(&CellKey {
+                radio: Radio::Lte,
+                mcc: 255,
+                mnc: 1,
+                area: 1864,
+                cid: 99,
+            })?
+            .is_some()
+        {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    let export = client
+        .get(format!("{}/admin/export/consensus", server.base_url))
+        .header("cookie", &cookie)
+        .send()
+        .await?;
+    assert_eq!(export.status(), StatusCode::OK);
+    let mut decoded = String::new();
+    let bytes = export.bytes().await?;
+    std::io::Read::read_to_string(
+        &mut flate2::read::GzDecoder::new(bytes.as_ref()),
+        &mut decoded,
+    )?;
+    assert!(decoded.contains("LTE,255,1,1864,99"));
+    let observations = client
+        .get(format!("{}/admin/export/observations", server.base_url))
+        .header("cookie", &cookie)
+        .send()
+        .await?;
+    assert_eq!(observations.status(), StatusCode::OK);
+    decoded.clear();
+    let bytes = observations.bytes().await?;
+    std::io::Read::read_to_string(
+        &mut flate2::read::GzDecoder::new(bytes.as_ref()),
+        &mut decoded,
+    )?;
+    assert!(decoded.contains("seed"));
+    let cancel = client
+        .post(format!("{}/admin/jobs/cancel", server.base_url))
+        .header("cookie", &cookie)
+        .form(&[("csrf", csrf.as_str())])
+        .send()
+        .await?;
+    assert_eq!(cancel.status(), StatusCode::SEE_OTHER);
+
+    let register = client.post(format!("{}/v1/auth/register", server.base_url))
+        .json(&serde_json::json!({"email":"driver@example.org","password":"correct horse battery staple"}))
+        .send().await?;
+    let id = register.json::<serde_json::Value>().await?["account"]["id"]
+        .as_i64()
+        .unwrap();
+    let suspend = client
+        .post(format!("{}/admin/accounts/{id}/suspend", server.base_url))
+        .header("cookie", &cookie)
+        .form(&[("csrf", csrf.as_str())])
+        .send()
+        .await?;
+    assert_eq!(suspend.status(), StatusCode::SEE_OTHER);
+    let blocked = client.post(format!("{}/v1/auth/login", server.base_url))
+        .json(&serde_json::json!({"email":"driver@example.org","password":"correct horse battery staple"}))
+        .send().await?;
+    assert_eq!(blocked.status(), StatusCode::UNAUTHORIZED);
+    let restore = client
+        .post(format!("{}/admin/accounts/{id}/restore", server.base_url))
+        .header("cookie", &cookie)
+        .form(&[("csrf", csrf.as_str())])
+        .send()
+        .await?;
+    assert_eq!(restore.status(), StatusCode::SEE_OTHER);
     Ok(())
 }
 
@@ -865,7 +1210,7 @@ async fn health_bad_uploads_and_management_validation() -> Result<()> {
             .send()
             .await?
             .status(),
-        StatusCode::NOT_FOUND
+        StatusCode::CONFLICT
     );
     assert_eq!(
         client

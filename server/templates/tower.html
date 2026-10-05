@@ -11,7 +11,7 @@
 <nav class="navbar bg-dark border-bottom border-body" data-bs-theme="dark">
     <div class="container-fluid container-xl">
         <a class="navbar-brand" href="/admin">IMU Nav cell server</a>
-        <span class="navbar-text"><span class="badge text-bg-secondary">Read only</span></span>
+        <form method="post" action="/account/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-outline-light btn-sm">Sign out</button></form>
     </div>
 </nav>
 
@@ -52,6 +52,29 @@
             </section>
         </div>
     </div>
+    <div class="row g-4 mt-1">
+        <div class="col-lg-6"><section class="card"><div class="card-header"><h2 class="h5 mb-0">Manual correction</h2></div><div class="card-body">
+            <p class="small text-body-secondary">This correction takes precedence over imported seed data until removed from observations.</p>
+            <form method="post" action="{{ tower.detail_path }}/correct">
+                <input type="hidden" name="csrf" value="{{ csrf }}">
+                <label class="form-label">Latitude<input class="form-control" type="number" name="lat" step="any" value="{{ tower.lat }}" required></label>
+                <label class="form-label">Longitude<input class="form-control" type="number" name="lon" step="any" value="{{ tower.lon }}" required></label>
+                <label class="form-label">Range (m)<input class="form-control" type="number" name="range_m" step="any" min="0.001" value="{{ tower.range_m }}" required></label>
+                <label class="form-label">Samples<input class="form-control" type="number" name="samples" min="1" value="{{ tower.samples }}" required></label>
+                <div><button class="btn btn-primary">Save correction</button></div>
+            </form>
+        </div></section></div>
+        <div class="col-lg-6"><section class="card"><div class="card-header"><h2 class="h5 mb-0">Moderation</h2></div><div class="card-body">
+            {% if tower.quarantined %}
+            <p>This tower is hidden from public downloads. New observations continue to be recorded.</p>
+            <form method="post" action="{{ tower.detail_path }}/restore"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-outline-success mb-3">Restore tower</button></form>
+            <form method="post" action="{{ tower.detail_path }}/delete"><input type="hidden" name="csrf" value="{{ csrf }}"><label class="form-label">Type DELETE to permanently remove current data<input class="form-control" name="confirm" autocomplete="off" required></label><button class="btn btn-danger">Delete tower data</button></form>
+            {% else %}<p>Quarantine hides this tower from public downloads before deletion.</p><form method="post" action="{{ tower.detail_path }}/quarantine"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-warning">Quarantine tower</button></form>{% endif %}
+        </div></section></div>
+    </div>
+    <section class="card mt-4"><div class="card-header"><h2 class="h5 mb-0">Observations</h2></div><div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Device</th><th>Latitude</th><th>Longitude</th><th>Range</th><th>Samples</th><th>Updated</th><th>Action</th></tr></thead><tbody>
+        {% for observation in observations %}<tr><td>{{ observation.device }}</td><td>{{ observation.lat }}</td><td>{{ observation.lon }}</td><td>{{ observation.range_m }}</td><td>{{ observation.samples }}</td><td>{{ observation.updated_s }}</td><td><form method="post" action="{{ tower.detail_path }}/observations/delete"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="device" value="{{ observation.device }}"><button class="btn btn-outline-danger btn-sm">Remove</button></form></td></tr>{% endfor %}
+    </tbody></table></div></section>
 </main>
 </body>
 </html>

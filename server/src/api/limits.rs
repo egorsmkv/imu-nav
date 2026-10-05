@@ -56,7 +56,7 @@ pub(super) fn enforce_limits_at(
         .lock()
         .map_err(|_| ApiError(StatusCode::INTERNAL_SERVER_ERROR, "SERVER_ERROR"))?;
     limits.cleanup_if_due(now);
-    let policy = &state.config.policy;
+    let policy = state.policy();
     let devices = limits.devices_by_ip.entry(ip.to_owned()).or_default();
     devices.retain(|_, seen| now.saturating_duration_since(*seen) <= DAY);
     if !devices.contains_key(device) && devices.len() >= policy.max_devices_per_ip_per_day {

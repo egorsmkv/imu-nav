@@ -46,15 +46,30 @@ require a session-specific form token. The Android JSON token endpoints remain s
 the browser pages through HTTPS before entering real credentials; the direct HTTP listener is
 intended for local development or a trusted reverse proxy.
 
-## Read-only admin interface
+## Administrator panel
 
-Open `/admin` for a server-rendered dashboard with database totals, MCC filtering, recent tower
-consensuses, and individual tower details. The pages use Askama templates and Bootstrap 5.3.8 from
-the jsDelivr CDN. They contain no create, edit, or delete controls.
+Sign in at `/login` with an administrator account; the browser opens `/admin`. The panel shows
+tower totals, MCC filtering, tower details and observations, account status, recent administrator
+actions, and the current anti-poisoning policy. Forms use the browser session and CSRF token.
+The pages use Askama templates and Bootstrap 5.3.8 from the jsDelivr CDN.
 
-The browser prompts for HTTP Basic credentials: enter the administrator's email and password.
-The dashboard also accepts an administrator access token in the
-`Authorization: Bearer <token>` header. Serve it over HTTPS so credentials are encrypted in transit.
+Administrators can correct a tower position, remove individual observations, quarantine or restore
+a tower, and delete its current data after quarantine and typing `DELETE`. Quarantined towers are
+hidden from public downloads while new observations continue to be stored. Deletion retains the
+quarantine marker, so later uploads cannot republish the tower without an explicit restore.
+Manual corrections take precedence over imported seeds; remove the `manual` observation to return
+to normal consensus. Account suspension revokes all sessions and blocks login and uploads while
+retaining existing observations. The acting administrator and final active administrator cannot be
+suspended.
+
+The panel accepts OpenCellID CSV/gzip seed imports up to 512 MiB compressed, 1 GiB decoded, and
+two million rows. Imports are streamed to a temporary file and applied in one cancellable SQLite
+transaction. It can export all consensuses (including quarantine status) and raw observations as
+gzip CSV; exports omit account emails and credentials. Policy changes are persisted and activate
+after an atomic full recalculation. During the apply transaction, public reads continue against
+committed data and writes wait. Job progress and cancellation are available on the dashboard.
+Interrupted jobs roll back; they do not resume after restart. CLI policy values initialize new
+databases and saved policy overrides them on later starts.
 
 ## API
 
@@ -62,9 +77,11 @@ The dashboard also accepts an administrator access token in the
 - `GET /v1/cells.csv.gz?mcc=255&since=0` streams confirmed towers to existing apps.
 - `GET /v1/towers?mcc=255&since=0&limit=500` returns published and pending consensus as JSON;
   `GET /v1/towers/{radio}/{mcc}/{mnc}/{area}/{cid}` returns one tower.
-- `PUT /v1/towers/{radio}/{mcc}/{mnc}/{area}/{cid}` creates or updates a trusted tower. Its JSON
+- `PUT /v1/towers/{radio}/{mcc}/{mnc}/{area}/{cid}` creates or updates a manual correction. Its JSON
   body contains `lat`, `lon`, `range_m`, and `samples`.
-- `DELETE /v1/towers/{radio}/{mcc}/{mnc}/{area}/{cid}` removes the tower and all contributions.
+- `POST /v1/towers/{radio}/{mcc}/{mnc}/{area}/{cid}/quarantine` accepts
+  `{"quarantined":true|false}`. `DELETE /v1/towers/{radio}/{mcc}/{mnc}/{area}/{cid}` removes
+  current tower data only after quarantine; otherwise it returns `409 QUARANTINE_REQUIRED`.
 - `GET /v1/events` upgrades to a WebSocket that emits `ready`, `tower_upserted`,
   `tower_deleted`, and `resync_required` JSON events. On `resync_required`, reload the management
   list because the client fell behind the bounded event queue.

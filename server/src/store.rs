@@ -1,4 +1,5 @@
 mod consensus;
+pub(crate) mod management;
 
 use crate::model::{distance_m, plausible};
 use crate::{CellKey, CellTower, Consensus, Policy, Radio, UploadResult};
@@ -12,6 +13,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 const SEED_DEVICE: &str = "seed";
+const MANUAL_DEVICE: &str = "manual";
 const SEED_WEIGHT: f64 = 200.0;
 const SEED_VOTE: f64 = 3.0;
 
@@ -38,6 +40,7 @@ pub struct StoreCounts {
     pub consensus: usize,
     pub contributions: usize,
     pub seeded: usize,
+    pub quarantined: usize,
 }
 
 /// A single observation uploaded by one of an account's devices.
@@ -95,12 +98,30 @@ impl CellStore {
              CREATE INDEX IF NOT EXISTS consensus_sync ON consensus(mcc, updated_s);",
         )?;
         connection.execute_batch(
+            "CREATE TABLE IF NOT EXISTS tower_moderation (
+               radio TEXT NOT NULL, mcc INTEGER NOT NULL, mnc INTEGER NOT NULL,
+               area INTEGER NOT NULL, cid INTEGER NOT NULL, quarantined INTEGER NOT NULL DEFAULT 1,
+               PRIMARY KEY (radio,mcc,mnc,area,cid)
+             );
+             CREATE TABLE IF NOT EXISTS server_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+             CREATE TABLE IF NOT EXISTS admin_audit (
+               id INTEGER PRIMARY KEY, actor_id INTEGER NOT NULL, action TEXT NOT NULL,
+               target TEXT NOT NULL, at_s INTEGER NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS admin_jobs (
+               id INTEGER PRIMARY KEY, kind TEXT NOT NULL, status TEXT NOT NULL,
+               processed INTEGER NOT NULL DEFAULT 0, started_s INTEGER NOT NULL,
+               finished_s INTEGER
+             );",
+        )?;
+        connection.execute_batch(
             "CREATE INDEX IF NOT EXISTS contributions_device ON contributions(device);",
         )?;
         connection.execute_batch(
             "CREATE TABLE IF NOT EXISTS users (
                id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE,
-               password_hash TEXT NOT NULL, admin INTEGER NOT NULL DEFAULT 0
+               password_hash TEXT NOT NULL, admin INTEGER NOT NULL DEFAULT 0,
+               suspended INTEGER NOT NULL DEFAULT 0
              );
              CREATE TABLE IF NOT EXISTS auth_tokens (
                token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -115,13 +136,27 @@ impl CellStore {
              );
              CREATE INDEX IF NOT EXISTS password_resets_expiry ON password_resets(expires_s);",
         )?;
+        let has_suspended = connection
+            .prepare("PRAGMA table_info(users)")?
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<rusqlite::Result<Vec<_>>>()?
+            .iter()
+            .any(|column| column == "suspended");
+        if !has_suspended {
+            connection.execute(
+                "ALTER TABLE users ADD COLUMN suspended INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+        }
         Ok(store)
     }
 
     pub(crate) fn connection(&self) -> Result<Connection> {
         let connection = Connection::open(&self.path)
             .with_context(|| format!("cannot open {}", self.path.display()))?;
-        connection.busy_timeout(std::time::Duration::from_secs(5))?;
+        // National seed imports and policy recalculations may hold the writer slot for minutes.
+        // SQLite WAL still serves readers while other writers wait for the atomic commit.
+        connection.busy_timeout(std::time::Duration::from_secs(3600))?;
         Ok(connection)
     }
 
@@ -294,6 +329,7 @@ impl CellStore {
         if let Some(policy) = publication_policy {
             query.push_str(" AND (seeded=1 OR devices>=?)");
             values.push(Value::Integer(i64::try_from(policy.min_devices)?));
+            query.push_str(" AND NOT EXISTS (SELECT 1 FROM tower_moderation m WHERE m.radio=consensus.radio AND m.mcc=consensus.mcc AND m.mnc=consensus.mnc AND m.area=consensus.area AND m.cid=consensus.cid AND m.quarantined=1)");
         }
         if let Some(mccs) = mccs {
             query.push_str(" AND mcc IN (");
@@ -473,17 +509,22 @@ impl CellStore {
         let (consensus_count, published_count, seeded_count): (i64, i64, i64) = connection
             .query_row(
                 "SELECT COUNT(*),
-                        COALESCE(SUM(CASE WHEN seeded=1 OR devices>=?1 THEN 1 ELSE 0 END), 0),
+                        COALESCE(SUM(CASE WHEN (seeded=1 OR devices>=?1) AND NOT EXISTS (SELECT 1 FROM tower_moderation m WHERE m.radio=consensus.radio AND m.mcc=consensus.mcc AND m.mnc=consensus.mnc AND m.area=consensus.area AND m.cid=consensus.cid AND m.quarantined=1) THEN 1 ELSE 0 END), 0),
                         COALESCE(SUM(CASE WHEN seeded=1 THEN 1 ELSE 0 END), 0)
                  FROM consensus",
                 [i64::try_from(policy.min_devices)?],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )?;
+        let quarantined_count: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM consensus c JOIN tower_moderation m ON m.radio=c.radio AND m.mcc=c.mcc AND m.mnc=c.mnc AND m.area=c.area AND m.cid=c.cid WHERE m.quarantined=1",
+            [], |row| row.get(0),
+        )?;
         Ok(StoreCounts {
             published: usize::try_from(published_count)?,
             consensus: usize::try_from(consensus_count)?,
             contributions: usize::try_from(contributions_count)?,
             seeded: usize::try_from(seeded_count)?,
+            quarantined: usize::try_from(quarantined_count)?,
         })
     }
 }
@@ -545,7 +586,7 @@ fn recompute(transaction: &Transaction<'_>, key: &CellKey, policy: &Policy) -> R
         "SELECT device,lat,lon,range_m,samples,updated_s FROM contributions
          WHERE radio=?1 AND mcc=?2 AND mnc=?3 AND area=?4 AND cid=?5",
     )?;
-    let contributions = statement
+    let mut contributions = statement
         .query_map(
             params![key.radio.to_string(), key.mcc, key.mnc, key.area, key.cid],
             |row| {
@@ -562,6 +603,11 @@ fn recompute(transaction: &Transaction<'_>, key: &CellKey, policy: &Policy) -> R
         .collect::<rusqlite::Result<Vec<_>>>()?;
     if contributions.is_empty() {
         anyhow::bail!("cannot recompute a cell without contributions");
+    }
+    for contribution in &mut contributions {
+        if contribution.device != SEED_DEVICE && contribution.device != MANUAL_DEVICE {
+            contribution.samples = contribution.samples.clamp(1, policy.max_samples_per_device);
+        }
     }
 
     Ok(consensus::calculate(key, &contributions, policy))

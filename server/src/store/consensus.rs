@@ -1,8 +1,8 @@
 //! Pure consensus calculation from the contributions read by the SQLite store.
 
 use super::{
-    CellKey, CellTower, Consensus, Contribution, Policy, SEED_DEVICE, SEED_VOTE, SEED_WEIGHT,
-    distance_m,
+    CellKey, CellTower, Consensus, Contribution, MANUAL_DEVICE, Policy, SEED_DEVICE, SEED_VOTE,
+    SEED_WEIGHT, distance_m,
 };
 
 /// Aggregate compatible contributions after rejecting location outliers.
@@ -12,6 +12,30 @@ pub(super) fn calculate(
     contributions: &[Contribution],
     policy: &Policy,
 ) -> Consensus {
+    if let Some(manual) = contributions
+        .iter()
+        .find(|item| item.device == MANUAL_DEVICE)
+    {
+        return Consensus {
+            tower: CellTower {
+                key: key.clone(),
+                lat: manual.lat,
+                lon: manual.lon,
+                range_m: manual.range_m,
+                samples: manual.samples,
+            },
+            devices: contributions
+                .iter()
+                .filter(|item| item.device != SEED_DEVICE && item.device != MANUAL_DEVICE)
+                .count(),
+            seeded: true,
+            updated_s: contributions
+                .iter()
+                .map(|item| item.updated_s)
+                .max()
+                .unwrap_or_default(),
+        };
+    }
     let median_lat = weighted_median(
         contributions
             .iter()

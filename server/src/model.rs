@@ -9,10 +9,12 @@ pub enum PolicyError {
     NotPositive(&'static str),
     #[error("{0} must be finite")]
     NotFinite(&'static str),
+    #[error("{0} is too large")]
+    TooLarge(&'static str),
 }
 
 /// Anti-poisoning and request limits. Defaults are suitable for a public server.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Policy {
     pub max_samples_per_device: i64,
     pub min_devices: usize,
@@ -73,6 +75,9 @@ impl Policy {
             if value == 0 {
                 return Err(PolicyError::NotPositive(name));
             }
+        }
+        if i64::try_from(self.min_devices).is_err() {
+            return Err(PolicyError::TooLarge("min_devices"));
         }
         for (name, value) in [
             ("outlier_min_m", self.outlier_min_m),
