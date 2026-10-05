@@ -5,6 +5,7 @@
   const summary = document.getElementById("job-summary");
   const report = document.getElementById("rejection-report");
   if (!importForm || !cancelForm || !panel || !summary || !report) return;
+  const localize = (value) => window.IMUNavLocale?.translate(value) || value;
 
   let upload = null;
   let sawRunning = false;
@@ -16,7 +17,7 @@
       panel.hidden = !job.status;
       if (!job.status) return;
       const unit = job.phase === "uploading" ? "bytes" : "rows";
-      summary.textContent = `${job.kind}: ${job.status} · ${job.phase} · ${job.processed} ${unit} processed · ${job.rejected} rejected`;
+      summary.textContent = localize(`${job.kind}: ${job.status} · ${job.phase} · ${job.processed} ${unit} processed · ${job.rejected} rejected`);
       cancelForm.hidden = job.status !== "running";
       report.hidden = !(job.id && job.rejected && job.status === "complete");
       if (job.id) report.href = `/admin/jobs/${job.id}/rejections.csv`;
@@ -35,22 +36,22 @@
     sawRunning = true;
     panel.hidden = false;
     cancelForm.hidden = false;
-    summary.textContent = "seed import: uploading · 0 bytes sent";
+    summary.textContent = localize("seed import: uploading · 0 bytes sent");
     request.open("POST", importForm.action);
     request.upload.onprogress = (progress) => {
-      summary.textContent = `seed import: uploading · ${progress.loaded} bytes sent`;
+      summary.textContent = localize(`seed import: uploading · ${progress.loaded} bytes sent`);
     };
     request.onload = () => {
       upload = null;
       if (request.status >= 400) {
-        summary.textContent = `Import failed (HTTP ${request.status}). Check the server log or retry.`;
+        summary.textContent = localize(`Import failed (HTTP ${request.status}). Check the server log or retry.`);
         cancelForm.hidden = true;
       }
       update();
     };
     request.onerror = () => {
       upload = null;
-      summary.textContent = "Upload connection failed. Check the server log or retry.";
+      summary.textContent = localize("Upload connection failed. Check the server log or retry.");
       cancelForm.hidden = true;
       update();
     };

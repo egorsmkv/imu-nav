@@ -76,5 +76,6 @@
         {% for observation in observations %}<tr><td>{{ observation.device }}</td><td>{{ observation.lat }}</td><td>{{ observation.lon }}</td><td>{{ observation.range_m }}</td><td>{{ observation.samples }}</td><td><time {% if observation.updated_time.valid %}datetime="{{ observation.updated_time.datetime }}"{% endif %}>{{ observation.updated_time.display }}</time></td><td><form method="post" action="{{ tower.detail_path }}/observations/delete"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="device" value="{{ observation.device }}"><button class="btn btn-outline-danger btn-sm">Remove</button></form></td></tr>{% endfor %}
     </tbody></table></div><form class="card-footer d-flex align-items-center gap-2" method="get" action="{{ tower.detail_path }}"><input type="hidden" name="device" value="{{ device_filter }}">{% if observation_page > 1 %}<button class="btn btn-outline-secondary btn-sm" name="page" value="{{ observation_previous }}">Previous</button>{% endif %}<span>Observation page {{ observation_page }}</span>{% if observation_has_next %}<button class="btn btn-outline-secondary btn-sm" name="page" value="{{ observation_next }}">Next</button>{% endif %}</form></section>
 </main>
+<script src="/web-locale.js" defer></script>
 </body>
 </html>

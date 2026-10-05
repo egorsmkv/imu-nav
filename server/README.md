@@ -37,7 +37,12 @@ only be enabled when direct access to the server port is blocked.
 
 Open `/data-usage` for a public explanation of what the server receives, stores, publishes, and
 lets users remove. Open `/signup` to create an account or `/login` to sign in. `/forgot-password`
-requests a reset email when SMTP is configured. The `/account` panel filters the account's cell
+requests a reset email when SMTP is configured.
+The web pages include a language selector for English, Ukrainian, and Russian. They initially use
+the browser's preferred language, then remember the selected language in a one-year cookie.
+JavaScript applies the translations in the browser; API responses and exported files are unchanged.
+
+The `/account` panel filters the account's cell
 observations by device, MCC, and update time; pages through 100 results at a time; and downloads
 matching rows as gzip CSV. It can delete individual observations or all observations, pause and
 resume uploads, change password or email, revoke other sessions, and close the account. The server

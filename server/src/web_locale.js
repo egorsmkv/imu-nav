@@ -1,0 +1,380 @@
+/* Browser-only copy for the account and administrator pages. Keys are English UI text. */
+(() => {
+  "use strict";
+  const copy = {
+    "Account": ["Обліковий запис", "Учётная запись"],
+    "My account · IMU Nav": ["Мій обліковий запис · IMU Nav", "Моя учётная запись · IMU Nav"],
+    "Data Usage · IMU Nav": ["Використання даних · IMU Nav", "Использование данных · IMU Nav"],
+    "IMU Nav · Server admin": ["IMU Nav · Адміністратор сервера", "IMU Nav · Администратор сервера"],
+    "Reset password · IMU Nav": ["Скинути пароль · IMU Nav", "Сбросить пароль · IMU Nav"],
+    "Sign in · IMU Nav": ["Увійти · IMU Nav", "Войти · IMU Nav"],
+    "Create account · IMU Nav": ["Створити обліковий запис · IMU Nav", "Создать учётную запись · IMU Nav"],
+    "Verify IMU Nav email": ["Підтвердити адресу IMU Nav", "Подтвердить почту IMU Nav"],
+    "Reset IMU Nav password": ["Скинути пароль IMU Nav", "Сбросить пароль IMU Nav"],
+    "Account email": ["Електронна адреса облікового запису", "Электронная почта учётной записи"],
+    "Accounts": ["Облікові записи", "Учётные записи"],
+    "Action": ["Дія", "Действие"],
+    "Active": ["Активний", "Активный"],
+    "Administrator": ["Адміністратор", "Администратор"],
+    "Administrator activity": ["Дії адміністратора", "Действия администратора"],
+    "All": ["Усі", "Все"],
+    "Already have an account?": ["Уже маєте обліковий запис?", "Уже есть учётная запись?"],
+    "App": ["Застосунок", "Приложение"],
+    "Apply": ["Застосувати", "Применить"],
+    "Apply filters": ["Застосувати фільтри", "Применить фильтры"],
+    "Area": ["Зона", "Зона"],
+    "Actor ID": ["ID виконавця", "ID исполнителя"],
+    "Browser": ["Браузер", "Браузер"],
+    "Cancel job": ["Скасувати завдання", "Отменить задачу"],
+    "Cell ID": ["ID комірки", "ID соты"],
+    "Change email": ["Змінити електронну адресу", "Изменить электронную почту"],
+    "Change password": ["Змінити пароль", "Изменить пароль"],
+    "Check your email for the verification link.": ["Перевірте пошту: ми надіслали посилання для підтвердження.", "Проверьте почту: мы отправили ссылку для подтверждения."],
+    "Clear": ["Очистити", "Очистить"],
+    "Close account": ["Закрити обліковий запис", "Закрыть учётную запись"],
+    "Close my account": ["Закрити мій обліковий запис", "Закрыть мою учётную запись"],
+    "Closing your account deletes your cell observations and sessions. This cannot be undone.": ["Закриття облікового запису видалить ваші спостереження за стільниковими вежами та сеанси. Цю дію неможливо скасувати.", "Закрытие учётной записи удалит ваши наблюдения за сотовыми вышками и сеансы. Это действие нельзя отменить."],
+    "Consensus": ["Узгоджені дані", "Согласованные данные"],
+    "Contributions": ["Внески", "Вклады"],
+    "Create account": ["Створити обліковий запис", "Создать учётную запись"],
+    "Create an account": ["Створити обліковий запис", "Создать учётную запись"],
+    "Current password": ["Поточний пароль", "Текущий пароль"],
+    "Daily devices per IP": ["Пристроїв на IP за добу", "Устройств на IP за сутки"],
+    "Data Usage": ["Використання даних", "Использование данных"],
+    "Delete": ["Видалити", "Удалить"],
+    "Delete all my observations": ["Видалити всі мої спостереження", "Удалить все мои наблюдения"],
+    "Delete all observations": ["Видалити всі спостереження", "Удалить все наблюдения"],
+    "Delete tower data": ["Видалити дані вежі", "Удалить данные вышки"],
+    "Device": ["Пристрій", "Устройство"],
+    "Device ID contains": ["ID пристрою містить", "ID устройства содержит"],
+    "Devices": ["Пристрої", "Устройства"],
+    "Download filtered CSV.gz": ["Завантажити відфільтрований CSV.gz", "Скачать отфильтрованный CSV.gz"],
+    "Download rejected rows": ["Завантажити відхилені рядки", "Скачать отклонённые строки"],
+    "Email": ["Електронна пошта", "Электронная почта"],
+    "Estimated range": ["Оцінений радіус", "Оценённый радиус"],
+    "Export consensuses": ["Експортувати узгоджені дані", "Экспортировать согласованные данные"],
+    "Export observations": ["Експортувати спостереження", "Экспортировать наблюдения"],
+    "Filter accounts by email": ["Фільтрувати облікові записи за адресою", "Фильтровать учётные записи по адресу"],
+    "Filter action": ["Фільтр дій", "Фильтр действий"],
+    "Filter by action": ["Фільтрувати за дією", "Фильтровать по действию"],
+    "Filter by device": ["Фільтрувати за пристроєм", "Фильтровать по устройству"],
+    "Filter device": ["Фільтр пристроїв", "Фильтр устройств"],
+    "Find and export observations": ["Пошук та експорт спостережень", "Поиск и экспорт наблюдений"],
+    "Forgot password?": ["Забули пароль?", "Забыли пароль?"],
+    "How the server uses your data": ["Як сервер використовує ваші дані", "Как сервер использует ваши данные"],
+    "Hourly uploads per device": ["Завантажень із пристрою за годину", "Загрузок с устройства в час"],
+    "Hourly uploads per IP": ["Завантажень з IP за годину", "Загрузок с IP в час"],
+    "IMU Nav cell server": ["Сервер стільникових даних IMU Nav", "Сервер сотовых данных IMU Nav"],
+    "IMU Nav is a research prototype, not a safety system.": ["IMU Nav — дослідницький прототип, а не система безпеки.", "IMU Nav — исследовательский прототип, а не система безопасности."],
+    "If this address has an account, we sent a reset link. Check your inbox.": ["Якщо для цієї адреси є обліковий запис, ми надіслали посилання для скидання пароля. Перевірте пошту.", "Если для этого адреса есть учётная запись, мы отправили ссылку для сброса пароля. Проверьте почту."],
+    "Import OpenCellID CSV or gzip. Imports update seed rows and preserve manual corrections. The operation is atomic.": ["Імпортуйте CSV OpenCellID або gzip. Імпорт оновлює початкові записи та зберігає ручні виправлення. Операція виконується атомарно.", "Импортируйте CSV OpenCellID или gzip. Импорт обновляет исходные записи и сохраняет ручные исправления. Операция выполняется атомарно."],
+    "Latitude": ["Широта", "Широта"],
+    "Longitude": ["Довгота", "Долгота"],
+    "Management dashboard": ["Панель керування", "Панель управления"],
+    "Manual correction": ["Ручне виправлення", "Ручное исправление"],
+    "Maximum jump (m)": ["Максимальний стрибок (м)", "Максимальный скачок (м)"],
+    "Maximum range (m)": ["Максимальний радіус (м)", "Максимальный радиус (м)"],
+    "Minimum devices": ["Мінімум пристроїв", "Минимум устройств"],
+    "Mobile country code": ["Код мобільної країни", "Код мобильной страны"],
+    "MCC filter": ["Фільтр MCC", "Фильтр MCC"],
+    "Moderation": ["Модерація", "Модерация"],
+    "My account": ["Мій обліковий запис", "Моя учётная запись"],
+    "My cell observations": ["Мої спостереження за стільниковими вежами", "Мои наблюдения за сотовыми вышками"],
+    "New email": ["Нова електронна адреса", "Новый адрес электронной почты"],
+    "New here?": ["Уперше тут?", "Впервые здесь?"],
+    "New password": ["Новий пароль", "Новый пароль"],
+    "New password (12–256 characters)": ["Новий пароль (12–256 символів)", "Новый пароль (12–256 символов)"],
+    "Next": ["Далі", "Далее"],
+    "Next page": ["Наступна сторінка", "Следующая страница"],
+    "No": ["Ні", "Нет"],
+    "No observations match this page and filter.": ["На цій сторінці немає спостережень за заданим фільтром.", "На этой странице нет наблюдений по заданному фильтру."],
+    "No towers match this filter.": ["За цим фільтром веж не знайдено.", "По этому фильтру вышек не найдено."],
+    "Observation deleted. Previously deleted data will not be accepted again.": ["Спостереження видалено. Раніше видалені дані більше не прийматимуться.", "Наблюдение удалено. Ранее удалённые данные больше не будут приниматься."],
+    "Observations": ["Спостереження", "Наблюдения"],
+    "Only observations uploaded by your devices appear here. The server does not store trip recordings.": ["Тут відображаються лише спостереження, завантажені вашими пристроями. Сервер не зберігає записи поїздок.", "Здесь отображаются только наблюдения, загруженные вашими устройствами. Сервер не хранит записи поездок."],
+    "Other sessions were signed out.": ["Інші сеанси завершено.", "Другие сеансы завершены."],
+    "Outlier threshold (m)": ["Поріг відхилення (м)", "Порог отклонения (м)"],
+    "Password": ["Пароль", "Пароль"],
+    "Password changed. Other sessions were signed out.": ["Пароль змінено. Інші сеанси завершено.", "Пароль изменён. Другие сеансы завершены."],
+    "Password to resume sharing": ["Пароль для відновлення обміну даними", "Пароль для возобновления обмена данными"],
+    "Pause uploads": ["Призупинити завантаження", "Приостановить загрузку"],
+    "Pending": ["Очікує", "Ожидает"],
+    "Pending towers": ["Вежі в очікуванні", "Вышки в ожидании"],
+    "Policy": ["Правила", "Правила"],
+    "Position": ["Розташування", "Положение"],
+    "Previous": ["Назад", "Назад"],
+    "Previous page": ["Попередня сторінка", "Предыдущая страница"],
+    "Published": ["Опубліковано", "Опубликовано"],
+    "Published towers": ["Опубліковані вежі", "Опубликованные вышки"],
+    "Quarantine hides this tower from public downloads before deletion.": ["Карантин приховує цю вежу з публічних завантажень перед видаленням.", "Карантин скрывает эту вышку из общедоступных загрузок перед удалением."],
+    "Quarantine tower": ["Помістити вежу на карантин", "Поместить вышку в карантин"],
+    "Quarantined": ["На карантині", "На карантине"],
+    "Quarantined towers": ["Вежі на карантині", "Вышки на карантине"],
+    "Radio": ["Радіозв’язок", "Радиосвязь"],
+    "Range": ["Радіус", "Радиус"],
+    "Range (m)": ["Радіус (м)", "Радиус (м)"],
+    "Recent towers": ["Останні вежі", "Недавние вышки"],
+    "Refresh": ["Оновити", "Обновить"],
+    "Remove": ["Прибрати", "Убрать"],
+    "Resend verification email": ["Надіслати лист підтвердження ще раз", "Отправить письмо подтверждения повторно"],
+    "Reset password": ["Скинути пароль", "Сбросить пароль"],
+    "Restore": ["Відновити", "Восстановить"],
+    "Restore tower": ["Відновити вежу", "Восстановить вышку"],
+    "Resume uploads": ["Відновити завантаження", "Возобновить загрузку"],
+    "Return to account": ["Повернутися до облікового запису", "Вернуться к учётной записи"],
+    "Return to administrator panel": ["Повернутися до панелі адміністратора", "Вернуться к панели администратора"],
+    "Return to dashboard": ["Повернутися до панелі керування", "Вернуться к панели управления"],
+    "Return to sign in": ["Повернутися до входу", "Вернуться ко входу"],
+    "Review towers, accounts, imports, and publication rules.": ["Переглядайте вежі, облікові записи, імпорт і правила публікації.", "Просматривайте вышки, учётные записи, импорт и правила публикации."],
+    "Role": ["Роль", "Роль"],
+    "Rows": ["Рядки", "Строки"],
+    "Rows per upload": ["Рядків на завантаження", "Строк на загрузку"],
+    "Samples": ["Зразки", "Образцы"],
+    "Samples per device": ["Зразків на пристрій", "Образцов на устройство"],
+    "Save and recalculate": ["Зберегти й перерахувати", "Сохранить и пересчитать"],
+    "Save correction": ["Зберегти виправлення", "Сохранить исправление"],
+    "Search": ["Пошук", "Поиск"],
+    "Search email": ["Шукати адресу", "Искать адрес"],
+    "Seed import and exports": ["Імпорт початкових даних та експорт", "Импорт исходных данных и экспорт"],
+    "Seeded": ["Початкові дані", "Исходные данные"],
+    "Send confirmation link": ["Надіслати посилання для підтвердження", "Отправить ссылку для подтверждения"],
+    "Send reset link": ["Надіслати посилання для скидання", "Отправить ссылку для сброса"],
+    "Sharing is active again; previously deleted towers stay blocked.": ["Обмін даними знову активний; раніше видалені вежі залишаються заблокованими.", "Обмен данными снова активен; ранее удалённые вышки остаются заблокированными."],
+    "Sign in": ["Увійти", "Войти"],
+    "Sign in to your account panel": ["Увійдіть до панелі облікового запису", "Войдите в панель учётной записи"],
+    "Sign out": ["Вийти", "Выйти"],
+    "Sign out all other sessions": ["Завершити всі інші сеанси", "Завершить все другие сеансы"],
+    "Sign out devices you no longer use. This browser is marked as current.": ["Завершіть сеанси на пристроях, якими більше не користуєтеся. Цей браузер позначено як поточний.", "Завершите сеансы на устройствах, которыми больше не пользуетесь. Этот браузер отмечен как текущий."],
+    "Signed-in sessions": ["Активні сеанси", "Активные сеансы"],
+    "Start import": ["Почати імпорт", "Начать импорт"],
+    "Status": ["Стан", "Состояние"],
+    "Suspend": ["Призупинити", "Приостановить"],
+    "Suspended": ["Призупинено", "Приостановлено"],
+    "Target": ["Ціль", "Цель"],
+    "The admin page could not be generated.": ["Не вдалося створити сторінку адміністратора.", "Не удалось создать страницу администратора."],
+    "This correction takes precedence over imported seed data until removed from observations.": ["Це виправлення має пріоритет над імпортованими початковими даними, доки його не буде вилучено зі спостережень.", "Это исправление имеет приоритет над импортированными исходными данными, пока его не удалят из наблюдений."],
+    "This tower is hidden from public downloads. New observations continue to be recorded.": ["Цю вежу приховано з публічних завантажень. Нові спостереження й далі записуються.", "Эта вышка скрыта из общедоступных загрузок. Новые наблюдения продолжают записываться."],
+    "Time": ["Час", "Время"],
+    "Tower key": ["Ключ вежі", "Ключ вышки"],
+    "Trip recordings are not stored by this server. Signing out of the app stops authenticated uploads, while public tower downloads remain available.": ["Цей сервер не зберігає записи поїздок. Вихід із застосунку зупиняє авторизовані завантаження, але публічне завантаження даних веж залишається доступним.", "Этот сервер не хранит записи поездок. Выход из приложения прекращает авторизованные загрузки, но общедоступная загрузка данных вышек остаётся доступной."],
+    "Trusted seed": ["Довірені початкові дані", "Доверенные исходные данные"],
+    "Type DELETE ACCOUNT to confirm": ["Введіть DELETE ACCOUNT для підтвердження", "Введите DELETE ACCOUNT для подтверждения"],
+    "Type DELETE to confirm": ["Введіть DELETE для підтвердження", "Введите DELETE для подтверждения"],
+    "Type DELETE to permanently remove current data": ["Введіть DELETE, щоб назавжди видалити поточні дані", "Введите DELETE, чтобы навсегда удалить текущие данные"],
+    "Updated": ["Оновлено", "Обновлено"],
+    "Updated (UTC)": ["Оновлено (UTC)", "Обновлено (UTC)"],
+    "Updated at or after (UTC)": ["Оновлено не раніше (UTC)", "Обновлено не раньше (UTC)"],
+    "Updated at or before (UTC)": ["Оновлено не пізніше (UTC)", "Обновлено не позже (UTC)"],
+    "User": ["Користувач", "Пользователь"],
+    "Verify email": ["Підтвердити електронну адресу", "Подтвердить электронную почту"],
+    "View as user": ["Переглянути як користувач", "Просмотреть как пользователь"],
+    "We send a confirmation link to your new address. You remain signed in until confirmation.": ["Ми надішлемо посилання для підтвердження на нову адресу. Ви залишатиметеся в системі до підтвердження.", "Мы отправим ссылку для подтверждения на новый адрес. Вы останетесь в системе до подтверждения."],
+    "Yes": ["Так", "Да"],
+    "Your observations were deleted and sharing is paused.": ["Ваші спостереження видалено, а обмін даними призупинено.", "Ваши наблюдения удалены, а обмен данными приостановлен."],
+    "← Dashboard": ["← Панель керування", "← Панель управления"],
+    "active": ["активний", "активен"],
+    "paused": ["призупинено", "приостановлен"],
+    "waiting for email verification": ["очікує підтвердження пошти", "ожидает подтверждения почты"],
+    "Sign in to administer the server.": ["Увійдіть, щоб керувати сервером.", "Войдите, чтобы управлять сервером."],
+    "Administrator access or a valid form token is required.": ["Потрібен доступ адміністратора або чинний токен форми.", "Требуется доступ администратора или действительный токен формы."],
+    "Tower not found.": ["Вежу не знайдено.", "Вышка не найдена."],
+    "Invalid email or password.": ["Неправильна електронна адреса або пароль.", "Неверная электронная почта или пароль."],
+    "Enter a valid email address.": ["Введіть правильну електронну адресу.", "Введите правильный адрес электронной почты."],
+    "Use a password between 12 and 256 characters.": ["Використовуйте пароль завдовжки від 12 до 256 символів.", "Используйте пароль длиной от 12 до 256 символов."],
+    "New password must be 12–256 characters.": ["Новий пароль має містити від 12 до 256 символів.", "Новый пароль должен содержать от 12 до 256 символов."],
+    "Too many attempts. Try again later.": ["Забагато спроб. Спробуйте пізніше.", "Слишком много попыток. Попробуйте позже."],
+    "That email is already registered.": ["Цю адресу вже зареєстровано.", "Этот адрес уже зарегистрирован."],
+    "Email delivery failed. Try again later.": ["Не вдалося надіслати лист. Спробуйте пізніше.", "Не удалось отправить письмо. Попробуйте позже."],
+    "Invalid form token.": ["Недійсний токен форми.", "Недействительный токен формы."],
+    "Current password is incorrect.": ["Поточний пароль неправильний.", "Текущий пароль неверен."],
+    "Password is incorrect.": ["Пароль неправильний.", "Пароль неверен."],
+    "Invalid observation filter.": ["Недійсний фільтр спостережень.", "Недопустимый фильтр наблюдений."],
+    "Timestamp is outside the supported range": ["Час поза підтримуваним діапазоном", "Время вне поддерживаемого диапазона"],
+    "Use a valid UTC date and time": ["Введіть правильні дату й час UTC", "Введите правильные дату и время UTC"],
+    "Invalid page number.": ["Недійсний номер сторінки.", "Недопустимый номер страницы."],
+    "Verify your email and enter the correct password before sharing.": ["Підтвердьте електронну адресу й введіть правильний пароль перед обміном даними.", "Подтвердите электронную почту и введите правильный пароль перед обменом данными."],
+    "Verify your email to enable uploads and sharing. Check your inbox for a link. If it did not arrive, resend it below.": ["Підтвердьте електронну адресу, щоб увімкнути завантаження та обмін даними. Перевірте пошту. Якщо листа немає, надішліть його повторно нижче.", "Подтвердите электронную почту, чтобы включить загрузку и обмен данными. Проверьте почту. Если письма нет, отправьте его повторно ниже."],
+    "Checking your link…": ["Перевіряємо посилання…", "Проверяем ссылку…"],
+    "Email verified. You can return to the app or sign in.": ["Електронну адресу підтверджено. Поверніться до застосунку або увійдіть.", "Электронная почта подтверждена. Вернитесь в приложение или войдите."],
+    "Link expired or invalid. Request another link from your account panel.": ["Посилання прострочене або недійсне. Запросіть нове в панелі облікового запису.", "Ссылка устарела или недействительна. Запросите новую в панели учётной записи."],
+    "Could not contact the server. Please try again.": ["Не вдалося зв’язатися із сервером. Спробуйте ще раз.", "Не удалось связаться с сервером. Попробуйте ещё раз."],
+    "Missing verification token.": ["Немає токена підтвердження.", "Отсутствует токен подтверждения."],
+    "Password changed. Return to the app and sign in.": ["Пароль змінено. Поверніться до застосунку та увійдіть.", "Пароль изменён. Вернитесь в приложение и войдите."],
+    "Link expired or invalid. Request another reset in the app.": ["Посилання прострочене або недійсне. Запросіть нове скидання пароля в застосунку.", "Ссылка устарела или недействительна. Запросите новый сброс пароля в приложении."],
+  };
+  Object.assign(copy, {
+    "What the server receives": ["Що отримує сервер", "Что получает сервер"],
+    "How tower data is used": ["Як використовуються дані веж", "Как используются данные вышек"],
+    "Accounts, logs, and retention": ["Облікові записи, журнали й зберігання", "Учётные записи, журналы и хранение"],
+    "Review and remove your data": ["Перегляд і видалення ваших даних", "Просмотр и удаление ваших данных"],
+    "This page explains how this cell-sharing server receives and uses data. Sharing tower observations is optional. IMU Nav is a research prototype, not a safety system.": ["На цій сторінці пояснено, як сервер обміну стільниковими даними отримує та використовує дані. Ділитися спостереженнями за вежами необов’язково. IMU Nav — дослідницький прототип, а не система безпеки.", "На этой странице объясняется, как сервер обмена сотовыми данными получает и использует данные. Передавать наблюдения за вышками необязательно. IMU Nav — исследовательский прототип, а не система безопасности."],
+    "When sharing is active, the app uploads estimated cell-tower positions: radio type, country and network codes, area and cell IDs, latitude, longitude, estimated range, and sample count. These are tower observations, not a trip recording or a raw GPS track.": ["Коли обмін даними активний, застосунок завантажує оцінені позиції стільникових веж: тип радіозв’язку, коди країни та мережі, ID зони й комірки, широту, довготу, оцінений радіус і кількість зразків. Це спостереження за вежами, а не запис поїздки чи необроблений GPS-трек.", "Когда обмен данными активен, приложение загружает оценённые позиции сотовых вышек: тип радиосвязи, коды страны и сети, ID зоны и соты, широту, долготу, оценённый радиус и число образцов. Это наблюдения за вышками, а не запись поездки или необработанный GPS-трек."],
+    "Uploads include an account session and a device ID so the server can keep contributions separate. If a client omits the device ID, the server stores its IP address as the fallback device identifier.": ["Завантаження містять сеанс облікового запису та ID пристрою, щоб сервер розрізняв внески. Якщо клієнт не передає ID пристрою, сервер зберігає його IP-адресу як резервний ідентифікатор.", "Загрузки содержат сеанс учётной записи и ID устройства, чтобы сервер различал вклады. Если клиент не передаёт ID устройства, сервер сохраняет его IP-адрес как запасной идентификатор."],
+    "Creating an account supplies an email address and password. The server stores a password hash, not the password itself, plus revocable session records. Email is used for sign-in and, when mail delivery is configured, verification and password reset.": ["Під час створення облікового запису ви надаєте електронну адресу й пароль. Сервер зберігає хеш пароля, а не сам пароль, а також записи сеансів, які можна відкликати. Електронна адреса потрібна для входу, а за налаштованої пошти — для підтвердження та скидання пароля.", "При создании учётной записи вы указываете электронную почту и пароль. Сервер хранит хеш пароля, а не сам пароль, а также записи сеансов, которые можно отозвать. Электронная почта нужна для входа, а при настроенной отправке писем — для подтверждения и сброса пароля."],
+    "The server checks upload size, location, range, movement, and rate limits. It keeps the latest accepted observation for each device and tower in a SQLite database, along with its update time.": ["Сервер перевіряє розмір завантаження, розташування, радіус, переміщення та обмеження частоти запитів. Він зберігає останнє прийняте спостереження для кожного пристрою й вежі в базі SQLite разом із часом оновлення.", "Сервер проверяет размер загрузки, местоположение, радиус, перемещение и ограничения частоты запросов. Он хранит последнее принятое наблюдение для каждого устройства и вышки в базе SQLite вместе со временем обновления."],
+    "It combines observations from different devices and rejects position outliers. Normally at least two independent devices must contribute before a tower is published. Administrator-imported seed data can be published immediately.": ["Він об’єднує спостереження різних пристроїв і відхиляє позиції, що різко відрізняються. Зазвичай для публікації вежі потрібні внески щонайменше двох незалежних пристроїв. Імпортовані адміністратором початкові дані можуть публікуватися одразу.", "Он объединяет наблюдения разных устройств и отклоняет резко отличающиеся позиции. Обычно для публикации вышки нужны данные как минимум двух независимых устройств. Импортированные администратором исходные данные могут публиковаться сразу."],
+    "Public downloads contain combined tower positions and tower removals. They do not include account email addresses or device IDs. Administrators can review individual observations, import seed data, correct or quarantine towers, and export stored observations.": ["Публічні завантаження містять узгоджені позиції веж та відомості про їх вилучення. Вони не містять електронних адрес облікових записів чи ID пристроїв. Адміністратори можуть переглядати окремі спостереження, імпортувати початкові дані, виправляти позиції або відправляти вежі на карантин та експортувати збережені спостереження.", "Общедоступные загрузки содержат согласованные позиции вышек и сведения об их удалении. В них нет адресов электронной почты учётных записей или ID устройств. Администраторы могут просматривать отдельные наблюдения, импортировать исходные данные, исправлять позиции или помещать вышки в карантин и экспортировать сохранённые наблюдения."],
+    "Accepted observations stay in the database until they are replaced or deleted; this server does not automatically expire them. The server uses IP addresses for rate limits and includes IP addresses and device IDs in upload log entries. Log and backup retention depends on whoever operates this server.": ["Прийняті спостереження залишаються в базі даних, доки їх не замінять або не видалять; сервер не видаляє їх автоматично після певного строку. Сервер використовує IP-адреси для обмеження частоти запитів і записує IP-адреси та ID пристроїв у журнал завантажень. Строк зберігання журналів і резервних копій визначає оператор сервера.", "Принятые наблюдения остаются в базе данных, пока их не заменят или не удалят; сервер не удаляет их автоматически по истечении срока. Сервер использует IP-адреса для ограничения частоты запросов и записывает IP-адреса и ID устройств в журнал загрузок. Срок хранения журналов и резервных копий определяет оператор сервера."],
+    "For a server outside your trusted network, use HTTPS through a reverse proxy before entering credentials or uploading observations.": ["Якщо сервер перебуває поза вашою довіреною мережею, налаштуйте HTTPS через зворотний проксі перед введенням облікових даних або завантаженням спостережень.", "Если сервер находится вне вашей доверенной сети, настройте HTTPS через обратный прокси перед вводом учётных данных или загрузкой наблюдений."],
+    "to review or download your own observations, pause future uploads, delete one observation or all of them, and close your account.": ["щоб переглянути чи завантажити власні спостереження, призупинити подальші завантаження, видалити одне або всі спостереження та закрити обліковий запис.", "чтобы просмотреть или скачать свои наблюдения, приостановить дальнейшие загрузки, удалить одно или все наблюдения и закрыть учётную запись."],
+    "Deleting observations recalculates shared tower positions. The server blocks those tower keys from being uploaded again by the same account; deleting all observations also pauses uploads. Closing the account removes its observations, sessions, and deletion markers.": ["Видалення спостережень спричиняє перерахунок спільних позицій веж. Сервер блокує повторне завантаження цих ключів веж із того самого облікового запису; видалення всіх спостережень також призупиняє завантаження. Закриття облікового запису видаляє його спостереження, сеанси й позначки видалення.", "Удаление наблюдений вызывает пересчёт общих позиций вышек. Сервер блокирует повторную загрузку этих ключей вышек с той же учётной записи; удаление всех наблюдений также приостанавливает загрузки. Закрытие учётной записи удаляет её наблюдения, сеансы и отметки удаления."],
+    "A tower may remain published if other devices or seed data still support it. Copies already downloaded or exported cannot be removed remotely; updated apps receive tower removals on a later sync when a tower is withdrawn.": ["Вежа може залишитися опублікованою, якщо її підтверджують інші пристрої або початкові дані. Уже завантажені чи експортовані копії неможливо видалити віддалено; оновлені застосунки отримають відомості про вилучення вежі під час наступної синхронізації.", "Вышка может остаться опубликованной, если её подтверждают другие устройства или исходные данные. Уже скачанные или экспортированные копии нельзя удалить удалённо; обновлённые приложения получат сведения об удалении вышки при следующей синхронизации."],
+    "View and manage the cell observations uploaded by your IMU Nav account.": ["Переглядайте та керуйте спостереженнями за стільниковими вежами, завантаженими з вашого облікового запису IMU Nav.", "Просматривайте и управляйте наблюдениями за сотовыми вышками, загруженными из вашей учётной записи IMU Nav."],
+    "This removes all of your currently stored cell observations, updates shared tower estimates, and pauses uploads. Previously deleted tower keys remain blocked from future uploads by this account.": ["Це видалить усі ваші поточні спостереження за стільниковими вежами, оновить спільні оцінки позицій і призупинить завантаження. Раніше видалені ключі веж і надалі блокуватимуться для цього облікового запису.", "Это удалит все ваши текущие наблюдения за сотовыми вышками, обновит общие оценки позиций и приостановит загрузки. Ранее удалённые ключи вышек по-прежнему будут заблокированы для этой учётной записи."],
+    "Changes become active after the recalculation completes.": ["Зміни набудуть чинності після завершення перерахунку.", "Изменения вступят в силу после завершения пересчёта."],
+    "Accept Ukraine coordinates only": ["Приймати координати лише в Україні", "Принимать координаты только в Украине"],
+  });
+  Object.assign(copy, {
+    "Sharing is": ["Обмін даними", "Обмен данными"],
+    "matching observations": ["відповідних спостережень", "подходящих наблюдений"],
+    "current browser": ["поточний браузер", "текущий браузер"],
+    "processed": ["оброблено", "обработано"],
+    "rejected": ["відхилено", "отклонено"],
+    "rows": ["рядків", "строк"],
+    "bytes": ["байтів", "байтов"],
+    "uploading": ["завантаження", "загрузка"],
+    "running": ["виконується", "выполняется"],
+    "complete": ["завершено", "завершено"],
+    "cancelled": ["скасовано", "отменено"],
+    "failed": ["помилка", "ошибка"],
+    "interrupted": ["перервано", "прервано"],
+    "finished": ["завершено", "завершено"],
+    "recalculating": ["перерахунок", "пересчёт"],
+    "processing": ["обробка", "обработка"],
+    "policy recalculation": ["перерахунок правил", "пересчёт правил"],
+    "seed import": ["імпорт початкових даних", "импорт исходных данных"],
+    "Password recovery email is unavailable on this server.": ["На цьому сервері відновлення пароля поштою недоступне.", "На этом сервере восстановление пароля по почте недоступно."],
+    "Too many requests. Try again later.": ["Забагато запитів. Спробуйте пізніше.", "Слишком много запросов. Попробуйте позже."],
+    "Email changes require server email delivery.": ["Для зміни адреси сервер має підтримувати надсилання листів.", "Для смены адреса сервер должен поддерживать отправку писем."],
+    "Invalid email address.": ["Недійсна електронна адреса.", "Недействительный адрес электронной почты."],
+    "Password is incorrect or email is already in use.": ["Неправильний пароль або адреса вже використовується.", "Неверный пароль или адрес уже используется."],
+    "Email delivery is unavailable.": ["Надсилання листів недоступне.", "Отправка писем недоступна."],
+    "Administrator accounts cannot be closed here.": ["Тут не можна закрити облікові записи адміністраторів.", "Здесь нельзя закрыть учётные записи администраторов."],
+    "Invalid tower identifier.": ["Недійсний ідентифікатор вежі.", "Недопустимый идентификатор вышки."],
+    "Contribution not found.": ["Внесок не знайдено.", "Вклад не найден."],
+    "Type DELETE to confirm.": ["Введіть DELETE для підтвердження.", "Введите DELETE для подтверждения."],
+    "Type DELETE ACCOUNT to confirm.": ["Введіть DELETE ACCOUNT для підтвердження.", "Введите DELETE ACCOUNT для подтверждения."],
+    "MCC must contain comma-separated numbers": ["MCC має містити числа через кому", "MCC должен содержать числа через запятую"],
+    "Tower identifiers must be numbers.": ["Ідентифікатори вежі мають бути числами.", "Идентификаторы вышки должны быть числами."],
+    "Unknown tower status.": ["Невідомий стан вежі.", "Неизвестное состояние вышки."],
+    "Tower coordinates or samples are invalid.": ["Недійсні координати вежі або кількість зразків.", "Недопустимые координаты вышки или количество образцов."],
+    "Quarantine this tower before deleting it.": ["Помістіть вежу на карантин перед видаленням.", "Поместите вышку в карантин перед удалением."],
+    "Account not found or last administrator cannot be suspended.": ["Обліковий запис не знайдено або не можна призупинити останнього адміністратора.", "Учётная запись не найдена или нельзя приостановить последнего администратора."],
+    "Only active user accounts can be opened, and your administrator session must still be valid.": ["Можна відкрити лише активний обліковий запис користувача; ваш сеанс адміністратора має залишатися дійсним.", "Можно открыть только активную учётную запись пользователя; ваш сеанс администратора должен оставаться действительным."],
+    "Another job is running.": ["Інше завдання вже виконується.", "Другая задача уже выполняется."],
+    "Policy values must be finite and positive.": ["Значення правил мають бути скінченними й додатними.", "Значения правил должны быть конечными и положительными."],
+    "Invalid import form.": ["Недійсна форма імпорту.", "Недействительная форма импорта."],
+    "Missing form token.": ["Немає токена форми.", "Отсутствует токен формы."],
+    "Invalid import file.": ["Недійсний файл імпорту.", "Недействительный файл импорта."],
+    "Missing import file.": ["Файл імпорту не вибрано.", "Файл импорта не выбран."],
+    "Import cancelled.": ["Імпорт скасовано.", "Импорт отменён."],
+  });
+
+  const codes = ["uk", "ru"];
+  const language = (() => {
+    const saved = document.cookie.match(/(?:^|;\s*)imu_nav_lang=(en|uk|ru)(?:;|$)/)?.[1];
+    if (saved) return saved;
+    for (const preferred of navigator.languages || [navigator.language || "en"]) {
+      const code = preferred.toLowerCase().split("-")[0];
+      if (codes.includes(code)) return code;
+      if (code === "en") return "en";
+    }
+    return "en";
+  })();
+  document.documentElement.lang = language;
+  const index = codes.indexOf(language);
+  const choose = (english) => index < 0 ? english : (copy[english]?.[index] || english);
+  const months = {
+    Jan: ["січ", "янв"], Feb: ["лют", "фев"], Mar: ["бер", "мар"], Apr: ["квіт", "апр"],
+    May: ["трав", "май"], Jun: ["черв", "июн"], Jul: ["лип", "июл"], Aug: ["серп", "авг"],
+    Sep: ["вер", "сен"], Oct: ["жовт", "окт"], Nov: ["лист", "ноя"], Dec: ["груд", "дек"],
+  };
+  function translate(value) {
+    if (index < 0) return value;
+    if (copy[value]) return copy[value][index];
+    let match;
+    if ((match = value.match(/^(\d+) matching observations$/))) return `${match[1]} ${choose("matching observations")}`;
+    if ((match = value.match(/^Page (\d+) of matching towers\. Times are in UTC\.$/))) return index === 0 ? `Сторінка ${match[1]} веж за фільтром. Час указано в UTC.` : `Страница ${match[1]} вышек по фильтру. Время указано в UTC.`;
+    if ((match = value.match(/^Page (\d+)$/))) return index === 0 ? `Сторінка ${match[1]}` : `Страница ${match[1]}`;
+    if ((match = value.match(/^Observation page (\d+)$/))) return index === 0 ? `Сторінка спостережень ${match[1]}` : `Страница наблюдений ${match[1]}`;
+    if ((match = value.match(/^Published after (\d+) independent devices, or immediately when seeded\.$/))) return index === 0 ? `Публікується після внесків ${match[1]} незалежних пристроїв або одразу для початкових даних.` : `Публикуется после данных от ${match[1]} независимых устройств или сразу для исходных данных.`;
+    if ((match = value.match(/^Administrator view as (.+)$/))) return index === 0 ? `Перегляд адміністратором від імені ${match[1]}` : `Просмотр администратором от имени ${match[1]}`;
+    if ((match = value.match(/^You are signed in as this user from (.+)\. Account actions are recorded in the administrator activity log\. This view expires after one hour\.$/))) return index === 0 ? `Ви увійшли від імені цього користувача з облікового запису ${match[1]}. Дії з обліковим записом записуються в журнал адміністратора. Цей перегляд завершиться за годину.` : `Вы вошли от имени этого пользователя из учётной записи ${match[1]}. Действия с учётной записью записываются в журнал администратора. Этот просмотр завершится через час.`;
+    if ((match = value.match(/^(.+) · expires$/))) return index === 0 ? `${translate(match[1])} · діє до` : `${translate(match[1])} · действует до`;
+    if ((match = value.match(/^(Browser|App) · (.+)$/))) return `${choose(match[1])} · ${match[2]}`;
+    if (value === "· current browser") return index === 0 ? "· поточний браузер" : "· текущий браузер";
+    if ((match = value.match(/^View as (.+)$/))) return index === 0 ? `Переглянути як ${match[1]}` : `Просмотреть как ${match[1]}`;
+    if ((match = value.match(/^Delete observation for cell (.+)$/))) return index === 0 ? `Видалити спостереження для комірки ${match[1]}` : `Удалить наблюдение для соты ${match[1]}`;
+    if ((match = value.match(/^Tower (.+)$/))) return index === 0 ? `Вежа ${match[1]}` : `Вышка ${match[1]}`;
+    if ((match = value.match(/^(\d{1,2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{4}, .+)$/))) return `${match[1]} ${months[match[2]][index]} ${match[3]}`;
+    if ((match = value.match(/^IMU Nav · Tower (.+)$/))) return index === 0 ? `IMU Nav · Вежа ${match[1]}` : `IMU Nav · Вышка ${match[1]}`;
+    if ((match = value.match(/^(.+): ([a-z_]+) · ([a-z_]+) · (\d+) (bytes|rows) processed · (\d+) rejected$/))) return `${translate(match[1])}: ${translate(match[2])} · ${translate(match[3])} · ${match[4]} ${translate(match[5])} ${translate("processed")} · ${match[6]} ${translate("rejected")}`;
+    if ((match = value.match(/^seed import: uploading · (\d+) bytes sent$/))) return index === 0 ? `імпорт початкових даних: завантаження · надіслано ${match[1]} байтів` : `импорт исходных данных: загрузка · отправлено ${match[1]} байтов`;
+    if ((match = value.match(/^Import failed \(HTTP (\d+)\)\. Check the server log or retry\.$/))) return index === 0 ? `Імпорт не вдався (HTTP ${match[1]}). Перевірте журнал сервера або повторіть спробу.` : `Импорт не удался (HTTP ${match[1]}). Проверьте журнал сервера или повторите попытку.`;
+    if (value === "Upload connection failed. Check the server log or retry.") return index === 0 ? "Помилка з’єднання під час завантаження. Перевірте журнал сервера або повторіть спробу." : "Ошибка соединения при загрузке. Проверьте журнал сервера или повторите попытку.";
+    return value;
+  }
+  window.IMUNavLocale = { language, translate };
+  function translateNode(node) {
+    if (index < 0 || node.parentElement?.closest("script, style, textarea, code, [data-no-translate]")) return;
+    const original = node.nodeValue;
+    const trimmed = original.trim();
+    if (!trimmed) return;
+    const localized = translate(trimmed);
+    if (localized !== trimmed) node.nodeValue = original.replace(trimmed, localized);
+  }
+  function translateTree(root) {
+    if (root.nodeType === Node.TEXT_NODE) { translateNode(root); return; }
+    if (root.nodeType !== Node.ELEMENT_NODE || root.matches("script, style, textarea, code, [data-no-translate]")) return;
+    for (const attribute of ["placeholder", "aria-label", "title"]) {
+      if (root.hasAttribute(attribute)) {
+        const original = root.getAttribute(attribute);
+        const localized = translate(original);
+        if (localized !== original) root.setAttribute(attribute, localized);
+      }
+    }
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) translateNode(node);
+    for (const element of root.querySelectorAll("[placeholder], [aria-label], [title]")) {
+      for (const attribute of ["placeholder", "aria-label", "title"]) {
+        if (element.hasAttribute(attribute)) {
+          const original = element.getAttribute(attribute);
+          const localized = translate(original);
+          if (localized !== original) element.setAttribute(attribute, localized);
+        }
+      }
+    }
+  }
+  if (index >= 0) {
+    document.title = translate(document.title);
+    translateTree(document.documentElement);
+    new MutationObserver((changes) => {
+      for (const change of changes) {
+        if (change.type === "characterData") translateNode(change.target);
+        else for (const node of change.addedNodes) translateTree(node);
+      }
+    }).observe(document.documentElement, { childList: true, characterData: true, subtree: true });
+  }
+  const host = document.querySelector("header") || document.querySelector("nav.navbar .container-fluid") || document.querySelector("main") || document.body;
+  const label = document.createElement("label");
+  label.textContent = language === "uk" ? "Мова: " : language === "ru" ? "Язык: " : "Language: ";
+  label.setAttribute("for", "web-language");
+  const select = document.createElement("select");
+  select.id = "web-language";
+  select.setAttribute("aria-label", label.textContent.trim());
+  if (host.classList.contains("container-fluid")) select.className = "form-select form-select-sm w-auto";
+  for (const [code, name] of [["en", "English"], ["uk", "Українська"], ["ru", "Русский"]]) {
+    const option = document.createElement("option");
+    option.value = code;
+    option.textContent = name;
+    option.selected = code === language;
+    select.append(option);
+  }
+  select.addEventListener("change", () => {
+    document.cookie = `imu_nav_lang=${select.value}; Path=/; Max-Age=31536000; SameSite=Lax`;
+    location.reload();
+  });
+  label.append(select);
+  host.prepend(label);
+})();

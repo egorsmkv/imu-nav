@@ -70,6 +70,52 @@ async fn start_server_with_mail(policy: Policy, mail: Option<MailConfig>) -> Res
     })
 }
 
+#[tokio::test]
+async fn browser_pages_serve_all_three_locales_under_their_csp() -> Result<()> {
+    let server = start_server().await?;
+    let client = reqwest::Client::new();
+    let translations = client
+        .get(format!("{}/web-locale.js", server.base_url))
+        .send()
+        .await?;
+    assert_eq!(translations.status(), StatusCode::OK);
+    assert!(
+        translations.headers()["content-type"]
+            .to_str()?
+            .contains("text/javascript")
+    );
+    let translations = translations.text().await?;
+    assert!(translations.contains("Українська"));
+    assert!(translations.contains("Русский"));
+    assert!(translations.contains("navigator.languages"));
+
+    for path in [
+        "/login",
+        "/signup",
+        "/forgot-password",
+        "/data-usage",
+        "/verify-email",
+        "/reset-password",
+    ] {
+        let page = client
+            .get(format!("{}{path}", server.base_url))
+            .send()
+            .await?;
+        assert_eq!(page.status(), StatusCode::OK, "{path}");
+        assert!(
+            page.headers()["content-security-policy"]
+                .to_str()?
+                .contains("'self'"),
+            "{path}"
+        );
+        assert!(
+            page.text().await?.contains("src=\"/web-locale.js\""),
+            "{path}"
+        );
+    }
+    Ok(())
+}
+
 fn tower(lat: f64) -> CellTower {
     CellTower {
         key: CellKey {

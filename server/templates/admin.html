@@ -190,5 +190,6 @@
     </tbody></table></div><form class="card-footer d-flex align-items-center gap-2" method="get" action="/admin"><input type="hidden" name="audit_action" value="{{ audit_action }}">{% if audit_page > 1 %}<button class="btn btn-outline-secondary btn-sm" name="audit_page" value="{{ audit_previous }}">Previous</button>{% endif %}<span>Page {{ audit_page }}</span>{% if audit_has_next %}<button class="btn btn-outline-secondary btn-sm" name="audit_page" value="{{ audit_next }}">Next</button>{% endif %}</form></section>
 </main>
 <script src="/admin/admin.js" defer></script>
+<script src="/web-locale.js" defer></script>
 </body>
 </html>

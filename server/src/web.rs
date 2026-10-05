@@ -27,7 +27,7 @@ use tokio_util::io::ReaderStream;
 pub(crate) const WEB_LIFETIME_S: i64 = 7 * 24 * 60 * 60;
 pub(crate) const IMPERSONATION_LIFETIME_S: i64 = 60 * 60;
 const PAGE_SIZE: usize = 100;
-const CONTENT_SECURITY_POLICY: &str = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'";
+const CONTENT_SECURITY_POLICY: &str = "default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'";
 
 /// Account pages use normal HTML forms; Android keeps the JSON bearer-token API.
 pub(crate) fn router() -> Router<AppState> {
@@ -36,6 +36,7 @@ pub(crate) fn router() -> Router<AppState> {
         .route("/login", get(login_page).post(login))
         .route("/signup", get(signup_page).post(signup))
         .route("/data-usage", get(data_usage_page))
+        .route("/web-locale.js", get(locale_script))
         .route("/forgot-password", get(forgot_page).post(forgot_submit))
         .route("/account", get(account_page))
         .route("/account/export", get(export_own))
@@ -1372,9 +1373,21 @@ fn error_page(status: StatusCode, message: &'static str) -> Response {
     html_response(
         status,
         format!(
-            "<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><title>Account</title><body><h1>{message}</h1><p><a href=\"/account\">Return to account</a></p></body></html>"
+            "<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><title>Account</title><body><h1>{message}</h1><p><a href=\"/account\">Return to account</a></p><script src=\"/web-locale.js\" defer></script></body></html>"
         ),
     )
+}
+
+/// Serve browser translations from the same origin so account pages keep a strict CSP.
+async fn locale_script() -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, "text/javascript; charset=utf-8"),
+            (header::CACHE_CONTROL, "public, max-age=3600"),
+        ],
+        include_str!("web_locale.js"),
+    )
+        .into_response()
 }
 
 fn redirect(path: &'static str) -> Response {

@@ -1278,7 +1278,7 @@ impl From<ApiError> for AdminError {
 impl IntoResponse for AdminError {
     fn into_response(self) -> Response {
         let body = format!(
-            "<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><title>{}</title><body><h1>{}</h1><p><a href=\"/admin\">Return to dashboard</a></p></body></html>",
+            "<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><title>{}</title><body><h1>{}</h1><p><a href=\"/admin\">Return to dashboard</a></p><script src=\"/web-locale.js\" defer></script></body></html>",
             self.status.as_str(),
             self.message
         );
