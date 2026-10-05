@@ -8,7 +8,7 @@ The app records a trip automatically while you navigate. Recordings contain your
 
 1. Tap the clock icon on the map to open **History**.
 2. Open a trip to see its tracks, distance, time without GPS and uncertainty.
-3. Tap the share icon if you want to send a separate `.rec.gz` copy through Android's share menu. The original stays on the phone.
+3. Tap the share icon to send a `.zip` archive through Android's share menu. Open the ZIP to get a plain `.rec` recording. The original stays on the phone.
 
 If the app is killed during a trip, starting it again within three hours can restore the route and recording. The estimate becomes less certain for the missing time.
 
@@ -24,7 +24,7 @@ The recording contains precise location and sensor data. Turn the switch off to 
 
 ## Replay a recording on a computer
 
-1. Copy the `.rec.gz` file from a trip you own, or use a directory of recordings.
+1. Extract the `.rec` file from a shared ZIP, copy your own `.rec.gz` recording from app storage, or use a directory of recordings.
 2. Run the replay tool from the project root:
 
    ```bash

@@ -10,7 +10,9 @@
   the engine's estimate on a map, distance, duration, moving time, time/distance without GPS and the
   largest uncertainty. _Snap to roads_ map-matches the drive with GraphHopper.
 - **Share a trip:** open it in History and tap the share icon. Android's share menu sends a separate
-  `.rec.gz` copy containing the route, positions and recorded sensor events, usable by the replay tool.
+  `.zip` archive containing a plain `.rec` file with the route, positions and recorded sensor events.
+  Extract the `.rec` file to use it with the replay tool. A truncated gzip tail in the app's recording
+  is salvaged while building the ZIP.
   The original stays in app storage. Preparing the attachment runs in the background; missing files
   or insufficient storage produce an error without changing the trip.
 - **Surviving the app being killed:** the active trip is saved every 10 s. If Android or the user kills

@@ -455,7 +455,7 @@
     <string name="map_match_no_gps">В этой поездке недостаточно достоверных данных GPS для привязки</string>
     <string name="action_delete">Удалить</string>
     <string name="trip_delete_title">Удалить эту поездку?</string>
-    <string name="trip_share">Поделиться записью поездки</string>
+    <string name="trip_share">Поделиться ZIP-архивом поездки</string>
     <string name="trip_share_failed">Не удалось поделиться записью поездки. Проверьте, доступен ли файл и достаточно ли свободного места.</string>
     <string name="trip_loading">Загружаем запись…</string>
 

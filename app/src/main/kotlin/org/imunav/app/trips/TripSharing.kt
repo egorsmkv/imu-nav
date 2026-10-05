@@ -14,7 +14,7 @@ internal suspend fun tripShareIntent(context: Context, recording: File): Intent 
     val file = TripExport.snapshot(recording, File(context.cacheDir, "trip-shares"))
     val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
     Intent(Intent.ACTION_SEND).apply {
-        type = "application/gzip"
+        type = "application/zip"
         putExtra(Intent.EXTRA_STREAM, uri)
         clipData = ClipData.newUri(context.contentResolver, file.name, uri)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)

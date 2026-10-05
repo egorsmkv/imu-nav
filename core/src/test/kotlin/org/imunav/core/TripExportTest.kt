@@ -7,8 +7,9 @@ import org.imunav.core.record.TripRecorder
 import org.junit.Rule
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.util.zip.ZipFile
+import java.util.zip.ZipInputStream
 import kotlin.test.Test
-import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotEquals
@@ -30,15 +31,15 @@ class TripExportTest {
         val second = TripExport.snapshot(recording, directory)
 
         assertNotEquals(first, second)
-        assertTrue(first.name.endsWith(".rec.gz"))
-        assertContentEquals(originalBytes, recording.readBytes())
+        assertTrue(first.name.endsWith(".zip"))
+        assertTrue(originalBytes.contentEquals(recording.readBytes()))
         assertTrue(recording.delete())
-        assertEquals(events, TripFormat.read(first))
-        assertEquals(events, TripFormat.read(second))
+        assertEquals(events, unpackAndReplay(first, "trip-20261002-213400.rec"))
+        assertEquals(events, unpackAndReplay(second, "trip-20261002-213400.rec"))
     }
 
     @Test
-    fun truncatedRecordingIsCopiedWithoutLosingSalvageableEvents() {
+    fun truncatedRecordingStillProducesAnOpenableZipWithSalvageableEvents() {
         val recording = temporary.newFile("trip-truncated.rec.gz")
         TripRecorder(recording.outputStream()).use { recorder ->
             repeat(100) { recorder.record(TripEvent.Agc(it * 10L, -5f)) }
@@ -50,9 +51,8 @@ class TripExportTest {
 
         val exported = TripExport.snapshot(recording, temporary.newFolder("shared"))
 
-        assertContentEquals(truncated, exported.readBytes())
-        assertContentEquals(truncated, recording.readBytes())
-        assertEquals(events, TripFormat.read(exported))
+        assertTrue(truncated.contentEquals(recording.readBytes()))
+        assertEquals(events, unpackAndReplay(exported, "trip-truncated.rec"))
     }
 
     @Test
@@ -65,5 +65,29 @@ class TripExportTest {
         assertFailsWith<IllegalArgumentException> { TripExport.snapshot(empty, directory) }
 
         assertTrue(directory.listFiles().orEmpty().isEmpty())
+    }
+
+    @Test
+    fun corruptGzipDoesNotLeaveAnAttachment() {
+        val recording = temporary.newFile("trip-corrupt.rec.gz")
+        recording.writeText("not a gzip recording")
+        val directory = temporary.newFolder("shared")
+
+        assertFailsWith<java.io.IOException> { TripExport.snapshot(recording, directory) }
+        assertTrue(directory.listFiles().orEmpty().isEmpty())
+    }
+
+    /** Read all bytes to force the standard ZIP decoder to validate the entry CRC. */
+    private fun unpackAndReplay(archive: File, entryName: String): List<TripEvent> {
+        ZipFile(archive).use { zip ->
+            assertEquals(1, zip.size())
+            assertEquals(entryName, zip.entries().nextElement().name)
+        }
+        ZipInputStream(archive.inputStream().buffered()).use { zip ->
+            assertEquals(entryName, zip.nextEntry?.name)
+            val recording = zip.readBytes()
+            assertEquals(null, zip.nextEntry)
+            return TripFormat.read(recording.inputStream())
+        }
     }
 }
