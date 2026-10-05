@@ -3,42 +3,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>My account · IMU Nav</title>
-<style>
-  :root { font-family: system-ui, sans-serif; color: #172033; background: #f4f6fa; }
-  body { margin: 0; }
-  header { background: #172033; color: white; padding: 1rem max(1rem, calc((100vw - 76rem)/2)); display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
-  header span { color: #dbe5f7; }
-  main { max-width: 76rem; margin: 2rem auto; padding: 0 1rem; }
-  .card { background: white; border: 1px solid #dce2ec; border-radius: .8rem; padding: 1.25rem; margin-bottom: 1rem; }
-  h1, h2 { margin-top: 0; }
-  p { line-height: 1.5; color: #536176; }
-  label { display: block; margin: .6rem 0 .3rem; }
-  input { box-sizing: border-box; max-width: 100%; padding: .5rem; border: 1px solid #aeb9ca; border-radius: .4rem; font: inherit; }
-  input[type=text], input[type=email], input[type=password], input[type=number] { width: min(100%, 22rem); }
-  button, .button { display: inline-block; padding: .55rem .75rem; border: 1px solid #174ea6; border-radius: .45rem; background: white; color: #174ea6; font: inherit; cursor: pointer; text-decoration: none; }
-  .danger { color: #a22521; border-color: #a22521; }
-  .quiet { color: white; border-color: #8397b8; background: transparent; }
-  .actions, .filters { display: flex; flex-wrap: wrap; gap: .75rem; align-items: end; }
-  .notice { color: #075c30; background: #e5f7ed; border: 1px solid #8acaac; padding: .75rem; border-radius: .45rem; }
-  .warning { color: #7b2c09; background: #fff4e4; padding: .75rem; border-radius: .45rem; }
-  .table-wrap { overflow-x: auto; }
-  table { width: 100%; border-collapse: collapse; text-align: left; }
-  th, td { padding: .65rem; border-bottom: 1px solid #e5e9f0; white-space: nowrap; }
-  th { color: #536176; font-size: .85rem; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: 1rem; }
-  .grid .card { margin: 0; }
-  .row { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin: .6rem 0; }
-  footer { margin: 2rem 0; font-size: .9rem; }
-</style>
-<header>
-  <div><strong>IMU Nav</strong> <span>· {{ email }}</span></div>
-  <form action="/account/logout" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="quiet" type="submit">Sign out</button></form>
-</header>
-<main>
+<link rel="stylesheet" href="/web.css?v=20261005-ui">
+{% include "site_header.html" %}
+<main class="page-shell">
+  <div class="page-heading"><span class="eyebrow">{{ email }}</span><h1>My account</h1><p>Manage sharing, find your uploaded observations, and control your account.</p></div>
+  <nav class="section-links" aria-label="Account sections"><a href="#sharing">Sharing</a><a href="#diagnostics">Diagnostics</a><a href="#observations">Observations</a><a href="#security">Account security</a></nav>
   {% if impersonating %}<section class="card warning" role="status"><strong>Administrator view as {{ email }}</strong><p>You are signed in as this user from {{ actor_email }}. Account actions are recorded in the administrator activity log. This view expires after one hour.</p><form action="/account/stop-impersonation" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Return to administrator panel</button></form></section>{% endif %}
   {% if !message.is_empty() %}<p class="notice" role="status">{{ message }}</p>{% endif %}
-  <section class="card">
-    <h1>My cell observations</h1>
+  <div class="grid">
+  <section class="card" id="sharing">
+    <h2>Cell sharing</h2>
     <p>Only cell observations uploaded by your devices appear here. Opt-in developer diagnostics are listed separately.</p>
     {% if !email_verified %}
     <p class="warning">Verify your email to enable uploads and sharing. Check your inbox for a link. If it did not arrive, resend it below.</p>
@@ -51,22 +25,25 @@
     <form action="/account/sharing/resume" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><label for="resume-password">Password to resume sharing</label><input id="resume-password" name="password" type="password" autocomplete="current-password" required><button type="submit">Resume uploads</button></form>
     {% endif %}
   </section>
-  <section class="card"><h2>Developer diagnostics</h2><p>Review, download, or delete diagnostic trips that you chose to upload.</p><a class="button" href="/debug">Open my diagnostic sessions</a></section>
-  <section class="card">
-    <h2>Find and export observations</h2>
+  <section class="card" id="diagnostics"><h2>Developer diagnostics</h2><p>Review, download, or delete diagnostic trips that you chose to upload.</p><a class="button" href="/debug">Open my diagnostic sessions</a></section>
+  </div>
+  <section class="card" id="observations">
+    <h2>My observations</h2>
+    <p><strong class="stat">{{ total }} matching observations</strong>. Filter the list or download it as CSV.gz.</p>
+    <h3>Find and export observations</h3>
     <form action="/account" method="get" class="filters">
       <div><label for="device">Device ID contains</label><input id="device" name="device" type="text" maxlength="100" value="{{ filter_device }}"></div>
       <div><label for="mcc">Mobile country code</label><input id="mcc" name="mcc" type="number" min="1" max="999" value="{{ filter_mcc }}"></div>
       <div><label for="from-s">Updated at or after (UTC)</label><input id="from-s" name="from_s" type="datetime-local" step="1" value="{{ filter_from }}"></div>
       <div><label for="to-s">Updated at or before (UTC)</label><input id="to-s" name="to_s" type="datetime-local" step="1" value="{{ filter_to }}"></div>
-      <button type="submit">Apply filters</button><a class="button" href="/account">Clear</a>
+      <button class="primary" type="submit">Apply filters</button><a class="button" href="/account">Clear</a>
     </form>
     <form action="/account/export" method="get" class="row">
       <input type="hidden" name="device" value="{{ filter_device }}"><input type="hidden" name="mcc" value="{{ filter_mcc }}"><input type="hidden" name="from_s" value="{{ filter_from }}"><input type="hidden" name="to_s" value="{{ filter_to }}">
-      <button type="submit">Download filtered CSV.gz</button><span>{{ total }} matching observations</span>
+      <button type="submit">Download filtered CSV.gz</button>
     </form>
   </section>
-  <section class="card table-wrap">
+  <section class="card"><h2>Observation list</h2><div class="table-wrap">
     {% if rows.is_empty() %}<p>No observations match this page and filter.</p>{% else %}
     <table>
       <thead><tr><th>Radio</th><th>MCC</th><th>MNC</th><th>Area</th><th>Cell ID</th><th>Device</th><th>Latitude</th><th>Longitude</th><th>Range (m)</th><th>Samples</th><th>Updated (UTC)</th><th></th></tr></thead>
@@ -81,17 +58,17 @@
       </tbody>
     </table>
     {% endif %}
-    <div class="actions">
+    </div><div class="actions">
       {% if pagination.has_previous %}<form action="/account" method="get"><input type="hidden" name="page" value="{{ previous_page }}"><input type="hidden" name="device" value="{{ filter_device }}"><input type="hidden" name="mcc" value="{{ filter_mcc }}"><input type="hidden" name="from_s" value="{{ filter_from }}"><input type="hidden" name="to_s" value="{{ filter_to }}"><button type="submit">Previous page</button></form>{% endif %}
       <span>Page {{ page + 1 }}</span>
       {% if pagination.has_next %}<form action="/account" method="get"><input type="hidden" name="page" value="{{ next_page }}"><input type="hidden" name="device" value="{{ filter_device }}"><input type="hidden" name="mcc" value="{{ filter_mcc }}"><input type="hidden" name="from_s" value="{{ filter_from }}"><input type="hidden" name="to_s" value="{{ filter_to }}"><button type="submit">Next page</button></form>{% endif %}
     </div>
   </section>
-  <section class="card">
-    <h2>Delete all my observations</h2>
+  <details class="card account-controls"><summary>Delete all my observations</summary>
     <p>This removes all of your currently stored cell observations, updates shared tower estimates, and pauses uploads. Previously deleted tower keys remain blocked from future uploads by this account.</p>
     <form action="/account/contributions/delete-all" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><label for="delete-confirm">Type DELETE to confirm</label><input id="delete-confirm" name="confirm" type="text" required pattern="DELETE" autocomplete="off"><button class="danger" type="submit">Delete all observations</button></form>
-  </section>
+  </details>
+  <section id="security" class="account-controls"><h2>Account security</h2><p>Update your sign-in details and review active sessions.</p>
   <div class="grid">
     <section class="card"><h2>Change password</h2><form action="/account/password" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><label for="current-password">Current password</label><input id="current-password" name="current_password" type="password" autocomplete="current-password" required><label for="new-password">New password (12–256 characters)</label><input id="new-password" name="new_password" type="password" autocomplete="new-password" minlength="12" maxlength="256" required><p><button type="submit">Change password</button></p></form></section>
     <section class="card"><h2>Change email</h2><p>We send a confirmation link to your new address. You remain signed in until confirmation.</p><form action="/account/email" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><label for="new-email">New email</label><input id="new-email" name="email" type="email" autocomplete="email" required maxlength="254"><label for="email-password">Current password</label><input id="email-password" name="password" type="password" autocomplete="current-password" required><p><button type="submit">Send confirmation link</button></p></form></section>
@@ -100,8 +77,9 @@
     {% for session in sessions %}<div class="row"><span>{{ session.label }} · expires <time {% if session.expires.valid %}datetime="{{ session.expires.datetime }}"{% endif %}>{{ session.expires.display }}</time>{% if session.current %} · current browser{% endif %}</span>{% if !session.current %}<form action="/account/sessions/revoke" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="session_id" value="{{ session.id }}"><button type="submit">Sign out</button></form>{% endif %}</div>{% endfor %}
     <form action="/account/sessions/revoke-others" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Sign out all other sessions</button></form>
   </section>
-  <section class="card"><h2>Close account</h2><p>Closing your account deletes your cell observations, diagnostic trips, and sessions. This cannot be undone.</p><form action="/account/close" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><label for="close-password">Current password</label><input id="close-password" name="password" type="password" autocomplete="current-password" required><label for="close-confirm">Type DELETE ACCOUNT to confirm</label><input id="close-confirm" name="confirm" type="text" required pattern="DELETE ACCOUNT" autocomplete="off"><p><button class="danger" type="submit">Close my account</button></p></form></section>
-  <footer><p><a href="/data-usage">How the server uses your data</a></p><p>IMU Nav is a research prototype, not a safety system.</p></footer>
+  <details class="card account-controls"><summary>Close account</summary><p>Closing your account deletes your cell observations, diagnostic trips, and sessions. This cannot be undone.</p><form action="/account/close" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><label for="close-password">Current password</label><input id="close-password" name="password" type="password" autocomplete="current-password" required><label for="close-confirm">Type DELETE ACCOUNT to confirm</label><input id="close-confirm" name="confirm" type="text" required pattern="DELETE ACCOUNT" autocomplete="off"><p><button class="danger" type="submit">Close my account</button></p></form></details>
+  </section>
 </main>
-<script src="/web-locale.js" defer></script>
+{% include "site_footer.html" %}
+<script src="/web-locale.js?v=20261005-ui" defer></script>
 </html>

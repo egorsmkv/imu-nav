@@ -144,29 +144,40 @@ pub(crate) fn router() -> Router<AppState> {
         .route("/verify-email", get(verify_page))
 }
 
+#[derive(askama::Template)]
+#[template(path = "verify_email.html")]
+struct VerifyPage {
+    nav: crate::web::SiteChrome,
+}
+
+#[derive(askama::Template)]
+#[template(path = "reset_password.html")]
+struct ResetPage {
+    nav: crate::web::SiteChrome,
+}
+
 async fn verify_page() -> Response {
-    let page = r#"<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Verify IMU Nav email</title><body><h1>Verify email</h1><p id="result" role="status">Checking your link…</p><p><a href="/login">Sign in</a></p><script>const token=new URLSearchParams(location.hash.slice(1)).get('token');history.replaceState(null,'','/verify-email');if(token){fetch('/v1/auth/email/confirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token})}).then(response=>{document.getElementById('result').textContent=response.ok?'Email verified. You can return to the app or sign in.':'Link expired or invalid. Request another link from your account panel.'}).catch(()=>{document.getElementById('result').textContent='Could not contact the server. Please try again.'})}else{document.getElementById('result').textContent='Missing verification token.'}</script><script src="/web-locale.js" defer></script></body></html>"#;
-    let mut response = Html(page).into_response();
-    response
-        .headers_mut()
-        .insert(header::CACHE_CONTROL, "no-store".parse().expect("header"));
-    response
-        .headers_mut()
-        .insert("referrer-policy", "no-referrer".parse().expect("header"));
-    response.headers_mut().insert(header::CONTENT_SECURITY_POLICY, "default-src 'none'; script-src 'unsafe-inline' 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'".parse().expect("header"));
-    response
+    auth_link_page(&VerifyPage {
+        nav: crate::web::SiteChrome::guest(),
+    })
 }
 
 async fn reset_page() -> Response {
-    let page = r#"<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Reset IMU Nav password</title><body><h1>Reset password</h1><form id="reset"><label>New password <input id="password" type="password" minlength="12" required autocomplete="new-password"></label><button>Reset password</button></form><p id="result" role="status"></p><script>const token=new URLSearchParams(location.hash.slice(1)).get('token');history.replaceState(null,'','/reset-password');document.getElementById('reset').addEventListener('submit',async event=>{event.preventDefault();const response=await fetch('/v1/auth/password-reset/confirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,password:document.getElementById('password').value})});document.getElementById('result').textContent=response.ok?'Password changed. Return to the app and sign in.':'Link expired or invalid. Request another reset in the app.';});</script><script src="/web-locale.js" defer></script></body></html>"#;
-    let mut response = Html(page).into_response();
+    auth_link_page(&ResetPage {
+        nav: crate::web::SiteChrome::guest(),
+    })
+}
+
+/// One-time link pages share the site chrome and load their script from this origin.
+fn auth_link_page(page: &impl askama::Template) -> Response {
+    let mut response = Html(page.render().expect("static auth page template")).into_response();
     response
         .headers_mut()
         .insert(header::CACHE_CONTROL, "no-store".parse().expect("header"));
     response
         .headers_mut()
         .insert("referrer-policy", "no-referrer".parse().expect("header"));
-    response.headers_mut().insert(header::CONTENT_SECURITY_POLICY, "default-src 'none'; script-src 'unsafe-inline' 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'".parse().expect("header"));
+    response.headers_mut().insert(header::CONTENT_SECURITY_POLICY, "default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'".parse().expect("header"));
     response
 }
 

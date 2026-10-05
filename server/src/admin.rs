@@ -51,7 +51,7 @@ const MAX_LIMIT: usize = 200;
 const ACCOUNT_PAGE_SIZE: usize = 50;
 const AUDIT_PAGE_SIZE: usize = 50;
 const OBSERVATION_PAGE_SIZE: usize = 100;
-const CONTENT_SECURITY_POLICY: &str = "default-src 'none'; style-src https://cdn.jsdelivr.net; script-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'";
+const CONTENT_SECURITY_POLICY: &str = "default-src 'none'; style-src 'self' https://cdn.jsdelivr.net; script-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'";
 
 /// Add authenticated operational pages and form actions.
 pub(crate) fn router() -> Router<AppState> {
@@ -303,6 +303,7 @@ impl JobSummary {
 #[derive(Template)]
 #[template(path = "admin.html")]
 struct AdminTemplate {
+    nav: web::SiteChrome,
     counts: StoreCounts,
     pending: usize,
     minimum_devices: usize,
@@ -358,6 +359,7 @@ fn tower_lookup_redirect(query: &AdminQuery) -> Result<Option<Response>, AdminEr
 #[derive(Template)]
 #[template(path = "tower.html")]
 struct TowerTemplate {
+    nav: web::SiteChrome,
     tower: TowerRow,
     minimum_devices: usize,
     csrf: String,
@@ -436,6 +438,7 @@ async fn dashboard(
     let has_mcc_filter = !mcc.trim().is_empty();
     let job = JobSummary::snapshot(&state)?;
     render(&AdminTemplate {
+        nav: web::SiteChrome::account(true, web::csrf_token(&raw)),
         counts,
         pending: counts
             .consensus
@@ -495,6 +498,7 @@ async fn tower_detail(
     let consensus = consensus.ok_or_else(AdminError::not_found)?;
     let minimum_devices = state.policy().min_devices;
     render(&TowerTemplate {
+        nav: web::SiteChrome::account(true, web::csrf_token(&raw)),
         tower: TowerRow::new(&consensus, minimum_devices, quarantined),
         minimum_devices,
         csrf: web::csrf_token(&raw),
@@ -1328,12 +1332,13 @@ impl From<ApiError> for AdminError {
 
 impl IntoResponse for AdminError {
     fn into_response(self) -> Response {
-        let body = format!(
-            "<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><title>{}</title><body><h1>{}</h1><p><a href=\"/admin\">Return to dashboard</a></p><script src=\"/web-locale.js\" defer></script></body></html>",
-            self.status.as_str(),
-            self.message
+        let mut response = web::shared_error_page(
+            self.status,
+            "Admin",
+            self.message,
+            "/admin",
+            "Return to dashboard",
         );
-        let mut response = html_response(self.status, body);
         if self.status == StatusCode::SEE_OTHER {
             response
                 .headers_mut()

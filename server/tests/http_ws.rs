@@ -364,6 +364,17 @@ async fn browser_pages_serve_all_three_locales_under_their_csp() -> Result<()> {
     assert!(translations.contains("Українська"));
     assert!(translations.contains("Русский"));
     assert!(translations.contains("navigator.languages"));
+    let stylesheet = client
+        .get(format!("{}/web.css", server.base_url))
+        .send()
+        .await?;
+    assert_eq!(stylesheet.status(), StatusCode::OK);
+    assert!(
+        stylesheet.headers()["content-type"]
+            .to_str()?
+            .contains("text/css")
+    );
+    assert!(stylesheet.text().await?.contains(".site-header"));
 
     for path in [
         "/login",
@@ -384,10 +395,11 @@ async fn browser_pages_serve_all_three_locales_under_their_csp() -> Result<()> {
                 .contains("'self'"),
             "{path}"
         );
-        assert!(
-            page.text().await?.contains("src=\"/web-locale.js\""),
-            "{path}"
-        );
+        let html = page.text().await?;
+        assert!(html.contains("src=\"/web-locale.js?v="), "{path}");
+        assert!(html.contains("href=\"/web.css?v="), "{path}");
+        assert!(html.contains("class=\"site-header\""), "{path}");
+        assert!(html.contains("class=\"site-footer\""), "{path}");
     }
     Ok(())
 }
@@ -668,6 +680,15 @@ async fn browser_account_pages_show_and_delete_only_owned_contributions() -> Res
     assert!(body.contains(&first_device));
     assert!(!body.contains(&second_device));
     assert!(body.contains("href=\"/data-usage\""));
+    let usage = browser
+        .get(format!("{}/data-usage", server.base_url))
+        .header("cookie", &first_cookie)
+        .send()
+        .await?;
+    let usage_html = usage.text().await?;
+    assert!(usage_html.contains("href=\"/debug\""));
+    assert!(usage_html.contains("action=\"/account/logout\""));
+    assert!(!usage_html.contains("href=\"/signup\""));
     assert!(body.contains("type=\"datetime-local\" step=\"1\""));
     assert!(body.contains("Updated at or after (UTC)"));
     assert!(body.contains("<time datetime=\""));
@@ -1187,7 +1208,7 @@ async fn admin_pages_use_session_and_render_controls() -> Result<()> {
             .get("content-security-policy")
             .and_then(|value| value.to_str().ok()),
         Some(
-            "default-src 'none'; style-src https://cdn.jsdelivr.net; script-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+            "default-src 'none'; style-src 'self' https://cdn.jsdelivr.net; script-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
         )
     );
     let dashboard_html = dashboard.text().await?;

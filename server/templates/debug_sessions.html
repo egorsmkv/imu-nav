@@ -1,17 +1,22 @@
 <!doctype html>
-<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Developer diagnostics · IMU Nav</title>
-<style>body{font:1rem system-ui;max-width:68rem;margin:2rem auto;padding:0 1rem;color:#172033}a{color:#174ea6}table{border-collapse:collapse;width:100%}td,th{padding:.6rem;border-bottom:1px solid #ddd;text-align:left}form{display:inline}button{padding:.4rem .7rem}nav{display:flex;gap:1rem}section{margin:2rem 0}time{white-space:nowrap}</style>
-<nav><a href="{% if admin %}/admin{% else %}/account{% endif %}">Back to panel</a><a href="/data-usage">Data Usage</a></nav>
-<h1>Developer diagnostics</h1>
-<p>These opt-in sessions contain precise locations and sensor data. Sessions expire after 30 days.</p>
-{% if admin %}<section><h2>Server upload switch</h2><p>Uploads are {% if enabled %}enabled{% else %}disabled{% endif %}. Existing sessions remain available when uploads are disabled.</p>
-<form method="post" action="/admin/debug/enable"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="enabled" value="{% if enabled %}0{% else %}1{% endif %}"><button>{% if enabled %}Disable uploads{% else %}Enable uploads{% endif %}</button></form></section>{% endif %}
-<section><h2>{% if admin %}Recent sessions{% else %}My sessions{% endif %}</h2>
-{% if rows.is_empty() %}<p>No diagnostic sessions yet.</p>{% else %}
-<table><thead><tr><th>Session</th>{% if admin %}<th>Account</th>{% endif %}<th>Started UTC</th><th>Updated UTC</th><th>Status</th><th>Bytes</th><th></th></tr></thead><tbody>
-{% for row in rows %}<tr><td><a href="/debug/{{ row.id }}">{{ row.id }}</a></td>{% if admin %}<td>{{ row.email }}</td>{% endif %}<td><time datetime="{{ row.created.datetime }}">{{ row.created.display }}</time></td><td><time datetime="{{ row.updated.datetime }}">{{ row.updated.display }}</time></td><td>{% if row.incomplete %}Incomplete{% else %}{% if row.finished %}Finished{% else %}Receiving or interrupted{% endif %}{% endif %}</td><td>{{ row.bytes }}</td><td><form method="post" action="/debug/{{ row.id }}/delete"><input type="hidden" name="csrf" value="{{ csrf }}"><button>Delete</button></form></td></tr>{% endfor %}
-</tbody></table>{% endif %}
-<p>{% if page > 0 %}<a href="/debug?page={{ page - 1 }}">Previous</a>{% endif %} {% if has_next %}<a href="/debug?page={{ page + 1 }}">Next</a>{% endif %}</p></section>
-{% if !admin && !rows.is_empty() %}<section><h2>Delete all my sessions</h2><form method="post" action="/debug/delete-all"><input type="hidden" name="csrf" value="{{ csrf }}"><label>Type DELETE to confirm <input name="confirm" required pattern="DELETE" autocomplete="off"></label><button>Delete all</button></form></section>{% endif %}
-<script src="/web-locale.js" defer></script></html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Developer diagnostics · IMU Nav</title><link rel="stylesheet" href="/web.css?v=20261005-ui"></head>
+<body>
+{% include "site_header.html" %}
+<main class="page-shell">
+  <div class="page-heading"><span class="eyebrow">Trip debugging</span><h1>Developer diagnostics</h1><p>These opt-in sessions contain precise locations and sensor data. Sessions expire after 30 days.</p></div>
+  {% if admin %}<section class="card"><h2>Server upload switch</h2><p>Uploads are {% if enabled %}enabled{% else %}disabled{% endif %}. Existing sessions remain available when uploads are disabled.</p>
+    <form method="post" action="/admin/debug/enable"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="enabled" value="{% if enabled %}0{% else %}1{% endif %}"><button type="submit">{% if enabled %}Disable uploads{% else %}Enable uploads{% endif %}</button></form>
+  </section>{% endif %}
+  <section class="card"><h2>{% if admin %}Recent sessions{% else %}My sessions{% endif %}</h2>
+    {% if rows.is_empty() %}<p>No diagnostic sessions yet.</p>{% else %}
+    <div class="table-wrap"><table><thead><tr><th>Session</th>{% if admin %}<th>Account</th>{% endif %}<th>Started UTC</th><th>Updated UTC</th><th>Status</th><th>Bytes</th><th>Action</th></tr></thead><tbody>
+    {% for row in rows %}<tr><td><a href="/debug/{{ row.id }}">{{ row.id }}</a></td>{% if admin %}<td>{{ row.email }}</td>{% endif %}<td><time datetime="{{ row.created.datetime }}">{{ row.created.display }}</time></td><td><time datetime="{{ row.updated.datetime }}">{{ row.updated.display }}</time></td><td>{% if row.incomplete %}Incomplete{% else %}{% if row.finished %}Finished{% else %}Receiving or interrupted{% endif %}{% endif %}</td><td>{{ row.bytes }}</td><td><form method="post" action="/debug/{{ row.id }}/delete"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="danger" type="submit">Delete</button></form></td></tr>{% endfor %}
+    </tbody></table></div>{% endif %}
+    <div class="actions">{% if page > 0 %}<a class="button" href="/debug?page={{ page - 1 }}">Previous</a>{% endif %}<span>Page {{ page + 1 }}</span>{% if has_next %}<a class="button" href="/debug?page={{ page + 1 }}">Next</a>{% endif %}</div>
+  </section>
+  {% if !admin && !rows.is_empty() %}<details class="card account-controls"><summary>Delete all my sessions</summary><form method="post" action="/debug/delete-all"><input type="hidden" name="csrf" value="{{ csrf }}"><label for="delete-debug-confirm">Type DELETE to confirm</label><input id="delete-debug-confirm" name="confirm" required pattern="DELETE" autocomplete="off"><p><button class="danger" type="submit">Delete all</button></p></form></details>{% endif %}
+</main>
+{% include "site_footer.html" %}
+<script src="/web-locale.js?v=20261005-ui" defer></script>
+</body></html>

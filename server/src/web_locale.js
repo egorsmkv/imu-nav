@@ -2,6 +2,21 @@
 (() => {
   "use strict";
   const copy = {
+    "cell server": ["сервер стільникових веж", "сервер сотовых вышек"],
+    "Admin": ["Адміністрування", "Администрирование"],
+    "Trip debugging": ["Налагодження поїздок", "Отладка поездок"],
+    "Sharing": ["Поширення", "Обмен данными"],
+    "Observations": ["Спостереження", "Наблюдения"],
+    "Cell sharing": ["Поширення даних веж", "Обмен данными вышек"],
+    "My observations": ["Мої спостереження", "Мои наблюдения"],
+    ". Filter the list or download it as CSV.gz.": [". Відфільтруйте список або завантажте його як CSV.gz.", ". Отфильтруйте список или скачайте его как CSV.gz."],
+    "Observation list": ["Список спостережень", "Список наблюдений"],
+    "Account security": ["Безпека облікового запису", "Безопасность учётной записи"],
+    "Downloads": ["Завантаження", "Загрузки"],
+    "Manage sharing, find your uploaded observations, and control your account.": ["Керуйте поширенням, знаходьте надіслані спостереження та налаштовуйте обліковий запис.", "Управляйте обменом данными, находите отправленные наблюдения и настройками учётной записи."],
+    "Update your sign-in details and review active sessions.": ["Оновлюйте дані для входу та переглядайте активні сеанси.", "Обновляйте данные для входа и просматривайте активные сеансы."],
+    "This permanently removes the uploaded diagnostic data for this session.": ["Це назавжди видалить надіслані діагностичні дані цього сеансу.", "Это навсегда удалит отправленные диагностические данные этого сеанса."],
+    "Missing reset token.": ["Немає токена скидання.", "Отсутствует токен сброса."],
     "Account": ["Обліковий запис", "Учётная запись"],
     "My account · IMU Nav": ["Мій обліковий запис · IMU Nav", "Моя учётная запись · IMU Nav"],
     "Data Usage · IMU Nav": ["Використання даних · IMU Nav", "Использование данных · IMU Nav"],
@@ -400,7 +415,7 @@
       }
     }).observe(document.documentElement, { childList: true, characterData: true, subtree: true });
   }
-  const host = document.querySelector("header") || document.querySelector("nav.navbar .container-fluid") || document.querySelector("main") || document.body;
+  const host = document.querySelector(".site-nav") || document.querySelector("header") || document.querySelector("main") || document.body;
   const label = document.createElement("label");
   label.textContent = language === "uk" ? "Мова: " : language === "ru" ? "Язык: " : "Language: ";
   label.setAttribute("for", "web-language");
@@ -420,5 +435,5 @@
     location.reload();
   });
   label.append(select);
-  host.prepend(label);
+  host.append(label);
 })();

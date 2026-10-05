@@ -3,15 +3,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Reset password · IMU Nav</title>
-<style>
-  body { font: 1rem system-ui, sans-serif; color: #172033; background: #f4f6fa; max-width: 28rem; margin: 8vh auto; padding: 1rem; }
-  main { background: white; border: 1px solid #dce2ec; border-radius: .8rem; padding: 1.5rem; }
-  label, input { display: block; width: 100%; box-sizing: border-box; margin: .75rem 0; }
-  input, button { font: inherit; padding: .7rem; border-radius: .4rem; }
-  button { color: white; background: #174ea6; border: 0; cursor: pointer; }
-  .error { color: #9b1c14; }
-</style>
-<main>
+<link rel="stylesheet" href="/web.css?v=20261005-ui">
+{% include "site_header.html" %}
+<main class="page-shell auth-shell"><section class="card">
   <h1>Reset password</h1>
   {% if success %}
   <p>If this address has an account, we sent a reset link. Check your inbox.</p>
@@ -20,11 +14,11 @@
   <form action="/forgot-password" method="post">
     <label for="email">Account email</label>
     <input id="email" name="email" type="email" autocomplete="email" required maxlength="254">
-    <button type="submit">Send reset link</button>
+    <button class="primary" type="submit">Send reset link</button>
   </form>
   {% endif %}
   <p><a href="/login">Return to sign in</a></p>
-  <p><a href="/data-usage">How the server uses your data</a></p>
-</main>
-<script src="/web-locale.js" defer></script>
+</section></main>
+{% include "site_footer.html" %}
+<script src="/web-locale.js?v=20261005-ui" defer></script>
 </html>

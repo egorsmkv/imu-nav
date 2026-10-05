@@ -27,7 +27,32 @@ use tokio_util::io::ReaderStream;
 pub(crate) const WEB_LIFETIME_S: i64 = 7 * 24 * 60 * 60;
 pub(crate) const IMPERSONATION_LIFETIME_S: i64 = 60 * 60;
 const PAGE_SIZE: usize = 100;
-const CONTENT_SECURITY_POLICY: &str = "default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'";
+const CONTENT_SECURITY_POLICY: &str = "default-src 'none'; style-src 'self'; script-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'";
+
+/// Shared navigation state for every server-rendered page.
+pub(crate) struct SiteChrome {
+    pub signed_in: bool,
+    pub admin: bool,
+    pub csrf: String,
+}
+
+impl SiteChrome {
+    pub(crate) fn guest() -> Self {
+        Self {
+            signed_in: false,
+            admin: false,
+            csrf: String::new(),
+        }
+    }
+
+    pub(crate) fn account(admin: bool, csrf: String) -> Self {
+        Self {
+            signed_in: true,
+            admin,
+            csrf,
+        }
+    }
+}
 
 /// Account pages use normal HTML forms; Android keeps the JSON bearer-token API.
 pub(crate) fn router() -> Router<AppState> {
@@ -37,6 +62,8 @@ pub(crate) fn router() -> Router<AppState> {
         .route("/signup", get(signup_page).post(signup))
         .route("/data-usage", get(data_usage_page))
         .route("/web-locale.js", get(locale_script))
+        .route("/auth-links.js", get(auth_links_script))
+        .route("/web.css", get(site_styles))
         .route("/forgot-password", get(forgot_page).post(forgot_submit))
         .route("/account", get(account_page))
         .route("/account/export", get(export_own))
@@ -60,6 +87,7 @@ pub(crate) fn router() -> Router<AppState> {
 #[derive(Template)]
 #[template(path = "account_form.html")]
 struct AccountFormTemplate {
+    nav: SiteChrome,
     signup: bool,
     title: &'static str,
     action: &'static str,
@@ -69,11 +97,24 @@ struct AccountFormTemplate {
 
 #[derive(Template)]
 #[template(path = "data_usage.html")]
-struct DataUsageTemplate;
+struct DataUsageTemplate {
+    nav: SiteChrome,
+}
+
+#[derive(Template)]
+#[template(path = "error.html")]
+struct ErrorTemplate {
+    nav: SiteChrome,
+    title: &'static str,
+    message: &'static str,
+    return_to: &'static str,
+    return_label: &'static str,
+}
 
 #[derive(Template)]
 #[template(path = "account.html")]
 struct AccountTemplate {
+    nav: SiteChrome,
     email: String,
     csrf: String,
     rows: Vec<AccountRow>,
@@ -302,6 +343,7 @@ struct EmailForm {
 #[derive(Template)]
 #[template(path = "forgot.html")]
 struct ForgotTemplate {
+    nav: SiteChrome,
     error: &'static str,
     success: bool,
 }
@@ -392,14 +434,23 @@ async fn signup_page() -> Result<Response, ApiError> {
 }
 
 /// Explain the server's data flow without requiring an account or loading external assets.
-async fn data_usage_page() -> Result<Response, ApiError> {
-    render(StatusCode::OK, &DataUsageTemplate)
+async fn data_usage_page(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    let nav = web_account(&state, &headers)
+        .await?
+        .map_or_else(SiteChrome::guest, |(account, raw)| {
+            SiteChrome::account(account.admin, csrf_token(&raw))
+        });
+    render(StatusCode::OK, &DataUsageTemplate { nav })
 }
 
 async fn forgot_page() -> Result<Response, ApiError> {
     render(
         StatusCode::OK,
         &ForgotTemplate {
+            nav: SiteChrome::guest(),
             error: "",
             success: false,
         },
@@ -416,6 +467,7 @@ async fn forgot_submit(
         Ok(()) => render(
             StatusCode::OK,
             &ForgotTemplate {
+                nav: SiteChrome::guest(),
                 error: "",
                 success: true,
             },
@@ -423,6 +475,7 @@ async fn forgot_submit(
         Err(ApiError(StatusCode::SERVICE_UNAVAILABLE, _)) => render(
             StatusCode::SERVICE_UNAVAILABLE,
             &ForgotTemplate {
+                nav: SiteChrome::guest(),
                 error: "Password recovery email is unavailable on this server.",
                 success: false,
             },
@@ -430,6 +483,7 @@ async fn forgot_submit(
         Err(ApiError(StatusCode::TOO_MANY_REQUESTS, _)) => render(
             StatusCode::TOO_MANY_REQUESTS,
             &ForgotTemplate {
+                nav: SiteChrome::guest(),
                 error: "Too many requests. Try again later.",
                 success: false,
             },
@@ -437,6 +491,7 @@ async fn forgot_submit(
         Err(ApiError(StatusCode::BAD_REQUEST, _)) => render(
             StatusCode::BAD_REQUEST,
             &ForgotTemplate {
+                nav: SiteChrome::guest(),
                 error: "Enter a valid email address.",
                 success: false,
             },
@@ -444,6 +499,7 @@ async fn forgot_submit(
         Err(ApiError(StatusCode::INTERNAL_SERVER_ERROR, _)) => render(
             StatusCode::SERVICE_UNAVAILABLE,
             &ForgotTemplate {
+                nav: SiteChrome::guest(),
                 error: "Email delivery failed. Try again later.",
                 success: false,
             },
@@ -459,6 +515,7 @@ fn form_page(
     status: StatusCode,
 ) -> Result<Response, ApiError> {
     let template = AccountFormTemplate {
+        nav: SiteChrome::guest(),
         signup,
         title: if signup { "Create account" } else { "Sign in" },
         action: if signup { "/signup" } else { "/login" },
@@ -847,6 +904,7 @@ async fn account_page(
     render(
         StatusCode::OK,
         &AccountTemplate {
+            nav: SiteChrome::account(account.admin, csrf_token(&raw)),
             email: account.email,
             csrf: csrf_token(&raw),
             rows: contributions.into(),
@@ -1388,12 +1446,25 @@ fn render(status: StatusCode, template: &impl Template) -> Result<Response, ApiE
 }
 
 fn error_page(status: StatusCode, message: &'static str) -> Response {
-    html_response(
-        status,
-        format!(
-            "<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><title>Account</title><body><h1>{message}</h1><p><a href=\"/account\">Return to account</a></p><script src=\"/web-locale.js\" defer></script></body></html>"
-        ),
-    )
+    shared_error_page(status, "Account", message, "/account", "Return to account")
+}
+
+/// Give account and management errors the same page chrome as regular views.
+pub(crate) fn shared_error_page(
+    status: StatusCode,
+    title: &'static str,
+    message: &'static str,
+    return_to: &'static str,
+    return_label: &'static str,
+) -> Response {
+    let template = ErrorTemplate {
+        nav: SiteChrome::guest(),
+        title,
+        message,
+        return_to,
+        return_label,
+    };
+    html_response(status, template.render().expect("static error template"))
 }
 
 /// Serve browser translations from the same origin so account pages keep a strict CSP.
@@ -1401,9 +1472,33 @@ async fn locale_script() -> Response {
     (
         [
             (header::CONTENT_TYPE, "text/javascript; charset=utf-8"),
-            (header::CACHE_CONTROL, "public, max-age=3600"),
+            (header::CACHE_CONTROL, "no-cache"),
         ],
         include_str!("web_locale.js"),
+    )
+        .into_response()
+}
+
+/// Browser handlers for one-time account links are served without inline script.
+async fn auth_links_script() -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, "text/javascript; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-cache"),
+        ],
+        include_str!("auth_links.js"),
+    )
+        .into_response()
+}
+
+/// Keep shared page styling local so all pages render under the browser CSP.
+async fn site_styles() -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, "text/css; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-cache"),
+        ],
+        include_str!("web.css"),
     )
         .into_response()
 }

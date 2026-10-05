@@ -4,27 +4,15 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Data Usage · IMU Nav</title>
-  <style>
-    :root { font-family: system-ui, sans-serif; color: #172033; background: #f4f6fa; }
-    body { margin: 0; }
-    header { background: #172033; color: white; padding: 1rem max(1rem, calc((100vw - 54rem)/2)); display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
-    header a { color: white; }
-    main { max-width: 54rem; margin: 2rem auto; padding: 0 1rem; }
-    section { background: white; border: 1px solid #dce2ec; border-radius: .8rem; padding: 1.25rem; margin: 1rem 0; }
-    h1, h2 { margin-top: 0; }
-    h2 { font-size: 1.2rem; }
-    p, li { line-height: 1.6; }
-    li + li { margin-top: .5rem; }
-    a { color: #174ea6; }
-  </style>
-</head>
+  <link rel="stylesheet" href="/web.css?v=20261005-ui">
+  </head>
 <body>
-<header><strong>IMU Nav cell server</strong><nav><a href="/account">My account</a> · <a href="/login">Sign in</a> · <a href="/signup">Create account</a></nav></header>
-<main>
+{% include "site_header.html" %}
+<main class="page-shell narrow">
   <h1>Data Usage</h1>
   <p>This page explains how this cell-sharing server receives and uses data. Sharing tower observations is optional. IMU Nav is a research prototype, not a safety system.</p>
 
-  <section>
+  <section class="content-card">
     <h2>What the server receives</h2>
     <ul>
       <li>When sharing is active, the app uploads estimated cell-tower positions: radio type, country and network codes, area and cell IDs, latitude, longitude, estimated range, and sample count. These are tower observations, not a trip recording or a raw GPS track.</li>
@@ -33,7 +21,7 @@
     </ul>
   </section>
 
-  <section>
+  <section class="content-card">
     <h2>How tower data is used</h2>
     <ul>
       <li>The server checks upload size, location, range, movement, and rate limits. It keeps the latest accepted observation for each device and tower in a SQLite database, along with its update time.</li>
@@ -42,7 +30,7 @@
     </ul>
   </section>
 
-  <section>
+  <section class="content-card">
     <h2>Accounts, logs, and retention</h2>
     <ul>
       <li>Accepted observations stay in the database until they are replaced or deleted; this server does not automatically expire them. The server uses IP addresses for rate limits and includes IP addresses and device IDs in upload log entries. Log and backup retention depends on whoever operates this server.</li>
@@ -53,7 +41,7 @@
     </ul>
   </section>
 
-  <section>
+  <section class="content-card">
     <h2>Review and remove your data</h2>
     <ul>
       <li><a href="/account">Sign in to your account panel</a> to review or download your own observations, pause future uploads, delete one observation or all of them, and close your account.</li>
@@ -64,6 +52,7 @@
   </section>
 
 </main>
-<script src="/web-locale.js" defer></script>
+{% include "site_footer.html" %}
+<script src="/web-locale.js?v=20261005-ui" defer></script>
 </body>
 </html>

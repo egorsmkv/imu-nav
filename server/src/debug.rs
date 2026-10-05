@@ -250,6 +250,7 @@ async fn finish(
 #[derive(Template)]
 #[template(path = "debug_sessions.html")]
 struct SessionsPage {
+    nav: web::SiteChrome,
     admin: bool,
     enabled: bool,
     csrf: String,
@@ -294,6 +295,7 @@ async fn list_page(
     let has_next = rows.len() > 100;
     rows.truncate(100);
     html(&SessionsPage {
+        nav: web::SiteChrome::account(account.admin, web::csrf_token(&raw)),
         admin: account.admin,
         enabled,
         csrf: web::csrf_token(&raw),
@@ -311,6 +313,7 @@ struct DetailQuery {
 #[derive(Template)]
 #[template(path = "debug_detail.html")]
 struct DetailPage {
+    nav: web::SiteChrome,
     id: String,
     context: String,
     email: String,
@@ -379,6 +382,7 @@ async fn detail_page(
     let has_next = entries.len() > 200;
     entries.truncate(200);
     html(&DetailPage {
+        nav: web::SiteChrome::account(account.admin, web::csrf_token(&raw)),
         id,
         context,
         email,
@@ -581,7 +585,7 @@ fn html(template: &impl Template) -> Result<Response, ApiError> {
         .render()
         .map_err(|error| ApiError::from(anyhow::Error::new(error)))?;
     Ok(([(header::CONTENT_TYPE,"text/html; charset=utf-8"),
-        (header::CONTENT_SECURITY_POLICY,"default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"),
+        (header::CONTENT_SECURITY_POLICY,"default-src 'none'; style-src 'self'; script-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"),
         (header::CACHE_CONTROL,"no-store")],body).into_response())
 }
 fn redirect(path: &'static str) -> Response {

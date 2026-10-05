@@ -1,0 +1,17 @@
+<header class="site-header">
+  <div class="site-header-inner">
+    <a class="site-brand" href="/account">IMU Nav <span>cell server</span></a>
+    <nav class="site-nav" aria-label="Main navigation">
+      <a href="/account">My account</a>
+      {% if nav.signed_in %}
+      <a href="/debug">Diagnostics</a>
+      {% if nav.admin %}<a href="/admin">Admin</a>{% endif %}
+      {% else %}
+      <a href="/login">Sign in</a>
+      <a href="/signup">Create account</a>
+      {% endif %}
+      <a href="/data-usage">Data Usage</a>
+      {% if nav.signed_in %}<form action="/account/logout" method="post"><input type="hidden" name="csrf" value="{{ nav.csrf }}"><button type="submit">Sign out</button></form>{% endif %}
+    </nav>
+  </div>
+</header>

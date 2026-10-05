@@ -1,13 +1,18 @@
 <!doctype html>
-<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">{% if !finished %}<meta http-equiv="refresh" content="5">{% endif %}
-<title>Diagnostic session · IMU Nav</title>
-<style>body{font:1rem system-ui;max-width:76rem;margin:2rem auto;padding:0 1rem;color:#172033}a{color:#174ea6}table{border-collapse:collapse;width:100%}td,th{padding:.4rem;border-bottom:1px solid #ddd;text-align:left;vertical-align:top}td:last-child{font: .85rem ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere}form{display:inline}button,input{padding:.4rem .7rem}nav{display:flex;gap:1rem}section{margin:2rem 0}</style>
-<nav><a href="/debug">All sessions</a><a href="/data-usage">Data Usage</a></nav><h1>Session {{ id }}</h1>
-<p>Account: {{ email }} · {% if incomplete %}Incomplete{% else %}{% if finished %}Finished{% else %}Receiving or interrupted{% endif %}{% endif %}. This page refreshes while a trip is active.</p>
-<p><a href="/debug/{{ id }}/download/recording">Download replay recording</a> · <a href="/debug/{{ id }}/download/logs">Download log</a> · <a href="/debug/{{ id }}/download/context">Download context</a></p>
-<form method="post" action="/debug/{{ id }}/delete"><input type="hidden" name="csrf" value="{{ csrf }}"><button>Delete session</button></form>
-<section><h2>Context</h2><pre>{{ context }}</pre></section>
-<section><h2>Timeline</h2><form method="get"><label>Search lines <input name="q" value="{{ q }}" maxlength="100"></label><button>Search</button></form>
-<table><thead><tr><th>Elapsed ms</th><th>Kind</th><th>Data</th></tr></thead><tbody>{% for entry in entries %}<tr><td>{{ entry.elapsed_ms }}</td><td>{{ entry.kind }}</td><td>{{ entry.line }}</td></tr>{% endfor %}</tbody></table>
-{% if page > 0 %}<a href="/debug/{{ id }}?q={{ q|urlencode }}&page={{ page - 1 }}">Previous</a>{% endif %} {% if has_next %}<a href="/debug/{{ id }}?q={{ q|urlencode }}&page={{ page + 1 }}">Next</a>{% endif %}
-</section><script src="/web-locale.js" defer></script></html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">{% if !finished %}<meta http-equiv="refresh" content="5">{% endif %}<title>Diagnostic session · IMU Nav</title><link rel="stylesheet" href="/web.css?v=20261005-ui"></head>
+<body>
+{% include "site_header.html" %}
+<main class="page-shell">
+  <div class="page-heading"><a href="/debug">All sessions</a><h1>Session {{ id }}</h1><p>Account: {{ email }} · {% if incomplete %}Incomplete{% else %}{% if finished %}Finished{% else %}Receiving or interrupted{% endif %}{% endif %}. This page refreshes while a trip is active.</p></div>
+  <section class="card"><h2>Downloads</h2><div class="actions"><a class="button" href="/debug/{{ id }}/download/recording">Download replay recording</a><a class="button" href="/debug/{{ id }}/download/logs">Download log</a><a class="button" href="/debug/{{ id }}/download/context">Download context</a></div></section>
+  <section class="card"><h2>Context</h2><pre>{{ context }}</pre></section>
+  <section class="card"><h2>Timeline</h2><form method="get" class="filters"><div><label for="timeline-search">Search lines</label><input id="timeline-search" name="q" value="{{ q }}" maxlength="100"></div><button type="submit">Search</button></form>
+    <div class="table-wrap"><table><thead><tr><th>Elapsed ms</th><th>Kind</th><th>Data</th></tr></thead><tbody>{% for entry in entries %}<tr><td>{{ entry.elapsed_ms }}</td><td>{{ entry.kind }}</td><td class="diagnostic-line">{{ entry.line }}</td></tr>{% endfor %}</tbody></table></div>
+    <div class="actions">{% if page > 0 %}<a class="button" href="/debug/{{ id }}?q={{ q|urlencode }}&page={{ page - 1 }}">Previous</a>{% endif %}<span>Page {{ page + 1 }}</span>{% if has_next %}<a class="button" href="/debug/{{ id }}?q={{ q|urlencode }}&page={{ page + 1 }}">Next</a>{% endif %}</div>
+  </section>
+  <details class="card account-controls"><summary>Delete session</summary><p>This permanently removes the uploaded diagnostic data for this session.</p><form method="post" action="/debug/{{ id }}/delete"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="danger" type="submit">Delete session</button></form></details>
+</main>
+{% include "site_footer.html" %}
+<script src="/web-locale.js?v=20261005-ui" defer></script>
+</body></html>
