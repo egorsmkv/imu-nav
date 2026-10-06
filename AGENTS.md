@@ -2,6 +2,7 @@
 
 Guidance for AI coding agents (and humans) working in this repository. Read this before changing
 code; `README.md` indexes the user and developer guides, and `docs/reference/NAVIGATION.md` explains the algorithms.
+Read [SECURITY.txt](SECURITY.txt) for the security and privacy rules that apply to every change.
 
 ## What this is
 

@@ -1,0 +1,65 @@
+Security guidance for IMU Nav developers
+========================================
+
+IMU Nav handles precise location and is a research prototype, not a safety system.
+Treat security and privacy as part of every app, core, routing, and server change.
+
+Sensitive data
+--------------
+- Trip recordings, routes, GPS and sensor samples, cell observations, logs,
+  screenshots, and performance archives can reveal where a person has been.
+  Use synthetic or redacted data in tests, issues, and review discussions.
+- Keep user data in app-private storage. Preserve the app's disabled backup
+  policy. Share files only after a user action, through the existing
+  FileProvider with narrow paths and temporary URI permissions. Do not add
+  automatic diagnostic uploads. See docs/TRIPS.md and docs/PROFILING_ANDROID.md.
+- Collect and retain only what a feature needs. Do not put precise location,
+  credentials, tokens, request bodies, or session identifiers in ordinary
+  logs, URLs, analytics, crash reports, or screenshots.
+
+Secrets and credentials
+-----------------------
+- Never commit, print, or attach keystores, keystore.properties, .env files,
+  server/config.toml, API keys, OpenCellID tokens, sync keys, account or
+  database credentials, or real user data. Gitignored files can still leak.
+- Do not enter a user's tokens on their behalf. Use local configuration and
+  test credentials for development. If a secret is exposed, tell the
+  maintainers privately and rotate or revoke it; deleting it from a later
+  commit does not make the exposure safe.
+- Do not assume stored proxy credentials are encrypted by the app. See
+  docs/GETTING_STARTED.md before changing proxy settings or storage.
+
+Network and server boundaries
+-----------------------------
+- Use the shared org.imunav.core.net.Http client for app and core HTTP.
+  Require HTTPS for public services and whenever credentials cross a public
+  network. Local HTTP support must remain an explicit, understood choice;
+  do not introduce a silent cleartext fallback.
+- Treat the client, GPS fixes, cell submissions, and all network input as
+  untrusted. Enforce authorization on the server. Preserve session and token
+  protections, CSRF checks for browser actions, upload limits, and the cell
+  anti-poisoning checks. Do not log passwords, tokens, cookies, or request
+  bodies. See docs/server/configuration.md and docs/server/accounts.md.
+- Validate imported routing packs, archives, CSV, and other external files
+  before using them. Bound their size and resource use, reject unsafe archive
+  paths, and avoid granting them access outside their intended storage area.
+- Keep Android permissions and exported components to the minimum needed.
+  Review intent inputs and URI grants when changing a component's exposure.
+
+Navigation integrity
+--------------------
+- Never make fused, cached, mock, or otherwise untrusted GPS authoritative for
+  navigation. Keep the trust classifier and conservative correction gates.
+- Route new positioning inputs through PositioningHub and record them in
+  TripEvent so replay can reveal real-world behavior changes. Check the
+  relevant trust, terrain, routing, and replay tests before shipping changes.
+- Keep vehicle access read-only. Do not describe the app as a safety system.
+  See docs/reference/NAVIGATION.md for the navigation model.
+
+Before merging or reporting a problem
+-------------------------------------
+- Run ./gradlew check and the relevant focused tests for code changes. Review
+  logs, artifacts, and diffs for secrets and private location data.
+- Report suspected vulnerabilities privately to maintainers. Do not post
+  exploit details, credentials, or real trip data in a public issue. If the
+  private contact route is unknown, ask for one without disclosing the issue.
