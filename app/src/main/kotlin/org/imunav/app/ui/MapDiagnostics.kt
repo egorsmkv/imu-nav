@@ -60,7 +60,7 @@ internal fun DiagnosticsContent(ui: UiState, app: AppGraph, onOpenLog: () -> Uni
             },
         )
         val reasons = verdict?.reasons.orEmpty()
-        if (reasons.isNotEmpty()) DiagRow(stringResource(R.string.diag_reasons), reasons.joinToString(", "), mono = true)
+        if (reasons.isNotEmpty()) DiagRow(stringResource(R.string.diag_reasons), reasons.joinToString("\n") { gpsReasonLabel(res, it) })
         val gn = ui.gnss
         DiagRow(stringResource(R.string.diag_satellites), "${gn.satellitesUsed} / ${gn.satellitesVisible}")
         DiagRow(stringResource(R.string.diag_signal), gn.meanCn0Used?.let { "%.0f ± %.1f dB-Hz".format(it, gn.cn0SpreadUsed ?: 0f) } ?: none)

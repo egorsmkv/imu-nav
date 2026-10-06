@@ -652,4 +652,26 @@
     <string name="account_sync_failed">Не удалось синхронизировать. Локальные изменения сохранены; попробуйте ещё раз.</string>
     <string name="account_sync_conflict">Для конфликтующих изменений использована версия сервера.</string>
     <string name="account_sync_local">Работает без интернета. Данные аккаунта скрываются после выхода.</string>
+    <string name="gps_reason_invalid">Некорректные координаты GPS</string>
+    <string name="gps_reason_mock">Имитация местоположения</string>
+    <string name="gps_reason_outside_area">Местоположение вне поддерживаемой территории</string>
+    <string name="gps_reason_altitude">Неправдоподобная высота</string>
+    <string name="gps_reason_speed">Неправдоподобно высокая скорость</string>
+    <string name="gps_reason_accuracy">Слишком низкая точность GPS</string>
+    <string name="gps_reason_accuracy_jump">Точность GPS резко ухудшилась</string>
+    <string name="gps_reason_clock_skew">Время GPS не совпадает со временем телефона</string>
+    <string name="gps_reason_duplicate_time">Время координат GPS не обновилось</string>
+    <string name="gps_reason_jump">Местоположение изменилось слишком резко</string>
+    <string name="gps_reason_speed_mismatch">Скорость GPS не соответствует изменению координат</string>
+    <string name="gps_reason_frozen">Координаты GPS не меняются при движении</string>
+    <string name="gps_reason_network_difference">GPS не совпадает с местоположением по сети</string>
+    <string name="gps_reason_jam">Обнаружены сильные радиопомехи</string>
+    <string name="gps_reason_jam_weak">Возможны радиопомехи</string>
+    <string name="gps_reason_jam_strong">Обнаружены радиопомехи; местоположение имеет дополнительное подтверждение</string>
+    <string name="gps_reason_no_satellites">Ни один спутник не используется для определения координат</string>
+    <string name="gps_reason_few_satellites">Слишком мало спутников для определения координат</string>
+    <string name="gps_reason_weak_signal">Слабые сигналы спутников</string>
+    <string name="gps_reason_flat_signal">Сигналы спутников подозрительно одинаковы</string>
+    <string name="gps_reason_heading_difference">Направление GPS не совпадает с компасом</string>
+    <string name="gps_reason_unknown">GPS не прошёл проверку надёжности</string>
 </resources>

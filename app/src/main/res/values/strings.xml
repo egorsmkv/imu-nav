@@ -642,4 +642,26 @@
     <string name="account_sync_failed">Could not sync. Your local changes are saved; try again.</string>
     <string name="account_sync_conflict">A conflicting edit was resolved using the server version.</string>
     <string name="account_sync_local">Works offline. Account data is hidden when you sign out.</string>
+    <string name="gps_reason_invalid">Invalid GPS coordinates</string>
+    <string name="gps_reason_mock">Location is simulated</string>
+    <string name="gps_reason_outside_area">Location is outside the supported area</string>
+    <string name="gps_reason_altitude">Implausible altitude</string>
+    <string name="gps_reason_speed">Implausibly high speed</string>
+    <string name="gps_reason_accuracy">GPS accuracy is too low</string>
+    <string name="gps_reason_accuracy_jump">GPS accuracy suddenly worsened</string>
+    <string name="gps_reason_clock_skew">GPS time differs from the phone clock</string>
+    <string name="gps_reason_duplicate_time">GPS timestamp has not advanced</string>
+    <string name="gps_reason_jump">Location jumped too far</string>
+    <string name="gps_reason_speed_mismatch">GPS speed does not match position changes</string>
+    <string name="gps_reason_frozen">GPS coordinates are stuck while moving</string>
+    <string name="gps_reason_network_difference">GPS disagrees with the network location</string>
+    <string name="gps_reason_jam">Strong radio interference detected</string>
+    <string name="gps_reason_jam_weak">Possible radio interference</string>
+    <string name="gps_reason_jam_strong">Radio interference detected; location has supporting evidence</string>
+    <string name="gps_reason_no_satellites">No satellites used for positioning</string>
+    <string name="gps_reason_few_satellites">Too few satellites used for positioning</string>
+    <string name="gps_reason_weak_signal">Weak satellite signals</string>
+    <string name="gps_reason_flat_signal">Satellite signals are suspiciously similar</string>
+    <string name="gps_reason_heading_difference">GPS direction disagrees with the compass</string>
+    <string name="gps_reason_unknown">GPS failed a reliability check</string>
 </resources>

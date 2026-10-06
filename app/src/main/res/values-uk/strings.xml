@@ -652,4 +652,26 @@
     <string name="account_sync_failed">Не вдалося синхронізувати. Локальні зміни збережено; спробуйте ще раз.</string>
     <string name="account_sync_conflict">Для суперечливих змін використано версію сервера.</string>
     <string name="account_sync_local">Працює без інтернету. Дані облікового запису приховано після виходу.</string>
+    <string name="gps_reason_invalid">Некоректні координати GPS</string>
+    <string name="gps_reason_mock">Імітація місцеположення</string>
+    <string name="gps_reason_outside_area">Місцеположення поза підтримуваною територією</string>
+    <string name="gps_reason_altitude">Неправдоподібна висота</string>
+    <string name="gps_reason_speed">Неправдоподібно висока швидкість</string>
+    <string name="gps_reason_accuracy">Занизька точність GPS</string>
+    <string name="gps_reason_accuracy_jump">Точність GPS різко погіршилася</string>
+    <string name="gps_reason_clock_skew">Час GPS не збігається з часом телефона</string>
+    <string name="gps_reason_duplicate_time">Час координат GPS не оновився</string>
+    <string name="gps_reason_jump">Місцеположення змінилося надто різко</string>
+    <string name="gps_reason_speed_mismatch">Швидкість GPS не відповідає зміні координат</string>
+    <string name="gps_reason_frozen">Координати GPS не змінюються під час руху</string>
+    <string name="gps_reason_network_difference">GPS не збігається з місцеположенням за мережею</string>
+    <string name="gps_reason_jam">Виявлено сильні радіоперешкоди</string>
+    <string name="gps_reason_jam_weak">Можливі радіоперешкоди</string>
+    <string name="gps_reason_jam_strong">Виявлено радіоперешкоди; місцеположення має додаткове підтвердження</string>
+    <string name="gps_reason_no_satellites">Жоден супутник не використовується для визначення координат</string>
+    <string name="gps_reason_few_satellites">Замало супутників для визначення координат</string>
+    <string name="gps_reason_weak_signal">Слабкі сигнали супутників</string>
+    <string name="gps_reason_flat_signal">Сигнали супутників підозріло однакові</string>
+    <string name="gps_reason_heading_difference">Напрямок GPS не збігається з компасом</string>
+    <string name="gps_reason_unknown">GPS не пройшов перевірку надійності</string>
 </resources>
