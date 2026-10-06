@@ -114,6 +114,7 @@ Without `keystore.properties`, `assemblePlayRelease` produces an unsigned APK. T
 Navigation start, reroute and restoration share cancellable request ownership: a stopped or superseded
 request cannot replace a newer trip, and failed startup releases partially initialized components.
 Location-provider status is cached for UI refresh and checked on the sensor worker before starting.
+
 Phone and Android Auto share asynchronously loaded, serialized recent-search history; malformed rows
 are skipped without discarding valid entries. Native network sample snapshots are reused between
 mutations. Android Auto publishes changed display fields and defers map updates while its surface is

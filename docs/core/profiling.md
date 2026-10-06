@@ -24,6 +24,7 @@ go tool pprof -http=127.0.0.1:8080 heap-profiles/heap-1-*.pb.gz
 Use a fresh output directory for each invocation. Sampling begins when the library loads, averaging
 one sample per 512 KiB allocated. The replay writes a baseline, a snapshot at the first event and
 then at most once per 60 seconds of recorded time, plus an `after-close` snapshot after every run.
+
 Live snapshots reveal retained route/history allocations; after-close snapshots help identify
 allocations that remain after releasing navigation handles. Small heaps may have few or no samples;
 these are sampled **live bytes**, not cumulative allocation traffic or an exact peak-memory report.

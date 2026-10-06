@@ -83,7 +83,9 @@ channels (shared Kotlin cell-derived motion vetoes remain separate).
 Disjoint fixes prevent direct sample reuse, not correlation between tower errors. Persistent coherent
 tower drift can still look like speed. Saved-prior recovery only helps when that prior better explains
 the contradictory movement. Relearning helps some other changes, but small changes and inaccurate or
-sparse cells still lag. The 500 m discrepancy gate deliberately prevents forced reacquisition once
+sparse cells still lag.
+
+The 500 m discrepancy gate deliberately prevents forced reacquisition once
 the model has diverged too far, so poor evidence can leave large errors unrecovered.
 It is not an instantaneous speed sensor. Peak errors can exceed position-only correction, so the
 experiment remains off by default pending broader real-drive validation.
@@ -93,14 +95,18 @@ experiment remains off by default pending broader real-drive validation.
 The shared pure-Kotlin `TurnDetector` uses recorded IMU samples and the existing gyro-bias estimate,
 independently of the live engine's turn matching and snaps. It requires one second of low yaw before
 rotation and 700 ms after it, a 1.5–8 second turn of 45–125 degrees, and at least 90% directional
-consistency. Missing/non-finite inputs, gaps over 200 ms, yaw over 55 deg/s, excessive non-yaw rotation,
+consistency.
+
+Missing/non-finite inputs, gaps over 200 ms, yaw over 55 deg/s, excessive non-yaw rotation,
 and acceleration above 6 m/s² invalidate evidence. Completed evidence expires two seconds after the
 turn ends; repeated navigation ticks cannot refresh it. Trip and route changes reset this detector.
 
 Rust indexes compact corners with straight approaches when immutable geometry is created. Broad
 curves, U-turns and complex corner clusters are excluded. Car-only matching requires one candidate
 within a 60–180 m prediction window and 15 degrees of the measured signed angle, with no other indexed
-turn within 80 m. Fresh GOOD GPS, a stop/resume speed prior, speed outside 2–18 m/s, position sigma
+turn within 80 m.
+
+Fresh GOOD GPS, a stop/resume speed prior, speed outside 2–18 m/s, position sigma
 above 300 m, or turn uncertainty above 100 m veto the correction. Events are consumed once; matching
 has a 15-second cooldown and cannot immediately reuse the same landmark, even after that cooldown.
 

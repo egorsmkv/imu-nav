@@ -11,7 +11,9 @@ rename and delete; compact route editors put bookmark saves under **More options
 Both Play and F-Droid builds include projected **Android Auto** navigation using AndroidX Car
 App 1.7.0 (host Car App API 7 or newer). This is not a standalone Android Automotive app.
 Finish setup and install offline packs on the phone, then use the car screen to search addresses,
-choose recent places or bookmarks, review a route and press **Start**. Use **Edit route** to choose
+choose recent places or bookmarks, review a route and press **Start**.
+
+Use **Edit route** to choose
 an explicit origin, or **Current position** for an automatic origin. Saved routes retain fixed
 starts. Walking routes remain phone-only. Incoming `geo:` navigation intents open a preview or
 search; they never start driving automatically. Stop the current trip before changing endpoints.
@@ -19,7 +21,9 @@ search; they never start driving automatically. Stop the current trip before cha
 The phone and car share one engine, sensor subscription set, foreground service and recording.
 The car shows maneuvers, remaining distance/time, arrival and positioning uncertainty, and offers
 Stop, Reroute, pan, zoom and recenter. Disconnecting releases the car map while navigation continues
-on the phone; reconnecting attaches to that trip. MapLibre draws through a virtual display directly
+on the phone; reconnecting attaches to that trip.
+
+MapLibre draws through a virtual display directly
 onto the host surface, sharing map styles and layers with the phone. Host visible/stable areas
 control camera padding, and power profiles cap rendering rates. Android restrictions or missing
 permissions produce a phone-setup action instead of starting an unprotected trip.

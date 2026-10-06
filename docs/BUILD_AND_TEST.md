@@ -28,6 +28,7 @@ For the production cell server, run `cargo build --locked --release --manifest-p
 Its release profile uses maximum optimization, fat link-time optimization and one codegen unit;
 expect a slower build in exchange for more optimization across dependencies.
 The [server guide](server/README.md) explains its Rust crates, storage choices and deployment.
+
 The `Server Docker image` CI workflow also builds `server/Dockerfile` from the `server/` context
 and checks that the resulting binary starts.
 Automatic CI workflows use path filters so documentation and unrelated modules do not start every

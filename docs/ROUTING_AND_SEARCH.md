@@ -3,7 +3,10 @@
 [Documentation index](../README.md)
 
 A routing pack lets the phone calculate routes and search addresses without internet. A map pack draws the streets; it is a different download. See the [glossary](GLOSSARY.md) if these terms are new.
-In **Settings → Maps and routes**, the app shows storage available for the packs, including cache space Android can reclaim. Allow at least 2 GB when installing offline routing and map packs; the exact amount depends on the packs. Use **Check again** after freeing space.
+
+In **Settings → Maps and routes**, the app shows storage available for the packs, including cache space Android can reclaim.
+Allow at least 2 GB when installing offline routing and map packs; the exact amount depends on the packs. Use **Check again** after freeing space.
+
 The app accepts locations worldwide. Install packs for the region you will use; only one map pack and one routing pack are active at a time. Outside a map pack's bounds, the map uses online tiles when available.
 
 ## Use an offline routing pack

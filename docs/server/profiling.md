@@ -25,14 +25,20 @@ HOTPATH_METRICS_SERVER_OFF=true server/target/release/imu-nav-cell-server \
 `tools/traffic_sim.py` drives the **actual HTTP server** on loopback with app-compatible gzip CSV.
 Four simulated phones make concurrent uploads over four sync rounds. Each 1,000-row upload mixes
 LTE, UMTS, GSM and NR cells across MCC 255/256, mostly shared cells, private cells, small repeat
-updates and 1% invalid ranges. Each round follows uploads with a full or incremental gzip download,
+updates and 1% invalid ranges.
+
+Each round follows uploads with a full or incremental gzip download,
 removals CSV, tower list and detail, authenticated account and administrator pages, account export,
 authentication status, diagnostic session upload and retry, diagnostic pages, Data Usage, and health.
-The first round also quarantines one published tower. Browser pages use actual login cookies and
+The first round also quarantines one published tower.
+
+Browser pages use actual login cookies and
 the diagnostics setting uses its administrator form and CSRF token. The driver
 prepares payloads before timing, starts a fresh SQLite database for each repetition, and checks a
 stable database fingerprint covering towers, contributions, moderation and diagnostic entries while
-excluding wall-clock update timestamps. It reports wall time and server process CPU time separately.
+excluding wall-clock update timestamps.
+
+It reports wall time and server process CPU time separately.
 It needs Python 3 on Linux and uses only the standard library.
 
 ```bash
@@ -64,7 +70,9 @@ observed production traffic or Internet latency measurements.
 
 An expanded route profile found repeated moderation lookups after uploads and while rendering the
 administrator tower page. Upload notifications now fetch quarantined keys in bounded batches on one
-database connection, and the dashboard query returns moderation status with each tower. With the same
+database connection, and the dashboard query returns moderation status with each tower.
+
+With the same
 expanded driver, compiler and host, three uninstrumented release repetitions of two rounds with
 1,000 rows per phone reduced median wall time from 1,997 to 512 ms (74%). All runs produced the
 same 7,920 accepted and 80 rejected rows, 200 stored diagnostic entries, and database fingerprint.

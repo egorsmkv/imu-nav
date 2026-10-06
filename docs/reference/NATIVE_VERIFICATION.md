@@ -169,11 +169,15 @@ fusion retains the same weights, arithmetic order and final speed cap.
 The finalization proof covers all floating-point bit patterns for weighted sum, weight sum and
 span, with source count 2. Successful output has finite speed in 0–150/3.6 m/s, finite positive
 sigma and finite nonnegative span. This is a numerical publication contract, not a proof of
-statistical calibration. Separate public-fusion proofs cover arbitrary invalid network fields and
+statistical calibration.
+
+Separate public-fusion proofs cover arbitrary invalid network fields and
 source speeds, GPS-only fallback, and every subset of fixed GPS/route/network speeds 10/20/12 m/s
 with arbitrary signed GPS age, split by source combination. The three-source case is further split into adjacent GPS-age
 ranges ≤0, 1–60,000 ms, 60,001–3,600,000 ms, and >3,600,000 ms; their union retains every signed
-age. The unsplit three-source proof exceeded five minutes. The recent and old partitions also
+age.
+
+The unsplit three-source proof exceeded five minutes. The recent and old partitions also
 exceeded five minutes with default CaDiCaL; they use bundled Kissat without changing their age
 domains or assertions. They check source
 counts, span ownership and the weighted-average
@@ -183,7 +187,9 @@ Storage proofs call production `add`/`clear`: invalid numeric fields or non-incr
 timestamps preserve a one-sample fixture bit-for-bit (unwind 4). Twelve harnesses enumerate fixed
 occupancies 0–59 (five independent fixtures each), checking one insertion's length, newest sample
 and every retained payload/timestamp. Fixtures have times 0…count−1 ms, position 10 m, accuracy
-20 m and capacity 61; insertion uses time 1,000 ms, position 30 m and accuracy 40 m. A separate
+20 m and capacity 61; insertion uses time 1,000 ms, position 30 m and accuracy 40 m.
+
+A separate
 exact-capacity fixture checks eviction with arbitrary finite position and nonnegative finite
 accuracy, then clear. Storage harnesses use unwind 62. Symbolic occupancy and multi-insertion
 formulations exceeded five minutes or 27 GB of memory; independent fixed-size fixtures avoid
@@ -196,7 +202,9 @@ arbitrary-history behavior.
 Window selection requires `0 <= now - sample_time <= window`, inclusive at expiry. Checked
 subtraction rejects unrepresentable ages. A query never removes stored observations, so future
 samples remain available for a later query. Outlier trimming must leave at least four observations;
-otherwise the window rejects instead of reusing the unfiltered fit. Finalization recomputes span
+otherwise the window rejects instead of reusing the unfiltered fit.
+
+Finalization recomputes span
 from surviving endpoints, requires the configured minimum span, and publishes only finite fit
 fields and positive uncertainty no greater than 4 m/s after inflation. Degenerate fits reject
 before outlier selection. The 30/40/90 s windows, 15/20/30 s minimum spans, weighting and fallback
@@ -242,7 +250,9 @@ These five harnesses call production `gate` and `record`, without stubs or chang
 decision rules. The slope variance square uses explicit multiplication: Kani overapproximates
 `powi` (see [intrinsic support](https://model-checking.github.io/kani/rust-feature-support/intrinsics.html)),
 which produced spurious NaN/direction failures in ordinary-size fixtures. Concrete counterexample
-inputs pass in Rust regression tests. The formula is unchanged and no operation is stubbed.
+inputs pass in Rust regression tests.
+
+The formula is unchanged and no operation is stubbed.
 Coarse observations use every signed timestamp and finite position/accuracy bit
 pattern with accuracy >300 m, from an established anchor and one stored candidate/sample.
 Both accepted and rejected coarse observations preserve the anchor, candidates, recent/history,
@@ -251,7 +261,9 @@ coordinate cache and speed samples; they cannot reanchor.
 Reanchoring starts at position 0 m/time 0, then rejects a candidate at 2,000 m/time 1 s (accuracy
 30 m throughout). The next observation uses times 3/12.999/13/14 s and offsets −100/−72/0/100/10,000 m
 from that candidate. All 20 combinations check the 12 s span, −6 m/s backward limit, reachability,
-anchor publication and candidate cleanup, with explicit exact-boundary witnesses. A broken-chain
+anchor publication and candidate cleanup, with explicit exact-boundary witnesses.
+
+A broken-chain
 proof replaces that candidate with position 10,000 m/time 2 s, then checks 10,100 m at 13.999/14 s:
 the discarded candidate's time cannot count toward the new span. Recovery to the original anchor
 uses time 2 s and every integer position 0–100 m, checking that abandoned candidates clear.
@@ -324,17 +336,23 @@ make a tiny rank-one input nonsingular; the ordinary-scale family retains exact 
 
 Prediction uses steps 0, 0.5 and 5 seconds, acceleration sigma 0.5 and drift rate 0.25; step −1
 must return an error without mutation. Each of the four measurement operations uses sigma 0, 0.25
-or 2, innovations 0, 0.5 or 64, and NIS gate 9; sigma −1 checks atomic error handling. Coarse
+or 2, innovations 0, 0.5 or 64, and NIS gate 9; sigma −1 checks atomic error handling.
+
+Coarse
 correction caps are 5 m and 1 m/s. State starts at position 10 m, speed 2 m/s and drift 5 m.
 Valid inputs must not return arithmetic/covariance errors, so rejecting a broken covariance is
-not enough to satisfy the contract. Measurement innovation rejection is allowed and must preserve
+not enough to satisfy the contract.
+
+Measurement innovation rejection is allowed and must preserve
 the entire state bit-for-bit. Required witnesses include a nonzero accepted correction, gating,
 errors and an accepted result at the variance floor.
 
 The postconditions check finite state, diagonal floors of 10⁻⁹ and the determinant tolerance
 `det(P) >= -1e-8 * (1 + P.position * P.speed)` without calling `Covariance2::is_valid`.
 Coarse updates additionally retain the unmeasured position/speed and its variance, respect their
-correction caps and cannot shrink the measured variance below the measurement variance. All
+correction caps and cannot shrink the measured variance below the measurement variance.
+
+All
 measurement operations preserve systematic drift. These are finite-grid, single-operation proofs,
 not proofs over arbitrary floating-point covariance matrices or repeated filter histories. Existing
 arbitrary-scalar overflow proofs remain separate. Unwinding assertions stay enabled (bound 2), and
@@ -361,6 +379,7 @@ Position preservation means the route position, its variance, and systematic dri
 unchanged while installing a speed prior. Cross-covariance may intentionally be cleared, and speed
 variance may change. Full-state no-op checks also inspect history and input watermarks. Repeated
 hint proofs cover two applications without intervening prediction, not arbitrary driving histories.
+
 These harnesses use unwind 3; none changes production arithmetic or disables verifier checks.
 The repeated car-ramp proofs separate initial-speed cases after the larger quarter-m/s input
 domain exceeded the five-minute solver budget. Normal/fallback cases retain every valid floating-point
@@ -372,7 +391,9 @@ unrestricted capped-case factors are not claimed as verified. Every assertion is
 Network ingress proofs reject arbitrary observation scalar bit patterns before projection in a
 populated fixture at 11,500 ms. The fixture retains a coordinate/input watermark at 9,000 ms,
 a position candidate, and an unfinished speed batch. Invalid, stale, future, duplicate-time and
-walking inputs preserve the whole estimator when no motion hint is present. Cached coordinates
+walking inputs preserve the whole estimator when no motion hint is present.
+
+Cached coordinates
 and too-frequent fixes at 9,001–11,500 ms may consume only the input watermark; they cannot add
 position confidence or speed samples. A separate reroute proof covers every timestamp from
 9,000 ms through `i64::MAX`, clearing candidates/speed while retaining coordinate and input caches.
@@ -380,17 +401,23 @@ position confidence or speed samples. A separate reroute proof covers every time
 Allocation proofs call production `apply_network_estimates` with already-projected candidates;
 projection, geographic accuracy and candidate-sequence eligibility are outside these contracts.
 The position path requires at least three fixes over ten seconds (all byte counts, spans 0–30 s),
-retains speed/drift, and caps its correction at 50 m on the fixed 100 m innovation fixture. A separate
+retains speed/drift, and caps its correction at 50 m on the fixed 100 m innovation fixture.
+
+A separate
 production dispatch helper proves that successful, rejected, reserved and prior-restoration speed
 allocations cannot fall through to position, reset drift, or fabricate measured freshness. It uses
 a speed-10/position-0 fixture, fits of 12 or 200 m/s, 2 m/s fit uncertainty, and a restored prior of
-15 m/s. Fresh GPS position/speed (ages 0–2,500 ms), OBD (0–2,499 ms), a stop hint, and disabled network speed each discard unfinished speed learning;
+15 m/s.
+
+Fresh GPS position/speed (ages 0–2,500 ms), OBD (0–2,499 ms), a stop hint, and disabled network speed each discard unfinished speed learning;
 position remains eligible except under fresh GPS position.
 
 Batch bookkeeping is checked through two four-sample batches over fifteen fixes, with separate
 successful/failed fit cases, and a seven-sample extended batch over thirteen fixes with unresolved
 fit summaries. Position-only slots have arbitrary floating-point positions and must leave all speed
-state except the slot toggle unchanged. A separate finalization proof covers every count 4–7,
+state except the slot toggle unchanged.
+
+A separate finalization proof covers every count 4–7,
 optional fit summaries with every floating-point speed 0–150/3.6 m/s, sigma 2–4 m/s and span 30–60 s,
 and both relearning states. Finalization must leave spare capacity or empty all storage; accepted
 summaries must pass the movement-confidence gate. No numerical fitting accuracy is claimed.
@@ -403,10 +430,14 @@ from either active control or a new hint, clears only unfinished speed learning.
 
 Kani cannot execute libc `hypot`, used to calculate departure uncertainty. Inlining the entire
 allocation path also grew to about 22 GB of solver memory and was stopped; a numerical fitting
-proof was stopped after more than three minutes to retain practical CI costs. A combined success/
+proof was stopped after more than three minutes to retain practical CI costs.
+
+A combined success/
 failure two-batch harness exceeded five minutes; splitting those cases retains both domains and
 all assertions. Production allocation, sample insertion, fit finalization, departure confirmation, recovery cleanup and speed dispatch
-are therefore small separate helpers; arithmetic and invocation order are unchanged. Proofs call
+are therefore small separate helpers; arithmetic and invocation order are unchanged.
+
+Proofs call
 these actual helpers at their input/result boundaries. They do not prove the numerical slope,
 `hypot`, regression fitter, or the complete `select` path. No production operation is stubbed.
 Existing real-route, fitting and delayed-GPS regressions exercise the complete path. Unwind bounds

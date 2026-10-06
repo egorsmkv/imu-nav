@@ -29,10 +29,14 @@ Ukraine tower database remains optional and does not set the MCC filter.
 **Usage history:** **Settings → Cell towers → Cell tower usage history** shows the latest 20 tower
 contributions and can share the complete history as a UTF-8 CSV file through Android's share sheet.
 Recording starts with this version and runs whenever cell scanning produces a fix, including outside
-active trips. Each scan records only towers actually used after outlier filtering, not unknown or
+active trips.
+
+Each scan records only towers actually used after outlier filtering, not unknown or
 disabled cells. The CSV includes app-session id, Unix/elapsed timestamps in ms, radio, MCC/MNC,
 area/cell id, signal, serving flag, timing advance, tower geometry and the estimated fix/accuracy.
-Coordinates can reflect a cell-id or site match rather than an exact tower match. History persists
+Coordinates can reflect a cell-id or site match rather than an exact tower match.
+
+History persists
 across app restarts and positioning-database resets; old trips cannot be reconstructed retroactively.
 It stays on the device unless you explicitly share it. The file reveals approximate locations and
 times: share only with trusted recipients.
@@ -90,29 +94,42 @@ Create the first admin with `--data cells.sqlite3 --create-admin admin@example.o
 standard input). To select PostgreSQL or configure the server with TOML, use
 `--config server/config.toml` as described in the
 [server configuration guide](../server/configuration.md). The repository's Compose
-setup includes Caddy as a TLS reverse proxy for use outside your own network. Account sign-in
+setup includes Caddy as a TLS reverse proxy for use outside your own network.
+
+Account sign-in
 in the app requires HTTPS outside local loopback development (including the emulator's `10.0.2.2`
 host alias). Public downloads still work without signing in.
 Browser users can register at `/signup`, sign in at `/login`, and manage their uploaded cell
-observations at `/account`. The panel filters and exports the account's observations, supports
+observations at `/account`.
+
+The panel filters and exports the account's observations, supports
 individual or full deletion, pauses uploads, changes credentials, revokes sessions, and closes the
 account. Deleted cell keys cannot be reuploaded by the same account. The server stores cell
-observations by default; opt-in developer diagnostics store trip recordings separately. Email
+observations by default; opt-in developer diagnostics store trip recordings separately.
+
+Email
 verification and browser password recovery use the
 configured SMTP server; local deployments without SMTP verify new accounts immediately.
 Administrators sign in through `/login` and are directed to `/admin`. Tower deletion requires
 quarantine first; the panel also supports account suspension and atomic seed imports and policy
-recalculation. The dashboard pages through towers, accounts, audit activity, and observations;
+recalculation.
+
+The dashboard pages through towers, accounts, audit activity, and observations;
 imports show live staging/progress, can be cancelled, and provide a rejected-row CSV report.
 Administrators can use **View as user** on an active ordinary account to open its account panel
 in a short lived, audited browser session, then return to the administrator panel.
+
 Phones now receive tower removals on their next sync when a shared tower is quarantined, deleted,
 or withdrawn by policy. Recalculation applies Ukraine-only and maximum-range rules to stored
 observations; maximum-jump checks still apply to new uploads because earlier positions are not
-retained. Saved policy values override CLI defaults on later starts.
+retained.
+
+Saved policy values override CLI defaults on later starts.
 The old Kotlin server's internal contribution gzip is not a
 SQLite migration source; re-import the original seed export when moving to this server. See
-[server API guide](../server/api.md) for the HTTP, management and WebSocket API. The
+[server API guide](../server/api.md) for the HTTP, management and WebSocket API.
+
+The
 [profiling guide](../server/profiling.md) covers optional instrumentation and the loopback traffic
 simulator.
 In the app: **Cells → Sharing server**, enter the URL, register or sign in with email and password,

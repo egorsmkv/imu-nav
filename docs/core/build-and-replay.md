@@ -71,18 +71,26 @@ coarse corrections for A/B replay; cell-derived motion vetoes remain controlled 
 
 The optional speed experiment has a separate 600-second synthetic drive: GPS is hidden at 60 s,
 actual speed rises from 15 to 17 m/s, and 40 m-accuracy noisy cells stop at 220 s. Blind native p95
-is 771 m with position-only corrections versus 51 m with speed learning. With continuous cells at
+is 771 m with position-only corrections versus 51 m with speed learning.
+
+With continuous cells at
 that speed, p95 is 41 m versus 51 m (RMS improves from 36 m to 21 m). With later abrupt changes to
-20 and then 12 m/s, the first speed-learning policy worsened p95 from 92 m to 267 m. Early prior
+20 and then 12 m/s, the first speed-learning policy worsened p95 from 92 m to 267 m.
+
+Early prior
 recovery reduces that to 90 m (RMS 53 m versus position-only 56 m), but maximum error is still higher:
 127 m versus 100 m. Moving the slowdown through eight five-second batch phases gives p95 90–100 m
-and maximum errors 125–153 m. These are synthetic regression results, not real-drive accuracy claims.
+and maximum errors 125–153 m.
+
+These are synthetic regression results, not real-drive accuracy claims.
 Run the same recording once without and once with
 `--native-network-speed` using separate output directories; the default remains position-only.
 
 Additional 600-second synthetic manoeuvre regressions hide GPS at 60 s, change motion at 250 s and
 use 40 m-accuracy cells with deterministic noise. The acceleration case rises from 17 to 25 m/s over
-10 s, away from the saved 15 m/s prior; gradual braking falls from 17 to 9 m/s over 80 s. Traffic adds
+10 s, away from the saved 15 m/s prior; gradual braking falls from 17 to 9 m/s over 80 s.
+
+Traffic adds
 recorded-style IMU stops/restarts; irregular cells alternate 5/10/5/15 s intervals. Separate error cases
 hold speed constant while cell bias ramps to 120 m or one tower fix jumps by 150 m.
 
@@ -97,7 +105,9 @@ hold speed constant while cell bias ramps to 120 m or one tower fix jumps by 150
 
 For acceleration, position error settles below 100 m at 125 s after the change versus 165 s before;
 gradual braking now settles at 255 s. Recovery requires at least 30 s below that threshold through
-the recording's end; a temporary crossing does not count. The irregular and changing-bias cases do
+the recording's end; a temporary crossing does not count.
+
+The irregular and changing-bias cases do
 not recover by this definition. These tests expose remaining failures, not acceptable navigation
 error bounds or real-drive guarantees. The original cell-dropout p95 remains 51 m. The experiment
 still loses to position-only correction on several scenarios and remains **off by default**.
@@ -105,6 +115,7 @@ still loses to position-only correction on several scenarios and remains **off b
 Turn JNI regressions hide GPS at 60 seconds, lower actual speed from 10 to 8 m/s without OBD/cells,
 and complete a left or right turn at 80 seconds. Over the 40-second blind interval, native p95 falls
 from 75 m with turns disabled to 65 m with the bounded correction (maximum error 79 m to 69 m).
+
 This synthetic gain is deliberately modest: one landmark does not fix an ongoing speed-model error.
 Phone swings, tilt-heavy movement, opposite yaw, missed turns and fresh-GPS cases must not introduce
 corrections. Use `--no-native-turns` with `--compare-native` for the corresponding recording A/B run.

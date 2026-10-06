@@ -53,7 +53,9 @@ Two optional inputs make dead reckoning much more accurate (**Settings → Gener
 
 - **OBD-II adapter.** A cheap Bluetooth ELM327 dongle in the car's diagnostic socket (under the dashboard,
   every petrol car since ~2001 and diesel since ~2004). Pair it in the phone's Bluetooth settings, switch
-  on _Car speed from OBD-II adapter_, pick it and tap _Test connection_ (ignition on). The app then connects
+  on _Car speed from OBD-II adapter_, pick it and tap _Test connection_ (ignition on).
+
+  The app then connects
   when a car trip starts, reads the speed 5× a second and reconnects by itself; the status pill shows
   _Estimated + car speed_. Only the standard speed request is sent: nothing is written to the car. Classic
   Bluetooth adapters work; BLE-only ones do not. Android 12+ asks for the _Nearby devices_ permission.
@@ -70,46 +72,72 @@ per second × stride, and the stride (0.72 m to start) is learned while GPS is t
 corrections are off (turn hold, gyro turn matching, compass snap, U-turn and missed-turn detection,
 traffic-signal and speed-bump rules — they assume a phone fixed in a car holder), off-route and
 arrival distances are tighter (`Tuning.forWalking()`), and maneuvers are announced at 150 / 50 / 15 m.
+
 Cell-tower and network corrections apply when the Hybrid fallback is selected. Step counting needs the _Physical activity_
 permission (asked when choosing _Walk_); without it or without a step sensor, a 1.3 m/s pace is
 assumed while the phone is moving. Walk recordings contain the steps, so the replay tool works for them too.
 
 Usage: search for the **From** and **To** addresses in the route panel, or long-press the map to
 choose a destination. The proposed route is drawn on the map as soon as its start and destination
-are known; review it, then tap **Start**. The current trusted position is used when **From** is not
+are known; review it, then tap **Start**.
+
+The current trusted position is used when **From** is not
 changed. Planning uses GOOD GPS up to 5 seconds old, otherwise network/cell location up to 30 seconds
 old; expired or future-dated fixes cannot supply an automatic start. A manual start takes precedence.
+
 If there is no fresh automatic position, search for the starting address or pan the
 crosshair onto your position and tap **Start here** first. Tap the status pill for
 positioning diagnostics (satellites, spoofing reasons, cells, _Simulate GPS loss_, trip log); the gear
-opens **Settings**. Its four expandable groups keep common controls separate from maps, cell-tower
+opens **Settings**.
+
+Its four expandable groups keep common controls separate from maps, cell-tower
 data and advanced tools. **General → Navigation without GPS** selects dead reckoning only, cell-tower
 positions only (held between scans), or the recommended hybrid that dead-reckons continuously and
-uses cell/network fixes to constrain drift. Trusted GPS remains preferred in all three modes.
+uses cell/network fixes to constrain drift.
+Trusted GPS remains preferred in all three modes.
+
 Each group starts with a short explanation; the map group also distinguishes routing packs (which
-calculate routes) from map packs (which draw streets). Pack imports can be cancelled during extraction
-and validation. Once replacement starts, it finishes or rolls back to the previous pack, and reports
+calculate routes) from map packs (which draw streets).
+
+Pack imports can be cancelled during extraction
+and validation.
+Once replacement starts, it finishes or rolls back to the previous pack, and reports
 the actual result. A new import waits until cleanup finishes. Routing, map matching and address
 search retain their pack resources until each operation completes, before replacement can close them.
+
 The map opens at the phone's last GPS position (spoofed or out-of-area fixes are ignored) or, if set in
 **Settings → General → Starting map view**, at a fixed place (typed coordinates, your position or the map centre).
+
 **Settings → General → Navigation without GPS → Vibration** disables both navigation
-vibrations and app tap feedback. The preference is saved, applies immediately and cancels active
+vibrations and app tap feedback.
+The preference is saved, applies immediately and cancels active
 navigation vibrations; it remains visible even on devices without a vibrator. When enabled, tap
 feedback still follows Android's touch-feedback setting. Vibration service calls run off the UI thread.
+
 The interface and voice follow the phone's language (Ukrainian, English or Russian) unless changed in
-**Settings → General → Language**, and the phone's light/dark theme. Spoken directions can be disabled under
+**Settings → General → Language**, and the phone's light/dark theme.
+
+Spoken directions can be disabled under
 **Settings → General → Navigation without GPS**. The phone vibrates as well, with a different
 pattern for an upcoming turn (one buzz), the turn itself (two), leaving the route (three short), GPS lost
-(long + short), GPS back, a new route and arrival, so alerts can be told apart without looking. Turn that off with
+(long + short), GPS back, a new route and arrival, so alerts can be told apart without looking.
+Turn that off with
 **Vibrate on turns and alerts** in the same group. Start, Stop, the Car/Walk selector and choosing a destination
-also give a short tap of feedback, following the phone's touch-feedback setting. Map and settings layouts adapt to portrait and landscape.
+also give a short tap of feedback, following the phone's touch-feedback setting.
+
+Map and settings layouts adapt to portrait and landscape.
 Map panels scroll when text does not fit, preserving space for zoom controls; long position labels
 shorten to keep History and Settings accessible, including with enlarged system text. In short windows,
 map warnings and controls scroll separately from the route panel; the compass stays clear of the zoom buttons.
+
 Action buttons, travel modes, legends and trip statistics wrap to the next line when needed. Settings,
 address search and the trip log keep content above the keyboard, and the setup and log control panels
-limit their height so the main content remains reachable. System font scaling is preserved. Text trip logs are written to
+limit their height so the main content remains reachable.
+System font scaling is preserved.
+
+Text trip logs are written to
 `files/logs/`, trip recordings to `files/trips/` in app storage. Log writes and trip boundaries share one worker, so queued messages stay with their original trip.
-Log files have unique suffixes and buffered writes flush within five seconds (or at rotation/trip end); an abrupt process kill can lose the last buffered lines. The in-app trip-log viewer shows timestamps, highlights problems, and can search,
+Log files have unique suffixes and buffered writes flush within five seconds (or at rotation/trip end); an abrupt process kill can lose the last buffered lines.
+
+The in-app trip-log viewer shows timestamps, highlights problems, and can search,
 filter, follow, copy or share the latest diagnostic events as a text file.

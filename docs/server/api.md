@@ -57,11 +57,15 @@ Password recovery needs all five environment variables: `CELLS_PUBLIC_URL` (an H
 `CELLS_SMTP_HOST`, `CELLS_SMTP_USERNAME`, `CELLS_SMTP_PASSWORD`, and `CELLS_SMTP_FROM`. The app
 calls `POST /v1/auth/password-reset/request` with an email. The one-use email link opens a
 server-hosted form and expires after 30 minutes. A successful reset revokes every session for
-that account. With SMTP configured, new accounts must confirm a one-use link within 24 hours
+that account.
+
+With SMTP configured, new accounts must confirm a one-use link within 24 hours
 before uploading cell observations; the account panel can resend it. Email changes also require
 confirmation at the new address and revoke all sessions on completion. Without SMTP, registration
 remains immediately verified for local deployments, while recovery and email changes are unavailable
-(`503 MAIL_UNAVAILABLE` for recovery). The account JSON includes `email_verified` and
+(`503 MAIL_UNAVAILABLE` for recovery).
+
+The account JSON includes `email_verified` and
 `sharing_enabled`, and uploads return 403 while either condition blocks sharing.
 All uploads also require a valid 8–64 character `X-Device-Id` made of letters, digits
 or hyphens. The server no longer uses the client IP as an identifier when this header is absent.

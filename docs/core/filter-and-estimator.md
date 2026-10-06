@@ -65,6 +65,7 @@ so all elapsed travel is accounted for without applying fresh-OBD uncertainty to
 OBD scale learning requires speeds of at least 5 m/s, a GNSS/OBD time difference no greater than
 250 ms, GNSS speed uncertainty at most 0.8 m/s, position uncertainty at most 20 m, and route offset
 below 25 m. The stable raw OBD range is at most 0.5 m/s with no gap longer than one second.
+
 Only ratios in 0.8–1.2 qualify, blended by 5% per accepted GNSS observation. SUSPECT fixes and
 missing accuracy fields cannot calibrate the scale. Scale and plateau history are checkpointed
 with the filter so delayed GNSS and OBD replay produce the same calibration as chronological input.
@@ -73,7 +74,9 @@ The existing systematic-drift allowance remains; learning a scale does not elimi
 Stop/resume hints reuse the Kotlin detector's hold time, resume confirmation and acceleration ramp.
 They are derived from recorded IMU/network inputs, not an independent velocity measurement. Fresh
 accepted GOOD GNSS or OBD speed takes precedence; recent non-duplicate network positions veto a stop
-when estimated speed minus three standard deviations exceeds 1 m/s. Walking ignores these hints.
+when estimated speed minus three standard deviations exceeds 1 m/s.
+
+Walking ignores these hints.
 Applying a hint changes the speed prior without reducing position uncertainty or resetting drift.
 The pre-stop cruising speed is retained for resuming. Hints expire two seconds after the last actual
 IMU sample, including across long tick gaps; missing or vetoed hints restore an uncertain cruising
@@ -82,6 +85,7 @@ prior instead of leaving the car permanently stopped. Delayed GNSS replays the r
 If the stopped/ramping speed model rejects a GOOD GNSS or OBD speed, the estimator also tests the
 saved cruising-speed prior (6 m/s standard deviation) with the same innovation gate. This prevents
 a false stop from repeatedly rejecting legitimate highway speeds above the stopped model's gate.
+
 SUSPECT GNSS cannot use this alternative. Rejection by both models leaves the predicted state and
 measurement freshness unchanged; accepting a speed clears motion control but does not correct
 position, reduce its uncertainty, or erase systematic drift. A measured zero speed still uses the

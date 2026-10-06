@@ -20,7 +20,9 @@ server/target/release/imu-nav-cell-server --config server/config.toml
 
 The server reads TOML only when `--config` is supplied. `[database] backend = "sqlite"` uses its
 `path`; relative paths in TOML are relative to the config file. To use PostgreSQL, set
-`backend = "postgres"`, remove `path`, and set `url` to a PostgreSQL connection URL. Configure
+`backend = "postgres"`, remove `path`, and set `url` to a PostgreSQL connection URL.
+
+Configure
 TLS and the database server's certificate trust for remote connections. The PostgreSQL backend
 uses a bounded connection pool and supports one running server process per database; the live
 WebSocket and job state is process-local. Never commit the real config: `server/config.toml` is
@@ -61,10 +63,12 @@ RUST_LOG=imu_nav_cell_server=debug,info server/target/release/imu-nav-cell-serve
 Put the server behind a TLS reverse proxy for public deployments. Accounts replace the former
 shared API key: users register with email and password in the Android app, and only signed-in
 users can upload. Existing apps can continue downloading published towers but cannot upload.
+
 `--trust-proxy` honors the first `X-Forwarded-For` address for per-IP limits and must
 only be enabled when direct access to the server port is blocked.
 For public HTTPS behind a reverse proxy, set `server.secure_cookies = true` in TOML or pass
 `--secure-cookies`. This marks browser sessions `Secure` without trusting forwarded client IPs.
+
 The server also recognizes `X-Forwarded-Proto: https` for the cookie flag; have the proxy replace
 that header. Local mode binds to loopback by default and rejects non-loopback binds. Public mode
 requires explicit `server.mode = "public"`, HTTPS `public_url`, secure cookies and complete privacy

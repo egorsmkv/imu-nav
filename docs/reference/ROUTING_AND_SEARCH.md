@@ -42,9 +42,13 @@ cp graph-ukraine/pack.json app/src/play/assets/routing/pack.json
 
 On first start the app unpacks it in the background (~20 s for Ukraine) and uses it. It is only
 reinstalled when an update ships a newer pack, and stays removed if the user removes it (Settings
-offers _Install built-in routing pack_). The APK grows by the zip size (~400+ MB for Ukraine with car and
+offers _Install built-in routing pack_).
+
+The APK grows by the zip size (~400+ MB for Ukraine with car and
 foot profiles and the search index, making the APK ~450+ MB — over Google Play's 200 MB base-APK limit, fine for
-sideloading); both files are gitignored. The F-Droid flavor deliberately never bundles this locally
+sideloading); both files are gitignored.
+
+The F-Droid flavor deliberately never bundles this locally
 generated pack: users can import or download the same freely licensed data pack in the app.
 
 Packs can also be installed at runtime with **Import pack** (the `.zip`) or **Download** from any HTTP(S) URL — the
@@ -55,10 +59,14 @@ large regions do not need a large heap.
 Geofabrik Ukraine extract by default. The workflow accepts a different one-word pack name and HTTPS
 `.osm.pbf` URL, with an optional expected SHA-256. It builds car and foot profiles with `search.db`
 and no elevation tiles, validates the flat ZIP layout and metadata, extracts it, and opens the graph
-with `PhoneGraphHopper`. Pull requests affecting the builder or workflow run the same checks on a
+with `PhoneGraphHopper`.
+
+Pull requests affecting the builder or workflow run the same checks on a
 small Monaco extract. The downloadable GitHub artifact contains `routing-<name>.zip`, its SHA-256
 file and `routing-build.json` with the source URL and checksum, source commit, pack metadata, sizes
-and peak build memory. Extract the artifact first; import its inner routing ZIP in the app or upload
+and peak build memory.
+
+Extract the artifact first; import its inner routing ZIP in the app or upload
 that ZIP to an HTTPS host for the app's Download field. The workflow does not deploy it.
 
 Android cannot compile GraphHopper's custom models at runtime (Janino generates JVM bytecode), so
@@ -70,15 +78,20 @@ builder and the phone must agree on, and `OfflineGraphTest` checks both give ide
 **Actions → Offline map pack → Run workflow** builds a Ukraine display map from a Geofabrik OSM
 extract. The workflow records the extract SHA-256, Planetiler version and JAR SHA-256, source and
 output sizes, and peak build memory. You can supply an expected extract checksum to reject a changed
-download. The OpenFreeMap light and dark styles, sprites, and fonts are snapshotted before generating
+download.
+
+The OpenFreeMap light and dark styles, sprites, and fonts are snapshotted before generating
 tiles; Planetiler emits only the vector layers those styles use, keeps English, Ukrainian and Russian
 name translations, and omits unused feature IDs. Street geometry stays at zoom 14 with gzip-compressed
-MVT tiles in PMTiles v3. If the standard hosted runner runs out of RAM or disk, the job fails and reports
+MVT tiles in PMTiles v3.
+
+If the standard hosted runner runs out of RAM or disk, the job fails and reports
 capacity instead of lowering street detail.
 
 The `map-ukraine` CI artifact contains `map-ukraine.zip`, its checksum, and `map-build.json`.
 Download it within the artifact retention period and upload the ZIP to your HTTPS host yourself.
 The app's **Settings → Offline map → Download** field accepts its URL; import also accepts the ZIP.
+
 CI builds a Play benchmark APK with the identical map files under `assets/map/`. MapLibre reads its
 uncompressed PMTiles APK asset through an on-device loopback range reader, so installation needs no
 second copy. A user-imported map
@@ -103,10 +116,12 @@ Routing packs also contain `search.db`, an SQLite FTS4 index of settlements, str
 numbers built from the same OSM extract (~87 MB for Ukraine; skip with `--no-addresses` or
 `--no-search`). Queries like `Хрещатик 22`, `Київ Хрещатик`, `вул. Шевченка, Львів` or `Буча`
 work offline in a few milliseconds; street-type words are ignored and results near you rank first.
+
 The route panel uses the same text search for both the starting address and the destination; the
 current trusted position remains the default start until the user chooses another one.
 When the offline index finds nothing and online use is allowed (**Settings → Maps and routes → Offline routing →
 Allow online routing and search**), a [Photon](https://github.com/komoot/photon) geocoder is asked.
+
 The public server `photon.komoot.io` is the default; **Settings → Maps and routes → Address search** accepts your own
 server instead (a host such as `http://192.168.1.10:2322` or the full `…/api` URL), with a _Test_
 button that runs a sample query. Self-hosting keeps search text off third-party servers.

@@ -19,6 +19,7 @@ The phone can estimate a rough position from nearby cell towers when GPS is unav
 4. Sign out when you no longer want to upload. Public downloads can still work without an account.
 
 A tower normally needs contributions from at least two devices before the server publishes it. For a server outside your local network, use HTTPS. The repository's Compose setup includes Caddy for HTTPS on the domain in `CELLS_PUBLIC_URL`; the [server guide](server/README.md) covers DNS, setup, accounts and administration.
+
 The server's public `/data-usage` page explains what uploads contain and how to review or delete your observations.
 Developer diagnostics are an independent, opt-in upload. See [Trips](TRIPS.md) for setup and deletion steps; diagnostic events are never used to calculate shared towers.
 

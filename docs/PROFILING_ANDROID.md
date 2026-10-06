@@ -25,10 +25,14 @@ History if replay is needed. No older trip or Logcat history is copied into the 
 
 The method trace samples managed code at 10 ms intervals with a 16 MiB buffer. It does not show
 Rust internal call stacks. The native report times selected JNI operations, including the core work
-they call; it is not a full native CPU profile. Recording changes timing, so use repeated captures
+they call; it is not a full native CPU profile.
+
+Recording changes timing, so use repeated captures
 for comparisons. Event and log files have size limits, and the manifest reports dropped entries.
 If Android stops the app mid-capture, the next launch offers a partial ZIP with the flushed files;
-the unclosed method trace is omitted. The app keeps at most three ZIPs and removes older ZIPs when
+the unclosed method trace is omitted.
+
+The app keeps at most three ZIPs and removes older ZIPs when
 preparing another capture. Android may clear them from app cache earlier.
 
 **Before sharing:** trip events and logs may contain precise locations and sensor data. Check the
