@@ -135,6 +135,13 @@
     <string name="settings_group_maps_setup">Налаштуйте навігацію без інтернету, карти й пошук адрес</string>
     <string name="settings_group_maps_ready">Офлайн-маршрути готові; керуйте картами й пошуком адрес</string>
     <string name="settings_help_maps">Пакет маршрутів будує шлях, а пакет карти показує вулиці. Це окремі завантаження.</string>
+    <string name="offline_storage_title">Місце для офлайн-пакетів</string>
+    <string name="offline_storage_required">Для офлайн-маршрутів і карт потрібно щонайменше 2 ГБ доступного місця. Точний обсяг залежить від пакетів.</string>
+    <string name="offline_storage_available">Доступно %1$.2f ГБ</string>
+    <string name="offline_storage_low">Доступно менш ніж 2 ГБ. Звільніть місце перед встановленням офлайн-пакетів.</string>
+    <string name="offline_storage_checking">Перевіряємо доступне місце…</string>
+    <string name="offline_storage_unavailable">Не вдалося перевірити доступне місце.</string>
+    <string name="offline_storage_check_again">Перевірити знову</string>
     <string name="settings_group_cells">Резерв за вежами без GPS</string>
     <string name="settings_group_cells_summary">Покращує позиціювання, коли GPS недоступний</string>
     <string name="settings_help_cells">Необов’язково. Вбудована база веж працює автоматично; додаткові дані можуть підвищити точність.</string>

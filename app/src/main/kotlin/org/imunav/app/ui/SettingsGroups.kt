@@ -1,6 +1,7 @@
 package org.imunav.app.ui
 
 import android.content.Context
+import android.os.storage.StorageManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -23,15 +24,21 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.imunav.app.AppGraph
 import org.imunav.app.R
 import org.imunav.app.UiState
@@ -41,6 +48,9 @@ import org.imunav.app.power.PowerProfile
 import org.imunav.app.routing.OfflineRoutingStatus
 import org.imunav.core.nav.NavigationEstimator
 import org.imunav.core.nav.NavigationMethod
+
+private const val OFFLINE_PACK_FREE_SPACE_BYTES = 2_000_000_000L
+private const val BYTES_PER_GB = 1_000_000_000.0
 
 /** Everyday controls for navigation, sensors, voice, and battery policy. */
 @Composable
@@ -179,12 +189,48 @@ internal fun EverydaySettings(app: AppGraph, ui: UiState, context: Context, save
 /** Offline routing pack, map pack, and online search controls. */
 @Composable
 internal fun MapsSettings(app: AppGraph, routing: OfflineRoutingStatus, offlineMap: OfflineMapStatus, packUrl: String, onPackUrlChange: (String) -> Unit, onPickPack: () -> Unit) {
+    val context = LocalContext.current
+    var availableStorageBytes by remember { mutableStateOf<Long?>(null) }
+    var storageChecked by remember { mutableStateOf(false) }
+    var storageCheck by remember { mutableIntStateOf(0) }
+    LaunchedEffect(routing.busy == null, offlineMap.busy == null, storageCheck) {
+        // Both packs use filesDir. Read its available space off the UI thread after installs and on request.
+        storageChecked = false
+        availableStorageBytes = withContext(Dispatchers.IO) {
+            runCatching {
+                val storageManager = context.getSystemService(StorageManager::class.java) ?: return@runCatching null
+                storageManager.getAllocatableBytes(storageManager.getUuidForPath(context.filesDir))
+            }.getOrNull()
+        }
+        storageChecked = true
+    }
     SettingsGroup(
         title = stringResource(R.string.settings_group_maps),
         summary = stringResource(if (routing.pack == null) R.string.settings_group_maps_setup else R.string.settings_group_maps_ready),
         icon = Icons.Filled.Route,
     ) {
         SettingsHelp(stringResource(R.string.settings_help_maps))
+        ListItem(
+            headlineContent = { Text(stringResource(R.string.offline_storage_title)) },
+            supportingContent = {
+                Column {
+                    Text(stringResource(R.string.offline_storage_required))
+                    when (val bytes = availableStorageBytes) {
+                        null -> Text(stringResource(if (storageChecked) R.string.offline_storage_unavailable else R.string.offline_storage_checking))
+
+                        else -> {
+                            Text(stringResource(R.string.offline_storage_available, bytes / BYTES_PER_GB))
+                            if (bytes < OFFLINE_PACK_FREE_SPACE_BYTES) {
+                                Text(stringResource(R.string.offline_storage_low), color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    }
+                }
+            },
+            trailingContent = {
+                TextButton(onClick = { storageCheck++ }) { Text(stringResource(R.string.offline_storage_check_again)) }
+            },
+        )
 
         // ---------------- Offline routing
         SectionHeader(stringResource(R.string.sec_routing))

@@ -137,6 +137,13 @@
     <string name="settings_group_maps_setup">Set up offline navigation, maps and address search</string>
     <string name="settings_group_maps_ready">Offline routing is ready; manage maps and address search</string>
     <string name="settings_help_maps">The routing pack calculates a route. The map pack draws streets. They are separate downloads.</string>
+    <string name="offline_storage_title">Storage for offline packs</string>
+    <string name="offline_storage_required">Allow at least 2 GB of available storage for offline routing and map packs. The exact amount depends on the packs.</string>
+    <string name="offline_storage_available">%1$.2f GB available</string>
+    <string name="offline_storage_low">Less than 2 GB available. Make room before installing offline packs.</string>
+    <string name="offline_storage_checking">Checking available storage…</string>
+    <string name="offline_storage_unavailable">Could not check available storage.</string>
+    <string name="offline_storage_check_again">Check again</string>
     <string name="settings_group_cells">Cell-tower GPS backup</string>
     <string name="settings_group_cells_summary">Improve positioning when GPS is unavailable</string>
     <string name="settings_help_cells">Optional. The built-in tower database works automatically; adding data can improve cell positioning.</string>

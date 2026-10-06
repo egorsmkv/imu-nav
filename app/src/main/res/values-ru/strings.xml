@@ -135,6 +135,13 @@
     <string name="settings_group_maps_setup">Настройте навигацию без интернета, карты и поиск адресов</string>
     <string name="settings_group_maps_ready">Офлайн-маршруты готовы; управляйте картами и поиском адресов</string>
     <string name="settings_help_maps">Пакет маршрутов строит путь, а пакет карты показывает улицы. Это отдельные загрузки.</string>
+    <string name="offline_storage_title">Место для офлайн-пакетов</string>
+    <string name="offline_storage_required">Для офлайн-маршрутов и карт нужно не менее 2 ГБ доступного места. Точный объём зависит от пакетов.</string>
+    <string name="offline_storage_available">Доступно %1$.2f ГБ</string>
+    <string name="offline_storage_low">Доступно менее 2 ГБ. Освободите место перед установкой офлайн-пакетов.</string>
+    <string name="offline_storage_checking">Проверяем доступное место…</string>
+    <string name="offline_storage_unavailable">Не удалось проверить доступное место.</string>
+    <string name="offline_storage_check_again">Проверить снова</string>
     <string name="settings_group_cells">Резерв по вышкам без GPS</string>
     <string name="settings_group_cells_summary">Улучшает позиционирование, когда GPS недоступен</string>
     <string name="settings_help_cells">Необязательно. Встроенная база вышек работает автоматически; дополнительные данные могут повысить точность.</string>
