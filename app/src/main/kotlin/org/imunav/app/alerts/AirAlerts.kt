@@ -136,6 +136,7 @@ class AirAlerts(private val context: Context, private val scope: CoroutineScope,
 
     private suspend fun receive(url: String, token: String) {
         val session = generation
+        val feed = AirAlertFeed()
         val closed = CompletableDeferred<Unit>()
         val request = Request.Builder().url(url + STREAM_PATH).header("Authorization", "Bearer $token").build()
         val socket = Http.client.newWebSocket(
@@ -146,7 +147,7 @@ class AirAlerts(private val context: Context, private val scope: CoroutineScope,
                 }
 
                 override fun onMessage(webSocket: WebSocket, text: String) {
-                    if (text.length <= MAX_EVENT_CHARS) scope.launch { if (visible && generation == session) handleMessage(text, session) }
+                    if (text.length <= MAX_EVENT_CHARS) scope.launch { if (visible && generation == session) handleMessage(text, session, feed) }
                 }
 
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
@@ -166,25 +167,17 @@ class AirAlerts(private val context: Context, private val scope: CoroutineScope,
         }
     }
 
-    private fun handleMessage(text: String, session: Long) {
+    private fun handleMessage(text: String, session: Long, feed: AirAlertFeed) {
         val message = runCatching { JSONObject(text) }.getOrNull() ?: return
-        when (message.optString("type")) {
-            "snapshot" -> {
-                val active = regions(message, "active")
-                _status.update { it.copy(active = active, stale = message.optBoolean("stale", true)) }
-            }
-
-            "changes" -> {
-                val started = regions(message, "started")
-                val cleared = regions(message, "cleared")
-                val active = _status.value.active.associateBy { it.id }.toMutableMap()
-                cleared.forEach { active.remove(it.id) }
-                started.forEach { active[it.id] = it }
-                _status.update { it.copy(active = active.values.toList(), stale = false) }
-                if (_status.value.enabled && visible && (started.isNotEmpty() || cleared.isNotEmpty())) {
-                    scope.launch(Dispatchers.IO) { runCatching { notifyChange(started, cleared, session) } }
-                }
-            }
+        val sequence = message.optLong("sequence", -1L)
+        val update = when (message.optString("type")) {
+            "snapshot" -> feed.snapshot(sequence, regions(message, "active"), message.optBoolean("stale", true))
+            "changes" -> feed.changes(sequence, regions(message, "started"), regions(message, "cleared"))
+            else -> null
+        } ?: return
+        _status.update { it.copy(active = update.active, stale = update.stale) }
+        if (_status.value.enabled && visible && (update.started.isNotEmpty() || update.cleared.isNotEmpty())) {
+            scope.launch(Dispatchers.IO) { runCatching { notifyChange(update.started, update.cleared, session) } }
         }
     }
 
@@ -210,20 +203,18 @@ class AirAlerts(private val context: Context, private val scope: CoroutineScope,
 
     private fun notifyChange(started: List<AirAlertRegion>, cleared: List<AirAlertRegion>, session: Long) {
         if (!visible || generation != session || !_status.value.enabled || cells.diagnosticAccountEmail() == null || !notificationsAllowed()) return
+        val language = AppLanguage.locale(AppLanguage.get(context)).language
+        val notice = airAlertNotice(started, cleared, language == "en", MAX_NAMES) ?: return
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(CHANNEL, context.getString(R.string.air_alerts_channel), NotificationManager.IMPORTANCE_HIGH))
         val title = context.getString(
-            when {
-                started.isNotEmpty() && cleared.isNotEmpty() -> R.string.air_alerts_notification_update
-                started.isNotEmpty() -> R.string.air_alerts_notification_start
-                else -> R.string.air_alerts_notification_clear
+            when (notice.kind) {
+                AirAlertNoticeKind.UPDATE -> R.string.air_alerts_notification_update
+                AirAlertNoticeKind.START -> R.string.air_alerts_notification_start
+                AirAlertNoticeKind.CLEAR -> R.string.air_alerts_notification_clear
             },
         )
-        val regions = (started + cleared).take(MAX_NAMES)
-        val language = AppLanguage.locale(AppLanguage.get(context)).language
-        val names = regions.joinToString(", ") { if (language == "en") it.nameEn else it.nameUk }
-        val truncated = started.size + cleared.size > regions.size
-        val body = if (truncated) context.getString(R.string.air_alerts_notification_truncated, names) else names
+        val body = if (notice.truncated) context.getString(R.string.air_alerts_notification_truncated, notice.names) else notice.names
         val open = PendingIntent.getActivity(context, 0, Intent(context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         val notification = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_nav)

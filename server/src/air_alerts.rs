@@ -563,6 +563,39 @@ fn now_s() -> i64 {
 mod tests {
     use super::*;
     use axum::routing::get;
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+
+    async fn mock_provider(
+        body: Arc<RwLock<String>>,
+        post_status: StatusCode,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        let source = body.clone();
+        let app = Router::new()
+            .route(
+                "/api/v3/alerts",
+                get(move || {
+                    let source = source.clone();
+                    async move { source.read().unwrap().clone() }
+                }),
+            )
+            .route(
+                "/api/v3/webhook",
+                post(move || async move { post_status }).patch(|| async { StatusCode::NO_CONTENT }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        (format!("http://{address}"), task)
+    }
+
+    fn test_config(provider_base: String) -> AirAlertConfig {
+        AirAlertConfig {
+            api_key: "test-api-key".to_owned(),
+            webhook_secret: "abcdefghijklmnopqrstuvwxyz012345".to_owned(),
+            public_url: "https://cells.example.org".to_owned(),
+            provider_base,
+        }
+    }
 
     #[test]
     fn filters_air_to_oblasts_and_diffs_without_repeating_notifications() {
@@ -626,5 +659,165 @@ mod tests {
             matches!(events.try_recv().unwrap(), AlertMessage::Changes { cleared, .. } if cleared.len() == 1)
         );
         task.abort();
+    }
+
+    #[test]
+    fn malformed_regions_do_not_invent_an_all_clear() {
+        let hub = AirAlertHub::new();
+        let active = parse_regions(
+            br#"[{"regionId":"14","regionType":"State","activeAlerts":[{"type":"AIR"}]}]"#,
+        )
+        .unwrap();
+        assert_eq!(active[0].name_uk, "14");
+        assert_eq!(active[0].name_en, "14");
+        hub.apply(active.clone());
+        assert!(
+            parse_regions(br#"[{"regionId":"14","regionType":"State","activeAlerts":null}]"#)
+                .is_err()
+        );
+        assert!(
+            parse_regions(
+                br#"[{"regionId":"","regionType":"State","activeAlerts":[{"type":"AIR"}]}]"#
+            )
+            .is_err()
+        );
+        assert_eq!(hub.snapshot.read().unwrap().active, active);
+        hub.mark_stale();
+        assert!(hub.snapshot.read().unwrap().stale);
+        hub.apply(active);
+        assert!(!hub.snapshot.read().unwrap().stale);
+    }
+
+    #[tokio::test]
+    async fn webhook_registration_updates_an_existing_provider_subscription() {
+        let (base, task) =
+            mock_provider(Arc::new(RwLock::new("[]".to_owned())), StatusCode::CONFLICT).await;
+        let config = test_config(base);
+        register_webhook(&reqwest::Client::new(), &config)
+            .await
+            .unwrap();
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn provider_failure_marks_status_stale_without_sending_a_false_all_clear() {
+        let body = Arc::new(RwLock::new(
+            r#"[{"regionId":"14","regionType":"State","regionName":"Київська","regionEngName":"Kyiv","activeAlerts":[{"type":"AIR"}]}]"#.to_owned(),
+        ));
+        let (base, server) = mock_provider(body.clone(), StatusCode::NO_CONTENT).await;
+        let hub = Arc::new(AirAlertHub::new());
+        *hub.config.write().unwrap() = Some(test_config(base));
+        let mut events = hub.events.subscribe();
+        let worker = tokio::spawn(run_provider(hub.clone()));
+        let initial = tokio::time::timeout(Duration::from_secs(3), events.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            matches!(initial, AlertMessage::Snapshot { stale: false, active, .. } if active.len() == 1)
+        );
+
+        *body.write().unwrap() = "broken".to_owned();
+        hub.refresh.notify_one();
+        let failed = tokio::time::timeout(Duration::from_secs(3), events.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            matches!(failed, AlertMessage::Snapshot { stale: true, active, .. } if active.len() == 1)
+        );
+
+        *body.write().unwrap() = "[]".to_owned();
+        hub.refresh.notify_one();
+        let clear = tokio::time::timeout(Duration::from_secs(3), events.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(clear, AlertMessage::Changes { cleared, .. } if cleared.len() == 1));
+        assert!(!hub.snapshot.read().unwrap().stale);
+        worker.abort();
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn user_stream_starts_with_a_snapshot_and_stops_after_opt_out() -> anyhow::Result<()> {
+        let database = tempfile::NamedTempFile::new()?;
+        let store = crate::CellStore::open(database.path())?;
+        crate::create_admin(&store, "driver@example.org", "correct horse battery staple")?;
+        let state = AppState::new(
+            store,
+            crate::ServerConfig {
+                mail: None,
+                policy: crate::Policy::default(),
+                trust_proxy: false,
+                secure_cookies: false,
+                privacy: None,
+            },
+        )?;
+        state.configure_air_alerts(test_config(PROVIDER_BASE.to_owned()));
+        let hub = state.air_alerts.clone();
+        let kyiv = AlertRegion {
+            region_id: "14".to_owned(),
+            name_uk: "Київська".to_owned(),
+            name_en: "Kyiv".to_owned(),
+        };
+        hub.apply(vec![kyiv.clone()]);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let address = listener.local_addr()?;
+        let server = tokio::spawn(async move {
+            axum::serve(
+                listener,
+                crate::router(state).into_make_service_with_connect_info::<std::net::SocketAddr>(),
+            )
+            .await
+            .unwrap();
+        });
+        let client = reqwest::Client::new();
+        let base = format!("http://{address}");
+        let login: serde_json::Value = client.post(format!("{base}/v1/auth/login"))
+            .json(&serde_json::json!({"email":"driver@example.org","password":"correct horse battery staple"}))
+            .send().await?.json().await?;
+        let token = login["access_token"].as_str().unwrap();
+        client
+            .put(format!("{base}/v1/air-alerts/preferences"))
+            .bearer_auth(token)
+            .json(&serde_json::json!({"enabled":true}))
+            .send()
+            .await?
+            .error_for_status()?;
+        let mut request = format!("ws://{address}/v1/air-alerts/stream").into_client_request()?;
+        request
+            .headers_mut()
+            .insert("Authorization", format!("Bearer {token}").parse()?);
+        let (mut socket, _) = tokio_tungstenite::connect_async(request).await?;
+        let initial = socket.next().await.unwrap()?;
+        let initial: serde_json::Value = serde_json::from_str(initial.to_text()?)?;
+        assert_eq!(initial["type"], "snapshot");
+        assert_eq!(initial["active"].as_array().unwrap().len(), 1);
+
+        hub.apply(Vec::new());
+        let clear = tokio::time::timeout(Duration::from_secs(3), socket.next())
+            .await?
+            .unwrap()?;
+        let clear: serde_json::Value = serde_json::from_str(clear.to_text()?)?;
+        assert_eq!(clear["type"], "changes");
+        assert_eq!(clear["cleared"].as_array().unwrap().len(), 1);
+
+        client
+            .put(format!("{base}/v1/air-alerts/preferences"))
+            .bearer_auth(token)
+            .json(&serde_json::json!({"enabled":false}))
+            .send()
+            .await?
+            .error_for_status()?;
+        hub.apply(vec![kyiv]);
+        let closed = tokio::time::timeout(Duration::from_secs(3), socket.next()).await?;
+        assert!(
+            closed.is_none_or(
+                |message| message.is_err() || message.is_ok_and(|value| value.is_close())
+            )
+        );
+        server.abort();
+        Ok(())
     }
 }

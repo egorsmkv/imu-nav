@@ -201,6 +201,14 @@ fn load_air_alerts(public_url: Option<&str>) -> Result<Option<AirAlertConfig>> {
     let secret = std::env::var("CELLS_AIR_ALERTS_WEBHOOK_SECRET")
         .ok()
         .filter(|value| !value.trim().is_empty());
+    validate_air_alerts(api_key, secret, public_url)
+}
+
+fn validate_air_alerts(
+    api_key: Option<String>,
+    secret: Option<String>,
+    public_url: Option<&str>,
+) -> Result<Option<AirAlertConfig>> {
     match (api_key, secret) {
         (None, None) => Ok(None),
         (Some(api_key), Some(webhook_secret)) => {
@@ -390,5 +398,37 @@ mod tests {
         assert!(!valid_public_url("http://cells.example.org"));
         assert!(!valid_public_url("https://cells.example.org/path"));
         Ok(())
+    }
+
+    #[test]
+    fn air_alert_settings_require_a_complete_private_https_configuration() {
+        let key = || Some("operator-api-key".to_owned());
+        let secret = || Some("abcdefghijklmnopqrstuvwxyz012345".to_owned());
+        assert!(validate_air_alerts(None, None, None).unwrap().is_none());
+        assert!(validate_air_alerts(key(), None, Some("https://cells.example.org")).is_err());
+        assert!(validate_air_alerts(None, secret(), Some("https://cells.example.org")).is_err());
+        assert!(
+            validate_air_alerts(
+                key(),
+                Some("short".to_owned()),
+                Some("https://cells.example.org")
+            )
+            .is_err()
+        );
+        assert!(
+            validate_air_alerts(
+                key(),
+                Some("a".repeat(31) + "/"),
+                Some("https://cells.example.org")
+            )
+            .is_err()
+        );
+        assert!(validate_air_alerts(key(), secret(), None).is_err());
+        assert!(validate_air_alerts(key(), secret(), Some("http://cells.example.org")).is_err());
+        let configured = validate_air_alerts(key(), secret(), Some("https://cells.example.org"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(configured.public_url, "https://cells.example.org");
+        assert_eq!(configured.api_key, "operator-api-key");
     }
 }

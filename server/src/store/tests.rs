@@ -23,6 +23,9 @@ fn privacy_withdrawal_erases_only_its_purpose_and_exports_receipts() -> Result<(
     store.grant_privacy_consent(1, "diagnostics", "v1")?;
     assert!(store.has_privacy_consent(1, "tower_upload", "v1")?);
     assert!(!store.has_privacy_consent(1, "tower_upload", "v2")?);
+    assert!(!store.air_alerts_enabled(1)?);
+    store.set_air_alerts_enabled(1, true)?;
+    assert!(store.air_alerts_enabled(1)?);
     let archive = NamedTempFile::new()?;
     store.export_account_to_path(1, archive.path())?;
     let mut contents = String::new();
@@ -33,6 +36,11 @@ fn privacy_withdrawal_erases_only_its_purpose_and_exports_receipts() -> Result<(
     assert!(contents.contains("tower_observation"));
     assert!(contents.contains("diagnostic_session"));
     assert!(contents.contains("notice_version"));
+    assert!(contents.lines().any(|line| {
+        serde_json::from_str::<serde_json::Value>(line).is_ok_and(|record| {
+            record["type"] == "air_alert_preference" && record["enabled"].as_bool() == Some(true)
+        })
+    }));
     assert!(!contents.contains("secret-hash"));
     store.withdraw_privacy_consent(1, "tower_upload", &policy)?;
     assert!(!store.has_privacy_consent(1, "tower_upload", "v1")?);
@@ -56,6 +64,12 @@ fn privacy_withdrawal_erases_only_its_purpose_and_exports_receipts() -> Result<(
         |row| row.get(0),
     )?;
     assert_eq!(accounts, 0);
+    let alert_preferences: i64 = store.connection()?.query_row(
+        "SELECT COUNT(*) FROM air_alert_preferences",
+        params![],
+        |row| row.get(0),
+    )?;
+    assert_eq!(alert_preferences, 0);
     Ok(())
 }
 

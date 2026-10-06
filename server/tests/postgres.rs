@@ -36,6 +36,7 @@ fn populate_migration_source(path: &std::path::Path) -> Result<()> {
     source.execute_batch(
         "INSERT INTO users(id,email,password_hash,admin) VALUES (2,'driver@example.org','hash',0);
          INSERT INTO privacy_consents(id,account_id,purpose,notice_version,granted,at_s) VALUES (1,2,'tower_upload','v1',1,100);
+         INSERT INTO air_alert_preferences(account_id,enabled,updated_s) VALUES (2,1,100);
          INSERT INTO tower_moderation(radio,mcc,mnc,area,cid,quarantined) VALUES ('LTE',255,1,100,202,1);
          INSERT INTO tower_removals(radio,mcc,mnc,area,cid,updated_s) VALUES ('LTE',255,1,100,201,101);
          INSERT INTO server_settings(key,value) VALUES ('debug_upload_enabled','1');
@@ -74,6 +75,7 @@ fn assert_migrated_tables(source_path: &std::path::Path, url: &str) -> Result<()
         "web_impersonations",
         "password_resets",
         "privacy_consents",
+        "air_alert_preferences",
         "debug_sessions",
         "debug_batches",
         "debug_entries",
