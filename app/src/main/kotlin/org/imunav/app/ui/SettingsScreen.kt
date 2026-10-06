@@ -45,6 +45,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -175,6 +176,8 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
         if (uri != null) mgr.importFile { context.contentResolver.openInputStream(uri) }
     }
     val routing by app.offlineRouting.status.collectAsStateWithLifecycle()
+    val airAlerts by app.airAlerts.status.collectAsStateWithLifecycle()
+    LaunchedEffect(c.accountEmail) { app.airAlerts.refresh() }
     val diagnostics by app.diagnostics.status.collectAsStateWithLifecycle()
     val profileStatus by app.profileCapture.status.collectAsStateWithLifecycle()
     var packUrl by remember { mutableStateOf(routing.packUrl) }
@@ -379,6 +382,36 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                             Text(stringResource(R.string.auth_sign_out))
                         }
                     }
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.air_alerts_title)) },
+                        supportingContent = {
+                            Column {
+                                Text(stringResource(R.string.air_alerts_summary))
+                                Text(
+                                    when {
+                                        !airAlerts.signedIn -> stringResource(R.string.air_alerts_sign_in)
+                                        airAlerts.error -> stringResource(R.string.air_alerts_error)
+                                        !airAlerts.available -> stringResource(R.string.air_alerts_unavailable)
+                                        else -> stringResource(R.string.air_alerts_active, airAlerts.active.size)
+                                    },
+                                )
+                                if (airAlerts.enabled && airAlerts.stale) Text(stringResource(R.string.air_alerts_stale), color = MaterialTheme.colorScheme.error)
+                                if (airAlerts.enabled && !airAlerts.notificationsAllowed) {
+                                    Text(stringResource(R.string.air_alerts_permission), color = MaterialTheme.colorScheme.error)
+                                    TextButton(onClick = {
+                                        context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
+                                    }) { Text(stringResource(R.string.air_alerts_notification_settings)) }
+                                }
+                            }
+                        },
+                        trailingContent = {
+                            Switch(checked = airAlerts.enabled, enabled = airAlerts.signedIn && airAlerts.available, onCheckedChange = { enabled ->
+                                scope.launch {
+                                    runCatching { app.airAlerts.setEnabled(enabled) }.onFailure { snackbar.showSnackbar(resources.getString(R.string.air_alerts_error)) }
+                                }
+                            })
+                        },
+                    )
                     SwitchItem(stringResource(R.string.sync_auto), stringResource(R.string.sync_auto_summary), autoSync) {
                         if (it && privacyNotice != null && !towerConsented) {
                             showPrivacyAction("auto_sync")

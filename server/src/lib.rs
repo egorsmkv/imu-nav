@@ -1,6 +1,7 @@
 //! Persistent HTTP and WebSocket server for sharing cell-tower positions.
 
 mod admin;
+mod air_alerts;
 mod api;
 mod auth;
 mod csv_format;
@@ -11,6 +12,7 @@ mod privacy;
 mod store;
 mod web;
 
+pub use air_alerts::AirAlertConfig;
 pub use api::{AppState, ServerConfig, router};
 pub use auth::{MailConfig, create_admin};
 pub use csv_format::{

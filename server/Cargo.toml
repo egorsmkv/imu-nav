@@ -21,6 +21,7 @@ flate2 = "1.1"
 lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "rustls-tls"] }
 futures-util = "0.3"
 rand = "0.9"
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "stream"] }
 rpassword = "7.5.4"
 hotpath = { version = "=0.28.4", default-features = false, optional = true }
 rusqlite = { version = "0.40", features = ["bundled"] }

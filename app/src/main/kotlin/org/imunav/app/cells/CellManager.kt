@@ -162,6 +162,14 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
         return url to token
     }
 
+    /** Reuse the account session for the separately opted-in air-alert stream, on an I/O thread. */
+    fun accountCredentials(): Pair<String, String>? {
+        val url = diagnosticServerUrl()
+        if (url.isBlank() || auth.email == null) return null
+        val token = auth.accessToken(url) ?: return null
+        return url to token
+    }
+
     /** Current account server, captured when a diagnostic trip starts. */
     fun diagnosticServerUrl(): String = prefs.getString("sync_url", "").orEmpty().trim().trimEnd('/')
 

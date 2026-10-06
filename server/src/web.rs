@@ -67,6 +67,7 @@ pub(crate) fn router() -> Router<AppState> {
         .route("/forgot-password", get(forgot_page).post(forgot_submit))
         .route("/account", get(account_page))
         .route("/account/export", get(export_own))
+        .route("/account/air-alerts", post(set_air_alerts))
         .route(
             "/account/privacy/{purpose}/withdraw",
             post(withdraw_privacy),
@@ -133,6 +134,7 @@ struct AccountTemplate {
     filter_from: String,
     filter_to: String,
     sharing_enabled: bool,
+    air_alerts: AirAlertAccountView,
     privacy: AccountPrivacyView,
     email_verified: bool,
     message: String,
@@ -150,6 +152,11 @@ struct AccountPrivacyView {
     configured: bool,
     tower_consent: bool,
     diagnostics_consent: bool,
+}
+
+struct AirAlertAccountView {
+    enabled: bool,
+    available: bool,
 }
 
 struct Impersonation {
@@ -414,6 +421,12 @@ impl AccountQuery {
 #[derive(Deserialize)]
 struct CsrfForm {
     csrf: String,
+}
+
+#[derive(Deserialize)]
+struct AirAlertForm {
+    csrf: String,
+    enabled: bool,
 }
 
 #[derive(Deserialize)]
@@ -760,6 +773,7 @@ pub(crate) async fn audit_impersonated_requests(
         }
         (&Method::POST, "/debug/delete-all") => Some("impersonate_debug_delete_all"),
         (&Method::GET, "/account/export") => Some("impersonate_export"),
+        (&Method::POST, "/account/air-alerts") => Some("impersonate_set_air_alerts"),
         (&Method::POST, "/account/logout") => Some("impersonate_logout"),
         (&Method::POST, "/account/password") => Some("impersonate_change_password"),
         (&Method::POST, "/account/email") => Some("impersonate_change_email"),
@@ -902,7 +916,7 @@ async fn account_page(
     let store = state.store.clone();
     let filter_for_query = filter.clone();
     let raw_for_sessions = raw.clone();
-    let (contributions, (sharing_enabled, email_verified), sessions) = run_db(move || {
+    let (contributions, (sharing_enabled, email_verified), air_alerts_enabled, sessions) = run_db(move || {
         let current = auth::account_for_token(&store, &raw_for_sessions, "web")?
             .map(|(_, session_id)| session_id).unwrap_or_default();
         let connection = store.connection()?;
@@ -915,7 +929,7 @@ async fn account_page(
             SessionRow { current: id == current, id, label, expires: utc_time(expires) }
         }).collect::<Vec<_>>();
         Ok((store.own_contributions(account.id, &filter_for_query, PAGE_SIZE, offset)?,
-            store.account_sharing_status(account.id)?, sessions))
+            store.account_sharing_status(account.id)?, store.air_alerts_enabled(account.id)?, sessions))
     }).await?;
     let total = contributions.total;
     let privacy = account_privacy_view(&state, account.id).await?;
@@ -942,6 +956,10 @@ async fn account_page(
             filter_from: filter.from_s.map_or_else(String::new, utc_input),
             filter_to: filter.to_s.map_or_else(String::new, utc_input),
             sharing_enabled,
+            air_alerts: AirAlertAccountView {
+                enabled: air_alerts_enabled,
+                available: state.air_alerts.configured(),
+            },
             privacy,
             email_verified,
             message: account_message(query.message.as_deref()).to_owned(),
@@ -1213,6 +1231,28 @@ async fn resend_verification(
         ));
     }
     Ok(redirect("/account?message=email-sent"))
+}
+
+async fn set_air_alerts(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Form(form): Form<AirAlertForm>,
+) -> Result<Response, ApiError> {
+    let Some((account, raw)) = web_account(&state, &headers).await? else {
+        return Ok(redirect("/login"));
+    };
+    if form.csrf != csrf_token(&raw) {
+        return Ok(error_page(StatusCode::FORBIDDEN, "Invalid form token."));
+    }
+    if form.enabled && !state.air_alerts.configured() {
+        return Ok(error_page(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Air alerts are not configured by this server.",
+        ));
+    }
+    let store = state.store.clone();
+    run_db(move || store.set_air_alerts_enabled(account.id, form.enabled)).await?;
+    Ok(redirect("/account"))
 }
 
 async fn pause_sharing(

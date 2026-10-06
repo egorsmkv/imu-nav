@@ -25,6 +25,16 @@ endpoints are the server-side contract for those clients.
 - `GET /v1/events` upgrades to a WebSocket that emits `ready`, `tower_upserted`,
   `tower_deleted`, and `resync_required` JSON events. On `resync_required`, reload the management
   list because the client fell behind the bounded event queue.
+- `GET /v1/air-alerts/preferences` returns `enabled` and `available` for the signed-in account;
+  `PUT` with `{"enabled":true|false}` changes its opt-in. New accounts default to off. Enabling
+  returns 503 when the operator has not configured the UkraineAlarm provider.
+- `GET /v1/air-alerts/stream` is a separate bearer-authenticated WebSocket available only to
+  opted-in accounts. It starts with a `snapshot` message (`active`, `updated_s`, `stale`,
+  `sequence`), followed by `changes` messages (`started`, `cleared`, `updated_s`, `sequence`).
+  Regions carry `region_id`, `name_uk`, and `name_en`. A snapshot does not imply a new alert.
+- `POST /v1/air-alerts/provider/{secret}` is the operator's private UkraineAlarm callback. Its
+  payload is ignored; it requests an authenticated provider refresh. Never expose its secret in
+  client apps or logs.
 - `GET /health` reports readiness and the number of published towers.
 - `GET /v1/privacy` returns the selected operator's current versioned notice in English,
   Ukrainian and Russian. `GET /v1/privacy/me` returns that notice and the signed-in account's

@@ -23,7 +23,7 @@ PostgreSQL stores persistent server data.
 | Files | Responsibility |
 | --- | --- |
 | `main.rs`, `config.rs` | Start the process and combine TOML, environment and command-line settings. |
-| `api.rs`, `auth.rs`, `privacy.rs` | Handle HTTP/WebSocket requests, sign-in, sessions, email and purpose consent. |
+| `api.rs`, `auth.rs`, `privacy.rs`, `air_alerts.rs` | Handle HTTP/WebSocket requests, sign-in, sessions, email, purpose consent and optional air-raid alerts. |
 | `model.rs`, `csv_format.rs` | Define tower records and read or write the app-compatible CSV format. |
 | `db.rs`, `store.rs`, `store/` | Use SQLite or PostgreSQL, store observations and calculate consensus. |
 | `web.rs`, `admin.rs`, `debug.rs`, `templates/` | Serve account pages, administration and opt-in trip diagnostics. |
@@ -40,9 +40,10 @@ quarantine a tower or change the publication policy. [API details](api.md) and t
 2. [Deploy with Compose](deploy-with-compose.md) for PostgreSQL, Caddy, DNS and upgrades.
 3. [Configure by hand](configuration.md) for TOML, database migration, logging and proxy settings.
 4. [Privacy deployment and requests](privacy.md) for notices, retention, consent and operator duties.
-5. [Browser accounts](accounts.md) for personal data review, exports and deletion.
-6. [Administration](administration.md) for moderation, policy and seed imports.
-7. [HTTP and WebSocket API](api.md) for client endpoints and authentication.
+5. [Air-raid alerts](air-alerts.md) for provider setup, the account switch and delivery limits.
+6. [Browser accounts](accounts.md) for personal data review, exports and deletion.
+7. [Administration](administration.md) for moderation, policy and seed imports.
+8. [HTTP and WebSocket API](api.md) for client endpoints and authentication.
 8. [Profiling and traffic simulation](profiling.md) for tests and repeatable performance checks.
 
 Start with the [newcomer glossary](glossary.md) for *contribution*, *consensus*, *quarantine*,

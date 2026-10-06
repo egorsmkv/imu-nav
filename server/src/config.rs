@@ -6,7 +6,7 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::path::{Path, PathBuf};
 
 use crate::Options;
-use imu_nav_cell_server::PrivacyNotice;
+use imu_nav_cell_server::{AirAlertConfig, PrivacyNotice};
 
 #[derive(Default, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -110,6 +110,7 @@ pub(crate) struct Settings {
     pub(crate) max_samples: i64,
     pub(crate) area: String,
     pub(crate) privacy: Option<PrivacyNotice>,
+    pub(crate) air_alerts: Option<AirAlertConfig>,
 }
 
 impl Settings {
@@ -144,6 +145,8 @@ impl Settings {
             area == "any" || area == "ukraine",
             "policy.area must be 'any' or 'ukraine'"
         );
+        let public_url = options.public_url.clone().or(server.public_url);
+        let air_alerts = load_air_alerts(public_url.as_deref())?;
         let settings = Self {
             bind: options
                 .bind
@@ -152,7 +155,7 @@ impl Settings {
             port: options.port.or(server.port).unwrap_or(8080),
             database,
             log_level,
-            public_url: options.public_url.clone().or(server.public_url),
+            public_url,
             smtp_host: options.smtp_host.clone().or(mail.host),
             smtp_username: options.smtp_username.clone().or(mail.username),
             smtp_password: options.smtp_password.clone().or(mail.password),
@@ -163,6 +166,7 @@ impl Settings {
             max_samples: options.max_samples.or(policy.max_samples).unwrap_or(50),
             area,
             privacy,
+            air_alerts,
         };
         if mode == "local" {
             ensure!(
@@ -187,6 +191,45 @@ impl Settings {
             "invalid initial policy limits"
         );
         Ok(settings)
+    }
+}
+
+fn load_air_alerts(public_url: Option<&str>) -> Result<Option<AirAlertConfig>> {
+    let api_key = std::env::var("CELLS_AIR_ALERTS_API_KEY")
+        .ok()
+        .filter(|value| !value.trim().is_empty());
+    let secret = std::env::var("CELLS_AIR_ALERTS_WEBHOOK_SECRET")
+        .ok()
+        .filter(|value| !value.trim().is_empty());
+    match (api_key, secret) {
+        (None, None) => Ok(None),
+        (Some(api_key), Some(webhook_secret)) => {
+            ensure!(
+                !api_key.trim().is_empty(),
+                "air alert API key cannot be empty"
+            );
+            ensure!(
+                webhook_secret.len() >= 32
+                    && webhook_secret
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric()),
+                "air alert webhook secret must be at least 32 alphanumeric characters"
+            );
+            let public_url =
+                public_url.ok_or_else(|| anyhow!("air alerts require a public HTTPS URL"))?;
+            ensure!(
+                valid_public_url(public_url),
+                "air alerts require a public HTTPS origin"
+            );
+            Ok(Some(AirAlertConfig::new(
+                api_key,
+                webhook_secret,
+                public_url.to_owned(),
+            )))
+        }
+        _ => Err(anyhow!(
+            "set both CELLS_AIR_ALERTS_API_KEY and CELLS_AIR_ALERTS_WEBHOOK_SECRET"
+        )),
     }
 }
 

@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import org.imunav.app.alerts.AirAlerts
 import org.imunav.app.bookmarks.BookmarkDatabase
 import org.imunav.app.bookmarks.Bookmarks
 import org.imunav.app.cells.CellManager
@@ -321,6 +322,9 @@ class AppGraph(private val context: Context) {
     /** Offline cell-tower positioning: tower database, scanning, downloads, sharing. */
     val cells = CellManager(context, scope, hub, tripLog::write)
 
+    /** Opt-in air-raid notifications are streamed only while the phone app is visible. */
+    val airAlerts = AirAlerts(context, scope, cells)
+
     /** Opt-in trip diagnostics use the same signed-in server but have separate local and server storage. */
     val diagnostics = DevDiagnostics(context, cells)
 
@@ -350,6 +354,7 @@ class AppGraph(private val context: Context) {
     /** Update display ownership without giving either display a second engine loop. */
     fun setPhoneVisible(visible: Boolean) {
         displays.phone(visible)
+        airAlerts.setVisible(visible)
         updateDisplays()
     }
 

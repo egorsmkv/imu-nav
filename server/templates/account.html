@@ -7,7 +7,7 @@
 {% include "site_header.html" %}
 <main class="page-shell">
   <div class="page-heading"><span class="eyebrow">{{ email }}</span><h1>My account</h1><p>Manage sharing, find your uploaded observations, and control your account.</p></div>
-  <nav class="section-links" aria-label="Account sections"><a href="#sharing">Sharing</a><a href="#diagnostics">Diagnostics</a><a href="#observations">Observations</a><a href="#security">Account security</a></nav>
+  <nav class="section-links" aria-label="Account sections"><a href="#sharing">Sharing</a><a href="#diagnostics">Diagnostics</a><a href="#air-alerts">Air alerts</a><a href="#observations">Observations</a><a href="#security">Account security</a></nav>
   {% if impersonating %}<section class="card warning" role="status"><strong>Administrator view as {{ email }}</strong><p>You are signed in as this user from {{ actor_email }}. Account actions are recorded in the administrator activity log. This view expires after one hour.</p><form action="/account/stop-impersonation" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Return to administrator panel</button></form></section>{% endif %}
   {% if !message.is_empty() %}<p class="notice" role="status">{{ message }}</p>{% endif %}
   <div class="grid">
@@ -32,6 +32,12 @@
   <section class="card" id="diagnostics"><h2>Developer diagnostics</h2><p>Review, download, or delete diagnostic trips that you chose to upload.</p><a class="button" href="/debug">Open my diagnostic sessions</a>
     {% if privacy.configured %}<p>Diagnostics consent: {% if privacy.diagnostics_consent %}<strong>current</strong>{% else %}<strong>not current</strong>{% endif %}.</p>
     {% if privacy.diagnostics_consent %}<form action="/account/privacy/diagnostics/withdraw" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="danger" type="submit">Withdraw diagnostics consent and erase sessions</button></form>{% endif %}{% endif %}
+  </section>
+  <section class="card" id="air-alerts"><h2>Air-raid alerts</h2><p>Receive nationwide oblast-level air-raid starts and all-clears while the Android app is open. The app uses system notifications; it is a research prototype, not a safety system.</p>
+    {% if air_alerts.available %}
+    {% if air_alerts.enabled %}<p>Air-raid alerts are enabled for this account.</p>{% else %}<p>Air-raid alerts are off for this account.</p>{% endif %}
+    <form action="/account/air-alerts" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="enabled" value="{% if air_alerts.enabled %}false{% else %}true{% endif %}"><button type="submit">{% if air_alerts.enabled %}Turn off alerts{% else %}Enable alerts{% endif %}</button></form>
+    {% else %}<p>This server has not configured air-raid alerts.</p>{% endif %}
   </section>
   </div>
   <section class="card" id="observations">

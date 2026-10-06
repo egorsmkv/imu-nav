@@ -23,4 +23,8 @@ To return to the checklist, open **Settings → Set up IMU Nav**. Skipping a pac
 
 Offline navigation does not need a proxy. This setting does not act as a VPN for the rest of the phone. HTTP proxy credentials are stored in app-private settings but are not encrypted by the app.
 
+## Optional air-raid alerts
+
+Sign in to a sharing server that has configured UkraineAlarm, then enable **Air-raid alerts for Ukraine** in Settings or on your server account page. The app shows current oblast-level air-raid status and sends Android notifications for starts and all-clears received while the app is open. Allow Android notifications for the app. The alert switch is off by default, uses no phone location, and does not provide a safety guarantee; consult official warning channels.
+
 See the [glossary](GLOSSARY.md) for unfamiliar terms and the [detailed setup reference](reference/GETTING_STARTED.md) for permission and proxy behaviour.

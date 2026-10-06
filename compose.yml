@@ -39,6 +39,8 @@ services:
       CELLS_PRIVACY_TRANSFERS: ${CELLS_PRIVACY_TRANSFERS:?Set transfer details in .env}
       CELLS_PRIVACY_ACCOUNT_BASIS: ${CELLS_PRIVACY_ACCOUNT_BASIS:?Set the account basis in .env}
       CELLS_PRIVACY_SECURITY_BASIS: ${CELLS_PRIVACY_SECURITY_BASIS:?Set the security basis in .env}
+      CELLS_AIR_ALERTS_API_KEY: ${CELLS_AIR_ALERTS_API_KEY:-}
+      CELLS_AIR_ALERTS_WEBHOOK_SECRET: ${CELLS_AIR_ALERTS_WEBHOOK_SECRET:-}
     volumes:
       - ./server/config.production.toml:/etc/imu-nav/config.toml:ro
     ports:

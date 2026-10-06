@@ -63,6 +63,7 @@ const MIGRATION_TABLES: &[(&str, &str)] = &[
         "privacy_consents",
         "id,account_id,purpose,notice_version,granted,at_s",
     ),
+    ("air_alert_preferences", "account_id,enabled,updated_s"),
     (
         "debug_sessions",
         "id,account_id,client_id,context_json,created_s,updated_s,finished_s,incomplete,bytes",
@@ -237,6 +238,13 @@ fn initialize_schema(connection: &Connection) -> Result<()> {
          );
          CREATE INDEX IF NOT EXISTS password_resets_expiry ON password_resets(expires_s);",
     )?;
+    initialize_privacy_schema(connection)?;
+    initialize_air_alert_schema(connection)?;
+    initialize_debug_schema(connection)?;
+    Ok(())
+}
+
+fn initialize_privacy_schema(connection: &Connection) -> Result<()> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS privacy_consents (
            id INTEGER PRIMARY KEY, account_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -244,7 +252,16 @@ fn initialize_schema(connection: &Connection) -> Result<()> {
          );
          CREATE INDEX IF NOT EXISTS privacy_consents_current ON privacy_consents(account_id,purpose,id);",
     )?;
-    initialize_debug_schema(connection)?;
+    Ok(())
+}
+
+fn initialize_air_alert_schema(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        "CREATE TABLE IF NOT EXISTS air_alert_preferences (
+           account_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+           enabled INTEGER NOT NULL DEFAULT 0, updated_s INTEGER NOT NULL
+         );",
+    )?;
     Ok(())
 }
 
@@ -396,9 +413,13 @@ impl CellStore {
                 |row| row.get(0),
             )?;
             anyhow::ensure!(count == 0, "PostgreSQL target is not empty: {table}");
-            // A stopped database from before purpose consent has no receipt table yet.
-            if *table == "privacy_consents" {
-                let exists: i64 = source.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='privacy_consents'", [], |row| row.get(0))?;
+            // Older stopped databases may lack tables added after the original account schema.
+            if matches!(*table, "privacy_consents" | "air_alert_preferences") {
+                let exists: i64 = source.query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                    [table],
+                    |row| row.get(0),
+                )?;
                 if exists == 0 {
                     continue;
                 }
@@ -666,6 +687,29 @@ impl CellStore {
             "UPDATE users SET sharing_enabled=?1 WHERE id=?2 AND (email_verified=1 OR ?1=0)",
             params![enabled, account_id],
         )? > 0)
+    }
+
+    /// Absence of a preference means the account has never opted in.
+    pub(crate) fn air_alerts_enabled(&self, account_id: i64) -> Result<bool> {
+        Ok(self
+            .connection()?
+            .query_row(
+                "SELECT enabled FROM air_alert_preferences WHERE account_id=?1",
+                [account_id],
+                |row| row.get(0),
+            )
+            .optional()?
+            .unwrap_or(false))
+    }
+
+    /// Store the same opt-in for the browser and Android app.
+    pub(crate) fn set_air_alerts_enabled(&self, account_id: i64, enabled: bool) -> Result<()> {
+        self.connection()?.execute(
+            "INSERT INTO air_alert_preferences(account_id,enabled,updated_s) VALUES (?1,?2,?3)
+             ON CONFLICT(account_id) DO UPDATE SET enabled=excluded.enabled,updated_s=excluded.updated_s",
+            params![account_id, enabled, current_time_s()?],
+        )?;
+        Ok(())
     }
 
     /// Remove an ordinary account and all its observations, tokens, and deletion markers atomically.
@@ -1223,14 +1267,8 @@ impl CellStore {
             out.write_all(b"\n")?;
             Ok(())
         };
-        let (email, admin, sharing, verified): (String, bool, bool, bool) = connection.query_row(
-            "SELECT email,admin,sharing_enabled,email_verified FROM users WHERE id=?1",
-            [account_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
-        )?;
-        emit(
-            serde_json::json!({"type":"account","email":email,"admin":admin,"sharing_enabled":sharing,"email_verified":verified}),
-        )?;
+        export_account_summary(&connection, account_id, &mut emit)?;
+        export_air_alert_preference(&connection, account_id, &mut emit)?;
         let mut statement = connection.prepare("SELECT purpose,notice_version,granted,at_s FROM privacy_consents WHERE account_id=?1 ORDER BY id")?;
         let mut rows = statement.query([account_id])?;
         while let Some(row) = rows.next()? {
@@ -1431,6 +1469,42 @@ impl CellStore {
             quarantined: usize::try_from(quarantined_count)?,
         })
     }
+}
+
+fn export_account_summary(
+    connection: &Connection,
+    account_id: i64,
+    emit: &mut impl FnMut(serde_json::Value) -> Result<()>,
+) -> Result<()> {
+    let (email, admin, sharing, verified): (String, bool, bool, bool) = connection.query_row(
+        "SELECT email,admin,sharing_enabled,email_verified FROM users WHERE id=?1",
+        [account_id],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+    )?;
+    emit(
+        serde_json::json!({"type":"account","email":email,"admin":admin,"sharing_enabled":sharing,"email_verified":verified}),
+    )?;
+    Ok(())
+}
+
+fn export_air_alert_preference(
+    connection: &Connection,
+    account_id: i64,
+    emit: &mut impl FnMut(serde_json::Value) -> Result<()>,
+) -> Result<()> {
+    let alert_preference: Option<(bool, i64)> = connection
+        .query_row(
+            "SELECT enabled,updated_s FROM air_alert_preferences WHERE account_id=?1",
+            [account_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    if let Some((enabled, updated_s)) = alert_preference {
+        emit(
+            serde_json::json!({"type":"air_alert_preference","enabled":enabled,"updated_s":updated_s}),
+        )?;
+    }
+    Ok(())
 }
 
 fn account_device_pattern(account_id: i64) -> String {

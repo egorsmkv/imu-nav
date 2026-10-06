@@ -627,4 +627,18 @@
     <string name="privacy_view_notice">Прочитать уведомление %1$s</string>
     <string name="privacy_sign_in_first">Сначала войдите на выбранный сервер обмена.</string>
     <string name="privacy_manage_account">Управлять данными сервера: экспорт или удаление</string>
+    <string name="air_alerts_title">Воздушные тревоги в Украине</string>
+    <string name="air_alerts_summary">Уведомлять о начале и отбое воздушной тревоги в любой области Украины, пока приложение открыто. Исследовательский прототип, не система безопасности.</string>
+    <string name="air_alerts_sign_in">Войдите на сервер обмена, чтобы включить уведомления о тревогах.</string>
+    <string name="air_alerts_unavailable">Этот сервер не настроил уведомления о тревогах.</string>
+    <string name="air_alerts_active">Областей с активной воздушной тревогой: %1$d</string>
+    <string name="air_alerts_stale">Данные о тревогах временно недоступны. Этот статус может быть устаревшим.</string>
+    <string name="air_alerts_error">Не удалось проверить тревоги. Попробуйте позже.</string>
+    <string name="air_alerts_permission">Уведомления Android выключены. Включите их, чтобы получать тревоги.</string>
+    <string name="air_alerts_notification_settings">Настройки уведомлений</string>
+    <string name="air_alerts_channel">Воздушные тревоги</string>
+    <string name="air_alerts_notification_start">Началась воздушная тревога</string>
+    <string name="air_alerts_notification_clear">Отбой воздушной тревоги</string>
+    <string name="air_alerts_notification_update">Обновление воздушных тревог</string>
+    <string name="air_alerts_notification_truncated">%1$s, …</string>
 </resources>

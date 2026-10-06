@@ -92,6 +92,12 @@ CREATE TABLE IF NOT EXISTS privacy_consents (
 );
 CREATE INDEX IF NOT EXISTS privacy_consents_current ON privacy_consents(account_id,purpose,id);
 
+CREATE TABLE IF NOT EXISTS air_alert_preferences (
+    account_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    enabled BIGINT NOT NULL DEFAULT 0,
+    updated_s BIGINT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS debug_sessions (
     id TEXT PRIMARY KEY, account_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     client_id TEXT NOT NULL, context_json TEXT NOT NULL,

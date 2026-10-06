@@ -627,4 +627,18 @@
     <string name="privacy_view_notice">Прочитати повідомлення %1$s</string>
     <string name="privacy_sign_in_first">Спершу ввійдіть на вибраний сервер обміну.</string>
     <string name="privacy_manage_account">Керувати даними сервера: експорт або видалення</string>
+    <string name="air_alerts_title">Повітряні тривоги в Україні</string>
+    <string name="air_alerts_summary">Сповіщати про початок і відбій повітряної тривоги в будь-якій області України, поки застосунок відкритий. Дослідницький прототип, не система безпеки.</string>
+    <string name="air_alerts_sign_in">Увійдіть на сервер обміну, щоб увімкнути сповіщення про тривоги.</string>
+    <string name="air_alerts_unavailable">Цей сервер не налаштував сповіщення про тривоги.</string>
+    <string name="air_alerts_active">Областей з активною повітряною тривогою: %1$d</string>
+    <string name="air_alerts_stale">Стрічка тривог тимчасово недоступна. Ці дані можуть бути застарілими.</string>
+    <string name="air_alerts_error">Не вдалося перевірити тривоги. Спробуйте пізніше.</string>
+    <string name="air_alerts_permission">Сповіщення Android вимкнені. Увімкніть їх, щоб отримувати тривоги.</string>
+    <string name="air_alerts_notification_settings">Налаштування сповіщень</string>
+    <string name="air_alerts_channel">Повітряні тривоги</string>
+    <string name="air_alerts_notification_start">Почалася повітряна тривога</string>
+    <string name="air_alerts_notification_clear">Відбій повітряної тривоги</string>
+    <string name="air_alerts_notification_update">Оновлення повітряних тривог</string>
+    <string name="air_alerts_notification_truncated">%1$s, …</string>
 </resources>

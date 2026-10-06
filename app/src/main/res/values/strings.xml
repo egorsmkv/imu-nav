@@ -617,4 +617,18 @@
     <string name="privacy_view_notice">Read %1$s privacy notice</string>
     <string name="privacy_sign_in_first">Sign in to the selected sharing server first.</string>
     <string name="privacy_manage_account">Manage server data: export or delete</string>
+    <string name="air_alerts_title">Air-raid alerts for Ukraine</string>
+    <string name="air_alerts_summary">Notify me when an air-raid alert starts or clears in any Ukrainian oblast while this app is open. Research prototype, not a safety system.</string>
+    <string name="air_alerts_sign_in">Sign in to the sharing server to enable air-raid alerts.</string>
+    <string name="air_alerts_unavailable">This server has not configured air-raid alerts.</string>
+    <string name="air_alerts_active">Oblasts with active air-raid alerts: %1$d</string>
+    <string name="air_alerts_stale">The alert feed is temporarily unavailable. This status may be outdated.</string>
+    <string name="air_alerts_error">Could not check air-raid alerts. Try again later.</string>
+    <string name="air_alerts_permission">Android notifications are off. Enable them to receive alerts.</string>
+    <string name="air_alerts_notification_settings">Notification settings</string>
+    <string name="air_alerts_channel">Air-raid alerts</string>
+    <string name="air_alerts_notification_start">Air-raid alert started</string>
+    <string name="air_alerts_notification_clear">Air-raid all-clear</string>
+    <string name="air_alerts_notification_update">Air-raid alert update</string>
+    <string name="air_alerts_notification_truncated">%1$s, …</string>
 </resources>
