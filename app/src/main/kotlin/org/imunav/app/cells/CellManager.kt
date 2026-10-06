@@ -176,6 +176,12 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
     /** Read the saved account directly so a trip can start before the next status refresh. */
     fun diagnosticAccountEmail(): String? = auth.email
 
+    /** Stable identity prevents email changes or a second server from mixing profiles. */
+    fun accountId(): Long = auth.accountId
+
+    /** Opaque server identity remains stable across email changes but not account deletion. */
+    fun syncIdentity(): String = auth.syncIdentity
+
     /** Do not capture precise location without a current local diagnostics receipt. */
     fun diagnosticConsentGranted(): Boolean = privacy.canCaptureDiagnostics(diagnosticServerUrl())
 

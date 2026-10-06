@@ -45,6 +45,12 @@ interface BookmarkStore {
     fun load(): List<Bookmark>
     fun save(bookmark: Bookmark)
     fun delete(id: String)
+
+    /** Replace one profile atomically so a failed restore cannot erase the previous snapshot. */
+    fun replaceAll(items: List<Bookmark>)
+
+    /** Release an inactive profile after a successful switch. */
+    fun close() = Unit
 }
 
 /** Renaming preserves identity, coordinates and all routing choices. */

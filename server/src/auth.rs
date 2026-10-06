@@ -50,6 +50,7 @@ pub struct Account {
 
 #[derive(Serialize)]
 struct SessionResponse {
+    sync_identity: String,
     access_token: String,
     refresh_token: String,
     expires_in: i64,
@@ -290,6 +291,7 @@ fn issue_session(
         ],
     )?;
     Ok(SessionResponse {
+        sync_identity: store.sync_identity(account.id)?,
         access_token,
         refresh_token,
         expires_in: ACCESS_LIFETIME,
@@ -686,6 +688,7 @@ async fn refresh(
         )?;
         transaction.commit()?;
         Ok(Some(SessionResponse {
+            sync_identity: store.sync_identity(account.id)?,
             access_token,
             refresh_token,
             expires_in: ACCESS_LIFETIME,

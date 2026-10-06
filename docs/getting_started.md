@@ -28,3 +28,5 @@ Offline navigation does not need a proxy. This setting does not act as a VPN for
 Sign in to a sharing server that has configured UkraineAlarm, then enable **Air-raid alerts for Ukraine** in Settings or on your server account page. The app shows current oblast-level air-raid status and sends Android notifications for starts and all-clears received while the app is open. Allow Android notifications for the app. The alert switch is off by default, uses no phone location, and does not provide a safety guarantee; consult official warning channels.
 
 See the [glossary](glossary.md) for unfamiliar terms and the [detailed setup reference](reference/getting_started.md) for permission and proxy behaviour.
+
+See [settings and bookmark synchronization](server/account-sync.md) for account restore, offline edits and deletion.

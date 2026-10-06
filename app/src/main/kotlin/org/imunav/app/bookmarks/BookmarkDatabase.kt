@@ -19,6 +19,8 @@ import org.imunav.core.route.TravelMode
 class BookmarkDatabase(context: Context, databaseName: String = "bookmarks.db") :
     SQLiteOpenHelper(context, databaseName, null, 1),
     BookmarkStore {
+    override fun close() = super<SQLiteOpenHelper>.close()
+
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
             "CREATE TABLE bookmarks (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, kind TEXT NOT NULL, " +
@@ -65,6 +67,14 @@ class BookmarkDatabase(context: Context, databaseName: String = "bookmarks.db") 
             // Atomic replacement by stable ID makes retry safe even after an interrupted UI update.
             delete("bookmarks", "id = ?", arrayOf(bookmark.id))
             insertOrThrow("bookmarks", null, values)
+        }
+    }
+
+    /** Replace a synchronized snapshot atomically, retaining the old data on write failure. */
+    override fun replaceAll(items: List<Bookmark>) {
+        writableDatabase.transaction {
+            delete("bookmarks", null, null)
+            items.forEach(::save)
         }
     }
 

@@ -119,3 +119,13 @@ CREATE TABLE IF NOT EXISTS debug_entries (
     PRIMARY KEY (session_id,seq,item)
 );
 CREATE INDEX IF NOT EXISTS debug_entries_kind ON debug_entries(session_id,kind,seq,item);
+
+CREATE TABLE IF NOT EXISTS account_sync_state (
+ account_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, generation BIGINT NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS account_sync_entries (
+ account_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE, kind TEXT NOT NULL, key TEXT NOT NULL,
+ revision BIGINT NOT NULL, value_json TEXT, PRIMARY KEY(account_id,kind,key)
+);
+
+CREATE TABLE IF NOT EXISTS account_sync_identity (account_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, identity TEXT NOT NULL);

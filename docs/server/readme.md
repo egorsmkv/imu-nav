@@ -47,3 +47,5 @@ quarantine a tower or change the publication policy. [API details](api.md) and t
 Start with the [newcomer glossary](glossary.md) for *contribution*, *consensus*, *quarantine*,
 *SQLite WAL*, *WebSocket* and other server terms. The [project glossary](../glossary.md) covers
 the app as a whole.
+
+See [settings and bookmark synchronization](account-sync.md) for account restore, offline edits and deletion.

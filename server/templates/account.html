@@ -33,6 +33,12 @@
     {% if privacy.configured %}<p>Diagnostics consent: {% if privacy.diagnostics_consent %}<strong>current</strong>{% else %}<strong>not current</strong>{% endif %}.</p>
     {% if privacy.diagnostics_consent %}<form action="/account/privacy/diagnostics/withdraw" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="danger" type="submit">Withdraw diagnostics consent and erase sessions</button></form>{% endif %}{% endif %}
   </section>
+  <section class="card" id="account-sync"><h2>Settings and bookmarks</h2>
+    <p>Private settings, saved places and routes sync between opted-in devices. Account exports include this data.</p>
+    {% if sync.enabled %}<p>Account synchronization is enabled.</p>
+    <form action="/account/privacy/account_sync/withdraw" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="danger" type="submit">Disable sync and erase server copy</button></form>
+    {% else %}<p>Account synchronization is off. Enable it in the app.</p>{% endif %}
+  </section>
   <section class="card" id="air-alerts"><h2>Air-raid alerts</h2><p>Receive nationwide oblast-level air-raid starts and all-clears while the Android app is open. The app uses system notifications; it is a research prototype, not a safety system.</p>
     {% if air_alerts.available %}
     {% if air_alerts.enabled %}<p>Air-raid alerts are enabled for this account.</p>{% else %}<p>Air-raid alerts are off for this account.</p>{% endif %}

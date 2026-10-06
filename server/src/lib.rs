@@ -1,5 +1,6 @@
 //! Persistent HTTP and WebSocket server for sharing cell-tower positions.
 
+mod account_sync;
 mod admin;
 mod air_alerts;
 mod api;

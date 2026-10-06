@@ -64,6 +64,12 @@ const MIGRATION_TABLES: &[(&str, &str)] = &[
         "id,account_id,purpose,notice_version,granted,at_s",
     ),
     ("air_alert_preferences", "account_id,enabled,updated_s"),
+    ("account_sync_state", "account_id,generation"),
+    ("account_sync_identity", "account_id,identity"),
+    (
+        "account_sync_entries",
+        "account_id,kind,key,revision,value_json",
+    ),
     (
         "debug_sessions",
         "id,account_id,client_id,context_json,created_s,updated_s,finished_s,incomplete,bytes",
@@ -239,8 +245,21 @@ fn initialize_schema(connection: &Connection) -> Result<()> {
          CREATE INDEX IF NOT EXISTS password_resets_expiry ON password_resets(expires_s);",
     )?;
     initialize_privacy_schema(connection)?;
+    initialize_account_sync_schema(connection)?;
     initialize_air_alert_schema(connection)?;
     initialize_debug_schema(connection)?;
+    Ok(())
+}
+
+fn initialize_account_sync_schema(connection: &Connection) -> Result<()> {
+    connection.execute_batch("CREATE TABLE IF NOT EXISTS account_sync_identity (account_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, identity TEXT NOT NULL)")?;
+    connection.execute_batch("CREATE TABLE IF NOT EXISTS account_sync_state (
+     account_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, generation INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS account_sync_entries (
+     account_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, kind TEXT NOT NULL, key TEXT NOT NULL,
+     revision INTEGER NOT NULL, value_json TEXT, PRIMARY KEY(account_id,kind,key)
+    );")?;
     Ok(())
 }
 
@@ -414,7 +433,14 @@ impl CellStore {
             )?;
             anyhow::ensure!(count == 0, "PostgreSQL target is not empty: {table}");
             // Older stopped databases may lack tables added after the original account schema.
-            if matches!(*table, "privacy_consents" | "air_alert_preferences") {
+            if matches!(
+                *table,
+                "privacy_consents"
+                    | "air_alert_preferences"
+                    | "account_sync_state"
+                    | "account_sync_entries"
+                    | "account_sync_identity"
+            ) {
                 let exists: i64 = source.query_row(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
                     [table],
@@ -568,6 +594,12 @@ impl CellStore {
                 .iter()
                 .map(|key| update_consensus_after_deletion(&transaction, key, policy))
                 .collect::<Result<Vec<_>>>()?;
+        } else if purpose == "account_sync" {
+            transaction.execute(
+                "DELETE FROM account_sync_entries WHERE account_id=?1",
+                [account_id],
+            )?;
+            transaction.execute("INSERT INTO account_sync_state(account_id,generation) VALUES (?1,1) ON CONFLICT(account_id) DO UPDATE SET generation=account_sync_state.generation+1", [account_id])?;
         } else {
             transaction.execute(
                 "DELETE FROM debug_sessions WHERE account_id=?1",
@@ -585,7 +617,7 @@ impl CellStore {
     /// Returns an error for an invalid purpose or a failed database transaction.
     pub fn replay_withdrawal(&self, account_id: i64, purpose: &str, policy: &Policy) -> Result<()> {
         anyhow::ensure!(
-            account_id > 0 && matches!(purpose, "tower_upload" | "diagnostics"),
+            account_id > 0 && matches!(purpose, "tower_upload" | "diagnostics" | "account_sync"),
             "invalid deletion replay entry"
         );
         let exists: bool = self.connection()?.query_row(
@@ -1260,6 +1292,7 @@ impl CellStore {
 
     /// Stream a machine-readable account archive without password hashes or bearer tokens.
     pub(crate) fn export_account_to_path(&self, account_id: i64, path: &Path) -> Result<()> {
+        let sync_entries = self.sync_entries(account_id)?;
         let connection = self.connection()?;
         let mut out = GzEncoder::new(std::fs::File::create(path)?, Compression::default());
         let mut emit = |record: serde_json::Value| -> Result<()> {
@@ -1269,6 +1302,9 @@ impl CellStore {
         };
         export_account_summary(&connection, account_id, &mut emit)?;
         export_air_alert_preference(&connection, account_id, &mut emit)?;
+        for entry in sync_entries {
+            emit(serde_json::json!({"type":"account_sync","entry":entry}))?;
+        }
         let mut statement = connection.prepare("SELECT purpose,notice_version,granted,at_s FROM privacy_consents WHERE account_id=?1 ORDER BY id")?;
         let mut rows = statement.query([account_id])?;
         while let Some(row) = rows.next()? {

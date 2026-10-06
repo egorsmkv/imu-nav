@@ -135,6 +135,7 @@ struct AccountTemplate {
     filter_to: String,
     sharing_enabled: bool,
     air_alerts: AirAlertAccountView,
+    sync: SyncAccountView,
     privacy: AccountPrivacyView,
     email_verified: bool,
     message: String,
@@ -146,6 +147,19 @@ struct AccountTemplate {
 struct AccountPagination {
     has_previous: bool,
     has_next: bool,
+}
+
+struct SyncAccountView {
+    enabled: bool,
+}
+
+async fn sync_account_view(state: &AppState, account: i64) -> Result<SyncAccountView, ApiError> {
+    let store = state.store.clone();
+    let version = crate::account_sync::notice_version(state);
+    Ok(SyncAccountView {
+        enabled: run_db(move || store.has_privacy_consent(account, "account_sync", &version))
+            .await?,
+    })
 }
 
 struct AccountPrivacyView {
@@ -933,6 +947,7 @@ async fn account_page(
     }).await?;
     let total = contributions.total;
     let privacy = account_privacy_view(&state, account.id).await?;
+    let sync = sync_account_view(&state, account.id).await?;
     let has_next = offset + PAGE_SIZE < total;
     render(
         StatusCode::OK,
@@ -961,6 +976,7 @@ async fn account_page(
                 available: state.air_alerts.configured(),
             },
             privacy,
+            sync,
             email_verified,
             message: account_message(query.message.as_deref()).to_owned(),
             sessions,
@@ -1072,7 +1088,11 @@ async fn withdraw_privacy(
     if form.csrf != csrf_token(&raw) {
         return Ok(error_page(StatusCode::FORBIDDEN, "Invalid form token."));
     }
-    if state.config.privacy.is_none() || !matches!(purpose.as_str(), "tower_upload" | "diagnostics")
+    if (state.config.privacy.is_none() && purpose != "account_sync")
+        || !matches!(
+            purpose.as_str(),
+            "tower_upload" | "diagnostics" | "account_sync"
+        )
     {
         return Ok(error_page(
             StatusCode::NOT_FOUND,

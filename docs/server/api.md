@@ -69,3 +69,5 @@ The account JSON includes `email_verified` and
 `sharing_enabled`, and uploads return 403 while either condition blocks sharing.
 All uploads also require a valid 8–64 character `X-Device-Id` made of letters, digits
 or hyphens. The server no longer uses the client IP as an identifier when this header is absent.
+
+See [settings and bookmark synchronization](account-sync.md) for account restore, offline edits and deletion.

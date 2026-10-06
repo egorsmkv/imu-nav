@@ -15,3 +15,5 @@ Bookmarks keep places and routes on this phone so you can use them again, even w
 A saved route keeps its own copy of each endpoint. Renaming or deleting a saved place does not change that route. Bookmarks stay in a local database; they do not sync or have a file backup.
 
 See the [glossary](glossary.md) and the [detailed bookmarks reference](reference/bookmarks.md) for storage and active-trip behaviour.
+
+See [settings and bookmark synchronization](server/account-sync.md) for account restore, offline edits and deletion.

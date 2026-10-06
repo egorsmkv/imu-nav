@@ -50,6 +50,7 @@ import org.imunav.app.routing.SmartRouter
 import org.imunav.app.search.PlaceSearch
 import org.imunav.app.sensors.SensorHub
 import org.imunav.app.service.NavService
+import org.imunav.app.sync.AccountSync
 import org.imunav.app.trips.TripManager
 import org.imunav.app.voice.Voice
 import org.imunav.core.Tuning
@@ -355,11 +356,13 @@ class AppGraph(private val context: Context) {
     fun setPhoneVisible(visible: Boolean) {
         displays.phone(visible)
         airAlerts.setVisible(visible)
+        accountSync.setVisible(visible)
         updateDisplays()
     }
 
     fun setCarVisible(id: String, visible: Boolean) {
         displays.car(id, visible)
+        accountSync.setVisible(displays.hasConsumer)
         updateDisplays()
     }
 
@@ -382,6 +385,8 @@ class AppGraph(private val context: Context) {
             idleRefresh = null
         }
     }
+    val accountSync by lazy { AccountSync(context, this) }
+
     private var tickCount = 0L
 
     init {

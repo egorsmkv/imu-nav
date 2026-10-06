@@ -630,4 +630,16 @@
     <string name="air_alerts_notification_clear">Air-raid all-clear</string>
     <string name="air_alerts_notification_update">Air-raid alert update</string>
     <string name="air_alerts_notification_truncated">%1$s, …</string>
+
+    <string name="account_sync_title">Settings and bookmarks</string>
+    <string name="account_sync_summary">Restore your preferences, saved places and routes when you sign in.</string>
+    <string name="account_sync_consent">Store selected settings, bookmark names, coordinates and saved route endpoints privately on your sharing server? Account settings will be restored and bookmarks merged. Passwords, downloaded maps and device permissions stay on this phone.</string>
+    <string name="account_sync_enable">Enable sync</string>
+    <string name="account_sync_disable">Disable and erase server copy</string>
+    <string name="account_sync_delete_notice">Stops sync immediately and deletes synced settings and bookmarks from the server when connected. Private local copies remain on this device.</string>
+    <string name="account_sync_unavailable">This server does not support account sync.</string>
+    <string name="account_sync_busy">Synchronizing…</string>
+    <string name="account_sync_failed">Could not sync. Your local changes are saved; try again.</string>
+    <string name="account_sync_conflict">A conflicting edit was resolved using the server version.</string>
+    <string name="account_sync_local">Works offline. Account data is hidden when you sign out.</string>
 </resources>

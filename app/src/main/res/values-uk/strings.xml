@@ -640,4 +640,16 @@
     <string name="air_alerts_notification_clear">Відбій повітряної тривоги</string>
     <string name="air_alerts_notification_update">Оновлення повітряних тривог</string>
     <string name="air_alerts_notification_truncated">%1$s, …</string>
+
+    <string name="account_sync_title">Налаштування й закладки</string>
+    <string name="account_sync_summary">Відновлюйте налаштування, збережені місця й маршрути після входу.</string>
+    <string name="account_sync_consent">Зберігати вибрані налаштування, назви й координати закладок та кінцеві точки маршрутів приватно на сервері обміну? Налаштування облікового запису буде відновлено, а закладки об’єднано. Паролі, завантажені карти й дозволи залишаться на телефоні.</string>
+    <string name="account_sync_enable">Увімкнути синхронізацію</string>
+    <string name="account_sync_disable">Вимкнути й видалити копію на сервері</string>
+    <string name="account_sync_delete_notice">Синхронізація зупиниться одразу. За наявності з’єднання налаштування й закладки буде видалено із сервера. Приватні локальні копії залишаться на пристрої.</string>
+    <string name="account_sync_unavailable">Цей сервер не підтримує синхронізацію.</string>
+    <string name="account_sync_busy">Синхронізація…</string>
+    <string name="account_sync_failed">Не вдалося синхронізувати. Локальні зміни збережено; спробуйте ще раз.</string>
+    <string name="account_sync_conflict">Для суперечливих змін використано версію сервера.</string>
+    <string name="account_sync_local">Працює без інтернету. Дані облікового запису приховано після виходу.</string>
 </resources>

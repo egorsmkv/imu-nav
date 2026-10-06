@@ -135,6 +135,7 @@ pub fn router(state: AppState) -> Router {
         .merge(auth::router())
         .merge(web::router())
         .merge(crate::privacy::router())
+        .merge(crate::account_sync::router())
         .merge(crate::air_alerts::router())
         .route("/health", get(health))
         .route("/v1/cells", post(upload_cells))

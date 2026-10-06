@@ -32,7 +32,7 @@ The account panel exports a gzip-compressed NDJSON file with account fields, the
 2. Set reverse proxy and container log retention to 30 days or less. Do not log request bodies, cookies, authorization headers, full IPs or device IDs. The app server's own request log records only route, status and duration; in-memory IPs are used for rate limiting.
 3. Encrypt backups, limit access, and delete each backup within 30 days. Keep the server's structured `privacy withdrawal committed`, `privacy erasure committed`, and `privacy account closed` events for at least as long as the oldest retained backup, within the 30-day log limit.
 
-   Before restoring, extract events newer than the snapshot into a reviewed CSV in chronological order. Use `account_id,purpose` as headers; purposes are `tower_upload`, `diagnostics`, or `account` for closure.
+   Before restoring, extract events newer than the snapshot into a reviewed CSV in chronological order. Use `account_id,purpose` as headers; purposes are `tower_upload`, `diagnostics`, `account_sync`, or `account` for closure.
 
    With the server stopped, restore the snapshot, then run `imu-nav-cell-server --config server/config.toml --replay-deletions /secure/replay.csv` before reopening traffic. The command reapplies consent withdrawals, stored-data deletion, and tower consensus changes, and invalidates all restored sessions and one-use links; users must sign in again.
 
@@ -41,3 +41,5 @@ The account panel exports a gzip-compressed NDJSON file with account fields, the
 5. Maintain an incident response contact and record. If personal data is breached, assess risk promptly and follow applicable notification duties, including the GDPR's 72-hour supervisory-authority rule when notification is required. [GDPR Articles 33–34](https://eur-lex.europa.eu/eli/reg/2016/679).
 
 This template provides controls but does not determine a deployment's lawful bases, processor agreements, transfer safeguards, or local legal obligations. The operator must supply and verify those facts.
+
+Account synchronization has its own `account_sync` consent. It stores private preferences and bookmark recipes until withdrawal or account closure. Account exports include the records. Withdrawing erases values and deletion markers; a non-location generation counter prevents old devices from republishing them. Update the deployment notice version before offering this new purpose.

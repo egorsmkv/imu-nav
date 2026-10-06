@@ -37,6 +37,8 @@ fn populate_migration_source(path: &std::path::Path) -> Result<()> {
         "INSERT INTO users(id,email,password_hash,admin) VALUES (2,'driver@example.org','hash',0);
          INSERT INTO privacy_consents(id,account_id,purpose,notice_version,granted,at_s) VALUES (1,2,'tower_upload','v1',1,100);
          INSERT INTO air_alert_preferences(account_id,enabled,updated_s) VALUES (2,1,100);
+         INSERT INTO account_sync_state(account_id,generation) VALUES (2,3);
+         INSERT INTO account_sync_entries(account_id,kind,key,revision,value_json) VALUES (2,'setting','voice',2,'false');
          INSERT INTO tower_moderation(radio,mcc,mnc,area,cid,quarantined) VALUES ('LTE',255,1,100,202,1);
          INSERT INTO tower_removals(radio,mcc,mnc,area,cid,updated_s) VALUES ('LTE',255,1,100,201,101);
          INSERT INTO server_settings(key,value) VALUES ('debug_upload_enabled','1');
@@ -76,6 +78,9 @@ fn assert_migrated_tables(source_path: &std::path::Path, url: &str) -> Result<()
         "password_resets",
         "privacy_consents",
         "air_alert_preferences",
+        "account_sync_identity",
+        "account_sync_state",
+        "account_sync_entries",
         "debug_sessions",
         "debug_batches",
         "debug_entries",
@@ -219,6 +224,7 @@ async fn api_auth_upload_and_private_diagnostics_use_postgres() -> Result<()> {
     exercise_browser(&base).await?;
     exercise_admin_mutations(&base).await?;
     exercise_paged_public_exports(&base, &url).await?;
+    exercise_account_sync(&base).await?;
     exercise_privacy_withdrawal(&base, &url).await?;
     task.abort();
     Ok(())
@@ -601,5 +607,58 @@ async fn exercise_paged_public_exports(base: &str, url: &str) -> Result<()> {
         .text()
         .await?;
     assert!(removals.lines().count() >= 601);
+    Ok(())
+}
+
+async fn exercise_account_sync(base: &str) -> Result<()> {
+    use serde_json::json;
+    let client = reqwest::Client::new();
+    let login: serde_json::Value = client
+        .post(format!("{base}/v1/auth/login"))
+        .json(&json!({"email":"driver@example.org","password":"correct horse battery staple"}))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let token = login["access_token"].as_str().expect("token");
+    let consent = format!("{base}/v1/privacy/consents/account_sync");
+    client
+        .put(&consent)
+        .bearer_auth(token)
+        .json(&json!({"notice_version":"v1"}))
+        .send()
+        .await?
+        .error_for_status()?;
+    let endpoint = format!("{base}/v1/account-sync");
+    let entry = json!({"kind":"setting","key":"language","revision":0,"value":"uk"});
+    let update = json!({"version":1,"generation":0,"changes":[entry]});
+    let saved: serde_json::Value = client
+        .put(&endpoint)
+        .bearer_auth(token)
+        .json(&update)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert_eq!(saved["entries"][0]["value"], "uk");
+    client
+        .delete(&consent)
+        .bearer_auth(token)
+        .send()
+        .await?
+        .error_for_status()?;
+    let cleared: serde_json::Value = client
+        .get(&endpoint)
+        .bearer_auth(token)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert_eq!(cleared["enabled"], false);
+    assert_eq!(cleared["generation"], 1);
+    assert_eq!(cleared["entries"], json!([]));
     Ok(())
 }

@@ -3209,3 +3209,117 @@ async fn impersonation_rejects_suspended_users_and_signout_revokes_admin() -> Re
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn account_sync_requires_consent_and_rejects_stale_generation() -> Result<()> {
+    use serde_json::json;
+    let server = start_server().await?;
+    let client = reqwest::Client::new();
+    let endpoint = format!("{}/v1/account-sync", server.base_url);
+    assert_eq!(
+        client.get(&endpoint).send().await?.status(),
+        StatusCode::UNAUTHORIZED
+    );
+    let snapshot: serde_json::Value = sync_snapshot(&server).await?;
+    assert_eq!(snapshot["enabled"], false);
+    assert_eq!(snapshot["notice_version"], "local");
+    let update = json!({"version":1,"generation":0,"changes":[{"kind":"setting","key":"voice","revision":0,"value":false}]});
+    assert_eq!(
+        client
+            .put(&endpoint)
+            .bearer_auth(&server.token)
+            .json(&update)
+            .send()
+            .await?
+            .status(),
+        StatusCode::CONFLICT
+    );
+    let consent = format!("{}/v1/privacy/consents/account_sync", server.base_url);
+    assert_eq!(
+        client
+            .put(&consent)
+            .bearer_auth(&server.token)
+            .json(&json!({"notice_version":"wrong"}))
+            .send()
+            .await?
+            .status(),
+        StatusCode::CONFLICT
+    );
+    client
+        .put(&consent)
+        .bearer_auth(&server.token)
+        .json(&json!({"notice_version":"local"}))
+        .send()
+        .await?
+        .error_for_status()?;
+    let saved: serde_json::Value = client
+        .put(&endpoint)
+        .bearer_auth(&server.token)
+        .json(&update)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert_eq!(saved["entries"][0]["revision"], 1);
+    assert_eq!(saved["entries"][0]["value"], false);
+    let retry: serde_json::Value = client
+        .put(&endpoint)
+        .bearer_auth(&server.token)
+        .json(&update)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert_eq!(retry["entries"], saved["entries"]);
+    let invalid = json!({"version":1,"generation":0,"changes":[{"kind":"setting","key":"password","revision":0,"value":"secret"}]});
+    assert_eq!(
+        client
+            .put(&endpoint)
+            .bearer_auth(&server.token)
+            .json(&invalid)
+            .send()
+            .await?
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+    client
+        .delete(&consent)
+        .bearer_auth(&server.token)
+        .send()
+        .await?
+        .error_for_status()?;
+    client
+        .put(&consent)
+        .bearer_auth(&server.token)
+        .json(&json!({"notice_version":"local"}))
+        .send()
+        .await?
+        .error_for_status()?;
+    assert_eq!(
+        client
+            .put(&endpoint)
+            .bearer_auth(&server.token)
+            .json(&update)
+            .send()
+            .await?
+            .status(),
+        StatusCode::CONFLICT
+    );
+    let empty: serde_json::Value = sync_snapshot(&server).await?;
+    assert_eq!(empty["generation"], 1);
+    assert_eq!(empty["entries"], json!([]));
+    Ok(())
+}
+
+async fn sync_snapshot(server: &TestServer) -> Result<serde_json::Value> {
+    Ok(reqwest::Client::new()
+        .get(format!("{}/v1/account-sync", server.base_url))
+        .bearer_auth(&server.token)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?)
+}

@@ -62,6 +62,22 @@ class BookmarkDatabaseTest {
     }
 
     @Test
+    fun failedSnapshotRestorePreservesAllOriginalBookmarks() {
+        val first = SavedPlace("first", "Home", point)
+        val second = SavedPlace("second", "Work", point)
+        BookmarkDatabase(context, databaseName).use { db ->
+            db.replaceAll(listOf(first, second))
+            db.writableDatabase.execSQL("CREATE TRIGGER fail_snapshot BEFORE INSERT ON bookmarks BEGIN SELECT RAISE(ABORT, 'test failure'); END")
+            try {
+                db.replaceAll(listOf(first.copy(name = "Changed")))
+                fail("Expected snapshot rollback")
+            } catch (_: SQLiteException) {
+                assertEquals(setOf(first, second), db.load().toSet())
+            }
+        }
+    }
+
+    @Test
     fun failedReplacementRollsBackTheOriginalRow() {
         val place = SavedPlace("place", "Home", point)
         BookmarkDatabase(context, databaseName).use { db ->

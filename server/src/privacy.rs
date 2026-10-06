@@ -33,6 +33,7 @@ struct PrivacyState {
     notice: PrivacyNotice,
     tower_upload: bool,
     diagnostics: bool,
+    account_sync: bool,
 }
 
 #[derive(Deserialize)]
@@ -70,10 +71,11 @@ async fn mine(
     let notice = configured(&state)?;
     let store = state.store.clone();
     let version = notice.version.clone();
-    let (tower_upload, diagnostics) = run_db(move || {
+    let (tower_upload, diagnostics, account_sync) = run_db(move || {
         Ok((
             store.has_privacy_consent(account.id, "tower_upload", &version)?,
             store.has_privacy_consent(account.id, "diagnostics", &version)?,
+            store.has_privacy_consent(account.id, "account_sync", &version)?,
         ))
     })
     .await?;
@@ -81,11 +83,12 @@ async fn mine(
         notice,
         tower_upload,
         diagnostics,
+        account_sync,
     }))
 }
 
 fn valid_purpose(purpose: &str) -> Result<(), ApiError> {
-    if matches!(purpose, "tower_upload" | "diagnostics") {
+    if matches!(purpose, "tower_upload" | "diagnostics" | "account_sync") {
         Ok(())
     } else {
         Err(ApiError(StatusCode::NOT_FOUND, "NOT_FOUND"))
@@ -100,8 +103,12 @@ async fn grant(
 ) -> Result<StatusCode, ApiError> {
     valid_purpose(&purpose)?;
     let account = auth::bearer_account(&state, &headers).await?;
-    let notice = configured(&state)?;
-    if request.notice_version != notice.version {
+    let version = if purpose == "account_sync" {
+        crate::account_sync::notice_version(&state)
+    } else {
+        configured(&state)?.version
+    };
+    if request.notice_version != version {
         return Err(ApiError(StatusCode::CONFLICT, "NOTICE_CHANGED"));
     }
     let _gate = state.write_gate.write().await;
@@ -118,7 +125,9 @@ async fn withdraw(
 ) -> Result<StatusCode, ApiError> {
     valid_purpose(&purpose)?;
     let account = auth::bearer_account(&state, &headers).await?;
-    configured(&state)?;
+    if purpose != "account_sync" {
+        configured(&state)?;
+    }
     let _gate = state.write_gate.write().await;
     let store = state.store.clone();
     let policy = state.policy();

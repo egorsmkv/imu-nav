@@ -20,7 +20,7 @@ data class BookmarkState(val items: List<Bookmark> = emptyList(), val loaded: Bo
 data class BookmarkEdit(val bookmark: Bookmark, val name: String = bookmark.name)
 
 /** Serializes local operations on the main scope, with blocking persistence on IO. */
-class Bookmarks(private val store: BookmarkStore, private val scope: CoroutineScope, private val io: CoroutineDispatcher = Dispatchers.IO) {
+class Bookmarks(private var store: BookmarkStore, private val scope: CoroutineScope, private val io: CoroutineDispatcher = Dispatchers.IO) {
     private val _state = MutableStateFlow(BookmarkState())
     val state = _state.asStateFlow()
     private val _editor = MutableStateFlow<BookmarkEdit?>(null)
@@ -79,6 +79,44 @@ class Bookmarks(private val store: BookmarkStore, private val scope: CoroutineSc
             withContext(io) { store.delete(bookmark.id) }
             _state.value = _state.value.copy(items = _state.value.items.filterNot { it.id == bookmark.id })
             _deleting.value = null
+        }
+    }
+
+    /** Switch only between completed edits so writes cannot cross account boundaries. */
+    // Any storage failure must restore the previous visible profile before propagating the error.
+    @Suppress("TooGenericExceptionCaught")
+    suspend fun selectStore(next: BookmarkStore, seed: List<Bookmark>? = null) {
+        check(!_state.value.busy)
+        val previous = _state.value
+        _state.value = BookmarkState(busy = true)
+        _editor.value = null
+        _deleting.value = null
+        try {
+            val items = withContext(io) {
+                if (seed != null) next.replaceAll(seed)
+                next.load()
+            }
+            withContext(io) { store.close() }
+            store = next
+            _state.value = BookmarkState(items = items.matching(""), loaded = true)
+        } catch (error: Exception) {
+            _state.value = previous.copy(failed = true)
+            withContext(io) { next.close() }
+            throw error
+        } finally {
+            _state.value = _state.value.copy(busy = false)
+        }
+    }
+
+    /** Server updates and user edits share the same busy guard and transactional persistence. */
+    suspend fun replaceAll(items: List<Bookmark>) {
+        check(!_state.value.busy)
+        _state.value = _state.value.copy(busy = true)
+        try {
+            withContext(io) { store.replaceAll(items) }
+            _state.value = _state.value.copy(items = items.matching(""))
+        } finally {
+            _state.value = _state.value.copy(busy = false)
         }
     }
 
