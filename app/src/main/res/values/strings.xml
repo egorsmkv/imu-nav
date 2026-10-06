@@ -420,10 +420,10 @@
     <string name="power_performance">Max accuracy</string>
     <string name="power_balanced">Balanced</string>
     <string name="power_saver">Battery saver</string>
-    <string name="power_auto_hint" formatted="false">Max accuracy on a charger, battery saver below 20 % or when the phone\'s battery saver is on, balanced otherwise.</string>
+    <string name="power_auto_hint" formatted="false">Auto keeps sensor settings tied to charging and battery level. On phones with low RAM or up to 4 GB RAM, the map uses 15 FPS without camera animation or tile prefetch.</string>
     <string name="power_auto_now">Now: %1$s · battery %2$s</string>
-    <string name="power_performance_hint">Frequent sensor updates and a smoother map. Uses the most battery.</string>
-    <string name="power_balanced_hint">Balances sensor updates, map smoothness and battery life. Recommended.</string>
+    <string name="power_performance_hint">Frequent sensor updates and a smoother map. Overrides reduced map rendering on low-memory phones. Uses the most battery.</string>
+    <string name="power_balanced_hint">Balances sensor updates and battery life. On phones with low RAM or up to 4 GB RAM, the map uses 15 FPS without camera animation or tile prefetch.</string>
     <string name="power_saver_hint">Fewer sensor and network updates. No map animation or jamming indicator. Turn detection may be less precise.</string>
     <string name="power_screen_on">Keep screen on while navigating</string>
     <string name="power_screen_on_summary">Turn off to save battery and follow voice directions with the screen off.</string>

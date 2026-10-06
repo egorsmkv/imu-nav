@@ -2,6 +2,7 @@ package org.imunav.app.maps
 
 import android.graphics.Color
 import androidx.core.graphics.toColorInt
+import kotlinx.coroutines.ensureActive
 import org.imunav.core.geo.GeoPoint
 import org.imunav.core.route.Route
 import org.maplibre.android.maps.Style
@@ -15,6 +16,7 @@ import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
 import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
+import kotlin.coroutines.coroutineContext
 import kotlin.math.cos
 import kotlin.math.pow
 
@@ -94,9 +96,15 @@ fun addNavigationLayers(s: Style) {
 }
 
 /** Encoding a large polyline belongs on a worker; both renderers share this representation. */
-fun routeFeatures(route: Route?): FeatureCollection = FeatureCollection.fromFeatures(
-    if (route == null) emptyList() else listOf(Feature.fromGeometry(LineString.fromLngLats(route.geometry.map { Point.fromLngLat(it.lon, it.lat) }))),
-)
+suspend fun routeFeatures(route: Route?): FeatureCollection {
+    val coordinates = route?.geometry?.map { point ->
+        coroutineContext.ensureActive()
+        Point.fromLngLat(point.lon, point.lat)
+    }
+    return FeatureCollection.fromFeatures(
+        if (coordinates == null) emptyList() else listOf(Feature.fromGeometry(LineString.fromLngLats(coordinates))),
+    )
+}
 
 /** Clear missing coordinates instead of leaving a stale trusted-looking marker on either display. */
 fun updateMapPoint(style: Style, source: String, point: GeoPoint?) {

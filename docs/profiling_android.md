@@ -12,9 +12,9 @@ The ZIP contains:
 
 | File | What it records |
 | --- | --- |
-| `manifest.json` | App/device version, capture times, completion state and dropped-entry counts. |
+| `manifest.json` | App/device version, build flavor/type and source revision, capture times, rendering policy, completion state and dropped-entry counts. |
 | `methods.trace` | Sampled Kotlin/Java method stacks for this app process; present only after a clean stop. |
-| `memory.csv` | Process Java heap use, native heap allocation, proportional set size and CPU time sampled every five seconds. |
+| `memory.csv` | Java/native heap counters and CPU time every five seconds; detailed process memory at start, every 15 seconds and at stop. |
 | `native-timings.json` | Call counts, total time and longest call for selected Rust JNI operations. |
 | `logs.txt` | App diagnostic log lines emitted during the capture, with credential-shaped values redacted. |
 | `trip-events.rec` | Trip recorder events produced during the capture, if navigating. |
@@ -37,3 +37,48 @@ preparing another capture. Android may clear them from app cache earlier.
 
 **Before sharing:** trip events and logs may contain precise locations and sensor data. Check the
 destination carefully.
+
+## Reading schema 2 captures
+
+`memory.csv` keeps the original five columns and adds Android memory-summary categories and
+`memory_sample_duration_ms`. PSS and summary columns are empty on cheap samples. Do not fill
+these gaps with zero or treat a previous PSS value as a new measurement. Older schema 1 archives
+have PSS on every sample and remain useful; inspect `manifest.json` before comparing formats.
+
+The `summary_*_kb` columns use Android's memory-summary definitions, including private Java,
+native, graphics, code, other and stack memory, and the system contribution. They are not separate
+PSS measurements. Java heap use, native allocation and total PSS overlap: do not add them together.
+Memory-sampling duration helps identify capture overhead on slower devices.
+
+The manifest records the effective map FPS, camera animation, prefetch setting and device RAM
+classification under `start.rendering`. This is a snapshot at capture start. Build source revisions
+come from CI, `-PsourceRevision=...`, or local Git when available; a revision alone does not identify
+uncommitted changes. Keep the exact APK and its matching R8 `mapping.txt` for every comparison.
+CI APK artifacts include mappings by build variant. A mapping from a later build cannot reliably
+explain obfuscated methods in an earlier trace.
+
+## Comparing changes
+
+Use the same device, pack, actions and power conditions. Compare five paired runs and separate
+cold route planning from warm runs. Both builds must use the same capture instrumentation;
+otherwise reduced profiling overhead can look like an application improvement.
+
+Compare process CPU, peak and settled PSS, and frame timing. Repeat map/settings/history transitions
+and background/resume to investigate retained memory. A short rise while loading tiles or touching
+memory-mapped routing data does not establish a leak. Managed traces omit native internal stacks;
+use a system/native profile when allocation ownership remains unclear.
+
+## Map rendering on constrained phones
+
+Phones that Android identifies as low RAM, or with at most 4 GiB of physical RAM, use a 15 FPS map
+cap with no automatic camera glide or lower-resolution tile prefetch in Auto, Balanced and Battery
+saver modes. This also applies when Auto selects faster sensor sampling on a charger. Detection runs
+once off the main thread; existing rendering settings apply until it finishes.
+
+**Max accuracy** explicitly restores normal rendering settings. Sensor sampling and navigation
+accuracy continue to follow the selected power profile. Reduced prefetch can leave newly visited
+areas blank longer while their tiles load. The same policy applies to the phone, trip history and
+Android Auto maps.
+
+Hidden maps retain their view but defer style, geometry and camera updates until visible. Android
+memory-pressure callbacks release MapLibre resources without deleting offline packs or trip data.

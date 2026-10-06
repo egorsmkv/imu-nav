@@ -1,11 +1,13 @@
 package org.imunav.app.power
 
+import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
 import android.os.PowerManager
 import androidx.core.content.edit
+import org.imunav.core.power.MapRenderingBudget
 
 /** User-selectable trade-off between accuracy/smoothness and battery. */
 enum class PowerMode { AUTO, PERFORMANCE, BALANCED, SAVER }
@@ -32,7 +34,14 @@ data class PowerProfile(
     val animateCamera: Boolean,
     /** Publish UI state every N engine ticks (500 ms each) while the screen shows the app. */
     val uiEveryTicks: Int,
+    val mapPrefetchZoomDelta: Int = MapRenderingBudget.DEFAULT_PREFETCH_ZOOM_DELTA,
 ) {
+    /** Change only map costs; the selected profile remains authoritative for positioning inputs. */
+    fun withRenderingBudget(constrained: Boolean, explicitPerformance: Boolean): PowerProfile {
+        val budget = MapRenderingBudget.resolve(constrained, explicitPerformance, mapMaxFps, animateCamera)
+        return copy(mapMaxFps = budget.maximumFps, animateCamera = budget.animateCamera, mapPrefetchZoomDelta = budget.prefetchZoomDelta)
+    }
+
     companion object {
         val PERFORMANCE = PowerProfile("performance", 20_000, 5_000, 5_000, 10_000, 1_000, true, 60, true, 1)
         val BALANCED = PowerProfile("balanced", 40_000, 10_000, 5_000, 15_000, 3_000, true, 30, true, 1)
@@ -43,6 +52,21 @@ data class PowerProfile(
 /** Remembers the chosen mode and resolves AUTO from battery level and the system battery saver. */
 class PowerPolicy(private val context: Context) {
     private val prefs = context.getSharedPreferences("power", Context.MODE_PRIVATE)
+
+    @Volatile var constrainedDevice: Boolean = false
+        private set
+
+    @Volatile var totalRamBytes: Long = 0
+        private set
+
+    /** Called once on an I/O worker; publish the result before resolving a new profile on main. */
+    fun detectDeviceCapacity() {
+        val manager = context.getSystemService(ActivityManager::class.java) ?: return
+        val info = ActivityManager.MemoryInfo()
+        manager.getMemoryInfo(info)
+        totalRamBytes = info.totalMem
+        constrainedDevice = MapRenderingBudget.isConstrained(manager.isLowRamDevice, totalRamBytes)
+    }
 
     var mode: PowerMode
         get() = PowerMode.entries.firstOrNull { it.name == prefs.getString("mode", null) } ?: PowerMode.AUTO
@@ -68,7 +92,12 @@ class PowerPolicy(private val context: Context) {
     }.getOrDefault(false)
 
     /** AUTO: full rate on a charger, saver under 20 % or with the system battery saver on, else balanced. */
-    fun resolve(): PowerProfile = when (mode) {
+    fun resolve(): PowerProfile {
+        val selected = mode
+        return baseProfile(selected).withRenderingBudget(constrainedDevice, selected == PowerMode.PERFORMANCE)
+    }
+
+    private fun baseProfile(selected: PowerMode): PowerProfile = when (selected) {
         PowerMode.PERFORMANCE -> PowerProfile.PERFORMANCE
 
         PowerMode.BALANCED -> PowerProfile.BALANCED

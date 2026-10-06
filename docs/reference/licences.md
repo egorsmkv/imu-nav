@@ -95,6 +95,7 @@ These tools are not distributed with the app.
 | Photon (komoot)                       | online address search fallback (only if allowed)                              | free public service; data © OpenStreetMap |
 
 Android car instrumentation tests also use AndroidX Car App Testing 1.7.0 (Apache 2.0).
+Its transitive Robolectric dependencies are excluded from device tests, which run on Android itself.
 Android bookmark instrumentation tests additionally use AndroidX Test Runner 1.6.2 and AndroidX
 JUnit extensions 1.2.1 (Apache 2.0); these are test-only dependencies and are not included in the app.
 

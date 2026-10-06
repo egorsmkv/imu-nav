@@ -72,11 +72,14 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.imunav.app.AppGraph
 import org.imunav.app.R
+import org.imunav.app.maps.MapMemoryCallbacks
 import org.imunav.app.maps.mapStyle
+import org.imunav.app.power.PowerProfile
 import org.imunav.app.trips.TripSummary
 import org.imunav.app.trips.TripTracks
 import org.imunav.app.trips.extractTracks
@@ -94,9 +97,11 @@ import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory
 import org.maplibre.android.style.sources.GeoJsonSource
 import org.maplibre.geojson.Feature
+import org.maplibre.geojson.FeatureCollection
 import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
 import java.util.Date
+import kotlin.coroutines.coroutineContext
 import android.graphics.Color as AColor
 
 private val GpsGreen = Color(0xFF1E8E3E)
@@ -249,7 +254,14 @@ fun TripDetailScreen(app: AppGraph, trip: TripSummary, onBack: () -> Unit) {
                         Text(stringResource(R.string.trip_loading), style = MaterialTheme.typography.bodySmall)
                     }
                 } else {
-                    TrackMap(t.gps, t.engine, matched.orEmpty(), Modifier.fillMaxSize(), offlineStyle = app.offlineMap::styleJson)
+                    TrackMap(
+                        t.gps,
+                        t.engine,
+                        matched.orEmpty(),
+                        Modifier.fillMaxSize(),
+                        app.powerProfile.collectAsStateWithLifecycle().value,
+                        offlineStyle = app.offlineMap::styleJson,
+                    )
                 }
             }
             FlowRow(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -349,16 +361,32 @@ private fun LegendDot(color: Color, label: String) {
 
 /** Read-only map showing a trip's tracks, zoomed to fit them. */
 @Composable
-private fun TrackMap(gps: List<GeoPoint>, engine: List<GeoPoint>, matched: List<GeoPoint>, modifier: Modifier, offlineStyle: (dark: Boolean) -> String? = { null }) {
+private fun TrackMap(
+    gps: List<GeoPoint>,
+    engine: List<GeoPoint>,
+    matched: List<GeoPoint>,
+    modifier: Modifier,
+    power: PowerProfile,
+    offlineStyle: (dark: Boolean) -> String? = { null },
+) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val dark = isSystemInDarkTheme()
     val mapView = remember { MapView(context).apply { onCreate(null) } }
     var style by remember { mutableStateOf<Style?>(null) }
     var mapRef by remember { mutableStateOf<org.maplibre.android.maps.MapLibreMap?>(null) }
+    var visible by remember { mutableStateOf(false) }
+    var disposed by remember { mutableStateOf(false) }
+    var readyStyle by remember { mutableStateOf<Style?>(null) }
+    var appliedTracks by remember { mutableStateOf<AppliedTracks?>(null) }
+    var requestedKey by remember { mutableStateOf<Pair<Boolean, String?>?>(null) }
+    var styleGeneration by remember { mutableStateOf(0L) }
+    val desiredStyle = offlineStyle(dark)
 
     DisposableEffect(lifecycle) {
+        val memory = MapMemoryCallbacks(context, mapView::onLowMemory)
         val obs = LifecycleEventObserver { _, e ->
+            visible = lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
             when (e) {
                 Lifecycle.Event.ON_START -> mapView.onStart()
                 Lifecycle.Event.ON_RESUME -> mapView.onResume()
@@ -368,9 +396,9 @@ private fun TrackMap(gps: List<GeoPoint>, engine: List<GeoPoint>, matched: List<
             }
         }
         lifecycle.addObserver(obs)
-        mapView.onStart()
-        mapView.onResume()
         onDispose {
+            disposed = true
+            memory.close()
             lifecycle.removeObserver(obs)
             mapView.onPause()
             mapView.onStop()
@@ -380,53 +408,98 @@ private fun TrackMap(gps: List<GeoPoint>, engine: List<GeoPoint>, matched: List<
 
     LaunchedEffect(mapView) {
         mapView.getMapAsync { m ->
-            m.uiSettings.isLogoEnabled = false
-            m.setStyle(mapStyle(offlineStyle(dark), dark)) { s ->
-                for ((id, color, width) in listOf(Triple("matched", "#1A73E8", 7f), Triple("gps", "#1E8E3E", 4f), Triple("engine", "#D93025", 3f))) {
-                    s.addSource(GeoJsonSource(id))
-                    s.addLayer(
-                        LineLayer("$id-line", id).withProperties(
-                            PropertyFactory.lineColor(color.toColorInt()),
-                            PropertyFactory.lineWidth(width),
-                            PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
-                            PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
-                            PropertyFactory.lineOpacity(if (id == "matched") 0.6f else 0.9f),
-                        ).also { if (id == "engine") it.setProperties(PropertyFactory.lineDasharray(arrayOf(2f, 1.5f))) },
-                    )
-                }
-                mapRef = m
-                style = s
-            }
+            if (disposed) return@getMapAsync
+            mapRef = m
+        }
+    }
+    LaunchedEffect(mapRef, visible, dark, desiredStyle) {
+        val m = mapRef ?: return@LaunchedEffect
+        val key = dark to desiredStyle
+        if (!visible || requestedKey == key) return@LaunchedEffect
+        requestedKey = key
+        val generation = ++styleGeneration
+        style = null
+        readyStyle = null
+        appliedTracks = null
+        m.uiSettings.isLogoEnabled = false
+        m.setStyle(mapStyle(desiredStyle, dark)) { s ->
+            if (!disposed && mapRef === m && styleGeneration == generation) style = s
+        }
+    }
+    LaunchedEffect(style, visible) {
+        val s = style ?: return@LaunchedEffect
+        if (!visible || readyStyle === s) return@LaunchedEffect
+        for ((id, color, width) in listOf(Triple("matched", "#1A73E8", 7f), Triple("gps", "#1E8E3E", 4f), Triple("engine", "#D93025", 3f))) {
+            s.addSource(GeoJsonSource(id))
+            s.addLayer(
+                LineLayer("$id-line", id).withProperties(
+                    PropertyFactory.lineColor(color.toColorInt()),
+                    PropertyFactory.lineWidth(width),
+                    PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+                    PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
+                    PropertyFactory.lineOpacity(if (id == "matched") 0.6f else 0.9f),
+                ).also { if (id == "engine") it.setProperties(PropertyFactory.lineDasharray(arrayOf(2f, 1.5f))) },
+            )
+        }
+        readyStyle = s
+    }
+    LaunchedEffect(mapRef, visible, power) {
+        if (visible) {
+            mapView.setMaximumFps(power.mapMaxFps)
+            mapRef?.setPrefetchZoomDelta(power.mapPrefetchZoomDelta)
         }
     }
 
-    LaunchedEffect(style, gps, engine, matched) {
-        val s = style ?: return@LaunchedEffect
+    LaunchedEffect(readyStyle, visible, gps, engine, matched) {
+        if (!visible) return@LaunchedEffect
+        val s = readyStyle ?: return@LaunchedEffect
+        val previous = appliedTracks
+        if (previous?.style === s && previous.gps === gps && previous.engine === engine && previous.matched === matched) return@LaunchedEffect
 
-        /** Replace the line drawn for source [id]. */
-        fun set(id: String, pts: List<GeoPoint>) {
-            val src = s.getSourceAs<GeoJsonSource>(id) ?: return
-            if (pts.size < 2) {
-                src.setGeoJson(org.maplibre.geojson.FeatureCollection.fromFeatures(emptyList()))
-            } else {
-                src.setGeoJson(Feature.fromGeometry(LineString.fromLngLats(pts.map { Point.fromLngLat(it.lon, it.lat) })))
-            }
-        }
-        set("gps", gps)
-        set("engine", engine)
-        set("matched", matched)
-        // Fit the camera to whatever tracks we have.
-        val all = gps + engine + matched
+        // Build GeoJSON and bounds without copying three combined coordinate lists on main.
+        val prepared = withContext(Dispatchers.Default) { prepareTrackMap(gps, engine, matched) }
+        if (disposed || readyStyle !== s || !visible) return@LaunchedEffect
+        prepared.features.forEach { (id, features) -> s.getSourceAs<GeoJsonSource>(id)?.setGeoJson(features) }
+        appliedTracks = AppliedTracks(s, gps, engine, matched)
         val m = mapRef ?: return@LaunchedEffect
-        val lats = all.map { it.lat }
-        val lons = all.map { it.lon }
-        if (all.isNotEmpty() && (lats.max() - lats.min() > 1e-4 || lons.max() - lons.min() > 1e-4)) {
-            val b = LatLngBounds.Builder().apply { all.forEach { include(LatLng(it.lat, it.lon)) } }.build()
-            m.moveCamera(CameraUpdateFactory.newLatLngBounds(b, 60))
-        } else if (all.isNotEmpty()) {
-            m.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(all[0].lat, all[0].lon), 15.0))
-        }
+        prepared.bounds?.let { m.moveCamera(CameraUpdateFactory.newLatLngBounds(it, 60)) }
+            ?: prepared.first?.let { m.moveCamera(CameraUpdateFactory.newLatLngZoom(it, 15.0)) }
     }
 
     AndroidView(factory = { mapView }, modifier = modifier)
 }
+
+/** Remember source inputs, so background/resume keeps existing native geometry and the user's camera. */
+private class AppliedTracks(val style: Style, val gps: List<GeoPoint>, val engine: List<GeoPoint>, val matched: List<GeoPoint>)
+
+/** Worker-owned geometry and one-pass bounds, independent of a live MapLibre view. */
+internal data class PreparedTrackMap(val features: Map<String, FeatureCollection>, val bounds: LatLngBounds?, val first: LatLng?)
+
+/** Preserve full track detail while avoiding intermediate combined tracks and latitude/longitude arrays. */
+internal suspend fun prepareTrackMap(gps: List<GeoPoint>, engine: List<GeoPoint>, matched: List<GeoPoint>): PreparedTrackMap {
+    var north = Double.NEGATIVE_INFINITY
+    var south = Double.POSITIVE_INFINITY
+    var east = Double.NEGATIVE_INFINITY
+    var west = Double.POSITIVE_INFINITY
+    var first: LatLng? = null
+    val features = mapOf("gps" to gps, "engine" to engine, "matched" to matched).mapValues { (_, points) ->
+        val coordinates = points.map { point ->
+            coroutineContext.ensureActive()
+            if (first == null) first = LatLng(point.lat, point.lon)
+            north = maxOf(north, point.lat)
+            south = minOf(south, point.lat)
+            east = maxOf(east, point.lon)
+            west = minOf(west, point.lon)
+            Point.fromLngLat(point.lon, point.lat)
+        }
+        FeatureCollection.fromFeatures(if (coordinates.size < 2) emptyList() else listOf(Feature.fromGeometry(LineString.fromLngLats(coordinates))))
+    }
+    val bounds = if (first != null && (north - south > TRACK_BOUNDS_EPSILON || east - west > TRACK_BOUNDS_EPSILON)) {
+        LatLngBounds.from(north, east, south, west)
+    } else {
+        null
+    }
+    return PreparedTrackMap(features, bounds, first)
+}
+
+private const val TRACK_BOUNDS_EPSILON = 1e-4

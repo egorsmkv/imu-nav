@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.imunav.app.alerts.AirAlerts
 import org.imunav.app.bookmarks.BookmarkDatabase
 import org.imunav.app.bookmarks.Bookmarks
@@ -331,7 +332,16 @@ class AppGraph(private val context: Context) {
     val diagnostics = DevDiagnostics(context, cells)
 
     /** Local performance capture shared only through Android's chooser. */
-    val profileCapture = ProfileCapture(context)
+    val profileCapture = ProfileCapture(context) {
+        val current = powerProfile.value
+        mapOf(
+            "device_ram_bytes" to power.totalRamBytes,
+            "constrained_device" to power.constrainedDevice,
+            "map_max_fps" to current.mapMaxFps,
+            "map_animate_camera" to current.animateCamera,
+            "map_prefetch_zoom_delta" to current.mapPrefetchZoomDelta,
+        )
+    }
 
     /** Owns the foreground service, trip recorder, native resources, engine, and OBD session as one transaction. */
     private val navigationSession =
@@ -394,6 +404,10 @@ class AppGraph(private val context: Context) {
     private var tickCount = 0L
 
     init {
+        scope.launch {
+            withContext(Dispatchers.IO) { power.detectDeviceCapacity() }
+            applyPower()
+        }
         hub.inertialObserver = { inertialShadow?.onSensor(it) }
         hub.judgedFixObserver = { if (!engine.simulateGpsLoss) inertialShadow?.onGps(it) }
         cells.scanner.intervalMs = {

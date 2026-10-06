@@ -64,5 +64,7 @@ jobs:
           path: |
             app/build/outputs/apk/fdroid/release/*.apk
             app/build/outputs/apk/fdroid/benchmark/*.apk
+            app/build/outputs/mapping/fdroidRelease/mapping.txt
+            app/build/outputs/mapping/fdroidBenchmark/mapping.txt
           if-no-files-found: error
           retention-days: 14

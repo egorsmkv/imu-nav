@@ -195,6 +195,8 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: imu-nav-play-benchmark-map-${{ github.run_id }}
-          path: app/build/outputs/apk/play/benchmark/*.apk
+          path: |
+            app/build/outputs/apk/play/benchmark/*.apk
+            app/build/outputs/mapping/playBenchmark/mapping.txt
           compression-level: 0
           retention-days: 14

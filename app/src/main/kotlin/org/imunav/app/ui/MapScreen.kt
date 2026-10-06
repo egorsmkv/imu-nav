@@ -249,6 +249,7 @@ fun MapScreen(
             cameraInsetStartPx = cameraStart,
             cameraInsetBottomPx = cameraBottom,
             maxFps = power.mapMaxFps,
+            prefetchZoomDelta = power.mapPrefetchZoomDelta,
             animateCamera = power.animateCamera,
             initialCenter = startView.point,
             initialZoom = startView.zoom,

@@ -23,6 +23,13 @@ fun configuredLink(name: String): String = linkProperties.getProperty(name, "").
 /** Quotes a configurable value so Gradle can emit it as a BuildConfig String field. */
 fun buildConfigString(value: String): String = "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
+val sourceRevision = providers.environmentVariable("GITHUB_SHA").orElse(providers.gradleProperty("sourceRevision")).orElse(
+    providers.exec {
+        commandLine("git", "rev-parse", "HEAD")
+        isIgnoreExitValue = true
+    }.standardOutput.asText.map { it.trim().ifEmpty { "unknown" } },
+)
+
 android {
     namespace = "org.imunav.app"
     compileSdk = 36
@@ -34,6 +41,7 @@ android {
         targetSdk = 36
         versionCode = 7
         versionName = "0.6.0"
+        buildConfigField("String", "SOURCE_REVISION", buildConfigString(sourceRevision.get()))
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "MONOBANK_DONATION_URL", buildConfigString(configuredLink("monobankDonationUrl")))
         buildConfigField("String", "PRIVATBANK_DONATION_URL", buildConfigString(configuredLink("privatbankDonationUrl")))
@@ -166,7 +174,10 @@ dependencies {
 
     implementation(libs.androidx.car.app)
     implementation(libs.androidx.car.projected)
-    androidTestImplementation(libs.androidx.car.testing)
+    androidTestImplementation(libs.androidx.car.testing) {
+        // Device tests use Android itself; Robolectric's service-loaded activity/thread adapters crash here.
+        exclude(group = "org.robolectric")
+    }
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)

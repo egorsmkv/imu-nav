@@ -31,6 +31,7 @@ class ProfileCaptureTest {
         ZipFile(requireNotNull(recovered.archive)).use { zip ->
             val manifest = JSONObject(zip.getInputStream(requireNotNull(zip.getEntry("manifest.json"))).bufferedReader().readText())
             assertTrue(manifest.getBoolean("interrupted"))
+            assertEquals(1, manifest.getInt("schema"))
             assertEquals("unclosed", manifest.getString("trace_status"))
             assertNotNull(zip.getEntry("logs.txt"))
             assertNull(zip.getEntry("methods.trace"))
@@ -41,12 +42,13 @@ class ProfileCaptureTest {
     @Test
     fun stoppedCaptureExportsBoundedDiagnosticsThroughFileProvider() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val capture = ProfileCapture(context)
+        val capture = ProfileCapture(context) { mapOf("map_max_fps" to 15) }
         capture.onLog("before start", 0)
         capture.start()
         await(capture, ProfilePhase.RECORDING)
         capture.onLog("profile_test token=secret", 0)
         NativeSpeedFusion.fuse(10.0, 0, 8.0, null)
+        Thread.sleep(6_000) // Cross one cheap sample interval, but not the next detailed scan.
         capture.stop()
         val ready = await(capture, ProfilePhase.READY)
         val archive = requireNotNull(ready.archive)
@@ -55,8 +57,22 @@ class ProfileCaptureTest {
             val manifest = JSONObject(zip.getInputStream(requireNotNull(zip.getEntry("manifest.json"))).bufferedReader().readText())
             assertFalse(manifest.getBoolean("interrupted"))
             assertEquals("complete", manifest.getString("trace_status"))
+            assertEquals(2, manifest.getInt("schema"))
+            assertEquals(15, manifest.getJSONObject("start").getJSONObject("rendering").getInt("map_max_fps"))
+            assertEquals(15_000, manifest.getInt("detailed_sample_interval_ms"))
+            assertTrue(manifest.getString("build_type").isNotBlank())
+            assertTrue(manifest.getString("source_revision").isNotBlank())
             assertNotNull(zip.getEntry("methods.trace"))
             assertNotNull(zip.getEntry("memory.csv"))
+            val rows = zip.getInputStream(requireNotNull(zip.getEntry("memory.csv"))).bufferedReader().readLines()
+            val columns = rows.first().split(',')
+            assertTrue(columns.contains("summary_graphics_kb"))
+            val samples = rows.drop(1).map { it.split(',') }
+            assertTrue(samples.isNotEmpty())
+            assertTrue(samples.all { it.size == columns.size })
+            assertTrue(samples.any { it[columns.indexOf("total_pss_kb")].isBlank() && it[columns.indexOf("summary_graphics_kb")].isBlank() })
+            assertTrue(samples.first()[columns.indexOf("total_pss_kb")].isNotBlank())
+            assertTrue(samples.last()[columns.indexOf("total_pss_kb")].isNotBlank())
             assertNotNull(zip.getEntry("native-timings.json"))
             val timings = JSONObject(zip.getInputStream(requireNotNull(zip.getEntry("native-timings.json"))).bufferedReader().readText())
             assertTrue(timings.getJSONObject("operations").getJSONObject("speed_fuse").getInt("calls") >= 1)

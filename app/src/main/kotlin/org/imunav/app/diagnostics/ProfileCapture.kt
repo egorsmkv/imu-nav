@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.imunav.app.BuildConfig
 import org.imunav.app.nativecore.NativeProfiler
+import org.imunav.core.diagnostics.ProfileSampling
 import org.imunav.core.record.TripEvent
 import org.imunav.core.record.TripFormat
 import org.json.JSONObject
@@ -37,7 +38,7 @@ data class ProfileStatus(val phase: ProfilePhase, val archive: File? = null, val
  * logs/events. Producers only offer to a bounded queue; serialization and file I/O stay off the
  * navigation and sensor threads.
  */
-class ProfileCapture(private val context: Context) {
+class ProfileCapture(private val context: Context, private val renderingMetadata: () -> Map<String, Any> = { emptyMap() }) {
     private val root = File(context.filesDir, "profiles")
     private val shares = File(context.cacheDir, "profile-shares")
     private val control = Executors.newSingleThreadExecutor()
@@ -54,6 +55,7 @@ class ProfileCapture(private val context: Context) {
     fun start() {
         if (_status.value.phase !in setOf(ProfilePhase.IDLE, ProfilePhase.READY, ProfilePhase.INTERRUPTED, ProfilePhase.ERROR)) return
         _status.value = ProfileStatus(ProfilePhase.STARTING)
+        val rendering = renderingMetadata().toMap()
         control.execute {
             var started: CaptureSession? = null
             runCatching {
@@ -64,8 +66,10 @@ class ProfileCapture(private val context: Context) {
                 val session = CaptureSession(directory)
                 started = session
                 File(directory, "started.json").writeText(
-                    JSONObject().put("start_wall_ms", System.currentTimeMillis())
-                        .put("start_elapsed_ms", SystemClock.elapsedRealtime()).toString(),
+                    JSONObject().put("schema", 2).put("start_wall_ms", System.currentTimeMillis())
+                        .put("build_type", BuildConfig.BUILD_TYPE).put("flavor", BuildConfig.FLAVOR)
+                        .put("source_revision", BuildConfig.SOURCE_REVISION)
+                        .put("start_elapsed_ms", SystemClock.elapsedRealtime()).put("rendering", JSONObject(rendering)).toString(),
                 )
                 session.start()
                 active = session
@@ -176,23 +180,32 @@ class ProfileCapture(private val context: Context) {
         }
     }
 
-    private fun manifest(directory: File, interrupted: Boolean, session: CaptureSession?): JSONObject = JSONObject()
-        .put("schema", 1)
-        .put("app_version", BuildConfig.VERSION_NAME)
-        .put("app_version_code", BuildConfig.VERSION_CODE)
-        .put("android_api", Build.VERSION.SDK_INT)
-        .put("device", "${Build.MANUFACTURER} ${Build.MODEL}")
-        .put("start", JSONObject(File(directory, "started.json").readText()))
-        .put("end_wall_ms", System.currentTimeMillis())
-        .put("interrupted", interrupted)
-        .put("trace_status", if (interrupted) "unclosed" else session?.traceError ?: if (File(directory, TRACE_FILE).isFile) "complete" else "missing")
-        .put("native_timing_status", session?.nativeError ?: if (interrupted) "unavailable" else "complete")
-        .put("stream_status", session?.streamError ?: if (interrupted) "possibly_incomplete" else "complete")
-        .put("dropped_queue_entries", session?.dropped?.get() ?: -1)
-        .put("dropped_log_entries", session?.droppedLogs ?: -1)
-        .put("dropped_event_entries", session?.droppedEvents ?: -1)
-        .put("dropped_memory_samples", session?.droppedMemory ?: -1)
-        .put("trip_events_replayable", false)
+    private fun manifest(directory: File, interrupted: Boolean, session: CaptureSession?): JSONObject {
+        val started = JSONObject(File(directory, "started.json").readText())
+        val schema = started.optInt("schema", 1)
+        return JSONObject()
+            .put("schema", schema)
+            .put("build_type", started.optString("build_type", "unknown"))
+            .put("flavor", started.optString("flavor", "unknown"))
+            .put("source_revision", started.optString("source_revision", "unknown"))
+            .put("heap_sample_interval_ms", ProfileSampling.HEAP_INTERVAL_MS)
+            .put("detailed_sample_interval_ms", if (schema == 1) ProfileSampling.HEAP_INTERVAL_MS else ProfileSampling.DETAILED_INTERVAL_MS)
+            .put("app_version", BuildConfig.VERSION_NAME)
+            .put("app_version_code", BuildConfig.VERSION_CODE)
+            .put("android_api", Build.VERSION.SDK_INT)
+            .put("device", "${Build.MANUFACTURER} ${Build.MODEL}")
+            .put("start", started)
+            .put("end_wall_ms", System.currentTimeMillis())
+            .put("interrupted", interrupted)
+            .put("trace_status", if (interrupted) "unclosed" else session?.traceError ?: if (File(directory, TRACE_FILE).isFile) "complete" else "missing")
+            .put("native_timing_status", session?.nativeError ?: if (interrupted) "unavailable" else "complete")
+            .put("stream_status", session?.streamError ?: if (interrupted) "possibly_incomplete" else "complete")
+            .put("dropped_queue_entries", session?.dropped?.get() ?: -1)
+            .put("dropped_log_entries", session?.droppedLogs ?: -1)
+            .put("dropped_event_entries", session?.droppedEvents ?: -1)
+            .put("dropped_memory_samples", session?.droppedMemory ?: -1)
+            .put("trip_events_replayable", false)
+    }
 
     private fun addFile(zip: ZipOutputStream, file: File) {
         if (!file.isFile) return
@@ -244,6 +257,7 @@ class ProfileCapture(private val context: Context) {
         private var logBytes = 0L
         private var eventBytes = 0L
         private var memoryBytes = 0L
+        private val sampling = ProfileSampling()
 
         private fun writeLoop() {
             File(directory, "logs.txt").bufferedWriter().use { logs ->
@@ -256,16 +270,13 @@ class ProfileCapture(private val context: Context) {
         }
 
         private fun capture(logs: BufferedWriter, events: BufferedWriter, memory: BufferedWriter) {
-            var lastSample = 0L
-            val header = "elapsed_ms,java_heap_used_bytes,native_heap_bytes,total_pss_kb,process_cpu_ms\n"
+            val header = "elapsed_ms,java_heap_used_bytes,native_heap_bytes,total_pss_kb,process_cpu_ms," +
+                "summary_java_heap_kb,summary_native_heap_kb,summary_graphics_kb,summary_code_kb,summary_private_other_kb,summary_stack_kb,summary_system_kb,memory_sample_duration_ms\n"
             memory.write(header)
             memoryBytes = header.toByteArray(StandardCharsets.UTF_8).size.toLong()
             while (running.get() || queue.isNotEmpty()) {
                 val now = SystemClock.elapsedRealtime()
-                if (now - lastSample >= SAMPLE_INTERVAL_MS) {
-                    sampleMemory(now, memory)
-                    lastSample = now
-                }
+                sampling.next(now)?.let { sampleMemory(now, memory, it == ProfileSampling.Kind.DETAILED) }
                 when (val entry = queue.poll(500, TimeUnit.MILLISECONDS)) {
                     is Entry.Log -> writeLog(entry.value, logs)
 
@@ -277,18 +288,35 @@ class ProfileCapture(private val context: Context) {
                     }
                 }
             }
+            val finished = SystemClock.elapsedRealtime()
+            sampleMemory(finished, memory, sampling.next(finished, finishing = true) == ProfileSampling.Kind.DETAILED)
         }
 
-        private fun sampleMemory(now: Long, memory: BufferedWriter) {
+        private fun sampleMemory(now: Long, memory: BufferedWriter, detailed: Boolean) {
             if (memoryBytes >= MEMORY_LIMIT_BYTES) {
                 droppedMemory++
                 return
             }
-            val info = Debug.MemoryInfo()
-            Debug.getMemoryInfo(info)
+            val sampleStart = SystemClock.elapsedRealtime()
+            val info = if (detailed) {
+                Debug.MemoryInfo().also {
+                    Debug.getMemoryInfo(it)
+                }
+            } else {
+                null
+            }
             val runtime = Runtime.getRuntime()
-            val line =
-                "$now,${runtime.totalMemory() - runtime.freeMemory()},${Debug.getNativeHeapAllocatedSize()},${info.totalPss},${Process.getElapsedCpuTime()}\n"
+            val stats = info?.memoryStats.orEmpty()
+            val categories = listOf("java-heap", "native-heap", "graphics", "code", "private-other", "stack", "system")
+                .map { stats["summary.$it"].orEmpty() }
+            val duration = SystemClock.elapsedRealtime() - sampleStart
+            val line = listOf(
+                now,
+                runtime.totalMemory() - runtime.freeMemory(),
+                Debug.getNativeHeapAllocatedSize(),
+                info?.totalPss ?: "",
+                Process.getElapsedCpuTime(),
+            ).joinToString(",") + "," + categories.joinToString(",") + ",$duration\n"
             val bytes = line.toByteArray(StandardCharsets.UTF_8).size
             if (memoryBytes + bytes <= MEMORY_LIMIT_BYTES) {
                 memory.write(line)
@@ -332,7 +360,6 @@ class ProfileCapture(private val context: Context) {
         const val MEMORY_LIMIT_BYTES = 1L * 1024 * 1024
         const val QUEUE_SIZE = 4_096
         const val MAX_ARCHIVES = 3
-        const val SAMPLE_INTERVAL_MS = 5_000L
         const val SHARE_RETENTION_MS = 7L * 24 * 60 * 60 * 1000
     }
 }

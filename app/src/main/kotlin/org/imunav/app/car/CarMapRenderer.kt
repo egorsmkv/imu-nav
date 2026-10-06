@@ -17,6 +17,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.imunav.app.AppGraph
 import org.imunav.app.UiState
+import org.imunav.app.maps.MapMemoryCallbacks
 import org.imunav.app.maps.addNavigationLayers
 import org.imunav.app.maps.mapStyle
 import org.imunav.app.maps.routeFeatures
@@ -46,6 +47,8 @@ class CarMapRenderer(
     private var display: VirtualDisplay? = null
     private var presentation: Presentation? = null
     private var view: MapView? = null
+    private var memory: MapMemoryCallbacks? = null
+    private var prefetch: Int? = null
     private var map: MapLibreMap? = null
     private var style: Style? = null
     private var styleInitialized = false
@@ -53,6 +56,7 @@ class CarMapRenderer(
     private var encodedRoute: Route? = null
     private var routeInitialized = false
     private var routeJob: Job? = null
+    private var styleGeneration = 0L
     private var styleKey: Pair<Boolean, String?>? = null
     private var state = UiState()
     private var visible = false
@@ -91,6 +95,7 @@ class CarMapRenderer(
             val mapView = MapView(window.context)
             view = mapView
             mapView.onCreate(null)
+            memory = MapMemoryCallbacks(context, mapView::onLowMemory)
             window.setContentView(mapView)
             window.show()
             resumeIfVisible()
@@ -148,6 +153,11 @@ class CarMapRenderer(
         if (!resumed) return
         val loaded = map ?: return
         initializeMap(loaded)
+        val desiredPrefetch = graph.powerProfile.value.mapPrefetchZoomDelta
+        if (prefetch != desiredPrefetch) {
+            loaded.setPrefetchZoomDelta(desiredPrefetch)
+            prefetch = desiredPrefetch
+        }
         if (guidanceZoomPending) {
             if (ui.guidance.active) loaded.moveCamera(CameraUpdateFactory.zoomTo(16.0))
             guidanceZoomPending = false
@@ -157,9 +167,10 @@ class CarMapRenderer(
         val key = dark to if (graph.offlineMap.status.value.offlineInUse) graph.offlineMap.styleJson(dark, center) else null
         if (styleKey != key) {
             styleKey = key
+            val generation = ++styleGeneration
             style = null
             loaded.setStyle(mapStyle(key.second, dark)) { newStyle ->
-                if (map !== loaded || styleKey != key) return@setStyle
+                if (map !== loaded || styleKey != key || styleGeneration != generation) return@setStyle
                 style = newStyle
                 styleInitialized = false
                 update(state)
@@ -288,6 +299,9 @@ class CarMapRenderer(
 
     /** Release native GL resources before dismissing the window and returning the host surface. */
     fun release() {
+        memory?.close()
+        memory = null
+        prefetch = null
         routeJob?.cancel()
         mapUpdates.reset()
         if (resumed) {
