@@ -18,6 +18,8 @@ const MANUAL_DEVICE: &str = "manual";
 const SEED_WEIGHT: f64 = 200.0;
 const SEED_VOTE: f64 = 3.0;
 const EXPORT_PAGE_SIZE: usize = 512;
+// Five bind values per key; keep each query under SQLite's older 999-variable limit.
+const MODERATION_BATCH_SIZE: usize = 100;
 
 // Parents precede children so PostgreSQL verifies all foreign keys during the copy.
 const MIGRATION_TABLES: &[(&str, &str)] = &[
@@ -439,6 +441,7 @@ impl CellStore {
     /// # Errors
     ///
     /// Returns an error when the database cannot be opened or cleanup fails.
+    #[cfg_attr(feature = "profiling", hotpath::measure(impl_type = "CellStore"))]
     pub fn prune_debug_sessions(&self) -> Result<usize> {
         let now_s = i64::try_from(
             std::time::SystemTime::now()
@@ -787,6 +790,7 @@ impl CellStore {
     }
 
     /// Page through all consensuses, including pending and moderated towers.
+    #[cfg_attr(feature = "profiling", hotpath::measure(impl_type = "CellStore"))]
     pub(crate) fn admin_tower_page(
         &self,
         mccs: Option<&HashSet<i64>>,
@@ -794,10 +798,11 @@ impl CellStore {
         limit: usize,
         offset: usize,
         policy: &Policy,
-    ) -> Result<Vec<Consensus>> {
+    ) -> Result<Vec<(Consensus, bool)>> {
         let connection = self.connection()?;
-        let mut sql = String::from(
-            "SELECT c.radio,c.mcc,c.mnc,c.area,c.cid,c.lat,c.lon,c.range_m,c.samples,c.devices,c.seeded,c.updated_s FROM consensus c WHERE 1=1",
+        let hidden = "EXISTS (SELECT 1 FROM tower_moderation m WHERE m.radio=c.radio AND m.mcc=c.mcc AND m.mnc=c.mnc AND m.area=c.area AND m.cid=c.cid AND m.quarantined=1)";
+        let mut sql = format!(
+            "SELECT c.radio,c.mcc,c.mnc,c.area,c.cid,c.lat,c.lon,c.range_m,c.samples,c.devices,c.seeded,c.updated_s,{hidden} FROM consensus c WHERE 1=1"
         );
         let mut values = Vec::new();
         if let Some(mccs) = mccs {
@@ -810,7 +815,6 @@ impl CellStore {
             sql.push(')');
             values.extend(mccs.iter().copied().map(Value::Integer));
         }
-        let hidden = "EXISTS (SELECT 1 FROM tower_moderation m WHERE m.radio=c.radio AND m.mcc=c.mcc AND m.mnc=c.mnc AND m.area=c.area AND m.cid=c.cid AND m.quarantined=1)";
         match status {
             "quarantined" => write!(sql, " AND {hidden}")?,
             "seeded" => write!(sql, " AND NOT {hidden} AND c.seeded=1")?,
@@ -831,8 +835,51 @@ impl CellStore {
         values.push(Value::Integer(i64::try_from(offset)?));
         let mut statement = connection.prepare(&sql)?;
         Ok(statement
-            .query_map(params_from_iter(values), row_to_consensus)?
+            .query_map(params_from_iter(values), |row| {
+                Ok((row_to_consensus(row)?, row.get(12)?))
+            })?
             .collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Find moderated keys in bounded batches so an upload does not open one connection per tower.
+    #[cfg_attr(feature = "profiling", hotpath::measure(impl_type = "CellStore"))]
+    pub(crate) fn visible_changes(&self, changed: Vec<Consensus>) -> Result<Vec<Consensus>> {
+        if changed.is_empty() {
+            return Ok(changed);
+        }
+        let connection = self.connection()?;
+        let mut hidden = HashSet::new();
+        for batch in changed.chunks(MODERATION_BATCH_SIZE) {
+            let placeholders = std::iter::repeat_n("(?,?,?,?,?)", batch.len())
+                .collect::<Vec<_>>()
+                .join(",");
+            let sql = format!(
+                "SELECT radio,mcc,mnc,area,cid FROM tower_moderation WHERE quarantined=1 AND (radio,mcc,mnc,area,cid) IN ({placeholders})"
+            );
+            let values = batch
+                .iter()
+                .flat_map(|consensus| {
+                    let key = &consensus.tower.key;
+                    [
+                        Value::Text(key.radio.to_string()),
+                        Value::Integer(key.mcc),
+                        Value::Integer(key.mnc),
+                        Value::Integer(key.area),
+                        Value::Integer(key.cid),
+                    ]
+                })
+                .collect::<Vec<_>>();
+            let mut statement = connection.prepare(&sql)?;
+            hidden.extend(
+                statement
+                    .query_map(params_from_iter(values), row_to_key)?
+                    .collect::<rusqlite::Result<Vec<_>>>()?,
+            );
+        }
+        Ok(changed
+            .into_iter()
+            .filter(|consensus| !hidden.contains(&consensus.tower.key))
+            .collect())
     }
 
     #[cfg_attr(feature = "profiling", hotpath::measure(impl_type = "CellStore"))]
@@ -926,6 +973,7 @@ impl CellStore {
     }
 
     /// List only contributions from devices linked to this account, newest first.
+    #[cfg_attr(feature = "profiling", hotpath::measure(impl_type = "CellStore"))]
     pub(crate) fn own_contributions(
         &self,
         account_id: i64,
@@ -969,6 +1017,7 @@ impl CellStore {
     }
 
     /// Stream only the account's matching observations into a portable gzip CSV.
+    #[cfg_attr(feature = "profiling", hotpath::measure(impl_type = "CellStore"))]
     pub(crate) fn export_own_to_path(
         &self,
         account_id: i64,

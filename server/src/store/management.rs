@@ -473,6 +473,7 @@ impl CellStore {
         Ok(true)
     }
 
+    #[cfg_attr(feature = "profiling", hotpath::measure(impl_type = "CellStore"))]
     pub(crate) fn quarantined(&self, key: &CellKey) -> Result<bool> {
         Ok(self.connection()?.query_row(
             "SELECT quarantined FROM tower_moderation WHERE radio=?1 AND mcc=?2 AND mnc=?3 AND area=?4 AND cid=?5",

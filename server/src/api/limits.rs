@@ -5,8 +5,8 @@ use axum::http::StatusCode;
 use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, Instant};
 
-pub(super) const HOUR: Duration = Duration::from_secs(60 * 60);
-pub(super) const DAY: Duration = Duration::from_secs(24 * 60 * 60);
+pub(super) const HOUR: Duration = Duration::from_hours(1);
+pub(super) const DAY: Duration = Duration::from_hours(24);
 
 #[derive(Default)]
 pub(super) struct Limits {

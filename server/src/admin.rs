@@ -409,11 +409,8 @@ async fn dashboard(
         )?;
         let rows = towers
             .into_iter()
-            .map(|tower| {
-                let hidden = store.quarantined(&tower.tower.key)?;
-                Ok(TowerRow::new(&tower, policy_for_query.min_devices, hidden))
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
+            .map(|(tower, hidden)| TowerRow::new(&tower, policy_for_query.min_devices, hidden))
+            .collect::<Vec<_>>();
         Ok((
             counts,
             rows,

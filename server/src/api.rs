@@ -239,19 +239,7 @@ async fn upload_cells(
     let (result, changed) =
         run_db(move || store.contribute(&device, &towers, now_s(), &policy)).await?;
     let visibility_store = state.store.clone();
-    let visible = run_db(move || {
-        changed
-            .into_iter()
-            .filter_map(
-                |tower| match visibility_store.quarantined(&tower.tower.key) {
-                    Ok(false) => Some(Ok(tower)),
-                    Ok(true) => None,
-                    Err(error) => Some(Err(error)),
-                },
-            )
-            .collect::<anyhow::Result<Vec<_>>>()
-    })
-    .await?;
+    let visible = run_db(move || visibility_store.visible_changes(changed)).await?;
     for tower in visible {
         let _ = state.events.send(ServerEvent::TowerUpserted { tower });
     }

@@ -297,6 +297,7 @@ fn issue_session(
     })
 }
 
+#[cfg_attr(feature = "profiling", hotpath::measure)]
 pub(crate) fn account_for_token(
     store: &CellStore,
     raw: &str,

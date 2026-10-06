@@ -403,3 +403,23 @@ fn management_lists_page_beyond_old_caps_and_filter_status() -> Result<()> {
     );
     Ok(())
 }
+
+#[test]
+fn visible_changes_batch_moderation_and_admin_page_shares_status() -> Result<()> {
+    let database = NamedTempFile::new()?;
+    let store = CellStore::open(database.path())?;
+    let policy = Policy::default();
+    let towers = (1..=105).map(|cid| tower(cid, 50.4)).collect::<Vec<_>>();
+    let (_, changed) = store.seed(&towers, 1, &policy)?;
+    store.set_quarantined(1, &towers[0].key, true, &policy)?;
+    store.set_quarantined(1, &towers[104].key, true, &policy)?;
+
+    let visible = store.visible_changes(changed)?;
+    assert_eq!(visible.len(), 103);
+    assert!(!visible.iter().any(|item| item.tower.key == towers[0].key));
+    assert!(!visible.iter().any(|item| item.tower.key == towers[104].key));
+    let page = store.admin_tower_page(None, "", 105, 0, &policy)?;
+    assert_eq!(page.iter().filter(|(_, hidden)| *hidden).count(), 2);
+    assert!(store.visible_changes(Vec::new())?.is_empty());
+    Ok(())
+}

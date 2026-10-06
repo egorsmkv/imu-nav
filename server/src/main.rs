@@ -226,7 +226,7 @@ async fn serve_http(
 /// Expire private diagnostics even when nobody opens the account pages.
 fn spawn_debug_cleanup(cleanup_store: CellStore) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(6 * 60 * 60));
+        let mut interval = tokio::time::interval(std::time::Duration::from_hours(6));
         loop {
             interval.tick().await;
             let store = cleanup_store.clone();

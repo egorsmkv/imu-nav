@@ -2,6 +2,7 @@
 """Drive the shipped server over loopback with repeatable Android-style sync traffic."""
 
 import argparse
+from http.cookiejar import CookieJar
 import gzip
 import hashlib
 import json
@@ -14,6 +15,7 @@ import statistics
 import subprocess
 import time
 import urllib.request
+import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -37,21 +39,47 @@ def upload_body(device: int, round_number: int, rows: int) -> bytes:
 
 
 def request(base: str, path: str, method: str = "GET", body: bytes | None = None,
-            device: int | None = None, token: str | None = None) -> tuple[bytes, float]:
+            device: int | None = None, token: str | None = None,
+            opener: urllib.request.OpenerDirector | None = None,
+            content_type: str | None = None) -> tuple[bytes, float]:
     headers = {}
     if token is not None:
         headers["Authorization"] = f"Bearer {token}"
     if body is not None and device is None:
-        headers["Content-Type"] = "application/json"
+        headers["Content-Type"] = content_type or "application/json"
     if device is not None:
         headers["X-Device-Id"] = f"sim-phone-{device:04d}"
         headers["Content-Encoding"] = "gzip"
         headers["Content-Type"] = "text/csv"
     started = time.perf_counter()
     pending = urllib.request.Request(base + path, data=body, headers=headers, method=method)
-    with urllib.request.urlopen(pending, timeout=120) as response:
+    with (opener.open(pending, timeout=120) if opener else urllib.request.urlopen(pending, timeout=120)) as response:
         payload = response.read()
     return payload, (time.perf_counter() - started) * 1000
+
+
+def browser_session(base: str, email: str, destination: str) -> urllib.request.OpenerDirector:
+    """Keep the separate browser cookie so HTML routes are measured after authentication."""
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(CookieJar()))
+    body = urllib.parse.urlencode({"email": email, "password": "correct horse battery staple"}).encode()
+    page, _ = request(base, "/login", "POST", body, opener=opener,
+                      content_type="application/x-www-form-urlencoded")
+    if destination.encode() not in page:
+        raise RuntimeError(f"browser login did not reach {destination}")
+    return opener
+
+
+def enable_diagnostics(base: str, browser: urllib.request.OpenerDirector) -> None:
+    """Use the same administrator form and CSRF token as a real browser."""
+    page, _ = request(base, "/debug", opener=browser)
+    token = re.search(rb'action="/admin/debug/enable"[^>]*>\s*<input type="hidden" name="csrf" value="([a-f0-9]+)"', page)
+    if token is None:
+        raise RuntimeError("administrator diagnostics form is missing")
+    body = urllib.parse.urlencode({"csrf": token.group(1).decode(), "enabled": "1"}).encode()
+    page, _ = request(base, "/admin/debug/enable", "POST", body, opener=browser,
+                      content_type="application/x-www-form-urlencoded")
+    if b"Uploads are enabled" not in page:
+        raise RuntimeError("diagnostic uploads were not enabled")
 
 
 def start_server(binary: Path, database: Path, profile: Path | None) -> tuple[subprocess.Popen[str], str]:
@@ -99,6 +127,25 @@ def database_fingerprint(database: Path) -> tuple[str, dict[str, int]]:
                 digest.update(b"\n")
                 count += 1
             counts[table] = count
+        diagnostic_rows = connection.execute(
+            "SELECT s.client_id,e.seq,e.item,e.kind,e.elapsed_ms,e.line "
+            "FROM debug_entries e JOIN debug_sessions s ON s.id=e.session_id "
+            "ORDER BY s.client_id,e.seq,e.item"
+        )
+        counts["debug_entries"] = 0
+        for row in diagnostic_rows:
+            digest.update(repr(row).encode())
+            digest.update(b"\n")
+            counts["debug_entries"] += 1
+        moderation_rows = connection.execute(
+            "SELECT radio,mcc,mnc,area,cid,quarantined FROM tower_moderation "
+            "ORDER BY radio,mcc,mnc,area,cid"
+        )
+        counts["moderation"] = 0
+        for row in moderation_rows:
+            digest.update(repr(row).encode())
+            digest.update(b"\n")
+            counts["moderation"] += 1
     return digest.hexdigest(), counts
 
 
@@ -110,8 +157,12 @@ def run_once(binary: Path, directory: Path, rounds: int, rows: int,
               for round_number in range(rounds)]
     cpu_before = resource.getrusage(resource.RUSAGE_CHILDREN)
     server, base = start_server(binary, database, directory / "hotpath.json" if profile else None)
-    timings: dict[str, list[float]] = {name: [] for name in ("upload", "download", "management", "health")}
-    accepted = rejected = downloaded = 0
+    timings: dict[str, list[float]] = {name: [] for name in (
+        "upload", "download", "removals", "management", "tower_detail", "quarantine", "admin_page",
+        "account_page", "account_export", "debug_start", "debug_batch", "debug_retry",
+        "debug_status", "debug_finish", "debug_page", "debug_detail", "auth_me",
+        "data_usage", "health")}
+    accepted = rejected = downloaded = diagnostic_entries = 0
     try:
         request(base, "/health")  # Exclude process startup and the first SQLite open.
         admin_token = json.loads(request(base, "/v1/auth/login", "POST", json.dumps({
@@ -120,7 +171,11 @@ def run_once(binary: Path, directory: Path, rounds: int, rows: int,
         tokens = [json.loads(request(base, "/v1/auth/register", "POST", json.dumps({
             "email": f"phone-{device}@example.org", "password": "correct horse battery staple"
         }).encode())[0])["access_token"] for device in range(4)]
+        admin_browser = browser_session(base, "admin@example.org", "Management dashboard")
+        phone_browser = browser_session(base, "phone-0@example.org", "My account")
+        enable_diagnostics(base, admin_browser)
         started = time.perf_counter()
+        removal_record = None
         with ThreadPoolExecutor(max_workers=4) as pool:
             for round_number in range(rounds):
                 jobs = [pool.submit(request, base, "/v1/cells", "POST",
@@ -137,14 +192,73 @@ def run_once(binary: Path, directory: Path, rounds: int, rows: int,
                 downloaded += len(gzip.decompress(payload).splitlines()) - 1
                 timings["download"].append(elapsed)
                 payload, elapsed = request(base, "/v1/towers?mcc=255&limit=500", token=admin_token)
-                assert len(json.loads(payload)["towers"]) <= 500
+                towers = json.loads(payload)["towers"]
+                assert 0 < len(towers) <= 500
                 timings["management"].append(elapsed)
+                key = next(tower for tower in towers if tower["devices"] >= 2)
+                path = f"/v1/towers/{key['radio']}/{key['mcc']}/{key['mnc']}/{key['area']}/{key['cid']}"
+                payload, elapsed = request(base, path, token=admin_token)
+                assert json.loads(payload)["cid"] == key["cid"]
+                timings["tower_detail"].append(elapsed)
+                if round_number == 0:
+                    payload, elapsed = request(base, path + "/quarantine", "POST",
+                                               b'{"quarantined":true}', token=admin_token)
+                    assert not payload
+                    removal_record = f"{key['radio']},{key['mcc']},{key['mnc']},{key['area']},{key['cid']}".encode()
+                    timings["quarantine"].append(elapsed)
+                payload, elapsed = request(base, "/v1/cells/removals.csv?mcc=255,256&since=0")
+                assert payload.startswith(b"radio,mcc,mnc,area,cid") and removal_record in payload
+                timings["removals"].append(elapsed)
+                payload, elapsed = request(base, "/v1/auth/me", token=tokens[0])
+                assert json.loads(payload)["email"] == "phone-0@example.org"
+                timings["auth_me"].append(elapsed)
+                payload, elapsed = request(base, "/account?mcc=255", opener=phone_browser)
+                assert b"My observations" in payload and b"phone-0@example.org" in payload
+                timings["account_page"].append(elapsed)
+                payload, elapsed = request(base, "/account/export?mcc=255", opener=phone_browser)
+                assert gzip.decompress(payload).startswith(b"radio,")
+                timings["account_export"].append(elapsed)
+                payload, elapsed = request(base, "/admin?mcc=255&limit=100", opener=admin_browser)
+                assert b"Management dashboard" in payload
+                timings["admin_page"].append(elapsed)
+                payload, elapsed = request(base, "/data-usage")
+                assert b"Data Usage" in payload
+                timings["data_usage"].append(elapsed)
+                payload, elapsed = request(base, "/v1/debug/sessions", "POST", json.dumps({
+                    "client_id": f"sim-round-{round_number}", "context": {"round": round_number, "source": "traffic-sim"}
+                }).encode(), token=tokens[0])
+                session = json.loads(payload)
+                assert session["next_seq"] == 0
+                timings["debug_start"].append(elapsed)
+                session_id = session["id"]
+                entries = [{"kind": "event" if index % 2 == 0 else "log", "elapsed_ms": index * 500,
+                            "line": f"A,{index * 500},-5" if index % 2 == 0 else f"sim round={round_number} row={index}"}
+                           for index in range(min(rows, 100))]
+                batch = json.dumps({"entries": entries}, separators=(",", ":")).encode()
+                batch_path = f"/v1/debug/sessions/{session_id}/batches/0"
+                payload, elapsed = request(base, batch_path, "PUT", batch, token=tokens[0])
+                assert json.loads(payload)["next_seq"] == 1
+                diagnostic_entries += len(entries)
+                timings["debug_batch"].append(elapsed)
+                payload, elapsed = request(base, batch_path, "PUT", batch, token=tokens[0])
+                assert json.loads(payload)["next_seq"] == 1
+                timings["debug_retry"].append(elapsed)
+                payload, elapsed = request(base, f"/v1/debug/sessions/{session_id}", token=tokens[0])
+                assert json.loads(payload)["next_seq"] == 1
+                timings["debug_status"].append(elapsed)
+                payload, elapsed = request(base, f"/v1/debug/sessions/{session_id}/finish", "POST",
+                                           b'{"next_seq":1}', token=tokens[0])
+                assert json.loads(payload)["finished"]
+                timings["debug_finish"].append(elapsed)
+                payload, elapsed = request(base, "/debug", opener=phone_browser)
+                assert session_id.encode() in payload
+                timings["debug_page"].append(elapsed)
+                payload, elapsed = request(base, f"/debug/{session_id}", opener=phone_browser)
+                assert b"Session " + session_id.encode() in payload
+                timings["debug_detail"].append(elapsed)
                 payload, elapsed = request(base, "/health")
                 assert payload.startswith(b"ok ")
                 timings["health"].append(elapsed)
-        payload, elapsed = request(base, "/admin?mcc=255&limit=100", token=admin_token)
-        assert b"<html" in payload.lower()
-        timings["management"].append(elapsed)
         wall_ms = (time.perf_counter() - started) * 1000
     finally:
         server.terminate()
@@ -162,10 +276,13 @@ def run_once(binary: Path, directory: Path, rounds: int, rows: int,
     if profile and not (directory / "hotpath.json").is_file():
         raise RuntimeError("profiling report was not flushed")
     fingerprint, counts = database_fingerprint(database)
+    if counts["debug_entries"] != diagnostic_entries:
+        raise RuntimeError("diagnostic upload count differs from stored entries")
     return {"wall_ms": wall_ms, "server_cpu_ms": cpu_ms, "latency_ms": {
         name: {"median": statistics.median(values), "max": max(values), "count": len(values)}
         for name, values in timings.items()}, "accepted": accepted, "rejected": rejected,
-        "downloaded_rows": downloaded, "database": counts, "fingerprint": fingerprint}
+        "downloaded_rows": downloaded, "diagnostic_entries": diagnostic_entries,
+        "database": counts, "fingerprint": fingerprint}
 
 
 def main() -> None:
@@ -193,6 +310,7 @@ def main() -> None:
     print(json.dumps({"median_wall_ms": summary["median_wall_ms"],
                       "median_server_cpu_ms": summary["median_server_cpu_ms"],
                       "accepted": runs[0]["accepted"], "rejected": runs[0]["rejected"],
+                      "diagnostic_entries": runs[0]["diagnostic_entries"],
                       "database": runs[0]["database"], "fingerprint": runs[0]["fingerprint"]}))
 
 
