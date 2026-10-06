@@ -678,4 +678,24 @@
     <string name="sensor_rotation_vector">датчик ориентации</string>
     <string name="sensor_compass">компас</string>
     <string name="diag_sensors_missing">Недоступны: %1$s. Определение поворотов по гироскопу отключено; остановки определяются только по акселерометру.</string>
+    <string name="logs_management">Журналы</string>
+    <string name="logs_management_summary">Управляйте локальными текстовыми журналами диагностики. После установки ограничений старые завершённые файлы будут удаляться автоматически. Текущий файл сохраняется до его закрытия.</string>
+    <string name="logs_storage">Занятое место</string>
+    <string name="logs_usage">Файлов: %1$d · %2$s</string>
+    <string name="logs_working">Обновление журналов…</string>
+    <string name="logs_failed">Не удалось обработать файлы журналов. Попробуйте ещё раз.</string>
+    <string name="logs_refresh">Обновить</string>
+    <string name="logs_size_limit">Ограничение общего размера</string>
+    <string name="logs_unlimited">Без ограничений</string>
+    <string name="logs_limit_mb">%1$d МБ</string>
+    <string name="logs_retention">Хранить журналы</string>
+    <string name="logs_forever">До очистки</string>
+    <plurals name="logs_days">
+        <item quantity="one">%1$d день</item>
+        <item quantity="few">%1$d дня</item>
+        <item quantity="many">%1$d дней</item>
+        <item quantity="other">%1$d дня</item>
+    </plurals>
+    <string name="logs_clear">Очистить журналы</string>
+    <string name="logs_clear_confirm">Удалить локальные текстовые журналы диагностики и последние сообщения? Это действие нельзя отменить. Записи поездок, отправленные копии и серверная диагностика сохранятся. Во время текущей поездки журналирование продолжится в новом файле.</string>
 </resources>

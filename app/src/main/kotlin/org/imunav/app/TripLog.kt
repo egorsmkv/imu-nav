@@ -31,6 +31,9 @@ class TripLog(context: Context, maxFileBytes: Long = 15L * 1024 * 1024) {
     /** The last [MAX_RECENT] lines, for the UI. Guarded by `synchronized(tail)`. */
     private val tail = ArrayDeque<String>()
 
+    /** Local retention and cleanup, independent of saved trip recordings and server diagnostics. */
+    val management = LogManagement(context, files) { synchronized(tail) { tail.clear() } }
+
     /** A snapshot of the latest lines (oldest first). */
     val recent: List<String> get() = recent(MAX_RECENT)
 

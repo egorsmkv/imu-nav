@@ -14,6 +14,20 @@ If the app is killed during a trip, starting it again within three hours can res
 
 The diagnostic log can also contain precise locations and cell tower data. When you share visible log events from the log screen, the app warns you before opening Android's share menu.
 
+## Manage diagnostic logs
+
+Open **Settings → Advanced → Logs** to see the number of local text log files and their disk usage.
+Tap **Refresh** for an updated measurement. These settings apply only to this device.
+
+Choose a total size limit of 25, 100 or 250 MB, and optionally keep files for 7, 30 or 90 days.
+Both defaults keep files until you clear them. Selecting a limit immediately removes older completed
+files as needed. Cleanup also runs while writing logs and when a trip ends. The current file stays
+open until rotation or trip end, so usage may temporarily exceed the selected limit.
+
+**Clear logs** asks for confirmation, deletes local text log files and clears recent messages.
+During navigation, logging continues in a new file. Saved trip recordings, exported copies and
+server diagnostics have separate storage and are kept.
+
 ## Send a diagnostic trip to your server
 
 1. Sign in under **Settings → Cell towers → Sharing server**.

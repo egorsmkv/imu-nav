@@ -668,4 +668,22 @@
     <string name="sensor_rotation_vector">orientation sensor</string>
     <string name="sensor_compass">compass</string>
     <string name="diag_sensors_missing">Unavailable: %1$s. Gyroscope turn detection is off; stops are detected using only the accelerometer.</string>
+    <string name="logs_management">Logs</string>
+    <string name="logs_management_summary">Manage local diagnostic text logs. Choosing limits deletes older completed log files automatically. The active file is kept until it closes.</string>
+    <string name="logs_storage">Storage used</string>
+    <string name="logs_usage">Files: %1$d · %2$s</string>
+    <string name="logs_working">Updating logs…</string>
+    <string name="logs_failed">Could not manage log files. Try again.</string>
+    <string name="logs_refresh">Refresh</string>
+    <string name="logs_size_limit">Total size limit</string>
+    <string name="logs_unlimited">No limit</string>
+    <string name="logs_limit_mb">%1$d MB</string>
+    <string name="logs_retention">Keep logs for</string>
+    <string name="logs_forever">Until cleared</string>
+    <plurals name="logs_days">
+        <item quantity="one">%1$d day</item>
+        <item quantity="other">%1$d days</item>
+    </plurals>
+    <string name="logs_clear">Clear logs</string>
+    <string name="logs_clear_confirm">Delete local diagnostic text logs and recent messages? This cannot be undone. Saved trip recordings, shared copies and server diagnostics are kept. Logging can continue in a new file during the current trip.</string>
 </resources>

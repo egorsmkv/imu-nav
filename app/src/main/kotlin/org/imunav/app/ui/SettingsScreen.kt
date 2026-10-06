@@ -467,6 +467,8 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                         modifier = Modifier.clickable(enabled = !busy) { confirmReset = true },
                     )
 
+                    LogManagementSection(app)
+
                     // ---------------- Diagnostics
                     SectionHeader(stringResource(R.string.sec_diagnostics))
                     SwitchItem(stringResource(R.string.simulate_gps_loss), stringResource(R.string.simulate_gps_loss_summary), ui.simulateGpsLoss) { app.setSimulateGpsLoss(it) }
