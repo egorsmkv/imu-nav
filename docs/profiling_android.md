@@ -6,7 +6,7 @@ Every app build can create a local performance bundle. Open **Settings → Advan
 Diagnostics → Record performance**, tap **Start capture**, use the app, then tap **Stop and prepare
 ZIP**. Capture works during navigation and while using the map, search or settings. It continues
 until you stop it or the app process ends. Tap **Share ZIP** and choose a destination in Android's
-share menu. The app does not upload the ZIP to the cell-sharing server.
+share menu. You can also choose **Upload to sharing server** after signing in. Every upload requires confirmation; nothing is sent automatically.
 
 The ZIP contains:
 
@@ -93,3 +93,19 @@ below the choices.
 The choice takes effect immediately on the navigation map, trip history map and Android Auto.
 It is remembered on this device and is not synced to other phones. Lower FPS can save battery
 but makes movement less smooth. Sensor rates and navigation accuracy stay the same.
+
+## Upload a profile to the sharing server
+
+After **Stop and prepare ZIP**, choose **Upload to sharing server**. The app fetches the server’s
+current privacy notice and shows the destination before asking for confirmation. Diagnostics uploads
+must be enabled by the server administrator. This action does not enable automatic trip diagnostics.
+
+Uploads include the whole ZIP, including any precise locations, sensor events, method trace and
+logs. Interrupted captures can also be uploaded. You and the server’s administrators can download
+it under **Diagnostics** (`/debug`). Use that page to delete a recording. Withdrawing diagnostics
+consent or deleting your account also removes uploaded profiles. Profiles expire after 30 days.
+
+Uploads are limited to 48 MiB per ZIP and share the diagnostics quota of 256 MiB and 100 sessions
+per account. Retrying the same ZIP does not create another copy. Leaving the screen or changing
+accounts cancels the request; if the server already accepted it, it can still appear in Diagnostics.
+The local ZIP remains available for sharing.

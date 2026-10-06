@@ -718,4 +718,20 @@
     <string name="map_fps_hint">Низкая частота кадров уменьшает плавность карты и может экономить заряд. Точность навигации не меняется. Сохраняется на этом устройстве.</string>
     <string name="map_fps_value">%1$d кадр/с</string>
     <string name="map_fps_effective">Текущее ограничение: %1$d кадр/с. Экономия энергии может снизить его ещё больше.</string>
+    <string name="profile_upload_action">Загрузить на сервер обмена</string>
+    <string name="profile_upload_sign_in">Войдите на сервер обмена, чтобы загрузить запись производительности.</string>
+    <string name="profile_upload_progress">Подключение к серверу или загрузка…</string>
+    <string name="profile_upload_unavailable">Загрузка профилей недоступна. Попросите администратора сервера разрешить загрузку диагностики.</string>
+    <string name="profile_upload_notice_changed">Уведомление о конфиденциальности на сервере изменилось. Прочитайте его и повторите попытку.</string>
+    <string name="profile_upload_too_large">ZIP недоступен, слишком велик или хранилище на сервере заполнено.</string>
+    <string name="profile_upload_failed">Загрузка не удалась. Повторите попытку; ZIP остаётся на этом устройстве.</string>
+    <string name="profile_upload_done">Профиль загружен.</string>
+    <string name="profile_upload_open">Открыть диагностику на сервере</string>
+    <string name="profile_upload_warning">Загрузить этот ZIP на %1$s? Он может содержать точное местоположение, данные датчиков, сведения об устройстве и журнал. Вы и администраторы сервера сможете скачать его. %2$s Вы можете удалить его в диагностике сервера или отозвать согласие на диагностику. Отправляется только выбранный ZIP.</string>
+    <plurals name="profile_upload_retention">
+        <item quantity="one">Срок хранения — до %d дня.</item>
+        <item quantity="few">Срок хранения — до %d дней.</item>
+        <item quantity="many">Срок хранения — до %d дней.</item>
+        <item quantity="other">Срок хранения — до %d дня.</item>
+    </plurals>
 </resources>

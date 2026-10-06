@@ -706,4 +706,18 @@
     <string name="map_fps_hint">Lower FPS makes the map less smooth and can save battery. Navigation accuracy stays the same. Saved on this device.</string>
     <string name="map_fps_value">%1$d FPS</string>
     <string name="map_fps_effective">Current limit: %1$d FPS. Power saving may lower it further.</string>
+    <string name="profile_upload_action">Upload to sharing server</string>
+    <string name="profile_upload_sign_in">Sign in to the sharing server to upload a performance recording.</string>
+    <string name="profile_upload_progress">Contacting server or uploading…</string>
+    <string name="profile_upload_unavailable">Profile uploads are unavailable. Ask the server administrator to enable diagnostics uploads.</string>
+    <string name="profile_upload_notice_changed">The server privacy notice changed. Review it and try again.</string>
+    <string name="profile_upload_too_large">The ZIP is unavailable, too large, or your server storage is full.</string>
+    <string name="profile_upload_failed">Upload failed. Try again; the ZIP remains on this device.</string>
+    <string name="profile_upload_done">Profile uploaded.</string>
+    <string name="profile_upload_open">Open server diagnostics</string>
+    <string name="profile_upload_warning">Upload this ZIP to %1$s? It may contain precise locations, sensor data, device details and logs. You and server administrators can download it. %2$s You can delete it in server diagnostics or withdraw diagnostics consent. This uploads only the selected ZIP.</string>
+    <plurals name="profile_upload_retention">
+        <item quantity="one">Kept for up to %d day.</item>
+        <item quantity="other">Kept for up to %d days.</item>
+    </plurals>
 </resources>

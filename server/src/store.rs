@@ -78,6 +78,7 @@ const MIGRATION_TABLES: &[(&str, &str)] = &[
         "debug_sessions",
         "id,account_id,client_id,context_json,created_s,updated_s,finished_s,incomplete,bytes",
     ),
+    ("debug_profiles", "session_id,archive"),
     ("debug_batches", "session_id,seq,digest,bytes"),
     ("debug_entries", "session_id,seq,item,kind,elapsed_ms,line"),
 ];
@@ -299,6 +300,9 @@ fn initialize_debug_schema(connection: &Connection) -> Result<()> {
          );
          CREATE INDEX IF NOT EXISTS debug_sessions_account ON debug_sessions(account_id,created_s);
          CREATE INDEX IF NOT EXISTS debug_sessions_expiry ON debug_sessions(created_s);
+         CREATE TABLE IF NOT EXISTS debug_profiles (
+           session_id TEXT PRIMARY KEY REFERENCES debug_sessions(id) ON DELETE CASCADE, archive BLOB NOT NULL
+         );
          CREATE TABLE IF NOT EXISTS debug_batches (
            session_id TEXT NOT NULL REFERENCES debug_sessions(id) ON DELETE CASCADE,
            seq INTEGER NOT NULL, digest TEXT NOT NULL, bytes INTEGER NOT NULL,
@@ -446,6 +450,7 @@ impl CellStore {
                     | "account_sync_entries"
                     | "account_sync_identity"
                     | "trip_archive"
+                    | "debug_profiles"
             ) {
                 let exists: i64 = source.query_row(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
@@ -1364,6 +1369,7 @@ impl CellStore {
                 serde_json::json!({"type":"diagnostic_session","id":row.get::<_,String>(0)?,"client_id":row.get::<_,String>(1)?,"context":serde_json::from_str::<serde_json::Value>(&row.get::<_,String>(2)?)?,"created_s":row.get::<_,i64>(3)?,"updated_s":row.get::<_,i64>(4)?,"finished_s":row.get::<_,Option<i64>>(5)?,"incomplete":row.get::<_,bool>(6)?}),
             )?;
         }
+        export_profile_archives(&connection, account_id, &mut emit)?;
         let mut statement = connection.prepare("SELECT e.session_id,e.seq,e.item,e.kind,e.elapsed_ms,e.line FROM debug_entries e JOIN debug_sessions s ON s.id=e.session_id WHERE s.account_id=?1 ORDER BY e.session_id,e.seq,e.item")?;
         let mut rows = statement.query([account_id])?;
         while let Some(row) = rows.next()? {
@@ -1533,6 +1539,23 @@ impl CellStore {
             quarantined: usize::try_from(quarantined_count)?,
         })
     }
+}
+
+/// Include the original private archive in the owner's streamed data export.
+fn export_profile_archives(
+    connection: &Connection,
+    account_id: i64,
+    emit: &mut impl FnMut(serde_json::Value) -> Result<()>,
+) -> Result<()> {
+    let mut statement = connection.prepare("SELECT p.session_id,p.archive FROM debug_profiles p JOIN debug_sessions s ON s.id=p.session_id WHERE s.account_id=?1")?;
+    let mut rows = statement.query([account_id])?;
+    while let Some(row) = rows.next()? {
+        use base64::Engine as _;
+        emit(
+            serde_json::json!({"type":"profile_archive","session_id":row.get::<_,String>(0)?,"zip_base64":base64::engine::general_purpose::STANDARD.encode(row.get::<_,Vec<u8>>(1)?)}),
+        )?;
+    }
+    Ok(())
 }
 
 fn export_account_summary(

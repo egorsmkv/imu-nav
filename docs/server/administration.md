@@ -15,7 +15,7 @@ device, accounts by email, and audit entries by action. Forms use the browser se
 The pages use Askama templates and Bootstrap 5.3.8 from the jsDelivr CDN.
 
 Open `/debug` from the admin panel to enable diagnostic uploads. The switch is off on a new or
-upgraded server. Users must also turn on **Developer diagnostics** in the app. The server accepts
+upgraded server. For automatic trip diagnostics, users must also turn on **Developer diagnostics** in the app. The server accepts
 ordered, idempotent JSON batches at `/v1/debug/sessions`, separate from tower contributions.
 
 Administrators can inspect the timeline and download `.rec.gz` replay recordings, trip logs and
@@ -75,3 +75,25 @@ databases and saved policy overrides them on later starts.
 `--import towers.csv.gz [--mcc 255,256]` imports trusted OpenCellID-format rows before listening.
 The SQLite database replaces the Kotlin server's contribution gzip and cannot use that old internal
 file as a database; re-import the original OpenCellID/Mozilla seed export when migrating.
+
+## Performance profile ZIPs
+
+Users can manually upload a completed or interrupted performance capture from the app’s
+**Record performance** controls. This uses the same administrator upload switch and diagnostics
+consent, without enabling automatic trip uploads. The owner and administrators can download the
+ZIP from its `/debug` session page. Administrator downloads are audited.
+
+`GET /v1/debug/profiles` returns availability, the current notice, and upload limits for an
+authenticated account. `POST /v1/debug/profiles` accepts an `application/zip` body up to 48 MiB
+and returns the diagnostic session ID. Repeated identical uploads return the same ID. ZIP entries
+are validated against the app format, including CRCs and decompressed size bounds; they are never
+extracted on the server. At most two profile uploads are buffered or processed concurrently.
+
+Profiles share the 256 MiB / 100-session account quota. They inherit the 30-day retention,
+account export, account deletion and diagnostics-consent withdrawal rules. Each account export
+includes a `profile_archive` record whose `zip_base64` field contains the complete archive.
+SQLite-to-PostgreSQL migration includes these archives.
+
+The existing diagnostics data is extended with method traces, Java/native memory counters,
+selected native operation timings and app/device metadata. Operators should describe these fields
+in their published diagnostics notice before accepting uploads.

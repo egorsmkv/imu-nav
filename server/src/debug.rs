@@ -1,5 +1,7 @@
 //! Opt-in trip diagnostics, kept apart from the public cell database.
 
+mod profiles;
+
 use crate::api::{ApiError, AppState, run_db};
 use crate::auth;
 use crate::db::params;
@@ -23,6 +25,7 @@ const MAX_ACCOUNT_BYTES: i64 = 256 * 1024 * 1024;
 
 pub(crate) fn router() -> Router<AppState> {
     Router::new()
+        .merge(profiles::router())
         .route("/v1/debug/sessions", post(start))
         .route("/v1/debug/sessions/{id}", get(status))
         .route("/v1/debug/sessions/{id}/batches/{seq}", put(batch))
@@ -337,6 +340,7 @@ struct DetailPage {
     nav: web::SiteChrome,
     id: String,
     context: String,
+    profile: Option<()>,
     email: String,
     csrf: String,
     entries: Vec<DetailEntry>,
@@ -353,6 +357,7 @@ struct DetailEntry {
 }
 struct SessionDetail {
     context: String,
+    profile: Option<()>,
     email: String,
     finished: bool,
     incomplete: bool,
@@ -388,10 +393,12 @@ async fn detail_page(
         let entries = statement.query_map(params![id_for_db,needle,page*200], |row| Ok(DetailEntry {
             kind: row.get(0)?,elapsed_ms: row.get(1)?,line: row.get(2)?,
         }))?.collect::<Result<Vec<_>,_>>()?;
-        Ok(Some(SessionDetail { context, email, finished, incomplete, entries }))
+        let profile = connection.query_row("SELECT 1 FROM debug_profiles WHERE session_id=?1", [&id_for_db], |_| Ok(())).optional()?;
+        Ok(Some(SessionDetail { context, profile, email, finished, incomplete, entries }))
     }).await?;
     let Some(SessionDetail {
         context,
+        profile,
         email,
         finished,
         incomplete,
@@ -406,6 +413,7 @@ async fn detail_page(
         nav: web::SiteChrome::account(account.admin, web::csrf_token(&raw)),
         id,
         context,
+        profile,
         email,
         csrf: web::csrf_token(&raw),
         entries,
@@ -422,7 +430,7 @@ async fn download(
     headers: HeaderMap,
     Path((id, kind)): Path<(String, String)>,
 ) -> Result<Response, ApiError> {
-    if !matches!(kind.as_str(), "recording" | "logs" | "context") {
+    if !matches!(kind.as_str(), "recording" | "logs" | "context" | "profile") {
         return Err(ApiError(StatusCode::NOT_FOUND, "NOT_FOUND"));
     }
     let (account, _) = browser(&state, &headers).await?;
@@ -443,6 +451,16 @@ async fn download(
         };
         if account.admin {
             store.audit(account.id, "debug_download", &id_for_db)?;
+        }
+        if kind_for_db == "profile" {
+            return connection
+                .query_row(
+                    "SELECT archive FROM debug_profiles WHERE session_id=?1",
+                    [&id_for_db],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(Into::into);
         }
         if kind_for_db == "context" {
             return Ok(Some(context.into_bytes()));
@@ -474,6 +492,7 @@ async fn download(
     .await?;
     let bytes = bytes.ok_or(ApiError(StatusCode::NOT_FOUND, "NOT_FOUND"))?;
     let (suffix, content_type) = match kind.as_str() {
+        "profile" => ("profile.zip", "application/zip"),
         "recording" => ("rec.gz", "application/gzip"),
         "logs" => ("log", "text/plain; charset=utf-8"),
         _ => ("json", "application/json"),

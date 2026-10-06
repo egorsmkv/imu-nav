@@ -31,7 +31,8 @@
   <section class="content-card">
     <h2>What is stored</h2>
     <p>An account stores your email, a password hash, session metadata, and consent receipts. Tower sharing stores a random device ID, cell identifiers, estimated tower coordinates, range, sample count and update time. The server uses an IP address in memory for rate limits but does not store it as a device ID or in application request logs.</p>
-    <p>Optional developer diagnostics contain trip events, precise location, sensor readings, log lines, device and app context. The server excludes passwords and tokens. Administrators can review private diagnostics, tower observations, import errors and audit records.</p>
+    <p>Manually uploaded performance ZIPs also contain method traces, memory counters and native operation timings. These archives are private diagnostics and follow the same access, deletion and retention rules.</p>
+    <p>Optional developer diagnostics contain trip events, precise location, sensor readings, log lines, device and app context. Do not include passwords or tokens in diagnostic data. Administrators can review private diagnostics, tower observations, import errors and audit records.</p>
   </section>
   <section class="content-card">
     <h2>My trips</h2>

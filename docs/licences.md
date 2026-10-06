@@ -22,3 +22,5 @@ The sharing server vendors MapLibre GL JS 5.20.0 under BSD-3-Clause. Its distrib
 AndroidX test libraries are confined to test APKs. Device tests exclude the Car App Testing
 library’s transitive Robolectric dependencies; production APK dependencies are unchanged.
 See the [full library list](reference/licences.md) for versions and licences.
+
+The sharing server uses `zip` 8.6 (MIT) to validate user-uploaded profiling archives. It enables only DEFLATE support; this dependency is not included in the Android app.

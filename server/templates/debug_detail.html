@@ -5,7 +5,7 @@
 {% include "site_header.html" %}
 <main class="page-shell">
   <div class="page-heading"><a href="/debug">All sessions</a><h1>Session {{ id }}</h1><p>Account: {{ email }} · {% if incomplete %}Incomplete{% else %}{% if finished %}Finished{% else %}Receiving or interrupted{% endif %}{% endif %}. This page refreshes while a trip is active.</p></div>
-  <section class="card"><h2>Downloads</h2><div class="actions"><a class="button" href="/debug/{{ id }}/download/recording">Download replay recording</a><a class="button" href="/debug/{{ id }}/download/logs">Download log</a><a class="button" href="/debug/{{ id }}/download/context">Download context</a></div></section>
+  <section class="card"><h2>Downloads</h2><div class="actions">{% if profile.is_some() %}<a class="button" href="/debug/{{ id }}/download/profile">Download profile ZIP</a>{% else %}<a class="button" href="/debug/{{ id }}/download/recording">Download replay recording</a><a class="button" href="/debug/{{ id }}/download/logs">Download log</a>{% endif %}<a class="button" href="/debug/{{ id }}/download/context">Download context</a></div></section>
   <section class="card"><h2>Context</h2><pre>{{ context }}</pre></section>
   <section class="card"><h2>Timeline</h2><form method="get" class="filters"><div><label for="timeline-search">Search lines</label><input id="timeline-search" name="q" value="{{ q }}" maxlength="100"></div><button type="submit">Search</button></form>
     <div class="table-wrap"><table><thead><tr><th>Elapsed ms</th><th>Kind</th><th>Data</th></tr></thead><tbody>{% for entry in entries %}<tr><td>{{ entry.elapsed_ms }}</td><td>{{ entry.kind }}</td><td class="diagnostic-line">{{ entry.line }}</td></tr>{% endfor %}</tbody></table></div>

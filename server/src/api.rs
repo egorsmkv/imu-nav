@@ -65,6 +65,7 @@ pub struct AppState {
     pub(crate) activation_gate: Arc<tokio::sync::RwLock<()>>,
     pub(crate) job: Arc<Mutex<admin::JobState>>,
     downloads: Arc<Semaphore>,
+    pub(crate) profile_transfers: Arc<Semaphore>,
     health_cache: Arc<AsyncMutex<Option<(Instant, usize)>>>,
 }
 
@@ -101,6 +102,7 @@ impl AppState {
             activation_gate: Arc::new(tokio::sync::RwLock::new(())),
             job: Arc::new(Mutex::new(admin::JobState::recovered(prior_job))),
             downloads: Arc::new(Semaphore::new(2)),
+            profile_transfers: Arc::new(Semaphore::new(2)),
             health_cache: Arc::new(AsyncMutex::new(None)),
         })
     }

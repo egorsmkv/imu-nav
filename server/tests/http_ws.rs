@@ -3323,3 +3323,237 @@ async fn sync_snapshot(server: &TestServer) -> Result<serde_json::Value> {
         .json()
         .await?)
 }
+
+/// Synthetic ZIPs exercise the real diagnostics ownership and privacy lifecycle.
+#[tokio::test]
+async fn profile_archives_are_private_idempotent_and_erased_with_consent() -> Result<()> {
+    use std::io::{Cursor, Write};
+    let server =
+        start_server_with_privacy(Policy::default(), None, Some(example_privacy_notice())).await?;
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?;
+    let endpoint = format!("{}/v1/debug/profiles", server.base_url);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    zip.start_file("manifest.json", zip::write::SimpleFileOptions::default())?;
+    zip.write_all(br#"{"schema":2,"interrupted":false,"app_version":"synthetic"}"#)?;
+    zip.start_file("memory.csv", zip::write::SimpleFileOptions::default())?;
+    zip.write_all(b"elapsed_ms,java_heap_used_bytes\n1,100\n")?;
+    let bytes = zip.finish()?.into_inner();
+    let upload = || {
+        client
+            .post(&endpoint)
+            .bearer_auth(&server.token)
+            .header("Content-Type", "application/zip")
+            .body(bytes.clone())
+    };
+    assert_eq!(
+        client
+            .post(&endpoint)
+            .body(bytes.clone())
+            .send()
+            .await?
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(upload().send().await?.status(), StatusCode::FORBIDDEN);
+    let connection = rusqlite::Connection::open(server.database.path())?;
+    connection.execute(
+        "INSERT INTO server_settings(key,value) VALUES ('debug_upload_enabled','1')",
+        [],
+    )?;
+    assert_eq!(upload().send().await?.status(), StatusCode::FORBIDDEN);
+    let metadata: serde_json::Value = client
+        .get(&endpoint)
+        .bearer_auth(&server.token)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    client
+        .put(format!(
+            "{}/v1/privacy/consents/diagnostics",
+            server.base_url
+        ))
+        .bearer_auth(&server.token)
+        .json(&serde_json::json!({"notice_version":metadata["notice_version"]}))
+        .send()
+        .await?
+        .error_for_status()?;
+    check_profile_rejections(&server, &client, &endpoint, &bytes).await?;
+    let first: serde_json::Value = upload().send().await?.error_for_status()?.json().await?;
+    let again: serde_json::Value = upload().send().await?.error_for_status()?.json().await?;
+    assert_eq!(first, again);
+    let id = first["id"].as_str().unwrap();
+    assert_eq!(
+        connection.query_row("SELECT COUNT(*) FROM debug_profiles", [], |r| r
+            .get::<_, i64>(0))?,
+        1
+    );
+    let cookie = check_profile_downloads(&server, &client, id, &bytes).await?;
+    let download = format!("{}/debug/{id}/download/profile", server.base_url);
+    client
+        .delete(format!(
+            "{}/v1/privacy/consents/diagnostics",
+            server.base_url
+        ))
+        .bearer_auth(&server.token)
+        .send()
+        .await?
+        .error_for_status()?;
+    assert_eq!(
+        connection.query_row("SELECT COUNT(*) FROM debug_profiles", [], |r| r
+            .get::<_, i64>(0))?,
+        0
+    );
+    assert_eq!(
+        client
+            .get(&download)
+            .header("Cookie", cookie)
+            .send()
+            .await?
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(upload().send().await?.status(), StatusCode::FORBIDDEN);
+    Ok(())
+}
+
+async fn check_profile_downloads(
+    server: &TestServer,
+    client: &reqwest::Client,
+    id: &str,
+    bytes: &[u8],
+) -> Result<String> {
+    let login = client
+        .post(format!("{}/login", server.base_url))
+        .form(&[
+            ("email", "admin@example.org"),
+            ("password", "correct horse battery staple"),
+        ])
+        .send()
+        .await?;
+    let cookie = login.headers()["set-cookie"]
+        .to_str()?
+        .split(';')
+        .next()
+        .unwrap();
+    let download = format!("{}/debug/{id}/download/profile", server.base_url);
+    assert_eq!(
+        client.get(&download).send().await?.status(),
+        StatusCode::UNAUTHORIZED
+    );
+    let page = client
+        .get(format!("{}/debug/{id}", server.base_url))
+        .header("Cookie", cookie)
+        .send()
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
+    assert!(page.contains("Download profile ZIP"));
+    let response = client
+        .get(&download)
+        .header("Cookie", cookie)
+        .send()
+        .await?
+        .error_for_status()?;
+    assert_eq!(response.headers()["content-type"], "application/zip");
+    assert_eq!(response.bytes().await?.as_ref(), bytes);
+    create_admin(
+        &CellStore::open(server.database.path())?,
+        "other@example.org",
+        "synthetic other password",
+    )?;
+    rusqlite::Connection::open(server.database.path())?.execute(
+        "UPDATE users SET admin=0 WHERE email='other@example.org'",
+        [],
+    )?;
+    let login = client
+        .post(format!("{}/login", server.base_url))
+        .form(&[
+            ("email", "other@example.org"),
+            ("password", "synthetic other password"),
+        ])
+        .send()
+        .await?;
+    let other_cookie = login.headers()["set-cookie"]
+        .to_str()?
+        .split(';')
+        .next()
+        .unwrap();
+    assert_eq!(
+        client
+            .get(&download)
+            .header("Cookie", other_cookie)
+            .send()
+            .await?
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    check_profile_export(server, client, cookie, bytes).await?;
+    Ok(cookie.to_owned())
+}
+
+async fn check_profile_export(
+    server: &TestServer,
+    client: &reqwest::Client,
+    cookie: &str,
+    expected: &[u8],
+) -> Result<()> {
+    use base64::Engine as _;
+    let body = client
+        .get(format!("{}/account/export", server.base_url))
+        .header("Cookie", cookie)
+        .send()
+        .await?
+        .error_for_status()?
+        .bytes()
+        .await?;
+    let mut text = String::new();
+    flate2::read::GzDecoder::new(body.as_ref()).read_to_string(&mut text)?;
+    let rows: Vec<serde_json::Value> = text
+        .lines()
+        .map(serde_json::from_str)
+        .collect::<Result<_, _>>()?;
+    let row = rows
+        .iter()
+        .find(|v| v["type"] == "profile_archive")
+        .unwrap();
+    assert_eq!(
+        base64::engine::general_purpose::STANDARD.decode(row["zip_base64"].as_str().unwrap())?,
+        expected
+    );
+    Ok(())
+}
+
+async fn check_profile_rejections(
+    server: &TestServer,
+    client: &reqwest::Client,
+    endpoint: &str,
+    bytes: &[u8],
+) -> Result<()> {
+    assert_eq!(
+        client
+            .post(endpoint)
+            .bearer_auth(&server.token)
+            .header("Content-Type", "application/zip")
+            .body("invalid")
+            .send()
+            .await?
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        client
+            .post(endpoint)
+            .bearer_auth(&server.token)
+            .body(bytes.to_vec())
+            .send()
+            .await?
+            .status(),
+        StatusCode::UNSUPPORTED_MEDIA_TYPE
+    );
+    Ok(())
+}

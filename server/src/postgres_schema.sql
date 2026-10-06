@@ -107,6 +107,9 @@ CREATE TABLE IF NOT EXISTS debug_sessions (
 CREATE UNIQUE INDEX IF NOT EXISTS debug_sessions_client ON debug_sessions(account_id,client_id);
 CREATE INDEX IF NOT EXISTS debug_sessions_account ON debug_sessions(account_id,created_s);
 CREATE INDEX IF NOT EXISTS debug_sessions_expiry ON debug_sessions(created_s);
+CREATE TABLE IF NOT EXISTS debug_profiles (
+    session_id TEXT PRIMARY KEY REFERENCES debug_sessions(id) ON DELETE CASCADE, archive BYTEA NOT NULL
+);
 CREATE TABLE IF NOT EXISTS debug_batches (
     session_id TEXT NOT NULL REFERENCES debug_sessions(id) ON DELETE CASCADE,
     seq BIGINT NOT NULL, digest TEXT NOT NULL, bytes BIGINT NOT NULL,

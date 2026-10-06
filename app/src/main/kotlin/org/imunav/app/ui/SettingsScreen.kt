@@ -534,6 +534,9 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                                         TextButton(onClick = { confirmProfileShare = true }) { Text(stringResource(R.string.profile_action_share)) }
                                     }
                                 }
+                                if (profileStatus.phase in setOf(ProfilePhase.READY, ProfilePhase.INTERRUPTED)) {
+                                    profileStatus.archive?.let { ProfileUploadControls(app, it) }
+                                }
                             }
                         },
                     )

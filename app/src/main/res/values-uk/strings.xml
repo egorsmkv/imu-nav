@@ -718,4 +718,20 @@
     <string name="map_fps_hint">Нижча частота кадрів зменшує плавність карти й може заощадити заряд. Точність навігації не змінюється. Зберігається на цьому пристрої.</string>
     <string name="map_fps_value">%1$d кадр/с</string>
     <string name="map_fps_effective">Поточне обмеження: %1$d кадр/с. Економія енергії може знизити його ще більше.</string>
+    <string name="profile_upload_action">Завантажити на сервер обміну</string>
+    <string name="profile_upload_sign_in">Увійдіть на сервер обміну, щоб завантажити запис продуктивності.</string>
+    <string name="profile_upload_progress">З’єднання із сервером або завантаження…</string>
+    <string name="profile_upload_unavailable">Завантаження профілів недоступне. Попросіть адміністратора сервера дозволити завантаження діагностики.</string>
+    <string name="profile_upload_notice_changed">Повідомлення про конфіденційність на сервері змінилося. Перегляньте його й спробуйте ще раз.</string>
+    <string name="profile_upload_too_large">ZIP недоступний, завеликий або сховище на сервері заповнене.</string>
+    <string name="profile_upload_failed">Не вдалося завантажити. Спробуйте ще раз; ZIP залишається на цьому пристрої.</string>
+    <string name="profile_upload_done">Профіль завантажено.</string>
+    <string name="profile_upload_open">Відкрити діагностику на сервері</string>
+    <string name="profile_upload_warning">Завантажити цей ZIP на %1$s? Він може містити точне місцезнаходження, дані датчиків, відомості про пристрій і журнал. Ви та адміністратори сервера зможете завантажити його. %2$s Ви можете видалити його в діагностиці сервера або відкликати згоду на діагностику. Надсилається лише вибраний ZIP.</string>
+    <plurals name="profile_upload_retention">
+        <item quantity="one">Термін зберігання — до %d дня.</item>
+        <item quantity="few">Термін зберігання — до %d днів.</item>
+        <item quantity="many">Термін зберігання — до %d днів.</item>
+        <item quantity="other">Термін зберігання — до %d дня.</item>
+    </plurals>
 </resources>

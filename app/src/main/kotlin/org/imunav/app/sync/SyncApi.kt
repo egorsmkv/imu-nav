@@ -7,6 +7,7 @@ import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
+import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import org.imunav.core.net.Http
@@ -19,9 +20,16 @@ import kotlin.coroutines.resumeWithException
 /** Uses the shared HTTP stack and cancels in-flight requests when the account changes. */
 internal class SyncApi(private val url: String, private val token: String) {
     suspend fun request(path: String = "/v1/account-sync", method: String = "GET", body: JSONObject? = null): JSONObject = withContext(Dispatchers.IO) {
+        send(path, method, body?.toString()?.toRequestBody("application/json".toMediaType()))
+    }
+
+    /** Stream caller-owned request bodies while retaining cancellation and response bounds. */
+    suspend fun requestBody(path: String, method: String, body: RequestBody): JSONObject = send(path, method, body)
+
+    private suspend fun send(path: String, method: String, body: RequestBody?): JSONObject = withContext(Dispatchers.IO) {
         suspendCancellableCoroutine { continuation ->
             val request = Request.Builder().url(url + path).header("Authorization", "Bearer $token")
-                .method(method, body?.toString()?.toRequestBody("application/json".toMediaType())).build()
+                .method(method, body).build()
             val call = Http.client.newCall(request)
             continuation.invokeOnCancellation { call.cancel() }
             call.enqueue(object : Callback {

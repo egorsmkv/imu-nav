@@ -53,6 +53,7 @@ fn populate_migration_source(path: &std::path::Path) -> Result<()> {
          INSERT INTO web_impersonations(token_hash,admin_token_hash,actor_id,target_id) VALUES ('user-token','admin-token',1,2);
          INSERT INTO password_resets(token_hash,user_id,expires_s) VALUES ('reset',2,1000);
          INSERT INTO debug_sessions(id,account_id,client_id,context_json,created_s,updated_s) VALUES ('trip',2,'client','{}',100,100);
+         INSERT INTO debug_profiles(session_id,archive) VALUES ('trip',X'504b0304');
          INSERT INTO debug_batches(session_id,seq,digest,bytes) VALUES ('trip',0,'digest',1);
          INSERT INTO debug_entries(session_id,seq,item,kind,elapsed_ms,line) VALUES ('trip',0,0,'event',1,'X,1');",
     )?;
@@ -84,6 +85,7 @@ fn assert_migrated_tables(source_path: &std::path::Path, url: &str) -> Result<()
         "account_sync_state",
         "account_sync_entries",
         "debug_sessions",
+        "debug_profiles",
         "debug_batches",
         "debug_entries",
     ] {
@@ -406,6 +408,7 @@ async fn exercise_api(base: &str, url: &str) -> Result<()> {
         StatusCode::OK
     );
     exercise_diagnostics(&client, base, access, url).await?;
+    exercise_profile_upload(&client, base, access, url).await?;
     Ok(())
 }
 
@@ -708,5 +711,55 @@ async fn exercise_account_sync(base: &str) -> Result<()> {
         StatusCode::CONFLICT
     );
 
+    Ok(())
+}
+
+async fn exercise_profile_upload(
+    client: &reqwest::Client,
+    base: &str,
+    token: &str,
+    url: &str,
+) -> Result<()> {
+    use std::io::{Cursor, Write};
+    let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    writer.start_file("manifest.json", zip::write::SimpleFileOptions::default())?;
+    writer.write_all(br#"{"schema":2,"interrupted":true}"#)?;
+    writer.start_file("memory.csv", zip::write::SimpleFileOptions::default())?;
+    writer.write_all(b"elapsed_ms\n1\n")?;
+    let bytes = writer.finish()?.into_inner();
+    let endpoint = format!("{base}/v1/debug/profiles");
+    let response: serde_json::Value = client
+        .post(&endpoint)
+        .bearer_auth(token)
+        .header("Content-Type", "application/zip")
+        .body(bytes.clone())
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let retry: serde_json::Value = client
+        .post(&endpoint)
+        .bearer_auth(token)
+        .header("Content-Type", "application/zip")
+        .body(bytes.clone())
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert_eq!(response, retry);
+    let id = response["id"].as_str().unwrap().to_owned();
+    let url = url.to_owned();
+    let stored: Vec<u8> = tokio::task::spawn_blocking(move || -> Result<Vec<u8>> {
+        Ok(postgres_client(&url)?
+            .query_one(
+                "SELECT archive FROM debug_profiles WHERE session_id=$1",
+                &[&id],
+            )?
+            .get(0))
+    })
+    .await??;
+    assert_eq!(stored, bytes);
     Ok(())
 }
