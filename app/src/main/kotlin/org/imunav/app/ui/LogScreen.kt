@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -43,6 +44,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -93,6 +95,7 @@ fun LogScreen(app: AppGraph, onBack: () -> Unit) {
     var query by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf(LogFilter.ALL) }
     var followNewest by remember { mutableStateOf(true) }
+    var pendingShareLines by remember { mutableStateOf<List<String>?>(null) }
     val list = rememberLazyListState()
     val visibleLines = remember(lines, query, filter) {
         lines.filter { line -> filter.matches(line) && (query.isBlank() || line.contains(query.trim(), ignoreCase = true)) }
@@ -127,26 +130,7 @@ fun LogScreen(app: AppGraph, onBack: () -> Unit) {
                     }
                     IconButton(
                         enabled = visibleLines.isNotEmpty(),
-                        onClick = {
-                            scope.launch {
-                                val file = runCatching { createSharedLogFile(context, visibleLines) }.getOrElse {
-                                    snackbar.showSnackbar(resources.getString(R.string.trip_log_share_failed))
-                                    return@launch
-                                }
-                                val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-                                val share = Intent(Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(Intent.EXTRA_STREAM, uri)
-                                    clipData = ClipData.newUri(context.contentResolver, file.name, uri)
-                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                }
-                                runCatching {
-                                    context.startActivity(Intent.createChooser(share, resources.getString(R.string.trip_log_share_title)))
-                                }.onFailure {
-                                    snackbar.showSnackbar(resources.getString(R.string.trip_log_share_failed))
-                                }
-                            }
-                        },
+                        onClick = { pendingShareLines = visibleLines.toList() },
                     ) {
                         Icon(Icons.Filled.Share, contentDescription = stringResource(R.string.trip_log_share))
                     }
@@ -212,6 +196,37 @@ fun LogScreen(app: AppGraph, onBack: () -> Unit) {
                 }
             }
         }
+    }
+    pendingShareLines?.let { shareLines ->
+        AlertDialog(
+            onDismissRequest = { pendingShareLines = null },
+            title = { Text(stringResource(R.string.trip_log_share_title)) },
+            text = { Text(stringResource(R.string.trip_log_share_warning)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingShareLines = null
+                    scope.launch {
+                        val file = runCatching { createSharedLogFile(context, shareLines) }.getOrElse {
+                            snackbar.showSnackbar(resources.getString(R.string.trip_log_share_failed))
+                            return@launch
+                        }
+                        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                        val share = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_STREAM, uri)
+                            clipData = ClipData.newUri(context.contentResolver, file.name, uri)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        runCatching {
+                            context.startActivity(Intent.createChooser(share, resources.getString(R.string.trip_log_share_title)))
+                        }.onFailure {
+                            snackbar.showSnackbar(resources.getString(R.string.trip_log_share_failed))
+                        }
+                    }
+                }) { Text(stringResource(R.string.trip_log_share_title)) }
+            },
+            dismissButton = { TextButton(onClick = { pendingShareLines = null }) { Text(stringResource(R.string.action_cancel)) } },
+        )
     }
 }
 

@@ -33,12 +33,42 @@ class PackFilesTest {
         }.toByteArray()
         val operation = PackOperation()
         assertFailsWith<InterruptedException> {
-            PackFiles.extract(archive.inputStream(), staging, false, operation::checkCancelled) { operation.cancel() }
+            PackFiles.extract(archive.inputStream(), staging, false, PackFiles.Limits(2_000_000, 10), operation::checkCancelled) { operation.cancel() }
         }
         assertTrue(File(staging, "data").length() < 1_000_000)
         assertEquals("working", File(current, "data").readText())
         assertFailsWith<InterruptedException> { operation.beginCommit() }
     }
+
+    @Test
+    fun compressedPackCannotExceedExtractedByteLimit() {
+        val staging = temporary.newFolder("staging")
+        val archive = archive("data" to ByteArray(200_000))
+        assertFailsWith<IOException> {
+            PackFiles.extract(archive.inputStream(), staging, false, PackFiles.Limits(100_000, 10), {}, {})
+        }
+        assertTrue(File(staging, "data").length() <= 100_000)
+    }
+
+    @Test
+    fun packCannotExceedEntryLimit() {
+        val staging = temporary.newFolder("staging")
+        val archive = archive("one" to byteArrayOf(1), "two" to byteArrayOf(2))
+        assertFailsWith<IOException> {
+            PackFiles.extract(archive.inputStream(), staging, false, PackFiles.Limits(100, 1), {}, {})
+        }
+        assertFalse(File(staging, "two").exists())
+    }
+
+    private fun archive(vararg entries: Pair<String, ByteArray>): ByteArray = ByteArrayOutputStream().also { bytes ->
+        ZipOutputStream(bytes).use { zip ->
+            entries.forEach { (name, content) ->
+                zip.putNextEntry(ZipEntry(name))
+                zip.write(content)
+                zip.closeEntry()
+            }
+        }
+    }.toByteArray()
 
     @Test
     fun cancellationAfterValidationStillPreventsCommit() {

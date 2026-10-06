@@ -293,6 +293,7 @@
     <string name="trip_log_copy">Копировать видимые события</string>
     <string name="trip_log_share">Отправить видимые события как текстовый файл</string>
     <string name="trip_log_share_title">Отправить журнал поездки</string>
+    <string name="trip_log_share_warning">Этот журнал может содержать точные координаты и данные о сотовых вышках. Отправляйте его только тем, кому доверяете.</string>
     <string name="trip_log_share_failed">Не удалось создать файл журнала</string>
     <string name="simulate_gps_loss">Имитировать потерю GPS</string>
     <string name="simulate_gps_loss_summary">Игнорировать GPS, чтобы проверить навигацию без него</string>

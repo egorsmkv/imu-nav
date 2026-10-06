@@ -8,6 +8,8 @@ The app accepts locations worldwide. Install packs for the region you will use; 
 ## Use an offline routing pack
 
 1. Install the built-in pack during setup if your build offers one. Otherwise open **Settings → Maps and route planning → Offline routing** and import or download a routing-pack ZIP.
+   The app rejects archives with more than 20,000 entries or 8 GiB of extracted data. It budgets
+   256 MiB of free storage when extraction starts.
 2. In **Where to?**, choose **Car** or **Walk**. Older packs may support only Car.
 3. Search for a destination and, if needed, a starting address. Review the route before tapping **Start**.
 
@@ -58,5 +60,6 @@ to your HTTPS server and a checksum; the separate Play benchmark APK artifact in
 map. Enter your uploaded ZIP URL in **Settings → Offline map** on builds without a bundled map.
 
 The Play APK reads its included map through an on-device range reader, with no first-run copy. F-Droid builds can import or
-download the ZIP. See the [detailed routing reference](reference/ROUTING_AND_SEARCH.md) for the
+download the ZIP. Imported map archives have the same 20,000-entry limit and a 4 GiB extracted-data
+limit. See the [detailed routing reference](reference/ROUTING_AND_SEARCH.md) for the
 build inputs, size report, and local commands.

@@ -13,9 +13,11 @@ Sensitive data
   policy. Share files only after a user action, through the existing
   FileProvider with narrow paths and temporary URI permissions. Do not add
   automatic diagnostic uploads. See docs/TRIPS.md and docs/PROFILING_ANDROID.md.
-- Collect and retain only what a feature needs. Do not put precise location,
-  credentials, tokens, request bodies, or session identifiers in ordinary
-  logs, URLs, analytics, crash reports, or screenshots.
+- Collect and retain only what a feature needs. Diagnostic logs can contain
+  precise location; treat them as private and warn before user-initiated
+  sharing. Do not put credentials, tokens, request bodies, or session
+  identifiers in logs, URLs, analytics, crash reports, or screenshots. Keep
+  precise location out of URLs unless a user-enabled service requires it.
 
 Secrets and credentials
 -----------------------

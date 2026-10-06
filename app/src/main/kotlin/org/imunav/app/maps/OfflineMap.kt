@@ -255,7 +255,7 @@ class OfflineMap(private val context: Context, private val scope: CoroutineScope
         }
         var bytes = 0L
         var lastReport = 0L
-        PackFiles.extract(input, staging, flat = false, check = ::checkCancellation) { copied ->
+        PackFiles.extract(input, staging, flat = false, limits = PackFiles.limitsFor(staging, MAX_MAP_PACK_BYTES, MAX_MAP_PACK_ENTRIES), check = ::checkCancellation) { copied ->
             bytes = copied
             if (bytes - lastReport >= PROGRESS_STEP_BYTES) {
                 lastReport = bytes
@@ -451,6 +451,8 @@ class OfflineMap(private val context: Context, private val scope: CoroutineScope
         const val KEY_URL = "pack_url"
         const val MB = 1_048_576L
         const val PROGRESS_STEP_BYTES = 4L * MB
+        const val MAX_MAP_PACK_BYTES = 4L * 1024 * 1024 * 1024
+        const val MAX_MAP_PACK_ENTRIES = 20_000
 
         /** Map this far either side of the route. */
         const val CORRIDOR_RADIUS_M = 1_000.0

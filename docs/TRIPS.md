@@ -12,6 +12,8 @@ The app records a trip automatically while you navigate. Recordings contain your
 
 If the app is killed during a trip, starting it again within three hours can restore the route and recording. The estimate becomes less certain for the missing time.
 
+The diagnostic log can also contain precise locations and cell tower data. When you share visible log events from the log screen, the app warns you before opening Android's share menu.
+
 ## Send a diagnostic trip to your server
 
 1. Sign in under **Settings → Cell towers → Sharing server**.

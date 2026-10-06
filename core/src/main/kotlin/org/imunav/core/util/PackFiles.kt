@@ -44,15 +44,32 @@ class PackOperation {
 
 /** Shared archive handling and rollback for routing and visual map packs. All methods run on workers. */
 object PackFiles {
+    /** Limits apply to extracted data, since a small ZIP can expand far beyond its download size. */
+    data class Limits(val maxBytes: Long, val maxEntries: Int) {
+        init {
+            require(maxBytes > 0 && maxEntries > 0)
+        }
+    }
+
+    /** Leave room for the rest of the phone while limiting even highly compressed archives. */
+    fun limitsFor(staging: File, maxBytes: Long, maxEntries: Int): Limits {
+        val available = staging.usableSpace - FREE_SPACE_RESERVE_BYTES
+        if (available <= 0) throw IOException("not enough free space to install pack")
+        return Limits(minOf(maxBytes, available), maxEntries)
+    }
+
     /** Check cancellation even inside a single large final ZIP entry. */
-    fun extract(input: InputStream, staging: File, flat: Boolean, check: () -> Unit, progress: (Long) -> Unit) {
+    fun extract(input: InputStream, staging: File, flat: Boolean, limits: Limits, check: () -> Unit, progress: (Long) -> Unit) {
         val stagingPath = staging.canonicalPath + File.separator
         var bytes = 0L
+        var entries = 0
         ZipInputStream(input.buffered(BUFFER_BYTES)).use { zip ->
             val buffer = ByteArray(BUFFER_BYTES)
             while (true) {
                 check()
                 val entry = zip.nextEntry ?: break
+                entries++
+                if (entries > limits.maxEntries) throw IOException("pack has too many entries")
                 val name = if (flat) File(entry.name).name else entry.name
                 if (name.isBlank() || (flat && entry.isDirectory)) continue
                 val target = File(staging, name)
@@ -67,6 +84,7 @@ object PackFiles {
                         check()
                         val count = zip.read(buffer)
                         if (count < 0) break
+                        if (count > limits.maxBytes - bytes) throw IOException("pack exceeds extracted size limit")
                         output.write(buffer, 0, count)
                         bytes += count
                         progress(bytes)
@@ -107,4 +125,5 @@ object PackFiles {
     }
 
     private const val BUFFER_BYTES = 1 shl 16
+    private const val FREE_SPACE_RESERVE_BYTES = 256L * 1024 * 1024
 }

@@ -311,7 +311,13 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
         }
         var bytes = 0L
         var lastReport = 0L
-        PackFiles.extract(input, staging, flat = true, check = ::checkCancellation) { copied ->
+        PackFiles.extract(
+            input,
+            staging,
+            flat = true,
+            limits = PackFiles.limitsFor(staging, MAX_ROUTING_PACK_BYTES, MAX_ROUTING_PACK_ENTRIES),
+            check = ::checkCancellation,
+        ) { copied ->
             bytes = copied
             if (bytes - lastReport >= 4L * 1_048_576) {
                 lastReport = bytes
@@ -393,6 +399,8 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
 
 private const val BUNDLED_ZIP = "routing/pack.zip"
 private const val BUNDLED_INFO = "routing/pack.json"
+private const val MAX_ROUTING_PACK_BYTES = 8L * 1024 * 1024 * 1024
+private const val MAX_ROUTING_PACK_ENTRIES = 20_000
 
 /** Offline first; online OSRM only when allowed and the offline pack cannot answer. */
 class SmartRouter(

@@ -293,6 +293,7 @@
     <string name="trip_log_copy">Копіювати видимі події</string>
     <string name="trip_log_share">Надіслати видимі події як текстовий файл</string>
     <string name="trip_log_share_title">Надіслати журнал поїздки</string>
+    <string name="trip_log_share_warning">Цей журнал може містити точні координати та дані про стільникові вежі. Надсилайте його лише тим, кому довіряєте.</string>
     <string name="trip_log_share_failed">Не вдалося створити файл журналу</string>
     <string name="simulate_gps_loss">Імітувати втрату GPS</string>
     <string name="simulate_gps_loss_summary">Ігнорувати GPS, щоб перевірити навігацію без нього</string>
