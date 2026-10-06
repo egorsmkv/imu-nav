@@ -227,8 +227,8 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
         persist(force = false)
     }
 
-    /** Finish the trip: close the recording and add it to the history. */
-    fun end(arrived: Boolean) {
+    /** Finish the trip; an explicit stop keeps even a short ride in history. */
+    fun end(arrived: Boolean, keepShortTrip: Boolean = false) {
         val tripId = id ?: return
         record(TripEvent.Stop(SystemClock.elapsedRealtime()))
         val finished = recorder
@@ -242,7 +242,7 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
         )
         id = null
         // Skip accidental starts (no movement at all) to keep the history meaningful.
-        if (summary.drivenM < 50 && summary.durationS < 120) {
+        if (!keepShortTrip && summary.drivenM < 50 && summary.durationS < 120) {
             finished?.finish(discard = true)
             log("trip_discarded $tripId")
             io.execute {

@@ -68,7 +68,7 @@ internal class NavigationSessionLifecycle(
     fun stop() {
         val arrived = engine.state.arrived
         val cleanup = listOf<() -> Unit>(
-            { trips.end(arrived = arrived) }, engine::stop, voice::stop, estimatorBridge::close,
+            { trips.end(arrived = arrived, keepShortTrip = true) }, engine::stop, voice::stop, estimatorBridge::close,
             routeProjector::close, obd::stop, applyPower, tripLog::endTrip,
             maybeAutoSync, { NavService.stop(context) },
         )

@@ -4,6 +4,9 @@
 
 The app records a trip automatically while you navigate. Recordings contain your route, positions and sensor events; treat a shared file as private location data.
 
+Tap **Stop** to save the ride in **History**, including short rides or rides without movement.
+The recording is closed and saved on the phone in the background.
+
 ## Review or share a trip
 
 1. Tap the clock icon on the map to open **History**.

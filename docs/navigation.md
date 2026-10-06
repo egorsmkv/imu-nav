@@ -8,9 +8,9 @@ The app tries to use trusted GPS first. When GPS is unreliable, it estimates pro
 
 1. In **Where to?**, choose **Car** or **Walk**.
 2. Search for a destination or long-press the map. The app uses your current position as the start when it has a recent usable fix.
-3. If no usable position is available, search for a starting address. You can also move the map crosshair to your position and tap **Start here**.
+3. If no usable position is available, search for a starting address. Selecting an address in **From** centres the map on that place and zooms in to street level. You can also move the map crosshair to your position and tap **Start here**.
 4. Review the proposed route, then tap **Start**. Tap the status pill to see positioning details, including why a GPS fix was rejected.
-5. Tap **Stop** when the trip ends.
+5. Tap **Stop** when the trip ends. The ride is saved in **History**, even if it was short.
 
 ## Choose how to navigate without GPS
 

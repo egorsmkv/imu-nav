@@ -62,11 +62,12 @@ class MapController {
         m.animateCamera(CameraUpdateFactory.zoomTo(z), 250)
     }
 
-    /** Fly the camera to [p] (north up). */
-    fun moveTo(p: GeoPoint, zoom: Double? = null) {
+    /** Centre on [p] north up; skip animation when changing overlays could interrupt it. */
+    fun moveTo(p: GeoPoint, zoom: Double? = null, animate: Boolean = true) {
         val m = map ?: return
         val z = zoom ?: m.cameraPosition.zoom.coerceAtLeast(14.0)
-        m.animateCamera(CameraUpdateFactory.newCameraPosition(CameraPosition.Builder().target(LatLng(p.lat, p.lon)).zoom(z).bearing(0.0).build()), 500)
+        val update = CameraUpdateFactory.newCameraPosition(CameraPosition.Builder().target(LatLng(p.lat, p.lon)).zoom(z).bearing(0.0).build())
+        if (animate) m.animateCamera(update, 500) else m.moveCamera(update)
     }
 }
 

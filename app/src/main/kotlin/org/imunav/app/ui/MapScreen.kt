@@ -97,6 +97,7 @@ internal val BadRed = Color(0xFFD93025)
 internal val InfoBlue = Color(0xFF1A73E8)
 private const val MAP_HEADER_HEIGHT_FRACTION = 0.4f
 private const val MAP_CONTROLS_HEIGHT_FRACTION = 0.45f
+private const val SELECTED_PLACE_ZOOM = 17.0
 internal val MapButtonSize = 48.dp
 internal val MapButtonSpacing = 10.dp
 private val MapOverlayPadding = 12.dp
@@ -176,11 +177,13 @@ fun MapScreen(
             controller.moveTo(p, 14.0)
         }
     }
-    LaunchedEffect(ui.mapFocusRequest, mapActive) {
-        if (mapActive) {
+    LaunchedEffect(ui.mapFocusRequest, mapActive, controller.map) {
+        if (mapActive && controller.map != null) {
             ui.mapFocusRequest?.let { point ->
                 if (!nav.active) {
-                    controller.moveTo(point, 16.0)
+                    following = false
+                    centeredOnce = true
+                    controller.moveTo(point, SELECTED_PLACE_ZOOM, animate = false)
                     // Saved walking routes need the same step-counter permission as the mode selector.
                     if (travelMode == TravelMode.FOOT && Build.VERSION.SDK_INT >= 29 && !hasActivityPermission(context)) {
                         activityPermission.launch(Manifest.permission.ACTIVITY_RECOGNITION)
@@ -491,7 +494,9 @@ fun MapScreen(
                         RoutePoint.START -> app.setManualStart(r.point, r.routePointLabel())
                         RoutePoint.DESTINATION -> app.setDestination(r.point, r.routePointLabel())
                     }
-                    controller.moveTo(r.point, 16.0)
+                    following = false
+                    centeredOnce = true
+                    controller.moveTo(r.point, SELECTED_PLACE_ZOOM, animate = false)
                     searchTarget = null
                 },
                 onClose = { searchTarget = null },

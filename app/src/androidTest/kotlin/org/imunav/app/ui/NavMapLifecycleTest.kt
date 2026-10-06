@@ -20,6 +20,8 @@ class NavMapLifecycleTest {
     @Test
     fun hiddenMapDefersCameraAndStyleAndResumesWithLatestValues() {
         val active = mutableStateOf(true)
+        val following = mutableStateOf(true)
+        val topInset = mutableStateOf(0)
         val point = mutableStateOf(GeoPoint(50.0, 30.0))
         val styleJson = mutableStateOf(style("first"))
         val controller = MapController()
@@ -34,7 +36,7 @@ class NavMapLifecycleTest {
                         accuracyM = 10.0,
                         bearingDeg = 0f,
                         destination = point.value,
-                        following = true,
+                        following = following.value,
                         towers = null,
                         onLongPress = {},
                         onCenterChanged = {},
@@ -47,6 +49,7 @@ class NavMapLifecycleTest {
                         prefetchZoomDelta = 0,
                         offlineStyleJson = styleJson.value,
                         active = active.value,
+                        insetTopPx = topInset.value,
                     )
                 }
             }
@@ -78,6 +81,20 @@ class NavMapLifecycleTest {
             point.value = GeoPoint(53.0, 33.0)
             scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
             await(scenario) { abs(latitude(controller) - 53.0) < 0.0001 }
+
+            // Selecting an address must survive the search overlay closing and later GPS updates.
+            scenario.onActivity {
+                following.value = false
+                controller.moveTo(GeoPoint(50.45, 30.52), 17.0, animate = false)
+                topInset.value = 120
+                point.value = GeoPoint(54.0, 34.0)
+            }
+            Thread.sleep(500)
+            scenario.onActivity {
+                assertEquals(50.45, latitude(controller), 0.0001)
+                assertEquals(30.52, controller.map?.cameraPosition?.target?.longitude ?: Double.NaN, 0.0001)
+                assertEquals(17.0, controller.map?.cameraPosition?.zoom ?: Double.NaN, 0.0001)
+            }
         }
     }
 
