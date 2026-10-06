@@ -18,11 +18,11 @@ The diagnostic log can also contain precise locations and cell tower data. When 
 
 1. Sign in under **Settings → Cell towers → Sharing server**.
 2. Ask the server administrator to enable uploads on **Admin → Diagnostics**.
-3. Turn on **Settings → Diagnostics → Developer diagnostics** before starting a trip. The app sends replay events, trip log lines and basic app/device settings while you navigate. It uses Wi-Fi or mobile data.
+3. Read the selected server notice and grant separate diagnostics consent in **Settings → Diagnostics → Developer diagnostics** before starting a trip. Turning it off queues server erasure and stops local capture immediately. The app sends replay events, trip log lines and basic app/device settings while you navigate. It uses Wi-Fi or mobile data.
 4. Watch **Upload status** in Settings. If the connection drops, the app keeps a bounded local queue and retries. A full queue or server quota can leave the server copy incomplete.
 5. Open **My account → Developer diagnostics** on the server to review, download or delete your sessions. Administrators can inspect submitted sessions. Sessions expire after 30 days.
 
-The recording contains precise location and sensor data. Turn the switch off to stop capture and discard unsent batches. Data already received by the server remains until you delete it or it expires. Passwords and account tokens are not part of the upload.
+The recording contains precise location and sensor data. Turn the switch off to stop capture and discard unsent batches. The app requests deletion of sessions already received; if offline, it retries after sign-in and connectivity return. Passwords and account tokens are not part of the upload.
 
 For a local performance capture that you share yourself, see [Capture app performance on Android](PROFILING_ANDROID.md).
 

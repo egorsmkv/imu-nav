@@ -4,6 +4,7 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import androidx.core.content.edit
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -24,6 +25,7 @@ internal class CellAuth(context: Context) {
     private var expiresAtMs = 0L
 
     val email: String? get() = prefs.getString("email", null)
+    val serverUrl: String? get() = prefs.getString("url", null)
     val emailVerified: Boolean get() = prefs.getBoolean("email_verified", true)
     val sharingEnabled: Boolean get() = prefs.getBoolean("sharing_enabled", true)
 
@@ -34,6 +36,9 @@ internal class CellAuth(context: Context) {
             if (body.contains("SHARING_DISABLED")) putBoolean("sharing_enabled", false)
         }
     }
+
+    /** A successful tower consent re-enables sharing on the server when email is verified. */
+    fun markSharingEnabled() = prefs.edit { putBoolean("sharing_enabled", true) }
 
     /** A changed server cannot receive a token issued by the previous server. */
     fun clear() {
@@ -102,7 +107,8 @@ internal class CellAuth(context: Context) {
 
     private fun post(url: String, path: String, body: JSONObject): JSONObject {
         val base = url.trim().trimEnd('/')
-        require(base.startsWith("https://") || base.startsWith("http://localhost:") || base.startsWith("http://127.0.0.1:") || base.startsWith("http://10.0.2.2:")) {
+        val parsed = base.toHttpUrlOrNull() ?: error("Invalid sharing server URL")
+        require(parsed.scheme == "https" || (parsed.scheme == "http" && parsed.host in setOf("localhost", "127.0.0.1", "10.0.2.2"))) {
             "Account sign-in requires HTTPS"
         }
         val request = Request.Builder().url(base + path).post(body.toString().toRequestBody("application/json".toMediaType())).build()

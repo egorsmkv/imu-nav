@@ -610,4 +610,14 @@
     <string name="driving_more">Другие действия</string>
     <string name="driving_expand">Показать управление маршрутом</string>
     <string name="driving_collapse">Свернуть</string>
+    <string name="privacy_notice_unavailable">Не удалось загрузить уведомление о конфиденциальности сервера. Повторите попытку после подключения.</string>
+    <string name="privacy_notice_title">Уведомление о конфиденциальности сервера</string>
+    <string name="privacy_notice_details">Контролёр: %1$s\nКонтакт: %2$s\nЗапросы о данных: %3$s\nРегион: %4$s\nПолучатели: %5$s\nПередача: %6$s\nОснование для учётной записи: %7$s\nОснование для безопасности: %8$s</string>
+    <string name="privacy_agree">Продолжить</string>
+    <string name="privacy_consent_failed">Не удалось сохранить согласие. Повторите попытку.</string>
+    <string name="privacy_tower_title">Делиться наблюдениями вышек</string>
+    <string name="privacy_tower_summary">Необязательно. Отправляет примерные координаты вышек на этот сервер; отключение удаляет ваши данные.</string>
+    <string name="privacy_view_notice">Прочитать уведомление %1$s</string>
+    <string name="privacy_sign_in_first">Сначала войдите на выбранный сервер обмена.</string>
+    <string name="privacy_manage_account">Управлять данными сервера: экспорт или удаление</string>
 </resources>

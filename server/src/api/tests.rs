@@ -9,6 +9,7 @@ fn rate_and_identity_limits_expire_only_after_their_windows() {
             mail: None,
             trust_proxy: false,
             secure_cookies: false,
+            privacy: None,
             policy: Policy {
                 max_uploads_per_hour_per_device: 1,
                 max_uploads_per_hour_per_ip: 2,
@@ -97,6 +98,7 @@ async fn public_export_slots_are_bounded() {
             policy: Policy::default(),
             trust_proxy: false,
             secure_cookies: false,
+            privacy: None,
         },
     )
     .unwrap();
@@ -121,6 +123,7 @@ async fn health_count_is_cached_until_its_short_ttl_expires() {
             policy: Policy::default(),
             trust_proxy: false,
             secure_cookies: false,
+            privacy: None,
         },
     )
     .unwrap();
@@ -181,6 +184,7 @@ async fn slow_websocket_consumers_receive_resync_then_live_events() {
             policy: Policy::default(),
             trust_proxy: false,
             secure_cookies: false,
+            privacy: None,
         },
     )
     .unwrap();

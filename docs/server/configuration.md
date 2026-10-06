@@ -40,7 +40,7 @@ server/target/release/imu-nav-cell-server --config server/config.toml \
     --migrate-from-sqlite backup.sqlite3
 ```
 
-The command copies accounts, sessions, tower data, settings, audit records, and diagnostics in one
+The command copies accounts, consent receipts, sessions, tower data, settings, audit records, and diagnostics in one
 PostgreSQL transaction. It refuses a nonempty target and leaves the SQLite source untouched. Start
 the server with the PostgreSQL config and check its startup counts. Keep the SQLite
 backup until the new server has been checked; rollback is selecting the original SQLite database.
@@ -66,10 +66,9 @@ only be enabled when direct access to the server port is blocked.
 For public HTTPS behind a reverse proxy, set `server.secure_cookies = true` in TOML or pass
 `--secure-cookies`. This marks browser sessions `Secure` without trusting forwarded client IPs.
 The server also recognizes `X-Forwarded-Proto: https` for the cookie flag; have the proxy replace
-that header. Direct LAN HTTP browser login remains available when secure cookies are disabled,
-but it sends credentials and sessions without transport encryption.
-`--bind 127.0.0.1` restricts the listener to loopback for local testing; the default remains
-`0.0.0.0` for existing deployments.
+that header. Local mode binds to loopback by default and rejects non-loopback binds. Public mode
+requires explicit `server.mode = "public"`, HTTPS `public_url`, secure cookies and complete privacy
+metadata; see [privacy operations](privacy.md).
 
 Public cell downloads are streamed from consistent database snapshots in bounded pages; at most
 two run at once, and excess requests receive HTTP 429. The `/health` body remains `ok <count>`,

@@ -600,4 +600,14 @@
     <string name="driving_more">More options</string>
     <string name="driving_expand">Show route controls</string>
     <string name="driving_collapse">Collapse</string>
+    <string name="privacy_notice_unavailable">The server privacy notice could not be loaded. Try again when connected.</string>
+    <string name="privacy_notice_title">Server privacy notice</string>
+    <string name="privacy_notice_details">Controller: %1$s\nContact: %2$s\nPrivacy requests: %3$s\nRegion: %4$s\nRecipients: %5$s\nTransfers: %6$s\nAccount basis: %7$s\nSecurity basis: %8$s</string>
+    <string name="privacy_agree">Continue</string>
+    <string name="privacy_consent_failed">Consent could not be saved. Please try again.</string>
+    <string name="privacy_tower_title">Share tower observations</string>
+    <string name="privacy_tower_summary">Optional. Sends estimated tower locations to this server; turn off to erase your contributions.</string>
+    <string name="privacy_view_notice">Read %1$s privacy notice</string>
+    <string name="privacy_sign_in_first">Sign in to the selected sharing server first.</string>
+    <string name="privacy_manage_account">Manage server data: export or delete</string>
 </resources>

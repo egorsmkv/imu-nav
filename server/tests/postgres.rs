@@ -2,8 +2,8 @@
 
 use anyhow::Result;
 use imu_nav_cell_server::{
-    AppState, CellKey, CellStore, CellTower, Consensus, Policy, Radio, ServerConfig, create_admin,
-    encode_towers, router,
+    AppState, CellKey, CellStore, CellTower, Consensus, Policy, PrivacyNotice, Radio, ServerConfig,
+    create_admin, encode_towers, router,
 };
 use postgres_native_tls::MakeTlsConnector;
 use reqwest::StatusCode;
@@ -35,6 +35,7 @@ fn populate_migration_source(path: &std::path::Path) -> Result<()> {
     let source = rusqlite::Connection::open(path)?;
     source.execute_batch(
         "INSERT INTO users(id,email,password_hash,admin) VALUES (2,'driver@example.org','hash',0);
+         INSERT INTO privacy_consents(id,account_id,purpose,notice_version,granted,at_s) VALUES (1,2,'tower_upload','v1',1,100);
          INSERT INTO tower_moderation(radio,mcc,mnc,area,cid,quarantined) VALUES ('LTE',255,1,100,202,1);
          INSERT INTO tower_removals(radio,mcc,mnc,area,cid,updated_s) VALUES ('LTE',255,1,100,201,101);
          INSERT INTO server_settings(key,value) VALUES ('debug_upload_enabled','1');
@@ -72,6 +73,7 @@ fn assert_migrated_tables(source_path: &std::path::Path, url: &str) -> Result<()
         "auth_tokens",
         "web_impersonations",
         "password_resets",
+        "privacy_consents",
         "debug_sessions",
         "debug_batches",
         "debug_entries",
@@ -81,11 +83,17 @@ fn assert_migrated_tables(source_path: &std::path::Path, url: &str) -> Result<()
         let actual: i64 = postgres.query_one(&sql, &[])?.get(0);
         assert_eq!(actual, expected, "{table}");
     }
-    for (table, expected) in [("users", 3), ("admin_jobs", 8), ("admin_audit", 12)] {
+    for (table, expected) in [
+        ("users", 3),
+        ("admin_jobs", 8),
+        ("admin_audit", 12),
+        ("privacy_consents", 2),
+    ] {
         let sql = match table {
             "users" => "INSERT INTO users(email,password_hash) VALUES ('later@example.org','hash') RETURNING id".to_owned(),
             "admin_jobs" => "INSERT INTO admin_jobs(kind,status,started_s) VALUES ('test','complete',1) RETURNING id".to_owned(),
-            _ => "INSERT INTO admin_audit(actor_id,action,target,at_s) VALUES (1,'test','next',1) RETURNING id".to_owned(),
+            "admin_audit" => "INSERT INTO admin_audit(actor_id,action,target,at_s) VALUES (1,'test','next',1) RETURNING id".to_owned(),
+            _ => "INSERT INTO privacy_consents(account_id,purpose,notice_version,granted,at_s) VALUES (2,'diagnostics','v1',1,1) RETURNING id".to_owned(),
         };
         let id: i64 = postgres.query_one(&sql, &[])?.get(0);
         assert_eq!(id, expected, "{table} sequence");
@@ -171,6 +179,22 @@ async fn api_auth_upload_and_private_diagnostics_use_postgres() -> Result<()> {
                     policy: Policy::default(),
                     trust_proxy: false,
                     secure_cookies: false,
+                    privacy: Some(PrivacyNotice {
+                        version: "v1".into(),
+                        controller: "Example".into(),
+                        contact: "contact@example.org".into(),
+                        rights_contact: "rights@example.org".into(),
+                        region: "EU".into(),
+                        recipients: "Host".into(),
+                        transfers: "None".into(),
+                        account_basis: "Contract".into(),
+                        security_basis: "Legitimate interests".into(),
+                        notice_en: "Example notice".into(),
+                        notice_uk: "Повідомлення".into(),
+                        notice_ru: "Уведомление".into(),
+                        tower_retention_months: 12,
+                        diagnostics_retention_days: 30,
+                    }),
                 },
             )?;
             Ok(Some((state, url)))
@@ -193,12 +217,98 @@ async fn api_auth_upload_and_private_diagnostics_use_postgres() -> Result<()> {
     exercise_browser(&base).await?;
     exercise_admin_mutations(&base).await?;
     exercise_paged_public_exports(&base, &url).await?;
+    exercise_privacy_withdrawal(&base, &url).await?;
     task.abort();
     Ok(())
 }
 
-async fn exercise_api(base: &str, url: &str) -> Result<()> {
+async fn exercise_privacy_withdrawal(base: &str, url: &str) -> Result<()> {
+    let client = reqwest::Client::new();
+    let login: serde_json::Value = client.post(format!("{base}/v1/auth/login"))
+        .json(&serde_json::json!({"email":"driver@example.org","password":"correct horse battery staple"}))
+        .send().await?.error_for_status()?.json().await?;
+    let token = login["access_token"].as_str().expect("access token");
+    let tower = CellTower {
+        key: CellKey {
+            radio: Radio::Lte,
+            mcc: 255,
+            mnc: 1,
+            area: 100,
+            cid: 909,
+        },
+        lat: 50.45,
+        lon: 30.52,
+        range_m: 500.0,
+        samples: 3,
+    };
+    let body = encode_towers(&[Consensus {
+        tower,
+        devices: 2,
+        seeded: false,
+        updated_s: 1,
+    }])?;
+    assert_eq!(
+        client
+            .put(format!("{base}/v1/privacy/consents/tower_upload"))
+            .bearer_auth(token)
+            .json(&serde_json::json!({"notice_version":"v1"}))
+            .send()
+            .await?
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        client
+            .post(format!("{base}/v1/cells"))
+            .bearer_auth(token)
+            .header("x-device-id", "pg-privacy-phone")
+            .body(body)
+            .send()
+            .await?
+            .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        client
+            .delete(format!("{base}/v1/privacy/consents/tower_upload"))
+            .bearer_auth(token)
+            .send()
+            .await?
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        client
+            .delete(format!("{base}/v1/privacy/consents/diagnostics"))
+            .bearer_auth(token)
+            .send()
+            .await?
+            .status(),
+        StatusCode::NO_CONTENT
+    );
     let url = url.to_owned();
+    let (remaining, sessions) = tokio::task::spawn_blocking(move || -> Result<(i64, i64)> {
+        let mut database = postgres_client(&url)?;
+        let remaining = database
+            .query_one(
+                "SELECT COUNT(*) FROM contributions WHERE cid=909 AND device LIKE 'account:%'",
+                &[],
+            )?
+            .get(0);
+        let sessions = database
+            .query_one(
+                "SELECT COUNT(*) FROM debug_sessions WHERE account_id=2",
+                &[],
+            )?
+            .get(0);
+        Ok((remaining, sessions))
+    })
+    .await??;
+    assert_eq!((remaining, sessions), (0, 0));
+    Ok(())
+}
+
+async fn exercise_api(base: &str, url: &str) -> Result<()> {
     let client = reqwest::Client::new();
     let register = client.post(format!("{base}/v1/auth/register"))
         .json(&serde_json::json!({"email":"driver@example.org","password":"correct horse battery staple"}))
@@ -234,6 +344,28 @@ async fn exercise_api(base: &str, url: &str) -> Result<()> {
         seeded: false,
         updated_s: 1,
     }])?;
+    let missing_consent = client
+        .post(format!("{base}/v1/cells"))
+        .bearer_auth(access)
+        .header("x-device-id", "device-aaaa-1111")
+        .body(body.clone())
+        .send()
+        .await?;
+    assert_eq!(missing_consent.status(), StatusCode::FORBIDDEN);
+    assert_eq!(
+        missing_consent.json::<serde_json::Value>().await?["message"],
+        "CONSENT_REQUIRED"
+    );
+    assert_eq!(
+        client
+            .put(format!("{base}/v1/privacy/consents/tower_upload"))
+            .bearer_auth(access)
+            .json(&serde_json::json!({"notice_version":"v1"}))
+            .send()
+            .await?
+            .status(),
+        StatusCode::NO_CONTENT
+    );
     for device in ["device-aaaa-1111", "device-bbbb-2222"] {
         let uploaded = client
             .post(format!("{base}/v1/cells"))
@@ -262,6 +394,17 @@ async fn exercise_api(base: &str, url: &str) -> Result<()> {
             .status(),
         StatusCode::OK
     );
+    exercise_diagnostics(&client, base, access, url).await?;
+    Ok(())
+}
+
+async fn exercise_diagnostics(
+    client: &reqwest::Client,
+    base: &str,
+    access: &str,
+    url: &str,
+) -> Result<()> {
+    let url = url.to_owned();
     tokio::task::spawn_blocking(move || -> Result<()> {
         let tls = MakeTlsConnector::new(native_tls::TlsConnector::builder().build()?);
         let mut connection = postgres::Client::connect(&url, tls)?;
@@ -272,6 +415,16 @@ async fn exercise_api(base: &str, url: &str) -> Result<()> {
         Ok(())
     })
     .await??;
+    assert_eq!(
+        client
+            .put(format!("{base}/v1/privacy/consents/diagnostics"))
+            .bearer_auth(access)
+            .json(&serde_json::json!({"notice_version":"v1"}))
+            .send()
+            .await?
+            .status(),
+        StatusCode::NO_CONTENT
+    );
     let diagnostic = client
         .post(format!("{base}/v1/debug/sessions"))
         .bearer_auth(access)

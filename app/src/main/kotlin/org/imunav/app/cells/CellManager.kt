@@ -41,11 +41,12 @@ import kotlin.math.abs
 class CellManager(private val context: Context, private val scope: CoroutineScope, private val hub: PositioningHub, private val log: (String) -> Unit) {
     private val prefs = context.getSharedPreferences("cells", Context.MODE_PRIVATE)
     private val auth = CellAuth(context)
+    private val privacy = CellPrivacy(context, auth)
 
     /** A string resource in the current app language. */
     private fun str(id: Int, vararg args: Any): String = context.getString(id, *args)
     val db = CellDatabase(context)
-    private val transfers = CellTransfers(context, db, prefs, auth, ::progress)
+    private val transfers = CellTransfers(context, db, prefs, auth, privacy, ::progress)
     private var lastCellLogMs = 0L
     private var lastLearnedFixMs = -1L
     private var task: Job? = null
@@ -89,6 +90,8 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
                 if (error is CancellationException) throw error
                 _status.update { it.copy(preparation = Preparation.FAILED, message = str(R.string.task_failed, error.message.orEmpty())) }
             }
+            withContext(Dispatchers.IO) { runCatching { privacy.flushWithdrawals(diagnosticServerUrl()) } }
+            withContext(Dispatchers.IO) { runCatching { privacy.refreshRemote(diagnosticServerUrl()) } }
             if (prefs.getBoolean("auto_sync", false) && System.currentTimeMillis() - prefs.getLong("last_sync_ms", 0) > AUTO_SYNC_INTERVAL_MS) sync(auto = true)
         }
     }
@@ -153,8 +156,9 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
     fun diagnosticCredentials(expectedUrl: String? = null): Pair<String, String>? {
         val url = prefs.getString("sync_url", "").orEmpty().trim().trimEnd('/')
         if (expectedUrl != null && expectedUrl != url) return null
-        if (url.isBlank() || auth.email == null) return null
+        if (url.isBlank() || auth.email == null || !privacy.canCaptureDiagnostics(url)) return null
         val token = auth.accessToken(url) ?: return null
+        if (!privacy.canSendDiagnostics(url, token)) return null
         return url to token
     }
 
@@ -163,6 +167,29 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
 
     /** Read the saved account directly so a trip can start before the next status refresh. */
     fun diagnosticAccountEmail(): String? = auth.email
+
+    /** Do not capture precise location without a current local diagnostics receipt. */
+    fun diagnosticConsentGranted(): Boolean = privacy.canCaptureDiagnostics(diagnosticServerUrl())
+
+    /** Read the selected server's current notice on an I/O thread. */
+    suspend fun privacyNotice(url: String): CellPrivacyNotice? = withContext(Dispatchers.IO) { privacy.notice(url) }
+
+    /** Local receipt state used by Settings; the server checks its own receipt on every upload. */
+    fun privacyGranted(purpose: String, version: String): Boolean = privacy.isGranted(diagnosticServerUrl(), purpose, version)
+
+    /** Record a separate server receipt only after the person has read that notice. */
+    suspend fun grantPrivacyConsent(purpose: String, version: String) = withContext(Dispatchers.IO) {
+        privacy.grant(diagnosticServerUrl(), purpose, version)
+    }
+
+    /** Stop uploads locally before the queued server deletion is attempted. */
+    fun withdrawPrivacyConsent(purpose: String) {
+        val url = diagnosticServerUrl()
+        privacy.withdrawLocally(url, purpose)
+        if (purpose == "tower_upload") prefs.edit { putBoolean("auto_sync", false) }
+        scope.launch(Dispatchers.IO) { runCatching { privacy.flushWithdrawals(url) } }
+        refresh()
+    }
 
     /** The saved OpenCellID token, for pre-filling Settings fields. */
     fun savedToken(): String = prefs.getString("token", "").orEmpty()
@@ -207,6 +234,8 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
             throw IOException(str(authError(error.code)), error)
         }
         prefs.edit { putLong("last_upload_ms", 0) }
+        withContext(Dispatchers.IO) { runCatching { privacy.flushWithdrawals(diagnosticServerUrl()) } }
+        withContext(Dispatchers.IO) { runCatching { privacy.refreshRemote(diagnosticServerUrl()) } }
         refresh()
         if (auth.emailVerified) str(R.string.auth_signed_in) else str(R.string.auth_verify_email)
     }

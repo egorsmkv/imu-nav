@@ -7,6 +7,7 @@ mod csv_format;
 mod db;
 mod debug;
 mod model;
+mod privacy;
 mod store;
 mod web;
 
@@ -19,4 +20,5 @@ pub use model::{
     CellKey, CellTower, Consensus, Policy, PolicyError, Radio, RadioParseError, ServerEvent,
     UploadResult,
 };
+pub use privacy::PrivacyNotice;
 pub use store::{CellStore, StoreCounts};

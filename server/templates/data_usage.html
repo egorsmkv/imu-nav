@@ -5,52 +5,43 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Data Usage · IMU Nav</title>
   <link rel="stylesheet" href="/web.css?v=20261005-ui2">
-  </head>
+</head>
 <body>
 {% include "site_header.html" %}
 <main class="page-shell narrow">
   <h1>Data Usage</h1>
-  <p>This page explains how this cell-sharing server receives and uses data. Sharing tower observations is optional. IMU Nav is a research prototype, not a safety system.</p>
-
+  <p>IMU Nav is a research prototype, not a safety system. This page describes this server's data and your controls.</p>
+  {% if let Some(notice) = notice %}
   <section class="content-card">
-    <h2>What the server receives</h2>
-    <ul>
-      <li>When sharing is active, the app uploads estimated cell-tower positions: radio type, country and network codes, area and cell IDs, latitude, longitude, estimated range, and sample count. These are tower observations, not a trip recording or a raw GPS track.</li>
-      <li>Uploads include an account session and a device ID so the server can keep contributions separate. If a client omits the device ID, the server stores its IP address as the fallback device identifier.</li>
-      <li>Creating an account supplies an email address and password. The server stores a password hash, not the password itself, plus revocable session records. Email is used for sign-in and, when mail delivery is configured, verification and password reset.</li>
-    </ul>
+    <h2>Operator and legal details</h2>
+    <p><strong>Controller:</strong> {{ notice.controller }}<br>
+    <strong>Contact:</strong> {{ notice.contact }}<br>
+    <strong>Privacy requests:</strong> {{ notice.rights_contact }}<br>
+    <strong>Data region:</strong> {{ notice.region }}<br>
+    <strong>Recipients and processors:</strong> {{ notice.recipients }}<br>
+    <strong>International transfers:</strong> {{ notice.transfers }}<br>
+    <strong>Account basis:</strong> {{ notice.account_basis }}<br>
+    <strong>Security basis:</strong> {{ notice.security_basis }}<br>
+    <strong>Notice version:</strong> {{ notice.version }}</p>
+    <h3>English</h3><p>{{ notice.notice_en }}</p>
+    <h3>Українська</h3><p lang="uk">{{ notice.notice_uk }}</p>
+    <h3>Русский</h3><p lang="ru">{{ notice.notice_ru }}</p>
   </section>
-
+  {% endif %}
   <section class="content-card">
-    <h2>How tower data is used</h2>
-    <ul>
-      <li>The server checks upload size, location, range, movement, and rate limits. It keeps the latest accepted observation for each device and tower in a SQLite database, along with its update time.</li>
-      <li>It combines observations from different devices and rejects position outliers. Normally at least two independent devices must contribute before a tower is published. Administrator-imported seed data can be published immediately.</li>
-      <li>Public downloads contain combined tower positions and tower removals. They do not include account email addresses or device IDs. Administrators can review individual observations, import seed data, correct or quarantine towers, and export stored observations.</li>
-    </ul>
+    <h2>What is stored</h2>
+    <p>An account stores your email, a password hash, session metadata, and consent receipts. Tower sharing stores a random device ID, cell identifiers, estimated tower coordinates, range, sample count and update time. The server uses an IP address in memory for rate limits but does not store it as a device ID or in application request logs.</p>
+    <p>Optional developer diagnostics contain trip events, precise location, sensor readings, log lines, device and app context. The server excludes passwords and tokens. Administrators can review private diagnostics, tower observations, import errors and audit records.</p>
   </section>
-
   <section class="content-card">
-    <h2>Accounts, logs, and retention</h2>
-    <ul>
-      <li>Accepted observations stay in the database until they are replaced or deleted; this server does not automatically expire them. The server uses IP addresses for rate limits and includes IP addresses and device IDs in upload log entries. Log and backup retention depends on whoever operates this server.</li>
-      <li>Developer diagnostics are separate from tower sharing. They upload only when the user turns on Developer diagnostics in the app and an administrator has enabled uploads on this server. A diagnostic session includes raw trip events, precise location and sensor data, trip log lines, and a limited set of app, Android and navigation settings. Passwords and account tokens are excluded.</li>
-      <li>Diagnostic sessions expire after 30 days. Each session and account has a storage limit; an interrupted or full session may be incomplete. Administrators can inspect and download these sessions for debugging. They are never included in public tower downloads or tower consensus.</li>
-      <li>Turning Developer diagnostics off stops capture and clears unsent batches on the phone. Signing out stops authenticated uploads. Sessions already received remain until the user deletes them, closes their account, or the 30-day expiry runs.</li>
-      <li>For a server outside your trusted network, use HTTPS through a reverse proxy before entering credentials or uploading observations.</li>
-    </ul>
+    <h2>Purpose, sharing and retention</h2>
+    <p>Public downloads contain combined tower positions and removals, without email addresses or device IDs. Accepted account tower observations expire after 12 calendar months; the server then recomputes consensus. Diagnostics expire after 30 days. Expired authentication records and old import errors are removed during daily cleanup. Admin audit records expire after 90 days. Operator backups and reverse proxy logs have separate controls.</p>
+    <p>Tower uploads and precise-location diagnostics require separate, versioned consent. An updated notice requires fresh consent. Withdrawing tower consent deletes that account's observations and recomputes shared positions. Withdrawing diagnostics consent deletes that account's diagnostic sessions. Another device's observations or seed data can still support a tower; downloaded copies and preexisting exports cannot be recalled.</p>
   </section>
-
   <section class="content-card">
-    <h2>Review and remove your data</h2>
-    <ul>
-      <li><a href="/account">Sign in to your account panel</a> to review or download your own observations, pause future uploads, delete one observation or all of them, and close your account.</li>
-      <li><a href="/debug">Your diagnostic sessions</a> can be reviewed, downloaded, and deleted individually or all at once.</li>
-      <li>Deleting observations recalculates shared tower positions. The server blocks those tower keys from being uploaded again by the same account; deleting all observations also pauses uploads. Closing the account removes its observations, sessions, and deletion markers.</li>
-      <li>A tower may remain published if other devices or seed data still support it. Copies already downloaded or exported cannot be removed remotely; updated apps receive tower removals on a later sync when a tower is withdrawn.</li>
-    </ul>
+    <h2>Your controls</h2>
+    <p><a href="/account">Your account</a> lets you review observations, download a compressed NDJSON archive of your account data, delete observations and close the account. <a href="/debug">Your diagnostics</a> lets you review and delete sessions. Use the app Settings to grant or withdraw each upload purpose. Contact the operator above for other requests. Account closure removes account data from the live database; bounded backups may retain a copy until expiry.</p>
   </section>
-
 </main>
 {% include "site_footer.html" %}
 <script src="/web-locale.js?v=20261005-ui2" defer></script>

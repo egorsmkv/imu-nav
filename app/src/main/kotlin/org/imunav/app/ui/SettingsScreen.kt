@@ -60,6 +60,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -68,10 +69,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.imunav.app.AppGraph
 import org.imunav.app.BuildConfig
 import org.imunav.app.R
 import org.imunav.app.UiState
+import org.imunav.app.cells.CellPrivacyNotice
 import org.imunav.app.cells.CellSource
 import org.imunav.app.diagnostics.DiagnosticPhase
 import org.imunav.app.diagnostics.ProfilePhase
@@ -88,6 +91,7 @@ private val RADIO_CHOICES = listOf(Radio.GSM to "2G", Radio.UMTS to "3G", Radio.
 @Composable
 fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: () -> Unit, onSetup: () -> Unit) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     val uriHandler = LocalUriHandler.current
     val telegramGroupUrl = stringResource(R.string.telegram_group_url)
     val profileShareLabel = stringResource(R.string.profile_action_share)
@@ -106,13 +110,58 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
     var accountEmail by remember { mutableStateOf(c.accountEmail.orEmpty()) }
     var accountPassword by remember { mutableStateOf("") }
     var autoSync by remember { mutableStateOf(c.autoSync) }
+    var privacyNotice by remember { mutableStateOf<CellPrivacyNotice?>(null) }
+    var pendingPrivacyAction by remember { mutableStateOf<String?>(null) }
+    var towerConsented by remember { mutableStateOf(false) }
+    var diagnosticConsented by remember { mutableStateOf(false) }
     var confirmReset by remember { mutableStateOf(false) }
     var confirmProfileShare by remember { mutableStateOf(false) }
-    val accountUrlAllowed = syncUrl.trim().startsWith("https://") || syncUrl.trim().startsWith("http://localhost:") ||
-        syncUrl.trim().startsWith("http://127.0.0.1:") || syncUrl.trim().startsWith("http://10.0.2.2:")
+    val parsedAccountUrl = syncUrl.trim().toHttpUrlOrNull()
+    val accountUrlAllowed = parsedAccountUrl != null && (
+        parsedAccountUrl.scheme == "https" ||
+            (parsedAccountUrl.scheme == "http" && parsedAccountUrl.host in setOf("localhost", "127.0.0.1", "10.0.2.2"))
+        )
 
     /** Store the typed server settings. */
     fun save() = mgr.saveSettings(syncUrl, autoSync, mccs)
+
+    /** Load the current notice before presenting registration or upload consent. */
+    fun showPrivacyAction(action: String) {
+        if (action != "register" && syncUrl.trim().trimEnd('/') != mgr.diagnosticServerUrl()) {
+            save()
+            scope.launch { snackbar.showSnackbar(resources.getString(R.string.privacy_sign_in_first)) }
+            return
+        }
+        scope.launch {
+            val result = runCatching { mgr.privacyNotice(syncUrl) }
+            val notice = result.getOrNull()
+            if (result.isFailure) {
+                snackbar.showSnackbar(resources.getString(R.string.privacy_notice_unavailable))
+                return@launch
+            }
+            privacyNotice = notice
+            if (notice == null && action == "register") {
+                save()
+                mgr.authenticate(accountEmail, accountPassword, register = true)
+                accountPassword = ""
+            } else if (notice == null && action == "diagnostics") {
+                app.diagnostics.setEnabled(true)
+            } else if (notice != null) {
+                pendingPrivacyAction = action
+            } else {
+                snackbar.showSnackbar(resources.getString(R.string.privacy_notice_unavailable))
+            }
+        }
+    }
+
+    LaunchedEffect(c.accountEmail, syncUrl, c.lastSync) {
+        if (syncUrl.isBlank() || !accountUrlAllowed) return@LaunchedEffect
+        val result = runCatching { mgr.privacyNotice(syncUrl) }
+        privacyNotice = result.getOrNull()
+        val notice = privacyNotice ?: return@LaunchedEffect
+        towerConsented = mgr.privacyGranted("tower_upload", notice.version)
+        diagnosticConsented = mgr.privacyGranted("diagnostics", notice.version)
+    }
 
     /** Save every editable field before either back affordance returns to the map. */
     fun leaveSettings() {
@@ -296,9 +345,7 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                                 Text(stringResource(R.string.auth_sign_in))
                             }
                             OutlinedButton(onClick = {
-                                save()
-                                mgr.authenticate(accountEmail, accountPassword, register = true)
-                                accountPassword = ""
+                                showPrivacyAction("register")
                             }, enabled = accountUrlAllowed && accountEmail.isNotBlank() && accountPassword.isNotBlank() && !busy) {
                                 Text(stringResource(R.string.auth_register))
                             }
@@ -311,13 +358,34 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                         }
                     } else {
                         ListItem(headlineContent = { Text(stringResource(R.string.auth_account, c.accountEmail)) })
+                        privacyNotice?.let { notice ->
+                            SwitchItem(stringResource(R.string.privacy_tower_title), stringResource(R.string.privacy_tower_summary), towerConsented) { on ->
+                                if (on) {
+                                    showPrivacyAction("tower_upload")
+                                } else {
+                                    towerConsented = false
+                                    autoSync = false
+                                    mgr.withdrawPrivacyConsent("tower_upload")
+                                }
+                            }
+                            TextButton(onClick = { pendingPrivacyAction = "view" }, modifier = Modifier.padding(horizontal = 16.dp)) {
+                                Text(stringResource(R.string.privacy_view_notice, notice.controller))
+                            }
+                        }
+                        TextButton(onClick = { uriHandler.openUri(mgr.diagnosticServerUrl() + "/account") }, modifier = Modifier.padding(horizontal = 16.dp)) {
+                            Text(stringResource(R.string.privacy_manage_account))
+                        }
                         TextButton(onClick = { mgr.signOut() }, enabled = !busy, modifier = Modifier.padding(horizontal = 16.dp)) {
                             Text(stringResource(R.string.auth_sign_out))
                         }
                     }
                     SwitchItem(stringResource(R.string.sync_auto), stringResource(R.string.sync_auto_summary), autoSync) {
-                        autoSync = it
-                        save()
+                        if (it && privacyNotice != null && !towerConsented) {
+                            showPrivacyAction("auto_sync")
+                        } else {
+                            autoSync = it
+                            save()
+                        }
                     }
                     FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = {
@@ -368,7 +436,21 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                     // ---------------- Diagnostics
                     SectionHeader(stringResource(R.string.sec_diagnostics))
                     SwitchItem(stringResource(R.string.simulate_gps_loss), stringResource(R.string.simulate_gps_loss_summary), ui.simulateGpsLoss) { app.setSimulateGpsLoss(it) }
-                    SwitchItem(stringResource(R.string.dev_diagnostics), stringResource(R.string.dev_diagnostics_summary), diagnostics.enabled) { app.diagnostics.setEnabled(it) }
+                    SwitchItem(
+                        stringResource(R.string.dev_diagnostics),
+                        stringResource(R.string.dev_diagnostics_summary),
+                        diagnostics.enabled && (privacyNotice == null || diagnosticConsented),
+                    ) { on ->
+                        if (on && c.accountEmail == null) {
+                            scope.launch { snackbar.showSnackbar(resources.getString(R.string.privacy_sign_in_first)) }
+                        } else if (on) {
+                            showPrivacyAction("diagnostics")
+                        } else {
+                            app.diagnostics.setEnabled(false)
+                            diagnosticConsented = false
+                            mgr.withdrawPrivacyConsent("diagnostics")
+                        }
+                    }
                     if (diagnostics.enabled) {
                         val phaseLabel = when (diagnostics.phase) {
                             DiagnosticPhase.IDLE, DiagnosticPhase.WAITING -> R.string.dev_status_waiting
@@ -455,6 +537,58 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
         }
     }
 
+    val displayedNotice = privacyNotice
+    if (pendingPrivacyAction != null && displayedNotice != null) {
+        val action = pendingPrivacyAction
+        AlertDialog(
+            onDismissRequest = { pendingPrivacyAction = null },
+            title = { Text(stringResource(R.string.privacy_notice_title)) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(displayedNotice.text(resources.configuration.locales[0].language))
+                    Text(
+                        stringResource(
+                            R.string.privacy_notice_details, displayedNotice.controller, displayedNotice.contact, displayedNotice.rightsContact,
+                            displayedNotice.region, displayedNotice.recipients, displayedNotice.transfers, displayedNotice.accountBasis, displayedNotice.securityBasis,
+                        ),
+                    )
+                }
+            },
+            confirmButton = {
+                if (action != "view") {
+                    TextButton(onClick = {
+                        pendingPrivacyAction = null
+                        when (action) {
+                            "register" -> {
+                                save()
+                                mgr.authenticate(accountEmail, accountPassword, register = true)
+                                accountPassword = ""
+                            }
+
+                            "tower_upload", "auto_sync", "diagnostics" -> scope.launch {
+                                val purpose = if (action == "diagnostics") "diagnostics" else "tower_upload"
+                                runCatching { mgr.grantPrivacyConsent(purpose, displayedNotice.version) }
+                                    .onSuccess {
+                                        if (purpose == "tower_upload") {
+                                            towerConsented = true
+                                            if (action == "auto_sync") {
+                                                autoSync = true
+                                                save()
+                                            }
+                                        } else {
+                                            diagnosticConsented = true
+                                            app.diagnostics.setEnabled(true)
+                                        }
+                                    }
+                                    .onFailure { snackbar.showSnackbar(resources.getString(R.string.privacy_consent_failed)) }
+                            }
+                        }
+                    }) { Text(stringResource(R.string.privacy_agree)) }
+                }
+            },
+            dismissButton = { TextButton(onClick = { pendingPrivacyAction = null }) { Text(stringResource(R.string.action_cancel)) } },
+        )
+    }
     if (confirmReset) {
         var deleteLearned by remember { mutableStateOf(false) }
         AlertDialog(

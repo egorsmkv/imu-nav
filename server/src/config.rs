@@ -6,6 +6,7 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::path::{Path, PathBuf};
 
 use crate::Options;
+use imu_nav_cell_server::PrivacyNotice;
 
 #[derive(Default, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -15,11 +16,30 @@ struct ConfigFile {
     mail: Option<MailFile>,
     policy: Option<PolicyFile>,
     logging: Option<LoggingFile>,
+    privacy: Option<PrivacyFile>,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PrivacyFile {
+    version: Option<String>,
+    controller: Option<String>,
+    contact: Option<String>,
+    rights_contact: Option<String>,
+    region: Option<String>,
+    recipients: Option<String>,
+    transfers: Option<String>,
+    account_basis: Option<String>,
+    security_basis: Option<String>,
+    notice_en: Option<String>,
+    notice_uk: Option<String>,
+    notice_ru: Option<String>,
 }
 
 #[derive(Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ServerFile {
+    mode: Option<String>,
     bind: Option<IpAddr>,
     port: Option<u16>,
     public_url: Option<String>,
@@ -89,6 +109,7 @@ pub(crate) struct Settings {
     pub(crate) min_devices: usize,
     pub(crate) max_samples: i64,
     pub(crate) area: String,
+    pub(crate) privacy: Option<PrivacyNotice>,
 }
 
 impl Settings {
@@ -98,53 +119,13 @@ impl Settings {
         let mail = file.mail.unwrap_or_default();
         let policy = file.policy.unwrap_or_default();
         let logging = file.logging.unwrap_or_default();
-        let database = match file.database {
-            None => DatabaseSettings::Sqlite(
-                options
-                    .data
-                    .clone()
-                    .unwrap_or_else(|| PathBuf::from("cells.sqlite3")),
-            ),
-            Some(DatabaseFile {
-                backend: DatabaseKind::Sqlite,
-                path,
-                url,
-            }) => {
-                ensure!(
-                    url.is_none(),
-                    "SQLite configuration cannot contain database.url"
-                );
-                let path = if let Some(path) = &options.data {
-                    path.clone()
-                } else if let Some(path) = path {
-                    resolve_config_path(options.config.as_deref(), path)
-                } else {
-                    PathBuf::from("cells.sqlite3")
-                };
-                DatabaseSettings::Sqlite(path)
-            }
-            Some(DatabaseFile {
-                backend: DatabaseKind::Postgres,
-                path,
-                url,
-            }) => {
-                ensure!(
-                    path.is_none() && options.data.is_none(),
-                    "PostgreSQL configuration cannot use --data or database.path"
-                );
-                let url = std::env::var("CELLS_DATABASE_URL")
-                    .ok()
-                    .or(url)
-                    .ok_or_else(|| {
-                        anyhow!("PostgreSQL requires database.url or CELLS_DATABASE_URL")
-                    })?;
-                ensure!(
-                    !url.trim().is_empty(),
-                    "PostgreSQL connection URL cannot be empty"
-                );
-                DatabaseSettings::Postgres(url)
-            }
-        };
+        let mode = server.mode.as_deref().unwrap_or("local");
+        ensure!(
+            matches!(mode, "local" | "public"),
+            "server.mode must be local or public"
+        );
+        let privacy = load_privacy_notice(mode, file.privacy)?;
+        let database = load_database(options, file.database)?;
         let log_level = options
             .log_level
             .clone()
@@ -167,7 +148,7 @@ impl Settings {
             bind: options
                 .bind
                 .or(server.bind)
-                .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
+                .unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST)),
             port: options.port.or(server.port).unwrap_or(8080),
             database,
             log_level,
@@ -181,13 +162,123 @@ impl Settings {
             min_devices: options.min_devices.or(policy.min_devices).unwrap_or(2),
             max_samples: options.max_samples.or(policy.max_samples).unwrap_or(50),
             area,
+            privacy,
         };
+        if mode == "local" {
+            ensure!(
+                settings.bind.is_loopback(),
+                "local mode must bind to loopback; set server.mode='public' for network access"
+            );
+        } else {
+            ensure!(
+                settings
+                    .public_url
+                    .as_ref()
+                    .is_some_and(|url| valid_public_url(url)),
+                "public mode requires an HTTPS origin in public_url"
+            );
+            ensure!(
+                settings.secure_cookies,
+                "public mode requires secure_cookies=true"
+            );
+        }
         ensure!(
             settings.min_devices > 0 && settings.max_samples > 0,
             "invalid initial policy limits"
         );
         Ok(settings)
     }
+}
+
+fn load_database(options: &Options, database: Option<DatabaseFile>) -> Result<DatabaseSettings> {
+    match database {
+        None => Ok(DatabaseSettings::Sqlite(
+            options
+                .data
+                .clone()
+                .unwrap_or_else(|| PathBuf::from("cells.sqlite3")),
+        )),
+        Some(DatabaseFile {
+            backend: DatabaseKind::Sqlite,
+            path,
+            url,
+        }) => {
+            ensure!(
+                url.is_none(),
+                "SQLite configuration cannot contain database.url"
+            );
+            let path = options
+                .data
+                .clone()
+                .or_else(|| path.map(|path| resolve_config_path(options.config.as_deref(), path)))
+                .unwrap_or_else(|| PathBuf::from("cells.sqlite3"));
+            Ok(DatabaseSettings::Sqlite(path))
+        }
+        Some(DatabaseFile {
+            backend: DatabaseKind::Postgres,
+            path,
+            url,
+        }) => {
+            ensure!(
+                path.is_none() && options.data.is_none(),
+                "PostgreSQL configuration cannot use --data or database.path"
+            );
+            let url = std::env::var("CELLS_DATABASE_URL")
+                .ok()
+                .or(url)
+                .ok_or_else(|| anyhow!("PostgreSQL requires database.url or CELLS_DATABASE_URL"))?;
+            ensure!(
+                !url.trim().is_empty(),
+                "PostgreSQL connection URL cannot be empty"
+            );
+            Ok(DatabaseSettings::Postgres(url))
+        }
+    }
+}
+
+fn load_privacy_notice(mode: &str, privacy: Option<PrivacyFile>) -> Result<Option<PrivacyNotice>> {
+    if mode == "local" {
+        return Ok(None);
+    }
+    let data = privacy.ok_or_else(|| anyhow!("public mode requires [privacy]"))?;
+    let required = |value: Option<String>, name: &str| -> Result<String> {
+        let env_name = format!("CELLS_PRIVACY_{}", name.to_ascii_uppercase());
+        let value = std::env::var(env_name).ok().or(value);
+        let value = value.ok_or_else(|| anyhow!("privacy.{name} is required"))?;
+        ensure!(
+            !value.trim().is_empty() && !value.contains("CHANGE_ME"),
+            "privacy.{name} must be set"
+        );
+        Ok(value)
+    };
+    Ok(Some(PrivacyNotice {
+        version: required(data.version, "version")?,
+        controller: required(data.controller, "controller")?,
+        contact: required(data.contact, "contact")?,
+        rights_contact: required(data.rights_contact, "rights_contact")?,
+        region: required(data.region, "region")?,
+        recipients: required(data.recipients, "recipients")?,
+        transfers: required(data.transfers, "transfers")?,
+        account_basis: required(data.account_basis, "account_basis")?,
+        security_basis: required(data.security_basis, "security_basis")?,
+        notice_en: required(data.notice_en, "notice_en")?,
+        notice_uk: required(data.notice_uk, "notice_uk")?,
+        notice_ru: required(data.notice_ru, "notice_ru")?,
+        tower_retention_months: 12,
+        diagnostics_retention_days: 30,
+    }))
+}
+
+pub(crate) fn valid_public_url(value: &str) -> bool {
+    let Ok(uri) = value.parse::<axum::http::Uri>() else {
+        return false;
+    };
+    uri.scheme_str() == Some("https")
+        && uri.authority().is_some_and(|authority| {
+            !authority.host().is_empty() && !authority.as_str().contains('@')
+        })
+        && uri.path() == "/"
+        && uri.query().is_none()
 }
 
 fn load_file(path: Option<&Path>) -> Result<ConfigFile> {
@@ -238,6 +329,23 @@ mod tests {
         assert!(
             matches!(settings.database, DatabaseSettings::Sqlite(ref path) if path == &directory.path().join("local.sqlite3"))
         );
+        Ok(())
+    }
+
+    #[test]
+    fn public_mode_requires_operator_notice_and_safe_origin() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("config.toml");
+        std::fs::write(
+            &path,
+            "[server]\nmode='public'\nbind='0.0.0.0'\npublic_url='https://cells.example.org'\nsecure_cookies=true\n",
+        )?;
+        let options = Options::try_parse_from(["server", "--config", path.to_str().unwrap()])?;
+        assert!(Settings::load(&options).is_err());
+        assert!(valid_public_url("https://cells.example.org"));
+        assert!(!valid_public_url("https://cells.example.org@evil.example"));
+        assert!(!valid_public_url("http://cells.example.org"));
+        assert!(!valid_public_url("https://cells.example.org/path"));
         Ok(())
     }
 }

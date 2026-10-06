@@ -1,8 +1,8 @@
 use anyhow::Result;
 use futures_util::StreamExt;
 use imu_nav_cell_server::{
-    AppState, CellKey, CellStore, CellTower, Consensus, MailConfig, Policy, Radio, ServerConfig,
-    create_admin, decode_towers, encode_towers, router,
+    AppState, CellKey, CellStore, CellTower, Consensus, MailConfig, Policy, PrivacyNotice, Radio,
+    ServerConfig, create_admin, decode_towers, encode_towers, router,
 };
 use reqwest::StatusCode;
 use std::io::Read;
@@ -34,6 +34,14 @@ async fn start_server_with_policy(policy: Policy) -> Result<TestServer> {
 }
 
 async fn start_server_with_mail(policy: Policy, mail: Option<MailConfig>) -> Result<TestServer> {
+    start_server_with_privacy(policy, mail, None).await
+}
+
+async fn start_server_with_privacy(
+    policy: Policy,
+    mail: Option<MailConfig>,
+    privacy: Option<PrivacyNotice>,
+) -> Result<TestServer> {
     let database = NamedTempFile::new()?;
     let store = CellStore::open(database.path())?;
     create_admin(&store, "admin@example.org", "correct horse battery staple")?;
@@ -44,6 +52,7 @@ async fn start_server_with_mail(policy: Policy, mail: Option<MailConfig>) -> Res
             policy,
             trust_proxy: false,
             secure_cookies: false,
+            privacy,
         },
     )?;
     let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?;
@@ -69,6 +78,139 @@ async fn start_server_with_mail(policy: Policy, mail: Option<MailConfig>) -> Res
         database,
         token,
     })
+}
+
+fn example_privacy_notice() -> PrivacyNotice {
+    PrivacyNotice {
+        version: "v1".into(),
+        controller: "Example operator".into(),
+        contact: "contact@example.org".into(),
+        rights_contact: "rights@example.org".into(),
+        region: "EU".into(),
+        recipients: "Hosting provider".into(),
+        transfers: "None".into(),
+        account_basis: "Contract".into(),
+        security_basis: "Legitimate interests".into(),
+        notice_en: "Example English notice".into(),
+        notice_uk: "Українське повідомлення".into(),
+        notice_ru: "Русское уведомление".into(),
+        tower_retention_months: 12,
+        diagnostics_retention_days: 30,
+    }
+}
+
+async fn assert_browser_consent_csrf(client: &reqwest::Client, base: &str) -> Result<()> {
+    let browser_login = client
+        .post(format!("{base}/login"))
+        .form(&[
+            ("email", "admin@example.org"),
+            ("password", "correct horse battery staple"),
+        ])
+        .send()
+        .await?;
+    let cookie = browser_login.headers()["set-cookie"]
+        .to_str()?
+        .split(';')
+        .next()
+        .unwrap();
+    assert_eq!(
+        client
+            .post(format!("{base}/account/privacy/tower_upload/withdraw"))
+            .header("cookie", cookie)
+            .form(&[("csrf", "wrong")])
+            .send()
+            .await?
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn public_consent_gates_uploads_and_withdrawal_erases_them() -> Result<()> {
+    let server =
+        start_server_with_privacy(Policy::default(), None, Some(example_privacy_notice())).await?;
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?;
+    let base = &server.base_url;
+    assert_eq!(
+        client
+            .get(format!("{base}/v1/privacy"))
+            .send()
+            .await?
+            .json::<serde_json::Value>()
+            .await?["version"],
+        "v1"
+    );
+    let upload = || {
+        client
+            .post(format!("{base}/v1/cells"))
+            .bearer_auth(&server.token)
+            .header("x-device-id", "privacy-phone-aaaa")
+            .body(upload_body(tower(50.4)).unwrap())
+    };
+    let blocked = upload().send().await?;
+    assert_eq!(blocked.status(), StatusCode::FORBIDDEN);
+    assert_eq!(
+        blocked.json::<serde_json::Value>().await?["message"],
+        "CONSENT_REQUIRED"
+    );
+    assert_eq!(
+        client
+            .put(format!("{base}/v1/privacy/consents/tower_upload"))
+            .bearer_auth(&server.token)
+            .json(&serde_json::json!({"notice_version":"old"}))
+            .send()
+            .await?
+            .status(),
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        client
+            .put(format!("{base}/v1/privacy/consents/tower_upload"))
+            .bearer_auth(&server.token)
+            .json(&serde_json::json!({"notice_version":"v1"}))
+            .send()
+            .await?
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(upload().send().await?.status(), StatusCode::OK);
+    assert_browser_consent_csrf(&client, base).await?;
+    assert_eq!(
+        CellStore::open(server.database.path())?
+            .counts(&Policy::default())?
+            .1,
+        1
+    );
+    assert_eq!(
+        client
+            .delete(format!("{base}/v1/privacy/consents/tower_upload"))
+            .bearer_auth(&server.token)
+            .send()
+            .await?
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        client
+            .get(format!("{base}/v1/privacy/me"))
+            .bearer_auth(&server.token)
+            .send()
+            .await?
+            .json::<serde_json::Value>()
+            .await?["tower_upload"],
+        false
+    );
+    assert_eq!(
+        CellStore::open(server.database.path())?
+            .counts(&Policy::default())?
+            .1,
+        0
+    );
+    assert_eq!(upload().send().await?.status(), StatusCode::FORBIDDEN);
+    Ok(())
 }
 
 #[tokio::test]
@@ -691,10 +833,12 @@ async fn browser_account_pages_show_and_delete_only_owned_contributions() -> Res
     assert_eq!(data_usage.headers()["cache-control"], "no-store");
     let data_usage_html = data_usage.text().await?;
     assert!(data_usage_html.contains("<h1>Data Usage</h1>"));
-    assert!(data_usage_html.contains("latest accepted observation for each device and tower"));
     assert!(
         data_usage_html
-            .contains("Copies already downloaded or exported cannot be removed remotely")
+            .contains("Accepted account tower observations expire after 12 calendar months")
+    );
+    assert!(
+        data_usage_html.contains("downloaded copies and preexisting exports cannot be recalled")
     );
     assert_eq!(
         browser
@@ -861,7 +1005,7 @@ async fn browser_account_pages_show_and_delete_only_owned_contributions() -> Res
     let mut filtered_csv = String::new();
     flate2::read::GzDecoder::new(filtered_export.bytes().await?.as_ref())
         .read_to_string(&mut filtered_csv)?;
-    assert!(!filtered_csv.contains(&first_device));
+    assert!(filtered_csv.contains(&first_device));
     let extra_towers = (0..100)
         .map(|index| {
             let mut cell = tower(50.4);
@@ -1990,6 +2134,7 @@ async fn health_bad_uploads_and_management_validation() -> Result<()> {
     let response = client
         .post(format!("{}/v1/cells", server.base_url))
         .bearer_auth(&server.token)
+        .header("x-device-id", "device-first")
         .body(vec![0x1f, 0x8b, 0])
         .send()
         .await?;

@@ -1,6 +1,93 @@
 use super::*;
 use tempfile::NamedTempFile;
 
+#[test]
+fn privacy_withdrawal_erases_only_its_purpose_and_exports_receipts() -> Result<()> {
+    let file = NamedTempFile::new()?;
+    let store = CellStore::open(file.path())?;
+    let policy = Policy::default();
+    store.connection()?.execute(
+        "INSERT INTO users(id,email,password_hash) VALUES (1,'driver@example.org','secret-hash')",
+        params![],
+    )?;
+    let item = tower(900, 50.3, 30.4, 5);
+    store.contribute(
+        "account:1:phone-aaaa",
+        std::slice::from_ref(&item),
+        current_time_s()?,
+        &policy,
+    )?;
+    store.connection()?.execute("INSERT INTO debug_sessions(id,account_id,client_id,context_json,created_s,updated_s) VALUES ('trip',1,'phone','{}',?1,?1)", [current_time_s()?])?;
+    assert!(!store.has_privacy_consent(1, "tower_upload", "v1")?);
+    store.grant_privacy_consent(1, "tower_upload", "v1")?;
+    store.grant_privacy_consent(1, "diagnostics", "v1")?;
+    assert!(store.has_privacy_consent(1, "tower_upload", "v1")?);
+    assert!(!store.has_privacy_consent(1, "tower_upload", "v2")?);
+    let archive = NamedTempFile::new()?;
+    store.export_account_to_path(1, archive.path())?;
+    let mut contents = String::new();
+    std::io::Read::read_to_string(
+        &mut flate2::read::GzDecoder::new(std::fs::File::open(archive.path())?),
+        &mut contents,
+    )?;
+    assert!(contents.contains("tower_observation"));
+    assert!(contents.contains("diagnostic_session"));
+    assert!(contents.contains("notice_version"));
+    assert!(!contents.contains("secret-hash"));
+    store.withdraw_privacy_consent(1, "tower_upload", &policy)?;
+    assert!(!store.has_privacy_consent(1, "tower_upload", "v1")?);
+    assert_eq!(store.counts(&policy)?.1, 0);
+    assert!(store.has_privacy_consent(1, "diagnostics", "v1")?);
+    store.withdraw_privacy_consent(1, "diagnostics", &policy)?;
+    let sessions: i64 =
+        store
+            .connection()?
+            .query_row("SELECT COUNT(*) FROM debug_sessions", params![], |row| {
+                row.get(0)
+            })?;
+    assert_eq!(sessions, 0);
+    store.replay_withdrawal(1, "tower_upload", &policy)?;
+    store.replay_account_closure(1, &policy)?;
+    store.replay_withdrawal(1, "diagnostics", &policy)?;
+    store.replay_account_closure(1, &policy)?;
+    let accounts: i64 = store.connection()?.query_row(
+        "SELECT COUNT(*) FROM users WHERE id=1",
+        params![],
+        |row| row.get(0),
+    )?;
+    assert_eq!(accounts, 0);
+    Ok(())
+}
+
+#[test]
+fn retention_recomputes_consensus_and_prunes_transient_rows() -> Result<()> {
+    let file = NamedTempFile::new()?;
+    let store = CellStore::open(file.path())?;
+    let policy = Policy::default();
+    let item = tower(901, 50.3, 30.4, 5);
+    store.contribute(
+        "account:1:phone-aaaa",
+        std::slice::from_ref(&item),
+        current_time_s()?,
+        &policy,
+    )?;
+    store.contribute(
+        "account:2:phone-bbbb",
+        std::slice::from_ref(&item),
+        current_time_s()?,
+        &policy,
+    )?;
+    assert_eq!(store.query(None, 0, None, &policy)?.len(), 1);
+    store.connection()?.execute(
+        "UPDATE contributions SET updated_s=1 WHERE device='account:1:phone-aaaa'",
+        params![],
+    )?;
+    store.prune_retained_data(&policy)?;
+    assert!(store.query(None, 0, None, &policy)?.is_empty());
+    assert_eq!(store.removals(None, 0)?, vec![item.key]);
+    Ok(())
+}
+
 fn tower(cid: i64, lat: f64, lon: f64, samples: i64) -> CellTower {
     CellTower {
         key: CellKey {

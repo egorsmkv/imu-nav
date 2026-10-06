@@ -910,6 +910,7 @@ mod tests {
                 policy: Policy::default(),
                 trust_proxy: false,
                 secure_cookies: false,
+                privacy: None,
             },
         )
         .unwrap();
@@ -977,6 +978,7 @@ mod tests {
                 policy: Policy::default(),
                 trust_proxy: false,
                 secure_cookies: false,
+                privacy: None,
             },
         )
         .unwrap();

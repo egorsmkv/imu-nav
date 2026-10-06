@@ -610,4 +610,14 @@
     <string name="driving_more">Інші дії</string>
     <string name="driving_expand">Показати керування маршрутом</string>
     <string name="driving_collapse">Згорнути</string>
+    <string name="privacy_notice_unavailable">Не вдалося завантажити повідомлення про приватність сервера. Спробуйте ще раз після підключення.</string>
+    <string name="privacy_notice_title">Повідомлення про приватність сервера</string>
+    <string name="privacy_notice_details">Контролер: %1$s\nКонтакт: %2$s\nЗапити щодо даних: %3$s\nРегіон: %4$s\nОтримувачі: %5$s\nПередавання: %6$s\nПідстава для облікового запису: %7$s\nПідстава для безпеки: %8$s</string>
+    <string name="privacy_agree">Продовжити</string>
+    <string name="privacy_consent_failed">Не вдалося зберегти згоду. Спробуйте ще раз.</string>
+    <string name="privacy_tower_title">Ділитися спостереженнями веж</string>
+    <string name="privacy_tower_summary">Необов’язково. Надсилає оцінені координати веж на цей сервер; вимкнення видаляє ваші внески.</string>
+    <string name="privacy_view_notice">Прочитати повідомлення %1$s</string>
+    <string name="privacy_sign_in_first">Спершу ввійдіть на вибраний сервер обміну.</string>
+    <string name="privacy_manage_account">Керувати даними сервера: експорт або видалення</string>
 </resources>

@@ -71,7 +71,7 @@ class DevDiagnostics(private val context: Context, private val cells: CellManage
 
     /** Begin a session using only a small allowlisted context object. */
     fun startTrip(id: String, details: JSONObject) {
-        if (!optedIn.get()) return
+        if (!optedIn.get() || !cells.diagnosticConsentGranted()) return
         val url = cells.diagnosticServerUrl()
         if (url.isBlank() || cells.diagnosticAccountEmail() == null) {
             _status.value = DiagnosticStatus(true, DiagnosticPhase.SIGN_IN)
@@ -100,13 +100,13 @@ class DevDiagnostics(private val context: Context, private val cells: CellManage
 
     /** Called only after the normal replay writer has accepted the event. */
     fun onEvent(event: TripEvent) {
-        if (!optedIn.get()) return
+        if (!optedIn.get() || !cells.diagnosticConsentGranted()) return
         ingest.execute { append("event", event.elapsedMs, TripFormat.encode(event)) }
     }
 
     /** Capture trip log lines without collecting Android Logcat or unrelated process output. */
     fun onLog(line: String, elapsedMs: Long) {
-        if (!optedIn.get()) return
+        if (!optedIn.get() || !cells.diagnosticConsentGranted()) return
         ingest.execute { append("log", elapsedMs, redact(line)) }
     }
 

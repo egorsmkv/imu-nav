@@ -23,6 +23,7 @@ internal class CellTransfers(
     private val db: CellDatabase,
     private val prefs: SharedPreferences,
     private val auth: CellAuth,
+    private val privacy: CellPrivacy,
     private val progress: (String) -> Unit,
 ) {
     /** Import a user-selected CSV, stopping promptly when its owning task is cancelled. */
@@ -121,7 +122,8 @@ internal class CellTransfers(
         }
         val client = CellSyncClient(url, accessToken, deviceId)
         val pending = db.learnedSince(prefs.getLong("last_upload_ms", 0))
-        val uploaded = if (accessToken != null && auth.emailVerified && auth.sharingEnabled) {
+        if (accessToken != null) privacy.flushWithdrawals(url)
+        val uploaded = if (accessToken != null && auth.emailVerified && auth.sharingEnabled && privacy.canUpload(url, accessToken)) {
             progress(context.getString(R.string.task_uploading, pending.size))
             try {
                 client.upload(pending).also { prefs.edit { putLong("last_upload_ms", startedMs) } }

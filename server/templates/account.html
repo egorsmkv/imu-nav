@@ -19,17 +19,24 @@
     <form action="/account/email/resend" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Resend verification email</button></form>
     {% endif %}
     <p>Sharing is {% if !email_verified %}<strong>waiting for email verification</strong>{% else %}{% if sharing_enabled %}<strong>active</strong>{% else %}<strong>paused</strong>{% endif %}{% endif %}.</p>
+    {% if privacy.configured %}
+    <p>Tower upload consent: {% if privacy.tower_consent %}<strong>current</strong>{% else %}<strong>not current</strong>{% endif %}. Read the <a href="/data-usage">operator privacy notice</a> in the app before granting consent.</p>
+    {% if privacy.tower_consent %}<form action="/account/privacy/tower_upload/withdraw" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="danger" type="submit">Withdraw tower consent and erase my contributions</button></form>{% endif %}
+    {% endif %}
     {% if sharing_enabled %}
     <form action="/account/sharing/pause" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Pause uploads</button></form>
     {% else %}
     <form action="/account/sharing/resume" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><label for="resume-password">Password to resume sharing</label><input id="resume-password" name="password" type="password" autocomplete="current-password" required><button type="submit">Resume uploads</button></form>
     {% endif %}
   </section>
-  <section class="card" id="diagnostics"><h2>Developer diagnostics</h2><p>Review, download, or delete diagnostic trips that you chose to upload.</p><a class="button" href="/debug">Open my diagnostic sessions</a></section>
+  <section class="card" id="diagnostics"><h2>Developer diagnostics</h2><p>Review, download, or delete diagnostic trips that you chose to upload.</p><a class="button" href="/debug">Open my diagnostic sessions</a>
+    {% if privacy.configured %}<p>Diagnostics consent: {% if privacy.diagnostics_consent %}<strong>current</strong>{% else %}<strong>not current</strong>{% endif %}.</p>
+    {% if privacy.diagnostics_consent %}<form action="/account/privacy/diagnostics/withdraw" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="danger" type="submit">Withdraw diagnostics consent and erase sessions</button></form>{% endif %}{% endif %}
+  </section>
   </div>
   <section class="card" id="observations">
     <h2>My observations</h2>
-    <p><strong class="stat">{{ total }} matching observations</strong>. Filter the list or download it as CSV.gz.</p>
+    <p><strong class="stat">{{ total }} matching observations</strong>. Filter the list or download your complete account archive as compressed NDJSON.</p>
     <h3>Find and export observations</h3>
     <form action="/account" method="get" class="filters">
       <div><label for="device">Device ID contains</label><input id="device" name="device" type="text" maxlength="100" value="{{ filter_device }}"></div>
@@ -39,8 +46,7 @@
       <button class="primary" type="submit">Apply filters</button><a class="button" href="/account">Clear</a>
     </form>
     <form action="/account/export" method="get" class="row">
-      <input type="hidden" name="device" value="{{ filter_device }}"><input type="hidden" name="mcc" value="{{ filter_mcc }}"><input type="hidden" name="from_s" value="{{ filter_from }}"><input type="hidden" name="to_s" value="{{ filter_to }}">
-      <button type="submit">Download filtered CSV.gz</button>
+      <button type="submit">Download account archive (.ndjson.gz)</button>
     </form>
   </section>
   <section class="card"><h2>Observation list</h2><div class="table-wrap">

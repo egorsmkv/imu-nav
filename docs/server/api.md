@@ -26,6 +26,14 @@ endpoints are the server-side contract for those clients.
   `tower_deleted`, and `resync_required` JSON events. On `resync_required`, reload the management
   list because the client fell behind the bounded event queue.
 - `GET /health` reports readiness and the number of published towers.
+- `GET /v1/privacy` returns the selected operator's current versioned notice in English,
+  Ukrainian and Russian. `GET /v1/privacy/me` returns that notice and the signed-in account's
+  current `tower_upload` and `diagnostics` consent states.
+- `PUT /v1/privacy/consents/{purpose}` with `{"notice_version":"..."}` records one
+  account-level consent. Purposes are `tower_upload` and `diagnostics`; the version must match
+  the current notice. `DELETE` at the same path withdraws consent and erases that purpose's
+  live records. Both methods require a bearer token. Public deployments return 403
+  `CONSENT_REQUIRED` for tower and diagnostic uploads without a current receipt.
 
 Register and sign in with `POST /v1/auth/register` or `/v1/auth/login`, sending JSON
 `{"email":"user@example.org","password":"..."}`. Both return `access_token`, `refresh_token`,
@@ -45,3 +53,5 @@ confirmation at the new address and revoke all sessions on completion. Without S
 remains immediately verified for local deployments, while recovery and email changes are unavailable
 (`503 MAIL_UNAVAILABLE` for recovery). The account JSON includes `email_verified` and
 `sharing_enabled`, and uploads return 403 while either condition blocks sharing.
+All uploads also require a valid 8–64 character `X-Device-Id` made of letters, digits
+or hyphens. The server no longer uses the client IP as an identifier when this header is absent.

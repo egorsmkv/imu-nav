@@ -1,10 +1,11 @@
 # Copy to server/config.toml, restrict permissions, then pass --config server/config.toml.
 # Paths in this file are relative to this file's directory.
 [server]
+mode = "local" # Explicit public mode requires HTTPS, secure cookies and [privacy].
 bind = "127.0.0.1"
 port = 8080
 trust_proxy = false
-# Set true when public HTTPS terminates at a reverse proxy. Keep false for LAN HTTP.
+# Set true when public HTTPS terminates at a reverse proxy.
 secure_cookies = false
 # public_url = "https://cells.example.org"
 

@@ -6,6 +6,7 @@ use limits::{Limits, enforce_limits};
 #[cfg(test)]
 use std::time::Duration;
 
+use crate::PrivacyNotice;
 use crate::admin;
 use crate::auth::{self, AuthRateLimits, MailConfig, SharedAuthLimits};
 use crate::debug;
@@ -45,6 +46,8 @@ pub struct ServerConfig {
     pub trust_proxy: bool,
     /// Require HTTPS when browsers send session cookies; set this behind a TLS proxy.
     pub secure_cookies: bool,
+    /// A public deployment requires a versioned, operator supplied notice.
+    pub privacy: Option<PrivacyNotice>,
 }
 
 /// Shared application state used by HTTP requests and WebSocket connections.
@@ -95,6 +98,31 @@ impl AppState {
     pub(crate) fn policy(&self) -> Policy {
         self.policy.read().expect("policy lock poisoned").clone()
     }
+
+    /// Apply retention with the current publication policy and notify live subscribers.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database or worker error when cleanup cannot complete.
+    pub async fn prune_retained_data(&self) -> anyhow::Result<usize> {
+        let _gate = self.write_gate.write().await;
+        let store = self.store.clone();
+        let policy = self.policy();
+        let (removed, changes) =
+            tokio::task::spawn_blocking(move || store.prune_retained_data(&policy)).await??;
+        for change in changes {
+            match change {
+                crate::store::OwnContributionChange::Updated(tower) => {
+                    let _ = self.events.send(ServerEvent::TowerUpserted { tower });
+                }
+                crate::store::OwnContributionChange::Removed(key) => {
+                    let _ = self.events.send(ServerEvent::TowerDeleted { key });
+                }
+            }
+        }
+        *self.health_cache.lock().await = None;
+        Ok(removed)
+    }
 }
 
 /// Construct all compatibility, management, and real-time routes.
@@ -104,6 +132,7 @@ pub fn router(state: AppState) -> Router {
         .merge(debug::router())
         .merge(auth::router())
         .merge(web::router())
+        .merge(crate::privacy::router())
         .route("/health", get(health))
         .route("/v1/cells", post(upload_cells))
         .route("/v1/cells.csv.gz", get(download_cells))
@@ -211,11 +240,8 @@ async fn upload_cells(
         .get("x-device-id")
         .and_then(|value| value.to_str().ok())
         .filter(|value| valid_device_id(value))
-        .map_or_else(|| format!("ip:{ip}"), str::to_owned);
+        .ok_or(ApiError(StatusCode::BAD_REQUEST, "BAD_DEVICE"))?;
     let device = format!("account:{}:{device}", account.id);
-    if device == "seed" {
-        return Err(ApiError(StatusCode::BAD_REQUEST, "BAD_DEVICE"));
-    }
     enforce_limits(&state, &ip, &device)?;
     let row_limit = state.policy().max_rows_per_upload;
     let towers = tokio::task::spawn_blocking(move || decode_towers(&body, row_limit))
@@ -235,7 +261,6 @@ async fn upload_cells(
     let _write_guard = state.write_gate.read().await;
     check_upload_permission(&state, account.id).await?;
     let policy = state.policy();
-    let device_for_log = device.clone();
     let (result, changed) =
         run_db(move || store.contribute(&device, &towers, now_s(), &policy)).await?;
     let visibility_store = state.store.clone();
@@ -244,8 +269,6 @@ async fn upload_cells(
         let _ = state.events.send(ServerEvent::TowerUpserted { tower });
     }
     tracing::info!(
-        device = device_for_log,
-        ip,
         accepted = result.accepted,
         rejected = result.rejected,
         "upload"
@@ -265,6 +288,15 @@ async fn check_upload_permission(state: &AppState, account_id: i64) -> Result<()
     }
     if !sharing {
         return Err(ApiError(StatusCode::FORBIDDEN, "SHARING_DISABLED"));
+    }
+    if let Some(notice) = &state.config.privacy {
+        let store = state.store.clone();
+        let version = notice.version.clone();
+        let consented =
+            run_db(move || store.has_privacy_consent(account_id, "tower_upload", &version)).await?;
+        if !consented {
+            return Err(ApiError(StatusCode::FORBIDDEN, "CONSENT_REQUIRED"));
+        }
     }
     Ok(())
 }

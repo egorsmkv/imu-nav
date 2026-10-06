@@ -1,12 +1,49 @@
 //! Exercise the shipped executable, including SQLite import and graceful profile flushing.
 #![cfg(unix)]
-use imu_nav_cell_server::{CellStore, create_admin};
+use imu_nav_cell_server::{CellKey, CellStore, CellTower, Policy, Radio, create_admin};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
 use std::time::Duration;
 
 struct ServerProcess(Child);
+
+#[test]
+fn replays_withdrawals_before_starting_a_restored_sqlite_server() -> anyhow::Result<()> {
+    let directory = tempfile::tempdir()?;
+    let database = directory.path().join("cells.sqlite3");
+    let store = CellStore::open(&database)?;
+    create_admin(&store, "admin@example.org", "correct horse battery staple")?;
+    let policy = Policy::default();
+    let observation = CellTower {
+        key: CellKey {
+            radio: Radio::Lte,
+            mcc: 255,
+            mnc: 1,
+            area: 100,
+            cid: 200,
+        },
+        lat: 50.45,
+        lon: 30.52,
+        range_m: 500.0,
+        samples: 3,
+    };
+    store.contribute("account:1:phone-aaaa", &[observation], 1, &policy)?;
+    assert_eq!(store.counts(&policy)?.1, 1);
+    let replay = directory.path().join("replay.csv");
+    std::fs::write(&replay, "account_id,purpose\n1,tower_upload\n")?;
+    for _ in 0..2 {
+        let result = Command::new(env!("CARGO_BIN_EXE_imu-nav-cell-server"))
+            .arg("--data")
+            .arg(&database)
+            .arg("--replay-deletions")
+            .arg(&replay)
+            .output()?;
+        assert!(result.status.success());
+    }
+    assert_eq!(store.counts(&policy)?.1, 0);
+    Ok(())
+}
 impl Drop for ServerProcess {
     fn drop(&mut self) {
         let _ = self.0.kill();

@@ -3,6 +3,7 @@ use clap::Parser;
 use imu_nav_cell_server::{
     AppState, CellStore, MailConfig, Policy, ServerConfig, create_admin, router,
 };
+use serde::Deserialize;
 use std::io::IsTerminal;
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
@@ -32,6 +33,9 @@ struct Options {
     /// Copy a stopped SQLite database into the empty PostgreSQL database selected by --config.
     #[arg(long)]
     migrate_from_sqlite: Option<PathBuf>,
+    /// Replay chronological account closures and consent withdrawals after a backup restore.
+    #[arg(long)]
+    replay_deletions: Option<PathBuf>,
     /// Create an admin locally; prompt on a terminal or read one line from standard input.
     #[arg(long)]
     create_admin: Option<String>,
@@ -110,7 +114,9 @@ fn main() -> Result<()> {
     };
     if let Some(path) = options.migrate_from_sqlite.as_ref() {
         anyhow::ensure!(
-            options.create_admin.is_none() && options.import.is_none(),
+            options.create_admin.is_none()
+                && options.import.is_none()
+                && options.replay_deletions.is_none(),
             "migration cannot be combined with admin setup or seed import"
         );
         store.migrate_from_sqlite(path)?;
@@ -119,6 +125,10 @@ fn main() -> Result<()> {
     }
     let policy = store.stored_policy()?.unwrap_or(default_policy);
     if let Some(email) = options.create_admin.as_deref() {
+        anyhow::ensure!(
+            options.replay_deletions.is_none(),
+            "administrator setup cannot run deletion replay"
+        );
         tracing::info!("administrator setup started");
         let password = read_admin_password()?;
         tracing::debug!("administrator password received; creating account");
@@ -126,19 +136,18 @@ fn main() -> Result<()> {
         tracing::info!("administrator account created");
         return Ok(());
     }
+    if let Some(path) = options.replay_deletions.as_ref() {
+        anyhow::ensure!(
+            options.import.is_none(),
+            "seed import cannot run deletion replay"
+        );
+        replay_deletions(&store, path, &policy)?;
+        return Ok(());
+    }
     tracing::info!(bind = %settings.bind, port = settings.port, area = %settings.area, "starting cell server");
     let mail = mail_config(&settings)?;
-    if let Some(path) = options.import {
-        let mut towers = imu_nav_cell_server::read_import(&path, usize::MAX)?;
-        if !options.mcc.is_empty() {
-            towers.retain(|tower| options.mcc.contains(&tower.key.mcc));
-        }
-        let now = i64::try_from(SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs())?;
-        let (result, _) = store.seed(&towers, now, &policy)?;
-        tracing::info!(path = %path.display(), accepted = result.accepted, rejected = result.rejected, "seed import");
-    }
+    import_seed_towers(&options, &store, &policy)?;
     let (published, contributions) = store.counts(&policy)?;
-    let cleanup_store = store.clone();
     let state = AppState::new(
         store,
         ServerConfig {
@@ -146,21 +155,57 @@ fn main() -> Result<()> {
             policy: policy.clone(),
             trust_proxy: settings.trust_proxy,
             secure_cookies: settings.secure_cookies,
+            privacy: settings.privacy.clone(),
         },
     )?;
     let address = SocketAddr::new(settings.bind, settings.port);
     let runtime = tokio::runtime::Runtime::new()?;
-    let pool_guard = cleanup_store.clone();
     let result = runtime.block_on(serve_http(
         state,
-        cleanup_store,
         address,
         (published, contributions),
         policy.min_devices,
     ));
     drop(runtime);
-    drop(pool_guard);
     result
+}
+
+fn import_seed_towers(options: &Options, store: &CellStore, policy: &Policy) -> Result<()> {
+    let Some(path) = options.import.as_ref() else {
+        return Ok(());
+    };
+    let mut towers = imu_nav_cell_server::read_import(path, usize::MAX)?;
+    if !options.mcc.is_empty() {
+        towers.retain(|tower| options.mcc.contains(&tower.key.mcc));
+    }
+    let now = i64::try_from(SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs())?;
+    let (result, _) = store.seed(&towers, now, policy)?;
+    tracing::info!(path = %path.display(), accepted = result.accepted, rejected = result.rejected, "seed import");
+    Ok(())
+}
+
+#[derive(Deserialize)]
+struct ReplayDeletion {
+    account_id: i64,
+    purpose: String,
+}
+
+/// Apply a reviewed, chronological event list while the server is stopped.
+fn replay_deletions(store: &CellStore, path: &std::path::Path, policy: &Policy) -> Result<()> {
+    let mut reader = csv::Reader::from_path(path).context("cannot open deletion replay file")?;
+    let mut count = 0usize;
+    for record in reader.deserialize::<ReplayDeletion>() {
+        let record = record.map_err(|_| anyhow::anyhow!("invalid deletion replay CSV"))?;
+        if record.purpose == "account" {
+            store.replay_account_closure(record.account_id, policy)?;
+        } else {
+            store.replay_withdrawal(record.account_id, &record.purpose, policy)?;
+        }
+        count += 1;
+    }
+    store.revoke_restored_sessions()?;
+    tracing::info!(count, "deletion replay completed");
+    Ok(())
 }
 
 /// Build complete mail settings only when every required value was supplied.
@@ -180,8 +225,8 @@ fn mail_config(settings: &Settings) -> Result<Option<MailConfig>> {
             Some(smtp_from),
         ) => {
             anyhow::ensure!(
-                public_url.starts_with("https://"),
-                "CELLS_PUBLIC_URL must use HTTPS"
+                config::valid_public_url(&public_url),
+                "CELLS_PUBLIC_URL must be an HTTPS origin"
             );
             Some(MailConfig {
                 public_url,
@@ -202,7 +247,6 @@ fn mail_config(settings: &Settings) -> Result<Option<MailConfig>> {
 /// Bind the HTTP listener after database initialization has completed on the ordinary thread.
 async fn serve_http(
     state: AppState,
-    cleanup_store: CellStore,
     address: SocketAddr,
     counts: (usize, usize),
     min_devices: usize,
@@ -211,7 +255,7 @@ async fn serve_http(
         .await
         .context("cannot bind server socket")?;
     tracing::info!(address = %listener.local_addr()?, published = counts.0, contributions = counts.1, min_devices, "cell server ready");
-    let cleanup = spawn_debug_cleanup(cleanup_store);
+    let cleanup = spawn_retention_cleanup(state.clone());
     axum::serve(
         listener,
         router(state).into_make_service_with_connect_info::<SocketAddr>(),
@@ -223,20 +267,18 @@ async fn serve_http(
     Ok(())
 }
 
-/// Expire private diagnostics even when nobody opens the account pages.
-fn spawn_debug_cleanup(cleanup_store: CellStore) -> tokio::task::JoinHandle<()> {
+/// Expire transient records and observations even when nobody opens account pages.
+fn spawn_retention_cleanup(state: AppState) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_hours(6));
+        let mut interval = tokio::time::interval(std::time::Duration::from_hours(24));
         loop {
             interval.tick().await;
-            let store = cleanup_store.clone();
-            match tokio::task::spawn_blocking(move || store.prune_debug_sessions()).await {
-                Ok(Ok(removed)) if removed > 0 => {
-                    tracing::info!(removed, "expired diagnostic sessions removed");
+            match state.prune_retained_data().await {
+                Ok(removed) if removed > 0 => {
+                    tracing::info!(removed, "expired tower observations removed");
                 }
-                Ok(Ok(_)) => {}
-                Ok(Err(error)) => tracing::warn!(%error, "diagnostic cleanup failed"),
-                Err(error) => tracing::warn!(%error, "diagnostic cleanup worker failed"),
+                Ok(_) => {}
+                Err(error) => tracing::warn!(%error, "retention cleanup failed"),
             }
         }
     })

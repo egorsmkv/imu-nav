@@ -16,7 +16,7 @@ it contains no credentials. PostgreSQL and SMTP credentials come from a local `.
 ```bash
 cp .env.example .env
 chmod 600 .env
-# Edit .env: set a fresh URL-safe POSTGRES_PASSWORD, public HTTPS URL, and SMTP settings.
+# Edit .env: set passwords, URL, SMTP and every CELLS_PRIVACY_* field. Review the notice text in server/config.production.toml.
 docker compose up -d --build
 docker compose run --rm server --config /etc/imu-nav/config.toml --create-admin admin@example.org
 docker compose ps
@@ -40,7 +40,17 @@ host. The TOML enables `trust_proxy` for per-IP limits and `secure_cookies` for 
 sessions. The server's `/tmp` is a 1 GiB temporary filesystem for
 imports and downloads; it is not persistent. Back up the PostgreSQL volume regularly, for
 example with `docker compose exec -T postgres pg_dump -U imu_nav -d imu_nav -Fc > /secure/backup/cells.dump`.
-Keep backups outside this repository and restrict access to them.
+Keep encrypted backups outside this repository, restrict access, and expire them within 30 days. Follow the [privacy operations guide](privacy.md) to replay withdrawals and account closures after a restore, before reopening the server.
+After restoring PostgreSQL while `server` and `caddy` are stopped, grant the server's UID 10001
+read access to the reviewed deletion CSV, mount it into a one-off server container, and run:
+
+```bash
+docker compose run --rm --no-deps -v /secure/replay.csv:/secure/replay.csv:ro \
+  server --config /etc/imu-nav/config.toml --replay-deletions /secure/replay.csv
+docker compose up -d server caddy
+```
+
+The replay command revokes all restored sessions; users sign in again.
 Changing `POSTGRES_PASSWORD` in `.env` after PostgreSQL has initialized does not rotate the
 password stored in its database.
 

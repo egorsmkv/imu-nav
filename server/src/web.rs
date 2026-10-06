@@ -9,7 +9,7 @@ use askama::Template;
 use axum::Router;
 use axum::body::Body;
 use axum::extract::Request;
-use axum::extract::{ConnectInfo, Form, Query, State};
+use axum::extract::{ConnectInfo, Form, Path, Query, State};
 use axum::http::{HeaderMap, Method, StatusCode, Uri, header};
 use axum::middleware::Next;
 use axum::response::{Html, IntoResponse, Response};
@@ -67,6 +67,10 @@ pub(crate) fn router() -> Router<AppState> {
         .route("/forgot-password", get(forgot_page).post(forgot_submit))
         .route("/account", get(account_page))
         .route("/account/export", get(export_own))
+        .route(
+            "/account/privacy/{purpose}/withdraw",
+            post(withdraw_privacy),
+        )
         .route("/account/password", post(change_password))
         .route("/account/email", post(change_email))
         .route("/account/email/resend", post(resend_verification))
@@ -99,6 +103,7 @@ struct AccountFormTemplate {
 #[template(path = "data_usage.html")]
 struct DataUsageTemplate {
     nav: SiteChrome,
+    notice: Option<crate::PrivacyNotice>,
 }
 
 #[derive(Template)]
@@ -128,6 +133,7 @@ struct AccountTemplate {
     filter_from: String,
     filter_to: String,
     sharing_enabled: bool,
+    privacy: AccountPrivacyView,
     email_verified: bool,
     message: String,
     sessions: Vec<SessionRow>,
@@ -138,6 +144,12 @@ struct AccountTemplate {
 struct AccountPagination {
     has_previous: bool,
     has_next: bool,
+}
+
+struct AccountPrivacyView {
+    configured: bool,
+    tower_consent: bool,
+    diagnostics_consent: bool,
 }
 
 struct Impersonation {
@@ -443,7 +455,13 @@ async fn data_usage_page(
         .map_or_else(SiteChrome::guest, |(account, raw)| {
             SiteChrome::account(account.admin, csrf_token(&raw))
         });
-    render(StatusCode::OK, &DataUsageTemplate { nav })
+    render(
+        StatusCode::OK,
+        &DataUsageTemplate {
+            nav,
+            notice: state.config.privacy.clone(),
+        },
+    )
 }
 
 async fn forgot_page() -> Result<Response, ApiError> {
@@ -900,6 +918,7 @@ async fn account_page(
             store.account_sharing_status(account.id)?, sessions))
     }).await?;
     let total = contributions.total;
+    let privacy = account_privacy_view(&state, account.id).await?;
     let has_next = offset + PAGE_SIZE < total;
     render(
         StatusCode::OK,
@@ -923,6 +942,7 @@ async fn account_page(
             filter_from: filter.from_s.map_or_else(String::new, utc_input),
             filter_to: filter.to_s.map_or_else(String::new, utc_input),
             sharing_enabled,
+            privacy,
             email_verified,
             message: account_message(query.message.as_deref()).to_owned(),
             sessions,
@@ -930,6 +950,38 @@ async fn account_page(
             actor_email: impersonation.map_or_else(String::new, |record| record.actor_email),
         },
     )
+}
+
+/// Read both account receipts against the version currently served to clients.
+async fn account_privacy_view(
+    state: &AppState,
+    account_id: i64,
+) -> Result<AccountPrivacyView, ApiError> {
+    let Some(version) = state
+        .config
+        .privacy
+        .as_ref()
+        .map(|notice| notice.version.clone())
+    else {
+        return Ok(AccountPrivacyView {
+            configured: false,
+            tower_consent: false,
+            diagnostics_consent: false,
+        });
+    };
+    let store = state.store.clone();
+    let (tower_consent, diagnostics_consent) = run_db(move || {
+        Ok((
+            store.has_privacy_consent(account_id, "tower_upload", &version)?,
+            store.has_privacy_consent(account_id, "diagnostics", &version)?,
+        ))
+    })
+    .await?;
+    Ok(AccountPrivacyView {
+        configured: true,
+        tower_consent,
+        diagnostics_consent,
+    })
 }
 
 fn account_message(key: Option<&str>) -> &'static str {
@@ -956,18 +1008,18 @@ async fn export_own(
     let Some((account, _)) = web_account(&state, &headers).await? else {
         return Ok(redirect("/login"));
     };
-    let Some(filter) = query.filter() else {
+    if query.filter().is_none() {
         return Ok(error_page(
             StatusCode::BAD_REQUEST,
             "Invalid observation filter.",
         ));
-    };
+    }
     let temporary = tempfile::NamedTempFile::new()
         .map_err(|error| ApiError::from(anyhow::Error::new(error)))?
         .into_temp_path();
     let path = temporary.to_path_buf();
     let store = state.store.clone();
-    run_db(move || store.export_own_to_path(account.id, &filter, &path)).await?;
+    run_db(move || store.export_account_to_path(account.id, &path)).await?;
     let file = tokio::fs::File::open(&temporary)
         .await
         .map_err(|error| ApiError::from(anyhow::Error::new(error)))?;
@@ -982,11 +1034,53 @@ async fn export_own(
     );
     response.headers_mut().insert(
         header::CONTENT_DISPOSITION,
-        "attachment; filename=\"my-cell-observations.csv.gz\""
+        "attachment; filename=\"my-account.ndjson.gz\""
             .parse()
             .expect("header"),
     );
     Ok(no_store(response))
+}
+
+/// Browser withdrawal uses the same write gate and immediate erasure as the bearer API.
+async fn withdraw_privacy(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(purpose): Path<String>,
+    Form(form): Form<CsrfForm>,
+) -> Result<Response, ApiError> {
+    let Some((account, raw)) = web_account(&state, &headers).await? else {
+        return Ok(redirect("/login"));
+    };
+    if form.csrf != csrf_token(&raw) {
+        return Ok(error_page(StatusCode::FORBIDDEN, "Invalid form token."));
+    }
+    if state.config.privacy.is_none() || !matches!(purpose.as_str(), "tower_upload" | "diagnostics")
+    {
+        return Ok(error_page(
+            StatusCode::NOT_FOUND,
+            "Privacy purpose not found.",
+        ));
+    }
+    let _gate = state.write_gate.write().await;
+    let store = state.store.clone();
+    let policy = state.policy();
+    let purpose_for_log = purpose.clone();
+    let changes =
+        run_db(move || store.withdraw_privacy_consent(account.id, &purpose, &policy)).await?;
+    for change in changes {
+        match change {
+            crate::store::OwnContributionChange::Updated(tower) => {
+                let _ = state
+                    .events
+                    .send(crate::ServerEvent::TowerUpserted { tower });
+            }
+            crate::store::OwnContributionChange::Removed(key) => {
+                let _ = state.events.send(crate::ServerEvent::TowerDeleted { key });
+            }
+        }
+    }
+    tracing::info!(account_id=account.id, purpose=%purpose_for_log, "privacy withdrawal committed");
+    Ok(redirect("/account"))
 }
 
 async fn change_password(
@@ -1258,6 +1352,7 @@ async fn close_account(
     for change in changes {
         publish_change(&state, change);
     }
+    tracing::info!(account_id = account.id, "privacy account closed");
     let mut response = redirect("/login");
     clear_cookie(&mut response, "imu_nav_session");
     clear_cookie(&mut response, "imu_nav_admin_return");
@@ -1395,6 +1490,11 @@ async fn delete_one(
         return Ok(error_page(StatusCode::NOT_FOUND, "Contribution not found."));
     };
     publish_change(&state, change);
+    tracing::info!(
+        account_id = account.id,
+        purpose = "tower_upload",
+        "privacy erasure committed"
+    );
     Ok(redirect("/account?message=deleted"))
 }
 
@@ -1423,6 +1523,11 @@ async fn delete_all(
     for change in changes {
         publish_change(&state, change);
     }
+    tracing::info!(
+        account_id = account.id,
+        purpose = "tower_upload",
+        "privacy erasure committed"
+    );
     Ok(redirect("/account?message=all-deleted"))
 }
 

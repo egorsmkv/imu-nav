@@ -1,6 +1,7 @@
 # Container settings. The PostgreSQL URL and SMTP credentials come from Compose environment.
 # Compose runs Caddy as the TLS reverse proxy in front of server:8080.
 [server]
+mode = "public"
 bind = "0.0.0.0"
 port = 8080
 trust_proxy = true
@@ -16,3 +17,10 @@ level = "info"
 min_devices = 2
 max_samples = 50
 area = "any"
+
+# Operator details come from CELLS_PRIVACY_* environment variables. Review the notice
+# wording with your own controller, processors, transfers and lawful bases before deployment.
+[privacy]
+notice_en = "Tower sharing is optional and uses your consent. We retain accepted tower observations for up to 12 months and use them to calculate public tower positions. Separate consent is required for precise-location diagnostics, which are private to you and administrators and expire after 30 days. You can withdraw either consent, export your account data or close your account at any time. This app is a research prototype, not a safety system."
+notice_uk = "Обмін даними про вежі є добровільним і ґрунтується на вашій згоді. Прийняті спостереження зберігаються до 12 місяців і використовуються для обчислення загальнодоступних координат веж. Для діагностики з точним місцезнаходженням потрібна окрема згода; ці дані доступні лише вам і адміністраторам та видаляються через 30 днів. Ви можете відкликати будь-яку згоду, експортувати дані облікового запису або закрити його будь-коли. Ця програма є дослідним прототипом, а не системою безпеки."
+notice_ru = "Обмен данными о вышках доброволен и основан на вашем согласии. Принятые наблюдения хранятся до 12 месяцев и используются для расчёта общедоступных координат вышек. Для диагностики с точным местоположением требуется отдельное согласие; эти данные доступны только вам и администраторам и удаляются через 30 дней. Вы можете отозвать любое согласие, экспортировать данные учётной записи или закрыть её в любое время. Это приложение является исследовательским прототипом, а не системой безопасности."

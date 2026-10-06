@@ -95,7 +95,17 @@ async fn start(
     let id = format!("{:032x}", rand::random::<u128>());
     let id_for_db = id.clone();
     let _gate = state.write_gate.write().await;
+    let notice_version = state
+        .config
+        .privacy
+        .as_ref()
+        .map(|notice| notice.version.clone());
     let session = run_db(move || -> anyhow::Result<Result<Option<SessionStatus>,ApiError>> {
+        if let Some(version) = notice_version.as_deref()
+            && !store.has_privacy_consent(account.id, "diagnostics", version)?
+        {
+            return Ok(Err(ApiError(StatusCode::FORBIDDEN, "CONSENT_REQUIRED")));
+        }
         prune(&store)?;
         if !enabled(&store)? { return Ok(Ok(None)); }
         let mut connection = store.connection()?;
@@ -118,7 +128,7 @@ async fn start(
         Ok(Ok(Some(SessionStatus { id: id_for_db, next_seq: 0, finished: false, incomplete: false })))
     }).await??;
     let session = session.ok_or_else(unavailable)?;
-    tracing::info!(account_id=account.id, session=%session.id, "debug session accepted");
+    tracing::info!(account_id = account.id, "debug session accepted");
     Ok(Json(session))
 }
 
@@ -188,7 +198,17 @@ async fn batch(
     let digest = format!("{:x}", Sha256::digest(&body));
     let store = state.store.clone();
     let _gate = state.write_gate.read().await;
+    let notice_version = state
+        .config
+        .privacy
+        .as_ref()
+        .map(|notice| notice.version.clone());
     let outcome = run_db(move || -> anyhow::Result<Result<SessionStatus, ApiError>> {
+        if let Some(version) = notice_version.as_deref()
+            && !store.has_privacy_consent(account.id, "diagnostics", version)?
+        {
+            return Ok(Err(ApiError(StatusCode::FORBIDDEN, "CONSENT_REQUIRED")));
+        }
         if !enabled(&store)? { return Ok(Err(unavailable())); }
         let mut connection = store.connection()?;
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -493,7 +513,15 @@ async fn delete(
     csrf(&raw, &form.csrf)?;
     let _gate = state.write_gate.write().await;
     let store = state.store.clone();
-    run_db(move || {
+    let owner = run_db(move || {
+        let owner: Option<i64> = store
+            .connection()?
+            .query_row(
+                "SELECT account_id FROM debug_sessions WHERE id=?1 AND (?2=1 OR account_id=?3)",
+                params![id, account.admin, account.id],
+                |row| row.get(0),
+            )
+            .optional()?;
         let affected = store.connection()?.execute(
             "DELETE FROM debug_sessions WHERE id=?1 AND (?2=1 OR account_id=?3)",
             params![id, account.admin, account.id],
@@ -501,9 +529,16 @@ async fn delete(
         if affected > 0 && account.admin {
             store.audit(account.id, "debug_delete", &id)?;
         }
-        Ok(())
+        Ok(if affected > 0 { owner } else { None })
     })
     .await?;
+    if let Some(account_id) = owner {
+        tracing::info!(
+            account_id,
+            purpose = "diagnostics",
+            "privacy erasure committed"
+        );
+    }
     Ok(redirect("/debug"))
 }
 
@@ -527,6 +562,11 @@ async fn delete_all(
         Ok(())
     })
     .await?;
+    tracing::info!(
+        account_id = account.id,
+        purpose = "diagnostics",
+        "privacy erasure committed"
+    );
     Ok(redirect("/debug"))
 }
 

@@ -10,6 +10,7 @@ use rusqlite::types::{Type, Value};
 use rusqlite::{OptionalExtension, TransactionBehavior};
 use std::collections::{BTreeSet, HashSet};
 use std::fmt::Write as _;
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -58,6 +59,10 @@ const MIGRATION_TABLES: &[(&str, &str)] = &[
         "token_hash,admin_token_hash,actor_id,target_id",
     ),
     ("password_resets", "token_hash,user_id,expires_s"),
+    (
+        "privacy_consents",
+        "id,account_id,purpose,notice_version,granted,at_s",
+    ),
     (
         "debug_sessions",
         "id,account_id,client_id,context_json,created_s,updated_s,finished_s,incomplete,bytes",
@@ -161,6 +166,9 @@ fn initialize_schema(connection: &Connection) -> Result<()> {
          CREATE INDEX IF NOT EXISTS consensus_sync ON consensus(mcc, updated_s);",
     )?;
     connection.execute_batch(
+        "CREATE INDEX IF NOT EXISTS contributions_expiry ON contributions(updated_s);",
+    )?;
+    connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS tower_moderation (
            radio TEXT NOT NULL, mcc INTEGER NOT NULL, mnc INTEGER NOT NULL,
            area INTEGER NOT NULL, cid INTEGER NOT NULL, quarantined INTEGER NOT NULL DEFAULT 1,
@@ -228,6 +236,13 @@ fn initialize_schema(connection: &Connection) -> Result<()> {
            expires_s INTEGER NOT NULL
          );
          CREATE INDEX IF NOT EXISTS password_resets_expiry ON password_resets(expires_s);",
+    )?;
+    connection.execute_batch(
+        "CREATE TABLE IF NOT EXISTS privacy_consents (
+           id INTEGER PRIMARY KEY, account_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+           purpose TEXT NOT NULL, notice_version TEXT NOT NULL, granted INTEGER NOT NULL, at_s INTEGER NOT NULL
+         );
+         CREATE INDEX IF NOT EXISTS privacy_consents_current ON privacy_consents(account_id,purpose,id);",
     )?;
     initialize_debug_schema(connection)?;
     Ok(())
@@ -381,6 +396,13 @@ impl CellStore {
                 |row| row.get(0),
             )?;
             anyhow::ensure!(count == 0, "PostgreSQL target is not empty: {table}");
+            // A stopped database from before purpose consent has no receipt table yet.
+            if *table == "privacy_consents" {
+                let exists: i64 = source.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='privacy_consents'", [], |row| row.get(0))?;
+                if exists == 0 {
+                    continue;
+                }
+            }
             let column_count = columns.split(',').count();
             let select = format!("SELECT {columns} FROM {table}");
             let insert = format!(
@@ -410,7 +432,7 @@ impl CellStore {
                 "PostgreSQL migration count mismatch in {table}"
             );
         }
-        for table in ["users", "admin_jobs", "admin_audit"] {
+        for table in ["users", "admin_jobs", "admin_audit", "privacy_consents"] {
             transaction.query_row(
                 &format!("SELECT setval(pg_get_serial_sequence('{table}','id'), COALESCE(MAX(id),1), MAX(id) IS NOT NULL) FROM {table}"),
                 params![],
@@ -452,6 +474,182 @@ impl CellStore {
             "DELETE FROM debug_sessions WHERE created_s<?1",
             [now_s - 30 * 24 * 60 * 60],
         )?)
+    }
+
+    /// Keep receipt history while enforcing independent, versioned purpose consent.
+    pub(crate) fn has_privacy_consent(
+        &self,
+        account_id: i64,
+        purpose: &str,
+        version: &str,
+    ) -> Result<bool> {
+        let connection = self.connection()?;
+        let current: Option<(String, bool)> = connection.query_row(
+            "SELECT notice_version,granted FROM privacy_consents WHERE account_id=?1 AND purpose=?2 ORDER BY id DESC LIMIT 1",
+            params![account_id,purpose], |row| Ok((row.get(0)?,row.get(1)?)),
+        ).optional()?;
+        Ok(current.is_some_and(|(accepted, granted)| granted && accepted == version))
+    }
+
+    pub(crate) fn grant_privacy_consent(
+        &self,
+        account_id: i64,
+        purpose: &str,
+        version: &str,
+    ) -> Result<()> {
+        let mut connection = self.connection()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        transaction.execute(
+            "INSERT INTO privacy_consents(account_id,purpose,notice_version,granted,at_s) VALUES (?1,?2,?3,1,?4)",
+            params![account_id,purpose,version,current_time_s()?],
+        )?;
+        if purpose == "tower_upload" {
+            transaction.execute(
+                "UPDATE users SET sharing_enabled=1 WHERE id=?1 AND email_verified=1",
+                [account_id],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
+    /// Withdraw consent and erase that purpose's stored data in one transaction.
+    pub(crate) fn withdraw_privacy_consent(
+        &self,
+        account_id: i64,
+        purpose: &str,
+        policy: &Policy,
+    ) -> Result<Vec<OwnContributionChange>> {
+        let mut connection = self.connection()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        transaction.execute(
+            "INSERT INTO privacy_consents(account_id,purpose,notice_version,granted,at_s)
+             VALUES (?1,?2,COALESCE((SELECT notice_version FROM privacy_consents WHERE account_id=?1 AND purpose=?2 ORDER BY id DESC LIMIT 1),''),0,?3)",
+            params![account_id,purpose,current_time_s()?],
+        )?;
+        let mut changes = Vec::new();
+        if purpose == "tower_upload" {
+            let pattern = account_device_pattern(account_id);
+            let keys = {
+                let mut statement = transaction.prepare("SELECT DISTINCT radio,mcc,mnc,area,cid FROM contributions WHERE device GLOB ?1")?;
+                statement
+                    .query_map([&pattern], row_to_key)?
+                    .collect::<rusqlite::Result<Vec<_>>>()?
+            };
+            transaction.execute("INSERT OR IGNORE INTO account_deleted_keys(account_id,radio,mcc,mnc,area,cid,device)
+                SELECT ?1,radio,mcc,mnc,area,cid,'*' FROM contributions WHERE device GLOB ?2", params![account_id,pattern])?;
+            transaction.execute("DELETE FROM contributions WHERE device GLOB ?1", [&pattern])?;
+            transaction.execute(
+                "UPDATE users SET sharing_enabled=0 WHERE id=?1",
+                [account_id],
+            )?;
+            changes = keys
+                .iter()
+                .map(|key| update_consensus_after_deletion(&transaction, key, policy))
+                .collect::<Result<Vec<_>>>()?;
+        } else {
+            transaction.execute(
+                "DELETE FROM debug_sessions WHERE account_id=?1",
+                [account_id],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(changes)
+    }
+
+    /// Reapply a recorded withdrawal to a restored database before it serves traffic.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an invalid purpose or a failed database transaction.
+    pub fn replay_withdrawal(&self, account_id: i64, purpose: &str, policy: &Policy) -> Result<()> {
+        anyhow::ensure!(
+            account_id > 0 && matches!(purpose, "tower_upload" | "diagnostics"),
+            "invalid deletion replay entry"
+        );
+        let exists: bool = self.connection()?.query_row(
+            "SELECT EXISTS(SELECT 1 FROM users WHERE id=?1)",
+            [account_id],
+            |row| row.get(0),
+        )?;
+        if !exists {
+            return Ok(());
+        }
+        self.withdraw_privacy_consent(account_id, purpose, policy)?;
+        Ok(())
+    }
+
+    /// Reapply an account closure to a restored database before it serves traffic.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database transaction fails or the identifier is invalid.
+    pub fn replay_account_closure(&self, account_id: i64, policy: &Policy) -> Result<()> {
+        anyhow::ensure!(account_id > 0, "invalid deletion replay entry");
+        self.close_own_account(account_id, policy)?;
+        Ok(())
+    }
+
+    /// Invalidate sessions and one-use links from a restored snapshot before public traffic resumes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database transaction fails.
+    pub fn revoke_restored_sessions(&self) -> Result<()> {
+        let mut connection = self.connection()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        transaction.execute("DELETE FROM auth_tokens", params![])?;
+        transaction.execute("DELETE FROM password_resets", params![])?;
+        transaction.execute("DELETE FROM email_verifications", params![])?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    /// Run bounded, daily retention for all transient server records and live tower data.
+    pub(crate) fn prune_retained_data(
+        &self,
+        policy: &Policy,
+    ) -> Result<(usize, Vec<OwnContributionChange>)> {
+        let now = current_time_s()?;
+        let mut connection = self.connection()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let current = time::OffsetDateTime::now_utc();
+        let previous_year = current.year() - 1;
+        let cutoff_date = current.date().replace_year(previous_year).or_else(|_| {
+            time::Date::from_calendar_date(previous_year, time::Month::February, 28)
+        })?;
+        let cutoff = cutoff_date
+            .with_time(current.time())
+            .assume_utc()
+            .unix_timestamp();
+        let keys = {
+            let mut statement = transaction.prepare("SELECT DISTINCT radio,mcc,mnc,area,cid FROM contributions WHERE updated_s<?1 AND device!='seed' AND device!='manual'")?;
+            statement
+                .query_map([cutoff], row_to_key)?
+                .collect::<rusqlite::Result<Vec<_>>>()?
+        };
+        let removed = transaction.execute(
+            "DELETE FROM contributions WHERE updated_s<?1 AND device!='seed' AND device!='manual'",
+            [cutoff],
+        )?;
+        let changes = keys
+            .iter()
+            .map(|key| update_consensus_after_deletion(&transaction, key, policy))
+            .collect::<Result<Vec<_>>>()?;
+        transaction.execute(
+            "DELETE FROM debug_sessions WHERE created_s<?1",
+            [now - 30 * 24 * 60 * 60],
+        )?;
+        transaction.execute("DELETE FROM auth_tokens WHERE expires_s<?1", [now])?;
+        transaction.execute("DELETE FROM email_verifications WHERE expires_s<?1", [now])?;
+        transaction.execute("DELETE FROM password_resets WHERE expires_s<?1", [now])?;
+        transaction.execute("DELETE FROM admin_import_rejections WHERE job_id IN (SELECT id FROM admin_jobs WHERE COALESCE(finished_s,started_s)<?1)", [now - 30*24*60*60])?;
+        transaction.execute(
+            "DELETE FROM admin_audit WHERE at_s<?1",
+            [now - 90 * 24 * 60 * 60],
+        )?;
+        transaction.commit()?;
+        Ok((removed, changes))
     }
 
     /// Account sharing and email status are checked again under the upload gate before writing.
@@ -1016,62 +1214,107 @@ impl CellStore {
         })
     }
 
-    /// Stream only the account's matching observations into a portable gzip CSV.
-    #[cfg_attr(feature = "profiling", hotpath::measure(impl_type = "CellStore"))]
-    pub(crate) fn export_own_to_path(
-        &self,
-        account_id: i64,
-        filter: &OwnFilter,
-        path: &Path,
-    ) -> Result<()> {
+    /// Stream a machine-readable account archive without password hashes or bearer tokens.
+    pub(crate) fn export_account_to_path(&self, account_id: i64, path: &Path) -> Result<()> {
         let connection = self.connection()?;
-        let encoder = GzEncoder::new(std::fs::File::create(path)?, Compression::default());
-        let mut writer = csv::Writer::from_writer(encoder);
-        writer.write_record([
-            "radio",
-            "mcc",
-            "mnc",
-            "area",
-            "cid",
-            "device",
-            "lat",
-            "lon",
-            "range_m",
-            "samples",
-            "updated_s",
-        ])?;
-        let mut statement = connection.prepare("SELECT radio,mcc,mnc,area,cid,device,lat,lon,range_m,samples,updated_s
-            FROM contributions WHERE device GLOB ?1 AND device LIKE ?2 ESCAPE '\\'
-            AND (CAST(?3 AS BIGINT) IS NULL OR mcc=?3) AND (CAST(?4 AS BIGINT) IS NULL OR updated_s>=?4) AND (CAST(?5 AS BIGINT) IS NULL OR updated_s<=?5)
-            ORDER BY updated_s DESC,radio,mcc,mnc,area,cid,device")?;
-        let pattern = account_device_pattern(account_id);
-        let mut rows = statement.query(params![
-            pattern,
-            device_filter_pattern(&filter.device),
-            filter.mcc,
-            filter.from_s,
-            filter.to_s
-        ])?;
+        let mut out = GzEncoder::new(std::fs::File::create(path)?, Compression::default());
+        let mut emit = |record: serde_json::Value| -> Result<()> {
+            serde_json::to_writer(&mut out, &record)?;
+            out.write_all(b"\n")?;
+            Ok(())
+        };
+        let (email, admin, sharing, verified): (String, bool, bool, bool) = connection.query_row(
+            "SELECT email,admin,sharing_enabled,email_verified FROM users WHERE id=?1",
+            [account_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )?;
+        emit(
+            serde_json::json!({"type":"account","email":email,"admin":admin,"sharing_enabled":sharing,"email_verified":verified}),
+        )?;
+        let mut statement = connection.prepare("SELECT purpose,notice_version,granted,at_s FROM privacy_consents WHERE account_id=?1 ORDER BY id")?;
+        let mut rows = statement.query([account_id])?;
         while let Some(row) = rows.next()? {
-            writer.write_record([
-                row.get::<_, String>(0)?,
-                row.get::<_, i64>(1)?.to_string(),
-                row.get::<_, i64>(2)?.to_string(),
-                row.get::<_, i64>(3)?.to_string(),
-                row.get::<_, i64>(4)?.to_string(),
-                row.get::<_, String>(5)?,
-                row.get::<_, f64>(6)?.to_string(),
-                row.get::<_, f64>(7)?.to_string(),
-                row.get::<_, f64>(8)?.to_string(),
-                row.get::<_, i64>(9)?.to_string(),
-                row.get::<_, i64>(10)?.to_string(),
-            ])?;
+            emit(
+                serde_json::json!({"type":"consent","purpose":row.get::<_,String>(0)?,"notice_version":row.get::<_,String>(1)?,"granted":row.get::<_,bool>(2)?,"at_s":row.get::<_,i64>(3)?}),
+            )?;
         }
-        writer.flush()?;
-        writer
-            .into_inner()
-            .map_err(csv::IntoInnerError::into_error)?
-            .finish()?;
+        let mut statement = connection.prepare("SELECT radio,mcc,mnc,area,cid,device,lat,lon,range_m,samples,updated_s FROM contributions WHERE device GLOB ?1")?;
+        let pattern = account_device_pattern(account_id);
+        let mut rows = statement.query([&pattern])?;
+        while let Some(row) = rows.next()? {
+            emit(
+                serde_json::json!({"type":"tower_observation","radio":row.get::<_,String>(0)?,"mcc":row.get::<_,i64>(1)?,"mnc":row.get::<_,i64>(2)?,"area":row.get::<_,i64>(3)?,"cid":row.get::<_,i64>(4)?,"device":row.get::<_,String>(5)?,"lat":row.get::<_,f64>(6)?,"lon":row.get::<_,f64>(7)?,"range_m":row.get::<_,f64>(8)?,"samples":row.get::<_,i64>(9)?,"updated_s":row.get::<_,i64>(10)?}),
+            )?;
+        }
+        let mut statement = connection.prepare(
+            "SELECT radio,mcc,mnc,area,cid,device FROM account_deleted_keys WHERE account_id=?1",
+        )?;
+        let mut rows = statement.query([account_id])?;
+        while let Some(row) = rows.next()? {
+            emit(
+                serde_json::json!({"type":"deleted_tower_key","radio":row.get::<_,String>(0)?,"mcc":row.get::<_,i64>(1)?,"mnc":row.get::<_,i64>(2)?,"area":row.get::<_,i64>(3)?,"cid":row.get::<_,i64>(4)?,"device":row.get::<_,String>(5)?}),
+            )?;
+        }
+        let mut statement = connection.prepare("SELECT id,client_id,context_json,created_s,updated_s,finished_s,incomplete FROM debug_sessions WHERE account_id=?1")?;
+        let mut rows = statement.query([account_id])?;
+        while let Some(row) = rows.next()? {
+            emit(
+                serde_json::json!({"type":"diagnostic_session","id":row.get::<_,String>(0)?,"client_id":row.get::<_,String>(1)?,"context":serde_json::from_str::<serde_json::Value>(&row.get::<_,String>(2)?)?,"created_s":row.get::<_,i64>(3)?,"updated_s":row.get::<_,i64>(4)?,"finished_s":row.get::<_,Option<i64>>(5)?,"incomplete":row.get::<_,bool>(6)?}),
+            )?;
+        }
+        let mut statement = connection.prepare("SELECT e.session_id,e.seq,e.item,e.kind,e.elapsed_ms,e.line FROM debug_entries e JOIN debug_sessions s ON s.id=e.session_id WHERE s.account_id=?1 ORDER BY e.session_id,e.seq,e.item")?;
+        let mut rows = statement.query([account_id])?;
+        while let Some(row) = rows.next()? {
+            emit(
+                serde_json::json!({"type":"diagnostic_entry","session_id":row.get::<_,String>(0)?,"seq":row.get::<_,i64>(1)?,"item":row.get::<_,i64>(2)?,"kind":row.get::<_,String>(3)?,"elapsed_ms":row.get::<_,i64>(4)?,"line":row.get::<_,String>(5)?}),
+            )?;
+        }
+        let mut statement = connection.prepare("SELECT b.session_id,b.seq,b.bytes FROM debug_batches b JOIN debug_sessions s ON s.id=b.session_id WHERE s.account_id=?1 ORDER BY b.session_id,b.seq")?;
+        let mut rows = statement.query([account_id])?;
+        while let Some(row) = rows.next()? {
+            emit(
+                serde_json::json!({"type":"diagnostic_batch","session_id":row.get::<_,String>(0)?,"seq":row.get::<_,i64>(1)?,"bytes":row.get::<_,i64>(2)?}),
+            )?;
+        }
+        let mut statement =
+            connection.prepare("SELECT kind,expires_s FROM auth_tokens WHERE user_id=?1")?;
+        let mut rows = statement.query([account_id])?;
+        while let Some(row) = rows.next()? {
+            emit(
+                serde_json::json!({"type":"session_metadata","kind":row.get::<_,String>(0)?,"expires_s":row.get::<_,i64>(1)?}),
+            )?;
+        }
+        let mut statement = connection
+            .prepare("SELECT email,expires_s FROM email_verifications WHERE user_id=?1")?;
+        let mut rows = statement.query([account_id])?;
+        while let Some(row) = rows.next()? {
+            emit(
+                serde_json::json!({"type":"email_verification","email":row.get::<_,String>(0)?,"expires_s":row.get::<_,i64>(1)?}),
+            )?;
+        }
+        let mut statement =
+            connection.prepare("SELECT expires_s FROM password_resets WHERE user_id=?1")?;
+        let mut rows = statement.query([account_id])?;
+        while let Some(row) = rows.next()? {
+            emit(serde_json::json!({"type":"password_reset","expires_s":row.get::<_,i64>(0)?}))?;
+        }
+        let mut statement =
+            connection.prepare("SELECT actor_id FROM web_impersonations WHERE target_id=?1")?;
+        let mut rows = statement.query([account_id])?;
+        while let Some(row) = rows.next()? {
+            emit(
+                serde_json::json!({"type":"administrator_impersonation","actor_id":row.get::<_,i64>(0)?}),
+            )?;
+        }
+        let mut statement =
+            connection.prepare("SELECT action,target,at_s FROM admin_audit WHERE actor_id=?1")?;
+        let mut rows = statement.query([account_id])?;
+        while let Some(row) = rows.next()? {
+            emit(
+                serde_json::json!({"type":"admin_audit","action":row.get::<_,String>(0)?,"target":row.get::<_,String>(1)?,"at_s":row.get::<_,i64>(2)?}),
+            )?;
+        }
+        out.finish()?;
         Ok(())
     }
 
@@ -1192,6 +1435,14 @@ impl CellStore {
 
 fn account_device_pattern(account_id: i64) -> String {
     format!("account:{account_id}:*")
+}
+
+fn current_time_s() -> Result<i64> {
+    Ok(i64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_secs(),
+    )?)
 }
 
 fn device_filter_pattern(value: &str) -> String {

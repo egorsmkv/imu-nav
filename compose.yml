@@ -30,6 +30,15 @@ services:
       CELLS_SMTP_USERNAME: ${CELLS_SMTP_USERNAME:?Set the SMTP username in .env}
       CELLS_SMTP_PASSWORD: ${CELLS_SMTP_PASSWORD:?Set the SMTP password in .env}
       CELLS_SMTP_FROM: ${CELLS_SMTP_FROM:?Set the SMTP sender in .env}
+      CELLS_PRIVACY_VERSION: ${CELLS_PRIVACY_VERSION:?Set the notice version in .env}
+      CELLS_PRIVACY_CONTROLLER: ${CELLS_PRIVACY_CONTROLLER:?Set the controller in .env}
+      CELLS_PRIVACY_CONTACT: ${CELLS_PRIVACY_CONTACT:?Set the operator contact in .env}
+      CELLS_PRIVACY_RIGHTS_CONTACT: ${CELLS_PRIVACY_RIGHTS_CONTACT:?Set the rights contact in .env}
+      CELLS_PRIVACY_REGION: ${CELLS_PRIVACY_REGION:?Set the data region in .env}
+      CELLS_PRIVACY_RECIPIENTS: ${CELLS_PRIVACY_RECIPIENTS:?Set the recipients in .env}
+      CELLS_PRIVACY_TRANSFERS: ${CELLS_PRIVACY_TRANSFERS:?Set transfer details in .env}
+      CELLS_PRIVACY_ACCOUNT_BASIS: ${CELLS_PRIVACY_ACCOUNT_BASIS:?Set the account basis in .env}
+      CELLS_PRIVACY_SECURITY_BASIS: ${CELLS_PRIVACY_SECURITY_BASIS:?Set the security basis in .env}
     volumes:
       - ./server/config.production.toml:/etc/imu-nav/config.toml:ro
     ports:
