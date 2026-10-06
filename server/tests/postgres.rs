@@ -37,6 +37,7 @@ fn populate_migration_source(path: &std::path::Path) -> Result<()> {
         "INSERT INTO users(id,email,password_hash,admin) VALUES (2,'driver@example.org','hash',0);
          INSERT INTO privacy_consents(id,account_id,purpose,notice_version,granted,at_s) VALUES (1,2,'tower_upload','v1',1,100);
          INSERT INTO air_alert_preferences(account_id,enabled,updated_s) VALUES (2,1,100);
+         INSERT INTO trip_archive(account_id,id,start_ms,bytes,summary,document) VALUES (2,'migration-trip',100,2,'{}','{}');
          INSERT INTO account_sync_state(account_id,generation) VALUES (2,3);
          INSERT INTO account_sync_entries(account_id,kind,key,revision,value_json) VALUES (2,'setting','voice',2,'false');
          INSERT INTO tower_moderation(radio,mcc,mnc,area,cid,quarantined) VALUES ('LTE',255,1,100,202,1);
@@ -78,6 +79,7 @@ fn assert_migrated_tables(source_path: &std::path::Path, url: &str) -> Result<()
         "password_resets",
         "privacy_consents",
         "air_alert_preferences",
+        "trip_archive",
         "account_sync_identity",
         "account_sync_state",
         "account_sync_entries",
@@ -182,6 +184,7 @@ async fn api_auth_upload_and_private_diagnostics_use_postgres() -> Result<()> {
             let state = AppState::new(
                 store.clone(),
                 ServerConfig {
+                    trip_archive: imu_nav_cell_server::TripArchiveLimits::default(),
                     mail: None,
                     policy: Policy::default(),
                     trust_proxy: false,

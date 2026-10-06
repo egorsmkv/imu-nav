@@ -28,12 +28,15 @@ pub struct PrivacyNotice {
     pub diagnostics_retention_days: i64,
 }
 
+// Independent consent purposes retain their existing boolean JSON API.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Serialize)]
 struct PrivacyState {
     notice: PrivacyNotice,
     tower_upload: bool,
     diagnostics: bool,
     account_sync: bool,
+    trip_archive: bool,
 }
 
 #[derive(Deserialize)]
@@ -71,11 +74,12 @@ async fn mine(
     let notice = configured(&state)?;
     let store = state.store.clone();
     let version = notice.version.clone();
-    let (tower_upload, diagnostics, account_sync) = run_db(move || {
+    let (tower_upload, diagnostics, account_sync, trip_archive) = run_db(move || {
         Ok((
             store.has_privacy_consent(account.id, "tower_upload", &version)?,
             store.has_privacy_consent(account.id, "diagnostics", &version)?,
             store.has_privacy_consent(account.id, "account_sync", &version)?,
+            store.has_privacy_consent(account.id, "trip_archive", &version)?,
         ))
     })
     .await?;
@@ -84,11 +88,15 @@ async fn mine(
         tower_upload,
         diagnostics,
         account_sync,
+        trip_archive,
     }))
 }
 
 fn valid_purpose(purpose: &str) -> Result<(), ApiError> {
-    if matches!(purpose, "tower_upload" | "diagnostics" | "account_sync") {
+    if matches!(
+        purpose,
+        "tower_upload" | "diagnostics" | "account_sync" | "trip_archive"
+    ) {
         Ok(())
     } else {
         Err(ApiError(StatusCode::NOT_FOUND, "NOT_FOUND"))
@@ -103,7 +111,7 @@ async fn grant(
 ) -> Result<StatusCode, ApiError> {
     valid_purpose(&purpose)?;
     let account = auth::bearer_account(&state, &headers).await?;
-    let version = if purpose == "account_sync" {
+    let version = if matches!(purpose.as_str(), "account_sync" | "trip_archive") {
         crate::account_sync::notice_version(&state)
     } else {
         configured(&state)?.version
@@ -125,7 +133,7 @@ async fn withdraw(
 ) -> Result<StatusCode, ApiError> {
     valid_purpose(&purpose)?;
     let account = auth::bearer_account(&state, &headers).await?;
-    if purpose != "account_sync" {
+    if !matches!(purpose.as_str(), "account_sync" | "trip_archive") {
         configured(&state)?;
     }
     let _gate = state.write_gate.write().await;

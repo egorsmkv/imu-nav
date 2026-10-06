@@ -81,3 +81,7 @@ with counts cached for up to 30 seconds to keep frequent checks cheap.
 Optional nationwide air-raid alerts use a dedicated UkraineAlarm API key and a public HTTPS
 webhook. Configure them as described in [air-raid alerts](air-alerts.md); the feature remains off
 without both private environment variables.
+
+## Browser trip history
+
+See [private browser trip history](trip_history.md) for manual uploads, playback, storage limits, consent and deletion.

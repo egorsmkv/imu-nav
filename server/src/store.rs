@@ -64,6 +64,10 @@ const MIGRATION_TABLES: &[(&str, &str)] = &[
         "id,account_id,purpose,notice_version,granted,at_s",
     ),
     ("air_alert_preferences", "account_id,enabled,updated_s"),
+    (
+        "trip_archive",
+        "account_id,id,start_ms,bytes,summary,document",
+    ),
     ("account_sync_state", "account_id,generation"),
     ("account_sync_identity", "account_id,identity"),
     (
@@ -246,6 +250,7 @@ fn initialize_schema(connection: &Connection) -> Result<()> {
     )?;
     initialize_privacy_schema(connection)?;
     initialize_account_sync_schema(connection)?;
+    connection.execute_batch("CREATE TABLE IF NOT EXISTS trip_archive (account_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,id TEXT NOT NULL,start_ms INTEGER NOT NULL,bytes INTEGER NOT NULL,summary TEXT NOT NULL,document TEXT NOT NULL,PRIMARY KEY(account_id,id)); CREATE INDEX IF NOT EXISTS trip_archive_date ON trip_archive(account_id,start_ms,id);")?;
     initialize_air_alert_schema(connection)?;
     initialize_debug_schema(connection)?;
     Ok(())
@@ -440,6 +445,7 @@ impl CellStore {
                     | "account_sync_state"
                     | "account_sync_entries"
                     | "account_sync_identity"
+                    | "trip_archive"
             ) {
                 let exists: i64 = source.query_row(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
@@ -569,6 +575,11 @@ impl CellStore {
     ) -> Result<Vec<OwnContributionChange>> {
         let mut connection = self.connection()?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        // Serialize trip withdrawal with uploads even across multiple PostgreSQL server processes.
+        if purpose == "trip_archive" {
+            transaction.execute("UPDATE users SET id=id WHERE id=?1", [account_id])?;
+        }
+
         transaction.execute(
             "INSERT INTO privacy_consents(account_id,purpose,notice_version,granted,at_s)
              VALUES (?1,?2,COALESCE((SELECT notice_version FROM privacy_consents WHERE account_id=?1 AND purpose=?2 ORDER BY id DESC LIMIT 1),''),0,?3)",
@@ -594,6 +605,8 @@ impl CellStore {
                 .iter()
                 .map(|key| update_consensus_after_deletion(&transaction, key, policy))
                 .collect::<Result<Vec<_>>>()?;
+        } else if purpose == "trip_archive" {
+            transaction.execute("DELETE FROM trip_archive WHERE account_id=?1", [account_id])?;
         } else if purpose == "account_sync" {
             transaction.execute(
                 "DELETE FROM account_sync_entries WHERE account_id=?1",
@@ -617,7 +630,11 @@ impl CellStore {
     /// Returns an error for an invalid purpose or a failed database transaction.
     pub fn replay_withdrawal(&self, account_id: i64, purpose: &str, policy: &Policy) -> Result<()> {
         anyhow::ensure!(
-            account_id > 0 && matches!(purpose, "tower_upload" | "diagnostics" | "account_sync"),
+            account_id > 0
+                && matches!(
+                    purpose,
+                    "tower_upload" | "diagnostics" | "account_sync" | "trip_archive"
+                ),
             "invalid deletion replay entry"
         );
         let exists: bool = self.connection()?.query_row(
@@ -1301,6 +1318,7 @@ impl CellStore {
             Ok(())
         };
         export_account_summary(&connection, account_id, &mut emit)?;
+        export_trips(&connection, account_id, &mut emit)?;
         export_air_alert_preference(&connection, account_id, &mut emit)?;
         for entry in sync_entries {
             emit(serde_json::json!({"type":"account_sync","entry":entry}))?;
@@ -1887,3 +1905,20 @@ fn row_to_consensus(row: &crate::db::Row) -> rusqlite::Result<Consensus> {
 
 #[cfg(test)]
 mod tests;
+
+fn export_trips(
+    connection: &Connection,
+    account_id: i64,
+    emit: &mut impl FnMut(serde_json::Value) -> Result<()>,
+) -> Result<()> {
+    let mut statement = connection
+        .prepare("SELECT id,document FROM trip_archive WHERE account_id=?1 ORDER BY start_ms,id")?;
+    let mut rows = statement.query([account_id])?;
+    while let Some(row) = rows.next()? {
+        emit(
+            serde_json::json!({"type":"trip_archive","id":row.get::<_,String>(0)?,"document":serde_json::from_str::<serde_json::Value>(&row.get::<_,String>(1)?)?}),
+        )?;
+    }
+
+    Ok(())
+}

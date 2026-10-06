@@ -12,6 +12,7 @@ on:
       - 'server/build.rs'
       - 'server/src/**'
       - 'server/templates/**'
+      - 'server/static/**'
   workflow_dispatch:
 
 permissions:

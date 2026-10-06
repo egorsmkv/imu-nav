@@ -129,3 +129,6 @@ CREATE TABLE IF NOT EXISTS account_sync_entries (
 );
 
 CREATE TABLE IF NOT EXISTS account_sync_identity (account_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, identity TEXT NOT NULL);
+
+CREATE TABLE IF NOT EXISTS trip_archive (account_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,id TEXT NOT NULL,start_ms BIGINT NOT NULL,bytes BIGINT NOT NULL,summary TEXT NOT NULL,document TEXT NOT NULL,PRIMARY KEY(account_id,id));
+CREATE INDEX IF NOT EXISTS trip_archive_date ON trip_archive(account_id,start_ms,id);

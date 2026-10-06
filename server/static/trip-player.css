@@ -1,0 +1,58 @@
+.trip-page {
+    max-width: 1100px;
+    margin: auto;
+    padding: 1.25rem;
+}
+.trip-page nav,
+.playback-controls,
+#filter {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    align-items: center;
+}
+.trip-page nav label {
+    margin-left: auto;
+}
+#map {
+    height: min(55vh, 520px);
+    min-height: 260px;
+    border-radius: 12px;
+    background: #e1e8ed;
+}
+#seek {
+    display: block;
+    width: 100%;
+    margin: 1rem 0;
+}
+#trips {
+    padding: 0;
+    list-style: none;
+}
+#trips li {
+    padding: 1rem;
+    border-bottom: 1px solid #8795a3;
+}
+.playback-controls {
+    margin-top: 1rem;
+}
+#map-error,
+#incomplete,
+#gap {
+    color: #946100;
+}
+[hidden] {
+    display: none !important;
+}
+.trip-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 0.75rem;
+}
+.trip-stats dt {
+    font-size: 0.85rem;
+}
+.trip-stats dd {
+    margin: 0.3rem 0 0;
+    font-weight: 600;
+}

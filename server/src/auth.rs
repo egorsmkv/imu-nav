@@ -909,6 +909,7 @@ mod tests {
         let state = AppState::new(
             store.clone(),
             crate::ServerConfig {
+                trip_archive: crate::TripArchiveLimits::default(),
                 mail: None,
                 policy: Policy::default(),
                 trust_proxy: false,
@@ -977,6 +978,7 @@ mod tests {
         let state = AppState::new(
             store.clone(),
             crate::ServerConfig {
+                trip_archive: crate::TripArchiveLimits::default(),
                 mail: None,
                 policy: Policy::default(),
                 trust_proxy: false,

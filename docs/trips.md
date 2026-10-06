@@ -52,3 +52,7 @@ For a local performance capture that you share yourself, see [Capture app perfor
 3. Open `replay-out/summary.txt` for error totals and the CSV or GeoJSON files for the route comparison.
 
 Replay is a research check, not proof that a live drive will be safe. The [detailed trips reference](reference/trips.md) explains native comparison, restoration and all report options. See the [glossary](glossary.md) for terms such as replay and uncertainty.
+
+## Browser trip history
+
+See [private browser trip history](server/trip_history.md) for manual uploads, playback, storage limits, consent and deletion.

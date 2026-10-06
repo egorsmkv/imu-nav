@@ -43,3 +43,7 @@ The account panel exports a gzip-compressed NDJSON file with account fields, the
 This template provides controls but does not determine a deployment's lawful bases, processor agreements, transfer safeguards, or local legal obligations. The operator must supply and verify those facts.
 
 Account synchronization has its own `account_sync` consent. It stores private preferences and bookmark recipes until withdrawal or account closure. Account exports include the records. Withdrawing erases values and deletion markers; a non-location generation counter prevents old devices from republishing them. Update the deployment notice version before offering this new purpose.
+
+## Browser trip history
+
+See [private browser trip history](trip_history.md) for manual uploads, playback, storage limits, consent and deletion.

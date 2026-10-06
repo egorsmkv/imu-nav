@@ -6,6 +6,7 @@ fn rate_and_identity_limits_expire_only_after_their_windows() {
     let state = AppState::new(
         CellStore::open(file.path()).unwrap(),
         ServerConfig {
+            trip_archive: crate::TripArchiveLimits::default(),
             mail: None,
             trust_proxy: false,
             secure_cookies: false,
@@ -94,6 +95,7 @@ async fn public_export_slots_are_bounded() {
     let state = AppState::new(
         CellStore::open(file.path()).unwrap(),
         ServerConfig {
+            trip_archive: crate::TripArchiveLimits::default(),
             mail: None,
             policy: Policy::default(),
             trust_proxy: false,
@@ -119,6 +121,7 @@ async fn health_count_is_cached_until_its_short_ttl_expires() {
     let state = AppState::new(
         store.clone(),
         ServerConfig {
+            trip_archive: crate::TripArchiveLimits::default(),
             mail: None,
             policy: Policy::default(),
             trust_proxy: false,
@@ -180,6 +183,7 @@ async fn slow_websocket_consumers_receive_resync_then_live_events() {
     let state = AppState::new(
         store,
         ServerConfig {
+            trip_archive: crate::TripArchiveLimits::default(),
             mail: None,
             policy: Policy::default(),
             trust_proxy: false,

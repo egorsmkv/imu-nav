@@ -48,6 +48,7 @@ async fn start_server_with_privacy(
     let state = AppState::new(
         store,
         ServerConfig {
+            trip_archive: imu_nav_cell_server::TripArchiveLimits::default(),
             mail,
             policy,
             trust_proxy: false,
@@ -2919,7 +2920,7 @@ async fn administrator_can_impersonate_active_user_and_return_with_audit() -> Re
             .send()
             .await?
             .status(),
-        StatusCode::OK
+        StatusCode::UNAUTHORIZED
     );
     let device = format!("account:{target_id}:driver-phone");
     assert_eq!(
@@ -2990,7 +2991,6 @@ async fn administrator_can_impersonate_active_user_and_return_with_audit() -> Re
         .collect::<rusqlite::Result<Vec<_>>>()?;
     for expected in [
         "start_impersonation",
-        "impersonate_export",
         "impersonate_delete_observation",
         "stop_impersonation",
     ] {

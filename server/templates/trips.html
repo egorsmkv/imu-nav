@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width,initial-scale=1" />
+        <meta name="csrf-token" content="CSRF_TOKEN" />
+        <title>IMU Nav — My trips</title>
+        <link rel="stylesheet" href="/web.css" />
+        <link rel="stylesheet" href="/trip-player.css" />
+        <link rel="stylesheet" href="/trip-map/maplibre-gl.css" />
+        <script defer src="/trip-map/maplibre-gl-csp.js"></script>
+        <script defer src="/trip-player.js"></script>
+    </head>
+    <body>
+        <main class="trip-page">
+            <nav>
+                <a href="/account" data-text="account">My account</a> ·
+                <a href="/trips" data-text="title">My trips</a>
+                <label
+                    ><span data-text="language">Language</span>
+                    <select id="language">
+                        <option value="en">English</option>
+                        <option value="uk">Українська</option>
+                        <option value="ru">Русский</option>
+                    </select></label
+                >
+            </nav>
+            <h1 data-text="title">My trips</h1>
+            <p data-text="private">
+                Your personal archive. Upload completed trips from History in
+                the app.
+            </p>
+            <p id="status" role="status"></p>
+            <section id="history">
+                <p id="usage"></p>
+                <form id="filter">
+                    <label
+                        ><span data-text="from">From</span>
+                        <input id="from" type="date"
+                    /></label>
+                    <label
+                        ><span data-text="to">To</span>
+                        <input id="to" type="date"
+                    /></label>
+                    <button data-text="filter">Filter</button>
+                </form>
+                <ul id="trips"></ul>
+                <button id="previous" data-text="previous">Previous</button>
+                <button id="next" data-text="next">Next</button>
+            </section>
+            <section id="player" hidden>
+                <h2 id="date"></h2>
+                <p id="summary"></p>
+                <dl id="trip-stats" class="trip-stats"></dl>
+                <p id="incomplete"></p>
+                <p data-text="mapPrivacy">
+                    The map provider, OpenFreeMap, receives map area requests
+                    and your IP address. Your trip document stays on this
+                    server.
+                </p>
+                <div id="map" aria-label="Trip map"></div>
+                <p data-text="legend">
+                    Red: recorded journey · Blue: planned route · Circle:
+                    position uncertainty
+                </p>
+                <p id="map-error" role="status"></p>
+                <div class="playback-controls">
+                    <button id="play" data-text="play">Play</button
+                    ><button id="restart" data-text="restart">Restart</button
+                    ><button id="fit" data-text="fit">Fit trip</button>
+                    <label
+                        ><span data-text="speed">Speed</span>
+                        <select id="speed">
+                            <option>0.5</option>
+                            <option selected>1</option>
+                            <option>2</option>
+                            <option>5</option>
+                            <option>10</option></select
+                        >×</label
+                    >
+                </div>
+                <label
+                    ><span data-text="timeline">Timeline</span
+                    ><input type="range" id="seek" min="0" value="0" step="1"
+                /></label>
+                <p id="position" aria-live="off"></p>
+                <p id="gap" role="status"></p>
+                <a id="download" data-text="download">Download playback</a>
+                <button id="delete" data-text="delete">
+                    Delete server copy
+                </button>
+            </section>
+            <p>
+                <a href="/trip-map/license.txt" data-text="license"
+                    >Map library licence</a
+                >
+            </p>
+        </main>
+    </body>
+</html>

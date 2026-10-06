@@ -29,3 +29,9 @@ area = "any" # Or "ukraine".
 # smtp_username = "imu-nav@example.org"
 # smtp_password = "REPLACE_ME"
 # smtp_from = "imu-nav@example.org"
+
+# Private browser trip history (never automatically evicts older trips).
+[trip_archive]
+account_bytes = 268435456
+account_trips = 1000
+upload_bytes = 16777216

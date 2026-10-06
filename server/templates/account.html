@@ -33,6 +33,8 @@
     {% if privacy.configured %}<p>Diagnostics consent: {% if privacy.diagnostics_consent %}<strong>current</strong>{% else %}<strong>not current</strong>{% endif %}.</p>
     {% if privacy.diagnostics_consent %}<form action="/account/privacy/diagnostics/withdraw" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="danger" type="submit">Withdraw diagnostics consent and erase sessions</button></form>{% endif %}{% endif %}
   </section>
+  <section class="card" id="trip-archive"><h2>My trips</h2><p><a href="/trips">My trips</a></p><form action="/account/privacy/trip_archive/withdraw" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="danger" type="submit">Withdraw trip archive consent and erase trips</button></form>
+  </section>
   <section class="card" id="account-sync"><h2>Settings and bookmarks</h2>
     <p>Private settings, saved places and routes sync between opted-in devices. Account exports include this data.</p>
     {% if sync.enabled %}<p>Account synchronization is enabled.</p>

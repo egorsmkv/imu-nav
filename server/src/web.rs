@@ -1053,6 +1053,7 @@ async fn export_own(
         .into_temp_path();
     let path = temporary.to_path_buf();
     let store = state.store.clone();
+    crate::trips::owner(&state, &headers, false).await?;
     run_db(move || store.export_account_to_path(account.id, &path)).await?;
     let file = tokio::fs::File::open(&temporary)
         .await
@@ -1088,10 +1089,11 @@ async fn withdraw_privacy(
     if form.csrf != csrf_token(&raw) {
         return Ok(error_page(StatusCode::FORBIDDEN, "Invalid form token."));
     }
-    if (state.config.privacy.is_none() && purpose != "account_sync")
+    if (state.config.privacy.is_none()
+        && !matches!(purpose.as_str(), "account_sync" | "trip_archive"))
         || !matches!(
             purpose.as_str(),
-            "tower_upload" | "diagnostics" | "account_sync"
+            "tower_upload" | "diagnostics" | "account_sync" | "trip_archive"
         )
     {
         return Ok(error_page(
@@ -1102,6 +1104,9 @@ async fn withdraw_privacy(
     let _gate = state.write_gate.write().await;
     let store = state.store.clone();
     let policy = state.policy();
+    if purpose == "trip_archive" {
+        crate::trips::owner(&state, &headers, false).await?;
+    }
     let purpose_for_log = purpose.clone();
     let changes =
         run_db(move || store.withdraw_privacy_consent(account.id, &purpose, &policy)).await?;

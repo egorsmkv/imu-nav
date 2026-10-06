@@ -11,6 +11,7 @@ on:
       - 'server/src/**'
       - 'server/tests/**'
       - 'server/templates/**'
+      - 'server/static/**'
       - 'app/src/main/kotlin/org/imunav/app/nativecore/**'
       - 'app/build.gradle.kts'
       - 'core/**'
@@ -33,6 +34,7 @@ on:
       - 'server/src/**'
       - 'server/tests/**'
       - 'server/templates/**'
+      - 'server/static/**'
       - 'app/src/main/kotlin/org/imunav/app/nativecore/**'
       - 'app/build.gradle.kts'
       - 'core/**'
@@ -93,6 +95,9 @@ jobs:
         if: matrix.suite == 'native'
       - name: Test coverage report validation
         run: python3 -m unittest discover -s tools/tests -v
+      - name: Test browser trip playback
+        if: matrix.suite == 'server'
+        run: node --test server/tests/web/trip-player.test.cjs
       - name: Collect and gate production coverage
         env:
           TEST_POSTGRES_URL: postgresql://postgres:test@127.0.0.1:5432/imu_nav_test?sslmode=disable

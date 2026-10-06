@@ -747,6 +747,7 @@ mod tests {
         let state = AppState::new(
             store,
             crate::ServerConfig {
+                trip_archive: crate::TripArchiveLimits::default(),
                 mail: None,
                 policy: crate::Policy::default(),
                 trust_proxy: false,

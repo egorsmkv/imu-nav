@@ -40,6 +40,7 @@ const HEALTH_CACHE_LIFETIME: std::time::Duration = std::time::Duration::from_sec
 /// Startup settings; policy is the initial value until a saved policy overrides it.
 #[derive(Clone)]
 pub struct ServerConfig {
+    pub trip_archive: crate::TripArchiveLimits,
     pub mail: Option<MailConfig>,
     pub policy: Policy,
     /// Honor the first `X-Forwarded-For` address. Enable only behind a trusted reverse proxy.
@@ -75,6 +76,13 @@ impl AppState {
     /// Returns an error for invalid limits or consensus thresholds.
     pub fn new(store: CellStore, config: ServerConfig) -> anyhow::Result<Self> {
         config.policy.validate()?;
+        anyhow::ensure!(
+            config.trip_archive.upload_bytes > 0
+                && config.trip_archive.upload_bytes <= 16 * 1024 * 1024
+                && config.trip_archive.account_bytes >= config.trip_archive.upload_bytes
+                && config.trip_archive.account_trips > 0,
+            "invalid trip archive limits"
+        );
         let active_policy = store
             .stored_policy()?
             .unwrap_or_else(|| config.policy.clone());
@@ -136,6 +144,7 @@ pub fn router(state: AppState) -> Router {
         .merge(web::router())
         .merge(crate::privacy::router())
         .merge(crate::account_sync::router())
+        .merge(crate::trips::router(&state.config.trip_archive))
         .merge(crate::air_alerts::router())
         .route("/health", get(health))
         .route("/v1/cells", post(upload_cells))

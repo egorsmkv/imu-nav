@@ -686,4 +686,16 @@
     </plurals>
     <string name="logs_clear">Clear logs</string>
     <string name="logs_clear_confirm">Delete local diagnostic text logs and recent messages? This cannot be undone. Saved trip recordings, shared copies and server diagnostics are kept. Logging can continue in a new file during the current trip.</string>
+    <string name="trip_archive_title">Browser trip history</string>
+    <string name="trip_archive_description">Upload this trip to your private account archive.</string>
+    <string name="trip_archive_sign_in">Sign in to the sharing server in Settings to upload trips.</string>
+    <string name="trip_archive_upload">Upload to trip history</string>
+    <string name="trip_archive_open">Open in browser</string>
+    <string name="trip_archive_progress">Preparing and uploading playback…</string>
+    <string name="trip_archive_consent">This uploads precise recorded positions, planned routes and trip statistics to your account. Raw GPS, sensors and logs are excluded. The server keeps the trip until you delete it or withdraw trip archive consent on your account page. Map playback sends map area requests and your IP address to OpenFreeMap. Read the operator notice below before uploading.</string>
+    <string name="trip_archive_failed">Upload failed. Check your connection and retry.</string>
+    <string name="trip_archive_quota">The archive or trip size limit was reached. Remove server copies in the browser to free space.</string>
+    <string name="trip_archive_unavailable">This server does not support trip history yet.</string>
+    <string name="trip_archive_conflict">Consent changed or a different copy already exists. Retry after reviewing the notice, or remove the existing server copy first.</string>
+    <string name="trip_archive_invalid">This recording has no usable positions or is too large for playback.</string>
 </resources>

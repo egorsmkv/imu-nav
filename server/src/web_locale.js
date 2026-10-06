@@ -2,6 +2,9 @@
 (() => {
   "use strict";
   const copy = {
+    "Optional trip archives contain recorded positions, planned routes and trip statistics. They require separate consent and remain until you delete them, withdraw archive consent or close your account. Administrator impersonation cannot access these archives. Browser maps send map area requests and your IP address to OpenFreeMap.": ["Необов’язкові архіви поїздок містять записані позиції, заплановані маршрути й статистику. Для них потрібна окрема згода. Вони зберігаються до видалення, відкликання згоди або закриття облікового запису. Адміністратор у режимі перегляду від імені користувача не має доступу до архівів. Карта в браузері надсилає OpenFreeMap запити ділянок карти й вашу IP-адресу.", "Необязательные архивы поездок содержат записанные позиции, запланированные маршруты и статистику. Для них нужно отдельное согласие. Они хранятся до удаления, отзыва согласия или закрытия учётной записи. Администратор в режиме просмотра от имени пользователя не имеет доступа к архивам. Карта в браузере отправляет OpenFreeMap запросы участков карты и ваш IP-адрес."],
+    "My trips": ["Мої поїздки", "Мои поездки"],
+    "Withdraw trip archive consent and erase trips": ["Відкликати згоду на архів і видалити поїздки", "Отозвать согласие на архив и удалить поездки"],
     "Settings and bookmarks": ["Налаштування й закладки", "Настройки и закладки"],
     "Private settings, saved places and routes sync between opted-in devices. Account exports include this data.": ["Приватні налаштування, збережені місця й маршрути синхронізуються між пристроями за згодою. Експорт облікового запису містить ці дані.", "Приватные настройки, сохранённые места и маршруты синхронизируются между устройствами с согласия пользователя. Экспорт аккаунта содержит эти данные."],
     "Account synchronization is enabled.": ["Синхронізацію облікового запису ввімкнено.", "Синхронизация аккаунта включена."],

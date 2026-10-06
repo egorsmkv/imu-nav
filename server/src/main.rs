@@ -151,6 +151,7 @@ fn main() -> Result<()> {
     let state = AppState::new(
         store,
         ServerConfig {
+            trip_archive: settings.trip_archive.clone(),
             mail,
             policy: policy.clone(),
             trust_proxy: settings.trust_proxy,

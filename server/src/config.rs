@@ -11,6 +11,7 @@ use imu_nav_cell_server::{AirAlertConfig, PrivacyNotice};
 #[derive(Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ConfigFile {
+    trip_archive: Option<imu_nav_cell_server::TripArchiveLimits>,
     server: Option<ServerFile>,
     database: Option<DatabaseFile>,
     mail: Option<MailFile>,
@@ -95,6 +96,7 @@ pub(crate) enum DatabaseSettings {
 }
 
 pub(crate) struct Settings {
+    pub(crate) trip_archive: imu_nav_cell_server::TripArchiveLimits,
     pub(crate) bind: IpAddr,
     pub(crate) port: u16,
     pub(crate) database: DatabaseSettings,
@@ -147,7 +149,16 @@ impl Settings {
         );
         let public_url = options.public_url.clone().or(server.public_url);
         let air_alerts = load_air_alerts(public_url.as_deref())?;
+        let trip_archive = file.trip_archive.unwrap_or_default();
+        ensure!(
+            trip_archive.upload_bytes > 0
+                && trip_archive.upload_bytes <= 16 * 1024 * 1024
+                && trip_archive.account_bytes >= trip_archive.upload_bytes
+                && trip_archive.account_trips > 0,
+            "invalid trip_archive limits"
+        );
         let settings = Self {
+            trip_archive,
             bind: options
                 .bind
                 .or(server.bind)

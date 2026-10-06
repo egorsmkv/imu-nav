@@ -16,6 +16,7 @@ async fn account_opt_in_gates_the_user_stream_and_provider_callback() -> Result<
     let state = AppState::new(
         store,
         ServerConfig {
+            trip_archive: imu_nav_cell_server::TripArchiveLimits::default(),
             mail: None,
             policy: Policy::default(),
             trust_proxy: false,
@@ -201,6 +202,7 @@ async fn unavailable_provider_cannot_accept_opt_in_or_open_a_stream() -> Result<
     let state = AppState::new(
         store,
         ServerConfig {
+            trip_archive: imu_nav_cell_server::TripArchiveLimits::default(),
             mail: None,
             policy: Policy::default(),
             trust_proxy: false,

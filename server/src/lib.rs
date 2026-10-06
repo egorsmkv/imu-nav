@@ -1,6 +1,8 @@
 //! Persistent HTTP and WebSocket server for sharing cell-tower positions.
 
 mod account_sync;
+mod trips;
+pub use trips::TripArchiveLimits;
 mod admin;
 mod air_alerts;
 mod api;

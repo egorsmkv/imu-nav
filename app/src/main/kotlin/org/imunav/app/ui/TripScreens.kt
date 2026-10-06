@@ -257,6 +257,7 @@ fun TripDetailScreen(app: AppGraph, trip: TripSummary, onBack: () -> Unit) {
                 LegendDot(EngineRed, stringResource(R.string.trip_legend_engine))
                 if (matched != null) LegendDot(MatchedBlue, stringResource(R.string.trip_legend_matched))
             }
+            TripArchiveControls(app, trip)
             Stat(stringResource(R.string.trip_stat_distance), formatDistance(res, trip.drivenM))
             matchedLength?.let { Stat(stringResource(R.string.trip_stat_matched), formatDistance(res, it)) }
             Stat(stringResource(R.string.trip_stat_duration), formatDuration(res, trip.durationS))

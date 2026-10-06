@@ -12,3 +12,7 @@ The project source code is MIT-licensed. Bundled map and cell data have their ow
 4. Use the [full library and data list](reference/licences.md) when reviewing dependencies or preparing a release.
 
 The navigation code was written from scratch after a behavioural analysis of BlindDriver 0.4.0. No original source code, UI or assets are included. See the [glossary](glossary.md) for terms such as APK and routing pack.
+
+## Browser map
+
+The sharing server vendors MapLibre GL JS 5.20.0 under BSD-3-Clause. Its distribution licence and bundled third-party notices are in `server/static/maplibre/license.txt` and the distributed JavaScript. OpenFreeMap supplies map data with on-map attribution. The pinned assets are reproduced by `tools/vendor_trip_map.py`.
