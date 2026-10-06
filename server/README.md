@@ -27,10 +27,9 @@ the command reads one line instead. It never logs the password. For example, if 
 ### Production with Compose
 
 The repository's [Compose file](../compose.yml) builds the Rust server, starts PostgreSQL 18,
-and keeps database files in the `postgres18_data` volume. The server reads the checked-in
-[production TOML](config.production.toml); it contains no credentials. PostgreSQL and SMTP
-credentials come from a local `.env` file. Set up a TLS reverse proxy on the same host before
-letting users sign in or upload data:
+and runs Caddy as the HTTPS reverse proxy. PostgreSQL files and Caddy's TLS state live in named
+volumes. The server reads the checked-in [production TOML](config.production.toml); it contains
+no credentials. PostgreSQL and SMTP credentials come from a local `.env` file:
 
 ```bash
 cp .env.example .env
@@ -45,16 +44,18 @@ curl http://127.0.0.1:8080/health
 Run these commands from the repository root. Generate a URL-safe database password with
 `openssl rand -hex 32`; the same value is used by PostgreSQL and the server connection URL.
 The URL and SMTP settings are required so registration can verify email and users can reset
-passwords. `CELLS_PUBLIC_URL` must be the public `https://` address with no trailing path.
+passwords. `CELLS_PUBLIC_URL` must be the public `https://` domain with no trailing path, for
+example `https://cells.example.org`. Point that domain's DNS record at this host and allow inbound
+TCP ports 80 and 443; Caddy uses them to obtain and renew HTTPS certificates. UDP port 443 enables
+HTTP/3. Caddy's [Caddyfile](../Caddyfile) reads the same URL and proxies to `server:8080`.
 The administrator command asks for the password on the terminal and exits after creating the
-account. To follow server logs, run `docker compose logs -f server`.
+account. To follow logs, run `docker compose logs -f server caddy`.
 
-Compose binds the HTTP server to host `127.0.0.1:8080` and does not publish PostgreSQL. Point
-the TLS proxy at that loopback address. Have it **replace** incoming `X-Forwarded-For` and
-`X-Forwarded-Proto` headers, and do not allow public direct access to port 8080. The TOML
-enables `trust_proxy` for per-IP limits and `secure_cookies` for HTTPS browser sessions. If the
-proxy runs in another container or on another machine, adjust the network and proxy trust
-settings before opening the service. The server's `/tmp` is a 1 GiB temporary filesystem for
+Compose binds the HTTP server to host `127.0.0.1:8080` for local health checks and does not
+publish PostgreSQL. Caddy reaches the server over the Compose network and replaces incoming
+`X-Forwarded-For` and `X-Forwarded-Proto` headers. Keep port 8080 inaccessible from outside the
+host. The TOML enables `trust_proxy` for per-IP limits and `secure_cookies` for HTTPS browser
+sessions. The server's `/tmp` is a 1 GiB temporary filesystem for
 imports and downloads; it is not persistent. Back up the PostgreSQL volume regularly, for
 example with `docker compose exec -T postgres pg_dump -U imu_nav -d imu_nav -Fc > /secure/backup/cells.dump`.
 Keep backups outside this repository and restrict access to them.
@@ -80,7 +81,7 @@ start the server. Wait until `docker compose ps` shows PostgreSQL as healthy bef
 docker compose rm -sf postgres
 docker compose up -d postgres
 docker compose exec -T postgres pg_restore -U imu_nav -d imu_nav --no-owner --no-privileges --single-transaction --exit-on-error < /secure/backup/cells-pg16.dump
-docker compose up -d --build server
+docker compose up -d --build server caddy
 curl http://127.0.0.1:8080/health
 ```
 

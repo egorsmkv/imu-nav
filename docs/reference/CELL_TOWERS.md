@@ -89,10 +89,10 @@ server/target/release/imu-nav-cell-server --data cells.sqlite3 --import 255.csv.
 Create the first admin with `--data cells.sqlite3 --create-admin admin@example.org` (password from
 standard input). To select PostgreSQL or configure the server with TOML, use
 `--config server/config.toml` as described in the
-[server guide](../../server/README.md#toml-configuration-and-postgresql). Put the server behind
-a TLS reverse proxy for use outside your own network. Account sign-in in the app requires HTTPS
-outside local loopback development (including the emulator's `10.0.2.2` host alias). Public
-downloads still work without signing in.
+[server guide](../../server/README.md#toml-configuration-and-postgresql). The repository's Compose
+setup includes Caddy as a TLS reverse proxy for use outside your own network. Account sign-in
+in the app requires HTTPS outside local loopback development (including the emulator's `10.0.2.2`
+host alias). Public downloads still work without signing in.
 Browser users can register at `/signup`, sign in at `/login`, and manage their uploaded cell
 observations at `/account`. The panel filters and exports the account's observations, supports
 individual or full deletion, pauses uploads, changes credentials, revokes sessions, and closes the

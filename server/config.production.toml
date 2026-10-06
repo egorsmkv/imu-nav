@@ -1,5 +1,5 @@
 # Container settings. The PostgreSQL URL and SMTP credentials come from Compose environment.
-# Put a TLS reverse proxy on the host in front of 127.0.0.1:8080.
+# Compose runs Caddy as the TLS reverse proxy in front of server:8080.
 [server]
 bind = "0.0.0.0"
 port = 8080

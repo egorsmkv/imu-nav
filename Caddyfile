@@ -1,0 +1,3 @@
+{$CELLS_PUBLIC_URL} {
+    reverse_proxy server:8080
+}

@@ -48,5 +48,24 @@ services:
       retries: 3
       start_period: 30s
 
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_healthy
+    environment:
+      CELLS_PUBLIC_URL: ${CELLS_PUBLIC_URL:?Set the public HTTPS URL in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
 volumes:
   postgres18_data:
+  caddy_data:
+  caddy_config:
