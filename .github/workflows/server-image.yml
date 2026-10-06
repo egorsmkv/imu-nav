@@ -1,0 +1,21 @@
+name: Server Docker image
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and smoke test server image
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build server image
+        run: docker build --file server/Dockerfile --tag imu-nav-cell-server:ci server
+      - name: Check server binary starts
+        run: docker run --rm imu-nav-cell-server:ci --help > /dev/null

@@ -26,6 +26,8 @@ Use this guide from the project root. The app needs JDK 17 or newer, Android SDK
 For the production cell server, run `cargo build --locked --release --manifest-path server/Cargo.toml`.
 Its release profile uses maximum optimization, fat link-time optimization and one codegen unit;
 expect a slower build in exchange for more optimization across dependencies.
+The `Server Docker image` CI workflow also builds `server/Dockerfile` from the `server/` context
+and checks that the resulting binary starts.
 
 For release rules, see [F-Droid](FDROID.md). For measurements, see [Kotlin coverage](KOTLIN_COVERAGE.md), [Rust coverage](RUST_COVERAGE.md) and [native verification](NATIVE_VERIFICATION.md).
 
