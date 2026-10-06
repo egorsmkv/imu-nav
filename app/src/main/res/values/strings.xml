@@ -720,4 +720,5 @@
         <item quantity="one">Kept for up to %d day.</item>
         <item quantity="other">Kept for up to %d days.</item>
     </plurals>
+    <string name="power_low_battery_hint" formatted="false">Battery saver turns on automatically at 20% or less when unplugged. Your chosen mode returns when you plug in or the battery reaches 25%.</string>
 </resources>

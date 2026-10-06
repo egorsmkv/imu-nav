@@ -1,5 +1,6 @@
 package org.imunav.app.power
 
+import org.imunav.core.power.BatteryState
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -45,5 +46,30 @@ class PowerRenderingTest {
         assertEquals(10, PowerProfile.BALANCED.withFrameRateLimit(selected).mapMaxFps)
         assertEquals(10, PowerProfile.PERFORMANCE.withFrameRateLimit(selected).mapMaxFps)
         assertEquals(PowerProfile.PERFORMANCE, PowerProfile.PERFORMANCE.withFrameRateLimit(MapFrameRate.AUTO))
+    }
+
+    @Test
+    fun lowBatteryOverridesEveryModeAndRestoresTheSelectedModeOnCharging() {
+        val low = BatteryState().update(20, false, false)
+        val charging = low.update(20, true, false)
+        val recovered = low.update(25, false, false)
+        for (mode in PowerMode.entries) {
+            assertEquals(PowerProfile.SAVER, resolveProfile(mode, low))
+            val expected = when (mode) {
+                PowerMode.AUTO, PowerMode.PERFORMANCE -> PowerProfile.PERFORMANCE
+                PowerMode.BALANCED -> PowerProfile.BALANCED
+                PowerMode.SAVER -> PowerProfile.SAVER
+            }
+            assertEquals(expected, resolveProfile(mode, charging))
+            assertEquals(if (mode == PowerMode.AUTO) PowerProfile.BALANCED else expected, resolveProfile(mode, recovered))
+        }
+    }
+
+    @Test
+    fun autoFollowsSystemSaverWhileManualModesKeepTheirExistingBehavior() {
+        val systemSaver = BatteryState().update(70, false, true)
+        assertEquals(PowerProfile.SAVER, resolveProfile(PowerMode.AUTO, systemSaver))
+        assertEquals(PowerProfile.PERFORMANCE, resolveProfile(PowerMode.PERFORMANCE, systemSaver))
+        assertEquals(PowerProfile.BALANCED, resolveProfile(PowerMode.AUTO, BatteryState()))
     }
 }

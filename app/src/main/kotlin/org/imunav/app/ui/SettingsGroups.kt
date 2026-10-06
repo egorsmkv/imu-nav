@@ -144,6 +144,7 @@ internal fun EverydaySettings(app: AppGraph, ui: UiState, context: Context, save
         SectionHeader(stringResource(R.string.sec_power))
         val powerMode by app.powerMode.collectAsStateWithLifecycle()
         val profile by app.powerProfile.collectAsStateWithLifecycle()
+        val battery by app.power.battery.collectAsStateWithLifecycle()
         val screenOn by app.keepScreenOn.collectAsStateWithLifecycle()
         ListItem(
             headlineContent = { Text(stringResource(R.string.power_title)) },
@@ -164,16 +165,15 @@ internal fun EverydaySettings(app: AppGraph, ui: UiState, context: Context, save
                             },
                         ),
                     )
-                    if (powerMode == PowerMode.AUTO) {
-                        // Reading the battery is a system call: once per screen visit, not on every redraw.
-                        val battery = remember { app.power.batteryPercent() }
+                    Text(stringResource(R.string.power_low_battery_hint))
+                    if (powerMode == PowerMode.AUTO || battery.requiresSaver) {
                         val active = when (profile.name) {
                             PowerProfile.PERFORMANCE.name -> PowerMode.PERFORMANCE
                             PowerProfile.SAVER.name -> PowerMode.SAVER
                             else -> PowerMode.BALANCED
                         }
                         Text(
-                            stringResource(R.string.power_auto_now, powerModeName(active), battery?.let { "$it %" } ?: "—"),
+                            stringResource(R.string.power_auto_now, powerModeName(active), battery.percent?.let { "$it %" } ?: "—"),
                             color = MaterialTheme.colorScheme.primary,
                         )
                     }

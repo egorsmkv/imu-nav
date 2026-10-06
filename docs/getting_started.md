@@ -30,3 +30,17 @@ Sign in to a sharing server that has configured UkraineAlarm, then enable **Air-
 See the [glossary](glossary.md) for unfamiliar terms and the [detailed setup reference](reference/getting_started.md) for permission and proxy behaviour.
 
 See [settings and bookmark synchronization](server/account-sync.md) for account restore, offline edits and deletion.
+
+## Automatic battery saving
+
+At 20% battery or below, IMU Nav uses **Battery saver** while unplugged, even if you selected
+**Max accuracy** or **Balanced**. It reduces sensor and network update rates and map animation.
+Turn detection may be less precise. Settings shows the active mode and current battery level.
+
+Your selected mode is remembered. It takes effect again when you plug in or the battery reaches
+25%. This gap prevents repeated switching near 20%. Unplugging while the battery remains low
+activates Battery saver again. A manually selected Battery saver stays selected.
+
+Battery and charging changes apply immediately, including during background navigation.
+**Auto** also follows Android’s Battery Saver while unplugged. This changes only IMU Nav’s
+power profile; it does not change Android’s system settings.

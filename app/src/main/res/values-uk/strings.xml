@@ -734,4 +734,5 @@
         <item quantity="many">Термін зберігання — до %d днів.</item>
         <item quantity="other">Термін зберігання — до %d дня.</item>
     </plurals>
+    <string name="power_low_battery_hint" formatted="false">Енергозбереження вмикається автоматично за заряду 20% або менше без підключення до живлення. Обраний режим повертається після підключення до живлення або за заряду 25%.</string>
 </resources>

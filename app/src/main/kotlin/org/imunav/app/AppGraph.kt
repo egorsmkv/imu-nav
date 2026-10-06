@@ -410,6 +410,7 @@ class AppGraph(private val context: Context) {
         scope.launch {
             withContext(Dispatchers.IO) { power.detectDeviceCapacity() }
             applyPower()
+            power.monitorBattery().collect { applyPower() }
         }
         hub.inertialObserver = { inertialShadow?.onSensor(it) }
         hub.judgedFixObserver = { if (!engine.simulateGpsLoss) inertialShadow?.onGps(it) }
@@ -445,7 +446,7 @@ class AppGraph(private val context: Context) {
         keepScreenOn.value = on
     }
 
-    /** Re-evaluate the profile (battery level / charger / battery saver for AUTO) and apply it. */
+    /** Apply the selected mode with the current automatic low-battery override. */
     fun applyPower() {
         val p = power.resolve()
         _powerProfile.value = p
@@ -648,8 +649,6 @@ class AppGraph(private val context: Context) {
         trips.onTick(now)
         tickCount++
         if (tickCount % 10 == 0L) logInertialShadow(now)
-        // Battery level / charger / battery saver change slowly: re-check AUTO once a minute.
-        if (tickCount % 120 == 0L) applyPower()
         val p = _powerProfile.value
         if (uiVisible && tickCount % p.uiEveryTicks == 0L) {
             refresh()

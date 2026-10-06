@@ -1,12 +1,23 @@
 package org.imunav.app.power
 
 import android.app.ActivityManager
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
 import android.os.PowerManager
+import androidx.core.content.ContextCompat
 import androidx.core.content.edit
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
+import org.imunav.core.power.BatteryState
 import org.imunav.core.power.MapRenderingBudget
 
 /** User-selectable trade-off between accuracy/smoothness and battery. */
@@ -55,7 +66,7 @@ data class PowerProfile(
     }
 }
 
-/** Remembers the chosen mode and resolves AUTO from battery level and the system battery saver. */
+/** Keeps the chosen mode while temporarily reducing power use when the battery is low. */
 class PowerPolicy(private val context: Context) {
     private val prefs = context.getSharedPreferences("power", Context.MODE_PRIVATE)
 
@@ -88,41 +99,45 @@ class PowerPolicy(private val context: Context) {
         get() = prefs.getBoolean("keep_screen_on", true)
         set(v) = prefs.edit { putBoolean("keep_screen_on", v) }
 
-    /** Battery level 0–100, or null if unknown. */
-    fun batteryPercent(): Int? = runCatching {
-        val i = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED)) ?: return null
-        val level = i.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
-        val scale = i.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
-        if (level < 0 || scale <= 0) null else level * 100 / scale
-    }.getOrNull()
+    private val _battery = MutableStateFlow(BatteryState())
+    val battery = _battery.asStateFlow()
 
-    /** Is the phone plugged in? */
-    fun isCharging(): Boolean = runCatching {
-        val i = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-        (i?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0
-    }.getOrDefault(false)
-
-    /** AUTO: full rate on a charger, saver under 20 % or with the system battery saver on, else balanced. */
-    fun resolve(): PowerProfile {
-        val selected = mode
-        return baseProfile(selected).withRenderingBudget(constrainedDevice, selected == PowerMode.PERFORMANCE).withFrameRateLimit(mapFrameRate)
-    }
-
-    private fun baseProfile(selected: PowerMode): PowerProfile = when (selected) {
-        PowerMode.PERFORMANCE -> PowerProfile.PERFORMANCE
-
-        PowerMode.BALANCED -> PowerProfile.BALANCED
-
-        PowerMode.SAVER -> PowerProfile.SAVER
-
-        PowerMode.AUTO -> {
-            val pm = context.getSystemService(PowerManager::class.java)
-            val battery = batteryPercent()
-            when {
-                isCharging() -> PowerProfile.PERFORMANCE
-                pm?.isPowerSaveMode == true || (battery != null && battery <= 20) -> PowerProfile.SAVER
-                else -> PowerProfile.BALANCED
+    /** Register and read system services on I/O; the collector applies profiles on the main thread. */
+    fun monitorBattery() = callbackFlow {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                trySend(Unit)
             }
         }
+        val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED).apply { addAction(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED) }
+        ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        trySend(Unit)
+        awaitClose { context.unregisterReceiver(receiver) }
+    }.conflate().map {
+        val reading = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val level = reading?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+        val scale = reading?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+        val percent = if (level in 0..scale && scale > 0) (level.toLong() * 100 / scale).toInt() else null
+        val plugged = (reading?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0
+        val systemSaver = context.getSystemService(PowerManager::class.java)?.isPowerSaveMode == true
+        _battery.value = _battery.value.update(percent, plugged, systemSaver)
+    }.flowOn(Dispatchers.IO)
+
+    /** Resolve from cached readings so UI and navigation never query battery services on main. */
+    fun resolve(): PowerProfile {
+        val selected = mode
+        val base = resolveProfile(selected, battery.value)
+        return base.withRenderingBudget(constrainedDevice, selected == PowerMode.PERFORMANCE && base != PowerProfile.SAVER).withFrameRateLimit(mapFrameRate)
     }
+}
+
+/** A low battery overrides any selected mode without changing the saved preference. */
+internal fun resolveProfile(selected: PowerMode, battery: BatteryState): PowerProfile = when {
+    battery.requiresSaver -> PowerProfile.SAVER
+    selected == PowerMode.PERFORMANCE -> PowerProfile.PERFORMANCE
+    selected == PowerMode.BALANCED -> PowerProfile.BALANCED
+    selected == PowerMode.SAVER -> PowerProfile.SAVER
+    battery.plugged -> PowerProfile.PERFORMANCE
+    battery.systemSaver -> PowerProfile.SAVER
+    else -> PowerProfile.BALANCED
 }
