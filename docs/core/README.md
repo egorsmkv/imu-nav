@@ -25,7 +25,7 @@ not choose the position shown to the user. IMU Nav remains a research prototype,
 4. [JNI bridge and Android integration](jni-and-android.md) explains the Kotlin boundary and native logs.
 5. [Build, test and compare recorded trips](build-and-replay.md) has commands and regression examples.
 6. [Profile JNI memory use](profiling.md) covers host replay heap snapshots.
-7. [Native simulator](simulator.md) explains controlled workloads and links to full capture commands.
+7. [Native simulator](sim/README.md) explains its crate, controlled workloads and capture commands.
 8. [Bounded verification](verification.md) explains the Kani proof suite and its limits.
 
 Start with the [newcomer glossary](glossary.md) for terms such as *route coordinate*, *uncertainty*,

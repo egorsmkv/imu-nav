@@ -47,7 +47,7 @@ project; the linked guides contain the exact rules and limits.
 - **Profiling** — Measuring where code uses time or memory. A host profile does not directly
   measure performance on Android. [Profiling guide](profiling.md).
 - **Simulator** — A desktop program that feeds repeatable synthetic trips into the core. It helps
-  compare behavior and performance changes without a phone. [Simulator guide](simulator.md).
+  compare behavior and performance changes without a phone. [Simulator guide](sim/README.md).
 - **Kani / bounded proof** — A tool and method for checking selected Rust rules across inputs
   within stated limits. Passing a bounded proof does not certify the entire navigator.
   [Verification guide](verification.md).

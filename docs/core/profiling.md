@@ -5,7 +5,7 @@
 This guide measures live Rust heap allocations in the JNI library during a recorded trip on Linux.
 It helps find memory retained by route geometry, estimator history or native handles. It does not
 measure JVM objects or Android memory use. For synthetic CPU, allocation and timing comparisons,
-see the [native simulator](simulator.md).
+see the [native simulator](sim/README.md).
 
 ## Native heap profiling (Linux host replay)
 
