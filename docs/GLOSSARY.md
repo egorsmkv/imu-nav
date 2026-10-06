@@ -3,6 +3,7 @@
 [Documentation index](../README.md)
 
 Find a term, then follow its topic link for steps and detailed reference.
+For terms specific to the Rust navigation crates, see the [newcomer core glossary](core/glossary.md).
 
 Jump to: [A to D](#a-to-d) · [E to K](#e-to-k) · [L to R](#l-to-r) · [S to Z](#s-to-z)
 
@@ -50,7 +51,7 @@ Jump to: [A to D](#a-to-d) · [E to K](#e-to-k) · [L to R](#l-to-r) · [S to Z]
   [Navigation guide](NAVIGATION.md).
 - **JDK** — Java Development Kit, needed to run the project build and Kotlin tools.
   [Build guide](BUILD_AND_TEST.md).
-- **JNI** — The bridge that lets Kotlin call native Rust code. [Build guide](BUILD_AND_TEST.md).
+- **JNI** — The bridge that lets Kotlin call native Rust code. [Core guide](core/jni-and-android.md).
 - **Kani** — A tool that checks selected Rust rules for many bounded inputs. It does not prove the
   whole app safe. [Verification guide](NATIVE_VERIFICATION.md).
 - **Kotlin** — The programming language used for the Android app and much of the navigation logic.
@@ -90,7 +91,7 @@ Jump to: [A to D](#a-to-d) · [E to K](#e-to-k) · [L to R](#l-to-r) · [S to Z]
 - **Rust** — The programming language used by the native navigation core and the sharing server.
   [Build guide](BUILD_AND_TEST.md).
 - **Rust native core** — The Rust part of the navigation engine, reached from Android through JNI.
-  [Navigation guide](NAVIGATION.md).
+  [Core guide](core/README.md).
 
 ## S to Z
 

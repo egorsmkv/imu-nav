@@ -3,6 +3,7 @@
 [Documentation index](../README.md)
 
 Use this guide from the project root. The app needs JDK 17 or newer, Android SDK platform 36 and build-tools 36.0.0, the Android NDK, and Rust 1.99 or newer with the Android targets. The [glossary](GLOSSARY.md) explains these tools.
+For the three native Rust crates and host replay commands, start with the [Rust core guide](core/README.md).
 
 ## Build the app
 

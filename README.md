@@ -31,6 +31,7 @@ Start with [getting started](docs/GETTING_STARTED.md). Look up unfamiliar terms 
 ### Build and verify
 
 - [Build, testing and performance checks](docs/BUILD_AND_TEST.md)
+- [Native Rust crates: core, JNI bridge and simulator](docs/core/README.md)
 - [F-Droid releases](docs/FDROID.md)
 - [Kotlin coverage](docs/KOTLIN_COVERAGE.md)
 - [Rust coverage](docs/RUST_COVERAGE.md)

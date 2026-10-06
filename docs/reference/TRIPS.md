@@ -49,7 +49,7 @@
   route projections can be ambiguous on repeated sections. This stricter comparison has different
   sampling/hidden-GPS semantics from the legacy replay, so their error figures are not interchangeable.
   On Linux, add `-PnativeHeapProfile` and `--native-heap-profile heap-profiles` to capture sampled Rust heap
-  profiles during `--compare-native` replay; see [native profiling](../../native/README.md#native-heap-profiling-linux-host-replay).
+  profiles during `--compare-native` replay; see [native profiling](../core/profiling.md#native-heap-profiling-linux-host-replay).
   For deterministic app-like native workloads without recordings, use the [simulation and profiling crate](../../native/nav-sim/README.md).
   Its twelve scenarios cover GPS loss/delay, walking, session lifecycles, dense OBD inputs, curved routes,
   crossings, parallel returns and global reacquisition; `--scenario advanced` selects the five focused stress cases.
