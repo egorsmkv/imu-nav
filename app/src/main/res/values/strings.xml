@@ -698,4 +698,8 @@
     <string name="trip_archive_unavailable">This server does not support trip history yet.</string>
     <string name="trip_archive_conflict">Consent changed or a different copy already exists. Retry after reviewing the notice, or remove the existing server copy first.</string>
     <string name="trip_archive_invalid">This recording has no usable positions or is too large for playback.</string>
+    <string name="trip_archive_auto">Automatically upload completed trips</string>
+    <string name="trip_archive_auto_description">Upload future completed trips, including their precise locations, to this account. Pending uploads retry when you reopen the app.</string>
+    <string name="trip_archive_auto_unavailable">Sign in and enable trip history by uploading a trip from History first. This checkbox requires current archive consent on the account.</string>
+    <string name="trip_archive_auto_failed">Could not check the account or upload a trip. Pending trips remain on this device; reopen the app to retry, or turn off automatic uploads.</string>
 </resources>

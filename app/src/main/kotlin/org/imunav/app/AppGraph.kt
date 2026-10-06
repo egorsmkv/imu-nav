@@ -51,6 +51,7 @@ import org.imunav.app.search.PlaceSearch
 import org.imunav.app.sensors.SensorHub
 import org.imunav.app.service.NavService
 import org.imunav.app.sync.AccountSync
+import org.imunav.app.trips.AutomaticTripUpload
 import org.imunav.app.trips.TripManager
 import org.imunav.app.voice.Voice
 import org.imunav.core.Tuning
@@ -356,6 +357,7 @@ class AppGraph(private val context: Context) {
     fun setPhoneVisible(visible: Boolean) {
         displays.phone(visible)
         airAlerts.setVisible(visible)
+        if (visible) automaticTripUpload.refresh()
         accountSync.setVisible(displays.hasConsumer)
         updateDisplays()
     }
@@ -386,6 +388,7 @@ class AppGraph(private val context: Context) {
             idleRefresh = null
         }
     }
+    val automaticTripUpload by lazy { AutomaticTripUpload(context, this) }
     val accountSync by lazy { AccountSync(context, this) }
 
     private var tickCount = 0L
@@ -677,6 +680,8 @@ class AppGraph(private val context: Context) {
     }
 
     init {
+        trips.onArchiveStart = automaticTripUpload::started
+        trips.onArchiveCompleted = automaticTripUpload::completed
         trips.onDiagnosticStart = { id ->
             diagnostics.startTrip(
                 id,

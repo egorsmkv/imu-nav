@@ -94,6 +94,8 @@ data class HistoryTotals(val trips: Int, val drivenM: Double, val durationS: Dou
  */
 class TripManager(private val context: Context, private val hub: PositioningHub, private val engine: NavigationEngine, private val log: (String) -> Unit) {
     /** Optional diagnostics sink; recording remains independent of upload availability. */
+    var onArchiveStart: ((String) -> Unit)? = null
+    var onArchiveCompleted: ((String) -> Unit)? = null
     var onDiagnosticStart: ((String) -> Unit)? = null
     var onDiagnosticEvent: ((TripEvent) -> Unit)? = null
 
@@ -149,6 +151,7 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
         this.mode = mode
         val stamp = RecordingSession.newId()
         id = stamp
+        onArchiveStart?.invoke(stamp)
         onDiagnosticStart?.invoke(stamp)
         recordingName = "trip-$stamp.rec.gz"
         startWall = System.currentTimeMillis()
@@ -242,7 +245,10 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
         if (summary.drivenM < 50 && summary.durationS < 120) {
             finished?.finish(discard = true)
             log("trip_discarded $tripId")
-            io.execute { onDiagnosticEnd?.invoke(tripId) }
+            io.execute {
+                onDiagnosticEnd?.invoke(tripId)
+                onArchiveCompleted?.invoke(tripId)
+            }
             return
         }
         finished?.finish()
@@ -251,6 +257,7 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
             onDiagnosticEnd?.invoke(tripId)
             index.appendText(summary.toJson().toString() + "\n")
             _history.value = loadHistory()
+            onArchiveCompleted?.invoke(tripId)
         }
     }
 
@@ -293,6 +300,7 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
         val now = SystemClock.elapsedRealtime()
         val estimator = NavigationEstimator.entries.firstOrNull { it.name == o.optString("estimator") } ?: NavigationEstimator.KOTLIN
         engine.start(restoredRoute, restoredDestination, waypoints, now, startAccuracyM = uncertainty, mode = mode, estimator = estimator)
+        onArchiveStart?.invoke(restoredId)
         onDiagnosticStart?.invoke(restoredId)
         engine.resumeAt(o.optDouble("s"))
         openRecorder(append = true)

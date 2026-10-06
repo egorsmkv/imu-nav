@@ -320,6 +320,7 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                     // ---------------- Sharing server
                     SectionHeader(stringResource(R.string.sec_sync))
                     AccountSyncSection(app)
+                    AutomaticTripUploadSection(app)
                     Text(
                         stringResource(R.string.sync_summary),
                         style = MaterialTheme.typography.bodyMedium,

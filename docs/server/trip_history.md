@@ -2,7 +2,15 @@
 
 Sign in to the sharing server in the Android app. Open **History**, select a
 completed trip, then choose **Upload to trip history**. Read the location-sharing
-notice before confirming. Uploading is manual and separate from diagnostic uploads.
+notice before confirming. Uploads are separate from diagnostic uploads.
+
+After granting archive consent, Settings offers **Automatically upload completed
+trips**. It is off by default and applies only to this device and server/account.
+It uploads future completed trips, never the existing history. Failed uploads are
+queued locally and retried when the app opens. Switching accounts cancels transfers;
+a trip started under another account is not uploaded to the new account. Turning
+the checkbox off clears pending uploads. Withdrawing consent or changing its
+version disables automatic uploading; the checkbox never grants consent itself.
 
 The archive stores recorded engine positions, their position source and uncertainty,
 planned routes, and trip statistics. It does not store the original recording, raw
