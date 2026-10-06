@@ -31,3 +31,6 @@ For sensor rules, turn matching, uncertainty and settings behaviour, read the [d
 GPS diagnostics explain each rejected or suspicious fix in the selected app language. For example,
 an implausible speed or a GPS timestamp that differs from the phone clock is shown as plain text.
 Trip recordings and developer logs retain the original reason codes for analysis.
+
+The **Sensors** row also uses the selected app language for missing hardware and its effect on
+turn and stop detection. Sensor names in developer logs stay unchanged.

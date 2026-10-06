@@ -1,6 +1,7 @@
 package org.imunav.app
 
 import org.imunav.app.cells.CellStatus
+import org.imunav.app.sensors.NavigationSensor
 import org.imunav.core.geo.GeoPoint
 import org.imunav.core.gnss.GnssSnapshot
 import org.imunav.core.gnss.GpsState
@@ -50,7 +51,7 @@ data class UiState(
     /** Debug switch: pretend GPS is jammed. */
     val simulateGpsLoss: Boolean = false,
     /** The phone lacks some sensors (e.g. no gyroscope); shown in diagnostics. */
-    val sensorWarning: String? = null,
+    val missingSensors: List<NavigationSensor> = emptyList(),
     /** System-wide Location switch; when off, Android delivers no fixes to any app. */
     val locationEnabled: Boolean = true,
     /** The latest trip-log lines. */

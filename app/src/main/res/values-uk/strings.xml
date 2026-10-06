@@ -674,4 +674,8 @@
     <string name="gps_reason_flat_signal">Сигнали супутників підозріло однакові</string>
     <string name="gps_reason_heading_difference">Напрямок GPS не збігається з компасом</string>
     <string name="gps_reason_unknown">GPS не пройшов перевірку надійності</string>
+    <string name="sensor_gyroscope">гіроскоп</string>
+    <string name="sensor_rotation_vector">датчик орієнтації</string>
+    <string name="sensor_compass">компас</string>
+    <string name="diag_sensors_missing">Недоступні: %1$s. Визначення поворотів за гіроскопом вимкнено; зупинки визначаються лише за акселерометром.</string>
 </resources>

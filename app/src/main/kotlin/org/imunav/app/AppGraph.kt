@@ -667,7 +667,7 @@ class AppGraph(private val context: Context) {
             trustedFromGps = planningFix?.source == FixSource.GPS,
             gpsRejectReasons = hub.lastJudged?.takeIf { it.verdict.level == TrustLevel.BAD }?.verdict?.reasons.orEmpty(),
             simulateGpsLoss = engine.simulateGpsLoss,
-            sensorWarning = sensors.sensorWarning,
+            missingSensors = sensors.missingSensors,
             locationEnabled = sensors.locationEnabled,
             log = tripLog.recent(30),
         )

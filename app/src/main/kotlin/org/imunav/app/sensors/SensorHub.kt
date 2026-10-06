@@ -70,14 +70,12 @@ class SensorHub(
 
     @Volatile private var rawAccelFallback = true
 
-    /** Human-readable description of missing sensors, null if the phone has everything. */
-    val sensorWarning: String? = run {
-        val missing = listOf(
-            Sensor.TYPE_GYROSCOPE to "gyroscope",
-            Sensor.TYPE_ROTATION_VECTOR to "rotation vector",
-            Sensor.TYPE_MAGNETIC_FIELD to "compass",
-        ).filter { sensorManager.getDefaultSensor(it.first) == null }.map { it.second }
-        if (missing.isEmpty()) null else "No ${missing.joinToString()}: gyro turn detection off, stop detection from accelerometer only"
+    /** Hardware availability is language-independent; the UI supplies translated sensor names. */
+    val missingSensors: List<NavigationSensor> = NavigationSensor.entries.filter { sensorManager.getDefaultSensor(it.androidType) == null }
+
+    /** Preserve the existing English diagnostic message for recordings and log analysis. */
+    private val sensorWarning: String? = missingSensors.takeIf { it.isNotEmpty() }?.let { missing ->
+        "No ${missing.joinToString { it.logName }}: gyro turn detection off, stop detection from accelerometer only"
     }
 
     private val gpsListener = FixLocationListener { hub.onFix(it.toRawFix(FixSource.GPS)) }

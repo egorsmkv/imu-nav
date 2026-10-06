@@ -664,4 +664,8 @@
     <string name="gps_reason_flat_signal">Satellite signals are suspiciously similar</string>
     <string name="gps_reason_heading_difference">GPS direction disagrees with the compass</string>
     <string name="gps_reason_unknown">GPS failed a reliability check</string>
+    <string name="sensor_gyroscope">gyroscope</string>
+    <string name="sensor_rotation_vector">orientation sensor</string>
+    <string name="sensor_compass">compass</string>
+    <string name="diag_sensors_missing">Unavailable: %1$s. Gyroscope turn detection is off; stops are detected using only the accelerometer.</string>
 </resources>
