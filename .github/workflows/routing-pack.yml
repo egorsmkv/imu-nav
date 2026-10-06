@@ -5,7 +5,13 @@ on:
     paths:
       - '.github/workflows/routing-pack.yml'
       - 'routing/**'
+      - 'core/**'
       - 'tools/verify_routing_pack.py'
+      - 'gradle/**'
+      - 'gradlew'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
   workflow_dispatch:
     inputs:
       pack_name:

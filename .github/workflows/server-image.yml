@@ -3,6 +3,15 @@ name: Server Docker image
 on:
   push:
     branches: [main]
+    paths:
+      - '.github/workflows/server-image.yml'
+      - 'server/Dockerfile'
+      - 'server/.dockerignore'
+      - 'server/Cargo.toml'
+      - 'server/Cargo.lock'
+      - 'server/build.rs'
+      - 'server/src/**'
+      - 'server/templates/**'
   workflow_dispatch:
 
 permissions:

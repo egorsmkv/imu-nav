@@ -28,6 +28,9 @@ Its release profile uses maximum optimization, fat link-time optimization and on
 expect a slower build in exchange for more optimization across dependencies.
 The `Server Docker image` CI workflow also builds `server/Dockerfile` from the `server/` context
 and checks that the resulting binary starts.
+Automatic CI workflows use path filters so documentation and unrelated modules do not start every
+build. F-Droid release tags still build regardless of changed paths; all manual dispatches remain
+available.
 
 For release rules, see [F-Droid](FDROID.md). For measurements, see [Kotlin coverage](KOTLIN_COVERAGE.md), [Rust coverage](RUST_COVERAGE.md) and [native verification](NATIVE_VERIFICATION.md).
 

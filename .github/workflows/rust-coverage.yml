@@ -2,8 +2,48 @@ name: Rust coverage
 
 on:
   pull_request:
+    paths:
+      - '.github/workflows/rust-coverage.yml'
+      - 'native/**'
+      - 'server/Cargo.toml'
+      - 'server/Cargo.lock'
+      - 'server/build.rs'
+      - 'server/src/**'
+      - 'server/tests/**'
+      - 'server/templates/**'
+      - 'app/src/main/kotlin/org/imunav/app/nativecore/**'
+      - 'app/build.gradle.kts'
+      - 'core/**'
+      - 'replay/**'
+      - 'routing/build.gradle.kts'
+      - 'tools/**'
+      - 'gradle/**'
+      - 'gradlew'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
   push:
     branches: [main]
+    paths:
+      - '.github/workflows/rust-coverage.yml'
+      - 'native/**'
+      - 'server/Cargo.toml'
+      - 'server/Cargo.lock'
+      - 'server/build.rs'
+      - 'server/src/**'
+      - 'server/tests/**'
+      - 'server/templates/**'
+      - 'app/src/main/kotlin/org/imunav/app/nativecore/**'
+      - 'app/build.gradle.kts'
+      - 'core/**'
+      - 'replay/**'
+      - 'routing/build.gradle.kts'
+      - 'tools/**'
+      - 'gradle/**'
+      - 'gradlew'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
   workflow_dispatch:
 
 permissions:

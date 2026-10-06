@@ -6,6 +6,22 @@ on:
     # branches: [main]
     tags: ['v*']
   pull_request:
+    paths:
+      - '.github/workflows/fdroid.yml'
+      - 'app/build.gradle.kts'
+      - 'app/lint.xml'
+      - 'app/proguard-rules.pro'
+      - 'app/src/main/**'
+      - 'app/src/fdroid/**'
+      - 'core/**'
+      - 'routing/**'
+      - 'native/**'
+      - 'scripts/build-rust-android.sh'
+      - 'gradle/**'
+      - 'gradlew'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
 
 permissions:
   contents: read
