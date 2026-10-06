@@ -44,3 +44,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 [dev-dependencies]
 reqwest = { version = "0.13", default-features = false, features = ["form", "gzip", "json", "rustls"] }
 tokio-tungstenite = "0.30"
+
+# Spend more build time on whole-program optimization for production binaries.
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1

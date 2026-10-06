@@ -23,6 +23,10 @@ Use this guide from the project root. The app needs JDK 17 or newer, Android SDK
 3. Run `./gradlew :core:test` for the quick engine tests. Run `./gradlew :core:serverApiTest` to test the Kotlin sharing client against a temporary local Rust server.
 4. For device tests, start an emulator or connect a device and run `./gradlew :app:connectedFdroidDebugAndroidTest`.
 
+For the production cell server, run `cargo build --locked --release --manifest-path server/Cargo.toml`.
+Its release profile uses maximum optimization, fat link-time optimization and one codegen unit;
+expect a slower build in exchange for more optimization across dependencies.
+
 For release rules, see [F-Droid](FDROID.md). For measurements, see [Kotlin coverage](KOTLIN_COVERAGE.md), [Rust coverage](RUST_COVERAGE.md) and [native verification](NATIVE_VERIFICATION.md).
 
 The [detailed build reference](reference/BUILD_AND_TEST.md) has signing fields, dependency checks, replay and performance commands.
