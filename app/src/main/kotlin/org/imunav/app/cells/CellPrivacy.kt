@@ -169,8 +169,9 @@ internal class CellPrivacy(context: Context, private val auth: CellAuth) {
         val requestBody = body?.toRequestBody("application/json".toMediaType())
         val response = Http.client.newCall(builder.method(method, requestBody).build()).execute()
         return response.use {
-            val bytes = it.body.source().readByteArray(MAX_RESPONSE_BYTES + 1L)
-            if (bytes.size > MAX_RESPONSE_BYTES) throw IOException("Sharing server notice is too large")
+            val source = it.body.source()
+            if (source.request(MAX_RESPONSE_BYTES + 1L)) throw IOException("Sharing server notice is too large")
+            val bytes = source.readByteArray()
             val text = bytes.toString(Charsets.UTF_8)
             if (it.code == 404 && path in setOf("/v1/privacy", "/v1/privacy/me")) return@use null
             if (!it.isSuccessful) throw HttpException(it.code, text.take(Http.ERROR_BODY_CHARS))

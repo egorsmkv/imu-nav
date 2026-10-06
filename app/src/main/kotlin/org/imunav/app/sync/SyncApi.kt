@@ -31,8 +31,9 @@ internal class SyncApi(private val url: String, private val token: String) {
                 override fun onResponse(call: Call, response: Response) {
                     val result = runCatching {
                         response.use {
-                            val bytes = it.body.source().readByteArray(MAX_RESPONSE_BYTES + 1L)
-                            if (bytes.size > MAX_RESPONSE_BYTES) throw IOException("Account response too large")
+                            val source = it.body.source()
+                            if (source.request(MAX_RESPONSE_BYTES + 1L)) throw IOException("Account response too large")
+                            val bytes = source.readByteArray()
                             if (!it.isSuccessful) throw HttpException(it.code, "Account synchronization failed")
                             if (bytes.isEmpty()) JSONObject() else JSONObject(bytes.toString(Charsets.UTF_8))
                         }

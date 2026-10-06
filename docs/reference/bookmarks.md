@@ -16,5 +16,8 @@ bookmark; browsing and management remain available during navigation.
 
 Bookmarks persist locally in a separate SQLite database and survive routing-pack replacement.
 Saved routes contain their own endpoint copies, so renaming or deleting a place does not change
-any route. There is no synchronization, file import/export or backup; existing Android backup
-exclusions apply.
+any route.
+
+Optional [account synchronization](../server/account-sync.md) merges bookmarks with the sharing
+server. Each account has a separate local database; signing out restores the original local profile.
+File import/export and Android backups remain disabled.

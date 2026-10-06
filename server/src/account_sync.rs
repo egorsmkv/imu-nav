@@ -349,7 +349,8 @@ mod tests {
         store.connection()?.execute("INSERT INTO users(id,email,password_hash) VALUES (1,'one@example.org','hash'),(2,'two@example.org','hash')",params![])?;
         let identity = store.sync_identity(1)?;
         assert_eq!(identity, store.sync_identity(1)?);
-        assert_ne!(identity, store.sync_identity(2)?);
+        let deleted_identity = store.sync_identity(2)?;
+        assert_ne!(identity, deleted_identity);
         store.grant_privacy_consent(1, "account_sync", "local")?;
         let first = entry("home", 0, Some(place("Home")));
         assert_eq!(
@@ -400,7 +401,7 @@ mod tests {
             "INSERT INTO users(id,email,password_hash) VALUES (2,'replacement@example.org','hash')",
             params![],
         )?;
-        assert_ne!(identity, store.sync_identity(2)?);
+        assert_ne!(deleted_identity, store.sync_identity(2)?);
         Ok(())
     }
 

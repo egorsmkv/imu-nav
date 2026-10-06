@@ -23,6 +23,7 @@ internal class CellAuth(context: Context) {
     private val prefs = context.getSharedPreferences("cell_auth", Context.MODE_PRIVATE)
     private val sessionLock = Any()
     private var generation = 0L
+
     @Volatile private var access: String? = null
     private var expiresAtMs = 0L
 
@@ -66,19 +67,18 @@ internal class CellAuth(context: Context) {
     /** Obtain a live access token; a failed refresh clears the local session. Called on an I/O thread. */
     @Synchronized
     fun accessToken(url: String): String? {
-        val expected = synchronized(sessionLock) { generation }
-        if (prefs.getString("url", null) != url.trim().trimEnd('/')) {
-            clear()
-            return null
+        val snapshot = synchronized(sessionLock) {
+            if (prefs.getString("url", null) != url.trim().trimEnd('/')) return null
+            if (System.currentTimeMillis() < expiresAtMs - 30_000) return access
+            generation to prefs.getString("refresh", null)
         }
-        if (System.currentTimeMillis() < expiresAtMs - 30_000) return access
-        val refresh = decrypt(prefs.getString("refresh", null)) ?: run {
-            clear()
+        val expected = snapshot.first
+        val refresh = decrypt(snapshot.second) ?: run {
+            synchronized(sessionLock) { if (generation == expected) clear() }
             return null
         }
         return try {
             saveSession(url, post(url, "/v1/auth/refresh", JSONObject().put("refresh_token", refresh)), expected)
-            access
         } catch (error: HttpException) {
             if (error.code == 401) synchronized(sessionLock) { if (generation == expected) clear() }
             throw error
@@ -87,11 +87,15 @@ internal class CellAuth(context: Context) {
 
     /** Revoke the server session before discarding local credentials. Called on an I/O thread. */
     fun signOut(url: String) {
-        val refresh = decrypt(prefs.getString("refresh", null))
+        val snapshot = synchronized(sessionLock) {
+            if (prefs.getString("url", null) != url.trim().trimEnd('/')) return
+            generation to prefs.getString("refresh", null)
+        }
+        val refresh = decrypt(snapshot.second)
         try {
             if (refresh != null) post(url, "/v1/auth/logout", JSONObject().put("refresh_token", refresh))
         } finally {
-            clear()
+            synchronized(sessionLock) { if (generation == snapshot.first) clear() }
         }
     }
 
@@ -100,22 +104,23 @@ internal class CellAuth(context: Context) {
         post(url, "/v1/auth/password-reset/request", JSONObject().put("email", email))
     }
 
-    private fun saveSession(url: String, body: JSONObject, expected: Long) {
+    private fun saveSession(url: String, body: JSONObject, expected: Long): String {
         val refresh = body.getString("refresh_token")
         val encrypted = encrypt(refresh)
         synchronized(sessionLock) {
-        check(generation == expected) { "Account session changed" }
-        prefs.edit {
-            putString("url", url.trim().trimEnd('/'))
-            putString("email", body.getJSONObject("account").getString("email"))
-            putLong("account_id", body.getJSONObject("account").getLong("id"))
-            putString("sync_identity", body.optString("sync_identity"))
-            putBoolean("email_verified", body.getJSONObject("account").optBoolean("email_verified", true))
-            putBoolean("sharing_enabled", body.getJSONObject("account").optBoolean("sharing_enabled", true))
-            putString("refresh", encrypted)
-        }
-        access = body.getString("access_token")
-        expiresAtMs = System.currentTimeMillis() + body.getLong("expires_in") * 1000
+            check(generation == expected) { "Account session changed" }
+            prefs.edit {
+                putString("url", url.trim().trimEnd('/'))
+                putString("email", body.getJSONObject("account").getString("email"))
+                putLong("account_id", body.getJSONObject("account").getLong("id"))
+                putString("sync_identity", body.optString("sync_identity"))
+                putBoolean("email_verified", body.getJSONObject("account").optBoolean("email_verified", true))
+                putBoolean("sharing_enabled", body.getJSONObject("account").optBoolean("sharing_enabled", true))
+                putString("refresh", encrypted)
+            }
+            access = body.getString("access_token")
+            expiresAtMs = System.currentTimeMillis() + body.getLong("expires_in") * 1000
+            return body.getString("access_token")
         }
     }
 

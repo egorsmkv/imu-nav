@@ -91,7 +91,10 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         hasLocation = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val app = graph
+        val languageAtCreation = AppLanguage.get(this)
         setContent {
+            val language by app.language.collectAsStateWithLifecycle()
+            LaunchedEffect(language) { if (language != languageAtCreation) recreate() }
             BlindDriverTheme {
                 HapticFeedbackProvider(app.haptics) {
                     AppRoot(app, hasLocation, ::requestPermissions, ::setKeepScreenOn, ::refreshPermissions)

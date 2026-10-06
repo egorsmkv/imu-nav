@@ -356,7 +356,7 @@ class AppGraph(private val context: Context) {
     fun setPhoneVisible(visible: Boolean) {
         displays.phone(visible)
         airAlerts.setVisible(visible)
-        accountSync.setVisible(visible)
+        accountSync.setVisible(displays.hasConsumer)
         updateDisplays()
     }
 
@@ -368,6 +368,7 @@ class AppGraph(private val context: Context) {
 
     fun disconnectCar(id: String) {
         displays.disconnect(id)
+        accountSync.setVisible(displays.hasConsumer)
         updateDisplays()
     }
 

@@ -1,6 +1,5 @@
 package org.imunav.app.ui
 
-import android.app.Activity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -12,7 +11,6 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -23,7 +21,6 @@ import org.imunav.app.R
 /** Shared UI/voice language choice; save pending settings before recreating the localized activity. */
 @Composable
 internal fun LanguageSelector(app: AppGraph, onBeforeChange: () -> Unit = {}) {
-    val context = LocalContext.current
     val language by app.language.collectAsStateWithLifecycle()
     ListItem(
         headlineContent = { Text(stringResource(R.string.language_title)) },
@@ -44,7 +41,6 @@ internal fun LanguageSelector(app: AppGraph, onBeforeChange: () -> Unit = {}) {
                                 if (language != choice) {
                                     onBeforeChange()
                                     app.setLanguage(choice)
-                                    (context as? Activity)?.recreate()
                                 }
                             },
                             label = { Text(label) },

@@ -7,6 +7,9 @@ import android.database.sqlite.SQLiteDatabase
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.imunav.app.AppGraph
 import org.imunav.core.bookmarks.BookmarkPoint
 import org.imunav.core.bookmarks.SavedPlace
@@ -80,6 +83,15 @@ class AccountSyncIntegrationTest {
             assertFalse(second.accountSync.status.value.prompt)
             main { second.accountSync.choose(false) }
             await { !second.accountSync.status.value.enabled && !second.accountSync.status.value.busy }
+            awaitServerErasure(second)
+            main { second.cells.signOut() }
+            await { !second.accountSync.status.value.signedIn && second.bookmarks.state.value.items.isEmpty() }
+            login(second, server, "other-$email", password, true)
+            await { second.accountSync.status.value.prompt }
+            main { second.accountSync.choose(true) }
+            await { second.accountSync.status.value.lastSuccess > 0 }
+            assertTrue(second.bookmarks.state.value.items.isEmpty())
+            assertTrue(second.voiceEnabled.value)
         } finally {
             main {
                 first.accountSync.setVisible(false)
@@ -96,6 +108,22 @@ class AccountSyncIntegrationTest {
     }
 
     private fun main(action: () -> Unit) = instrumentation.runOnMainSync(action)
+
+    /** Check the server acknowledgement: the switch turns off before queued erasure completes. */
+    private fun awaitServerErasure(app: AppGraph) = runBlocking {
+        val credentials = requireNotNull(app.cells.accountCredentials())
+        val api = SyncApi(credentials.first, credentials.second)
+        withTimeout(30_000) {
+            while (true) {
+                val snapshot = api.request()
+                if (!snapshot.getBoolean("enabled") && snapshot.getLong("generation") > 0) {
+                    assertEquals(0, snapshot.getJSONArray("entries").length())
+                    break
+                }
+                delay(100)
+            }
+        }
+    }
 
     private fun await(condition: () -> Boolean) {
         val deadline = System.nanoTime() + 30_000_000_000L
