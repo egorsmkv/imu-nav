@@ -7,8 +7,8 @@ project; the linked guides contain the exact rules and limits.
 
 - **Cargo workspace** — A set of Rust packages built together. `native/` is the workspace for the
   navigation crates. The cell-sharing server has a separate Cargo manifest.
-- **Crate** — One Rust package with one job. Here the core is an algorithm library, JNI is the
-  Android bridge, and the simulator is a desktop program. [Crate overview](README.md).
+- **Crate** — One Rust compilation unit. Here the core is an algorithm library, JNI is the Android
+  bridge, and the simulator is a desktop program. [Crate overview](README.md).
 - **Host** — The development computer running tests, replay or simulation, rather than the phone.
 - **JNI** — Java Native Interface, the bridge that lets Kotlin call compiled Rust code.
   [Android bridge](jni-and-android.md).

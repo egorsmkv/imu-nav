@@ -3,7 +3,7 @@
 [Documentation index](../../README.md) · [Newcomer glossary](glossary.md)
 
 The `native/` workspace contains the Rust code used by Android navigation and by repeatable host
-experiments. A **crate** is one Rust package. This workspace has three crates with separate jobs:
+experiments. It has three Cargo packages, each building one main Rust crate with a separate job:
 
 | Crate | In plain English | Where it runs |
 | --- | --- | --- |

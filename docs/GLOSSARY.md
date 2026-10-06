@@ -4,6 +4,7 @@
 
 Find a term, then follow its topic link for steps and detailed reference.
 For terms specific to the Rust navigation crates, see the [newcomer core glossary](core/glossary.md).
+For sharing-server terms, see the [newcomer server glossary](server/glossary.md).
 
 Jump to: [A to D](#a-to-d) · [E to K](#e-to-k) · [L to R](#l-to-r) · [S to Z](#s-to-z)
 
@@ -23,7 +24,7 @@ Jump to: [A to D](#a-to-d) · [E to K](#e-to-k) · [L to R](#l-to-r) · [S to Z]
 - **Cell tower** — A mobile-network radio site. The app uses nearby towers and a tower database for
   a rough location when GPS is weak. [Cell guide](CELL_TOWERS.md).
 - **Cell-sharing server** — A server that combines tower positions contributed by phones and sends
-  shared towers back. [Cell guide](CELL_TOWERS.md).
+  shared towers back. [Server guide](server/README.md).
 - **CI** — Continuous integration: automated builds and tests run for code changes.
   [Build guide](BUILD_AND_TEST.md).
 - **Coverage** — A measure of which source-code lines ran during tests. Coverage does not prove that
@@ -75,7 +76,7 @@ Jump to: [A to D](#a-to-d) · [E to K](#e-to-k) · [L to R](#l-to-r) · [S to Z]
   real one. It grows while the app lacks trusted location evidence.
   [Navigation guide](NAVIGATION.md).
 - **PostgreSQL** — A database server that the sharing server can use instead of a local SQLite
-  file. [Server guide](../server/README.md#toml-configuration-and-postgresql).
+  file. [Server deployment](server/deploy-with-compose.md).
 - **Proof** — A check that a stated rule holds for the inputs a verification tool explores. A
   bounded proof covers only its stated limits. [Verification guide](NATIVE_VERIFICATION.md).
 - **Proof bound** — A limit on the inputs or loop length a Kani check explores. Passing within a

@@ -89,7 +89,7 @@ server/target/release/imu-nav-cell-server --data cells.sqlite3 --import 255.csv.
 Create the first admin with `--data cells.sqlite3 --create-admin admin@example.org` (password from
 standard input). To select PostgreSQL or configure the server with TOML, use
 `--config server/config.toml` as described in the
-[server guide](../../server/README.md#toml-configuration-and-postgresql). The repository's Compose
+[server configuration guide](../server/configuration.md). The repository's Compose
 setup includes Caddy as a TLS reverse proxy for use outside your own network. Account sign-in
 in the app requires HTTPS outside local loopback development (including the emulator's `10.0.2.2`
 host alias). Public downloads still work without signing in.
@@ -97,7 +97,8 @@ Browser users can register at `/signup`, sign in at `/login`, and manage their u
 observations at `/account`. The panel filters and exports the account's observations, supports
 individual or full deletion, pauses uploads, changes credentials, revokes sessions, and closes the
 account. Deleted cell keys cannot be reuploaded by the same account. The server stores cell
-observations only, not trip recordings. Email verification and browser password recovery use the
+observations by default; opt-in developer diagnostics store trip recordings separately. Email
+verification and browser password recovery use the
 configured SMTP server; local deployments without SMTP verify new accounts immediately.
 Administrators sign in through `/login` and are directed to `/admin`. Tower deletion requires
 quarantine first; the panel also supports account suspension and atomic seed imports and policy
@@ -111,11 +112,13 @@ observations; maximum-jump checks still apply to new uploads because earlier pos
 retained. Saved policy values override CLI defaults on later starts.
 The old Kotlin server's internal contribution gzip is not a
 SQLite migration source; re-import the original seed export when moving to this server. See
-[`server/README.md`](../../server/README.md) for the complete HTTP, management, and WebSocket API,
-including opt-in profiling and a loopback traffic simulator.
+[server API guide](../server/api.md) for the HTTP, management and WebSocket API. The
+[profiling guide](../server/profiling.md) covers optional instrumentation and the loopback traffic
+simulator.
 In the app: **Cells → Sharing server**, enter the URL, register or sign in with email and password,
 then _Sync now_ or enable automatic sync (every 6 h and after trips). Signing out still allows
-public downloads. Password-reset email needs SMTP configuration; see the server README.
+public downloads. Password-reset email needs SMTP configuration; see the
+[server configuration guide](../server/configuration.md).
 
 Main navigation thresholds live in `core/.../Tuning.kt` (defaults = factory preset) and `TrustConfig`.
 The separate inertial experiment keeps its provisional noise densities in `InertialTuning`.
