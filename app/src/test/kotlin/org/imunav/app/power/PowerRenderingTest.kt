@@ -22,4 +22,28 @@ class PowerRenderingTest {
         assertEquals(PowerProfile.BALANCED, PowerProfile.BALANCED.withRenderingBudget(false, false))
         assertEquals(PowerProfile.SAVER, PowerProfile.SAVER.withRenderingBudget(false, false))
     }
+
+    @Test
+    fun manualCapOnlyLowersFpsAcrossAllProfilesAndDeviceBudgets() {
+        for (base in listOf(PowerProfile.PERFORMANCE, PowerProfile.BALANCED, PowerProfile.SAVER)) {
+            for (constrained in listOf(false, true)) {
+                for (explicitPerformance in listOf(false, true)) {
+                    val resolved = base.withRenderingBudget(constrained, explicitPerformance)
+                    for (rate in MapFrameRate.entries) {
+                        val capped = resolved.withFrameRateLimit(rate)
+                        assertEquals(minOf(resolved.mapMaxFps, rate.maximumFps ?: resolved.mapMaxFps), capped.mapMaxFps)
+                        assertEquals(resolved, capped.copy(mapMaxFps = resolved.mapMaxFps))
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun capSurvivesPowerModeChangesAndAutoRestoresPolicyLimit() {
+        val selected = MapFrameRate.FPS_10
+        assertEquals(10, PowerProfile.BALANCED.withFrameRateLimit(selected).mapMaxFps)
+        assertEquals(10, PowerProfile.PERFORMANCE.withFrameRateLimit(selected).mapMaxFps)
+        assertEquals(PowerProfile.PERFORMANCE, PowerProfile.PERFORMANCE.withFrameRateLimit(MapFrameRate.AUTO))
+    }
 }

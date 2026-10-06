@@ -702,4 +702,8 @@
     <string name="trip_archive_auto_description">Upload future completed trips, including their precise locations, to this account. Pending uploads retry when you reopen the app.</string>
     <string name="trip_archive_auto_unavailable">Sign in and enable trip history by uploading a trip from History first. This checkbox requires current archive consent on the account.</string>
     <string name="trip_archive_auto_failed">Could not check the account or upload a trip. Pending trips remain on this device; reopen the app to retry, or turn off automatic uploads.</string>
+    <string name="map_fps_title">Map frame rate</string>
+    <string name="map_fps_hint">Lower FPS makes the map less smooth and can save battery. Navigation accuracy stays the same. Saved on this device.</string>
+    <string name="map_fps_value">%1$d FPS</string>
+    <string name="map_fps_effective">Current limit: %1$d FPS. Power saving may lower it further.</string>
 </resources>

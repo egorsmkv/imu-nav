@@ -41,6 +41,7 @@ import org.imunav.app.navigation.RoutePreviewRequest
 import org.imunav.app.navigation.withPreparedResource
 import org.imunav.app.net.ProxySettings
 import org.imunav.app.obd.ObdLink
+import org.imunav.app.power.MapFrameRate
 import org.imunav.app.power.PowerMode
 import org.imunav.app.power.PowerPolicy
 import org.imunav.app.power.PowerProfile
@@ -356,6 +357,8 @@ class AppGraph(private val context: Context) {
     /** The profile in effect (AUTO already resolved). */
     val powerProfile: StateFlow<PowerProfile> = _powerProfile.asStateFlow()
     val powerMode = MutableStateFlow(power.mode)
+    private val _mapFrameRate = MutableStateFlow(power.mapFrameRate)
+    val mapFrameRate = _mapFrameRate.asStateFlow()
     val keepScreenOn = MutableStateFlow(power.keepScreenOn)
 
     /** Connected car hosts still need guidance updates while their map surface is hidden. */
@@ -426,6 +429,13 @@ class AppGraph(private val context: Context) {
         power.mode = mode
         powerMode.value = mode
         tripLog.write("power_mode $mode")
+        applyPower()
+    }
+
+    /** Persist the device's map FPS cap and update all map consumers immediately. */
+    fun setMapFrameRate(rate: MapFrameRate) {
+        power.mapFrameRate = rate
+        _mapFrameRate.value = rate
         applyPower()
     }
 

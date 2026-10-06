@@ -12,6 +12,9 @@ import org.imunav.core.power.MapRenderingBudget
 /** User-selectable trade-off between accuracy/smoothness and battery. */
 enum class PowerMode { AUTO, PERFORMANCE, BALANCED, SAVER }
 
+/** Optional device-local map cap; Auto follows the power and device rendering policy. */
+enum class MapFrameRate(val maximumFps: Int?) { AUTO(null), FPS_10(10), FPS_15(15), FPS_20(20), FPS_30(30) }
+
 /**
  * Concrete rates for one mode. Everything that costs energy continuously is here: sensor rates,
  * modem scans, network location, raw GNSS measurements and map rendering.
@@ -41,6 +44,9 @@ data class PowerProfile(
         val budget = MapRenderingBudget.resolve(constrained, explicitPerformance, mapMaxFps, animateCamera)
         return copy(mapMaxFps = budget.maximumFps, animateCamera = budget.animateCamera, mapPrefetchZoomDelta = budget.prefetchZoomDelta)
     }
+
+    /** A manual cap can reduce drawing frequency without changing positioning or other rendering settings. */
+    fun withFrameRateLimit(rate: MapFrameRate): PowerProfile = rate.maximumFps?.let { copy(mapMaxFps = minOf(mapMaxFps, it)) } ?: this
 
     companion object {
         val PERFORMANCE = PowerProfile("performance", 20_000, 5_000, 5_000, 10_000, 1_000, true, 60, true, 1)
@@ -72,6 +78,11 @@ class PowerPolicy(private val context: Context) {
         get() = PowerMode.entries.firstOrNull { it.name == prefs.getString("mode", null) } ?: PowerMode.AUTO
         set(v) = prefs.edit { putString("mode", v.name) }
 
+    /** Rendering preferences stay on this device because display performance differs between phones. */
+    var mapFrameRate: MapFrameRate
+        get() = MapFrameRate.entries.firstOrNull { it.name == prefs.getString("map_frame_rate", null) } ?: MapFrameRate.AUTO
+        set(value) = prefs.edit { putString("map_frame_rate", value.name) }
+
     /** Keep the display on while navigating (the screen is by far the largest consumer). */
     var keepScreenOn: Boolean
         get() = prefs.getBoolean("keep_screen_on", true)
@@ -94,7 +105,7 @@ class PowerPolicy(private val context: Context) {
     /** AUTO: full rate on a charger, saver under 20 % or with the system battery saver on, else balanced. */
     fun resolve(): PowerProfile {
         val selected = mode
-        return baseProfile(selected).withRenderingBudget(constrainedDevice, selected == PowerMode.PERFORMANCE)
+        return baseProfile(selected).withRenderingBudget(constrainedDevice, selected == PowerMode.PERFORMANCE).withFrameRateLimit(mapFrameRate)
     }
 
     private fun baseProfile(selected: PowerMode): PowerProfile = when (selected) {

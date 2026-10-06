@@ -82,3 +82,14 @@ Android Auto maps.
 
 Hidden maps retain their view but defer style, geometry and camera updates until visible. Android
 memory-pressure callbacks release MapLibre resources without deleting offline packs or trip data.
+
+## Choose a lower map frame rate
+
+Open **Settings → General → Battery → Map frame rate** and choose **Auto**, **10**, **15**,
+**20**, or **30 FPS**. Auto uses the current power and device policy. A numbered option sets
+an upper limit; power saving or device limits can reduce it further. The current limit appears
+below the choices.
+
+The choice takes effect immediately on the navigation map, trip history map and Android Auto.
+It is remembered on this device and is not synced to other phones. Lower FPS can save battery
+but makes movement less smooth. Sensor rates and navigation accuracy stay the same.

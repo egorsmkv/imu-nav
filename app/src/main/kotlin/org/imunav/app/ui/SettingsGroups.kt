@@ -167,9 +167,9 @@ internal fun EverydaySettings(app: AppGraph, ui: UiState, context: Context, save
                     if (powerMode == PowerMode.AUTO) {
                         // Reading the battery is a system call: once per screen visit, not on every redraw.
                         val battery = remember { app.power.batteryPercent() }
-                        val active = when (profile) {
-                            PowerProfile.PERFORMANCE -> PowerMode.PERFORMANCE
-                            PowerProfile.SAVER -> PowerMode.SAVER
+                        val active = when (profile.name) {
+                            PowerProfile.PERFORMANCE.name -> PowerMode.PERFORMANCE
+                            PowerProfile.SAVER.name -> PowerMode.SAVER
                             else -> PowerMode.BALANCED
                         }
                         Text(
@@ -181,6 +181,7 @@ internal fun EverydaySettings(app: AppGraph, ui: UiState, context: Context, save
             },
             leadingContent = { Icon(Icons.Filled.BatteryChargingFull, contentDescription = null) },
         )
+        MapFrameRateSetting(app)
         SwitchItem(stringResource(R.string.power_screen_on), stringResource(R.string.power_screen_on_summary), screenOn) { app.setKeepScreenOn(it) }
         BatteryOptimizationItem(context)
     }
