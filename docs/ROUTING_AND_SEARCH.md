@@ -3,12 +3,12 @@
 [Documentation index](../README.md)
 
 A routing pack lets the phone calculate routes and search addresses without internet. A map pack draws the streets; it is a different download. See the [glossary](GLOSSARY.md) if these terms are new.
-In **Settings → Maps and route planning**, the app shows storage available for the packs, including cache space Android can reclaim. Allow at least 2 GB when installing offline routing and map packs; the exact amount depends on the packs. Use **Check again** after freeing space.
+In **Settings → Maps and routes**, the app shows storage available for the packs, including cache space Android can reclaim. Allow at least 2 GB when installing offline routing and map packs; the exact amount depends on the packs. Use **Check again** after freeing space.
 The app accepts locations worldwide. Install packs for the region you will use; only one map pack and one routing pack are active at a time. Outside a map pack's bounds, the map uses online tiles when available.
 
 ## Use an offline routing pack
 
-1. Install the built-in pack during setup if your build offers one. Otherwise open **Settings → Maps and route planning → Offline routing** and import or download a routing-pack ZIP.
+1. Install the built-in pack during setup if your build offers one. Otherwise open **Settings → Maps and routes → Offline routing** and import or download a routing-pack ZIP.
    The app rejects archives with more than 20,000 entries or 8 GiB of extracted data. It budgets
    256 MiB of free storage when extraction starts.
 2. In **Where to?**, choose **Car** or **Walk**. Older packs may support only Car.
@@ -21,7 +21,7 @@ At the bottom of **Settings → Community links**, the Telegram group link point
 
 1. Type a town, street or house number into the **From** or **To** field.
 2. Choose a result. A routing pack with `search.db` provides offline results.
-3. If no offline result appears, you can allow online search in **Settings → Maps and route planning → Offline routing**. You can choose your own search server in **Address search**.
+3. If no offline result appears, you can allow online search in **Settings → Maps and routes → Offline routing**. You can choose your own search server in **Address search**.
 
 Online search sends your search text to the chosen server. Turn it off if you want to keep searches on the phone.
 
@@ -43,7 +43,7 @@ HTTPS link to its `.osm.pbf` extract. You can enter the extract's SHA-256 checks
 changed download.
 
 After the workflow succeeds, download the `routing-pack-...` artifact and unzip that GitHub artifact.
-Import the `routing-<name>.zip` inside it through **Settings → Maps and route planning → Offline
+Import the `routing-<name>.zip` inside it through **Settings → Maps and routes → Offline
 routing → Import pack**. You can also upload that ZIP to your own HTTPS server and enter its URL in
 the app's **Download** field. The artifact also includes a checksum and build details. CI does not
 publish the archive to a server.

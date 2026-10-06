@@ -49,7 +49,7 @@ gyro turn is matched against route turns 400 m behind … 300 m ahead (turn-sign
 
 ## Car speed and hills
 
-Two optional inputs make dead reckoning much more accurate (**Settings → Everyday settings → Car speed and hills**):
+Two optional inputs make dead reckoning much more accurate (**Settings → General → Car speed and hills**):
 
 - **OBD-II adapter.** A cheap Bluetooth ELM327 dongle in the car's diagnostic socket (under the dashboard,
   every petrol car since ~2001 and diesel since ~2004). Pair it in the phone's Bluetooth settings, switch
@@ -83,7 +83,7 @@ If there is no fresh automatic position, search for the starting address or pan 
 crosshair onto your position and tap **Start here** first. Tap the status pill for
 positioning diagnostics (satellites, spoofing reasons, cells, _Simulate GPS loss_, trip log); the gear
 opens **Settings**. Its four expandable groups keep common controls separate from maps, cell-tower
-data and advanced tools. **Everyday settings → Navigation without GPS** selects dead reckoning only, cell-tower
+data and advanced tools. **General → Navigation without GPS** selects dead reckoning only, cell-tower
 positions only (held between scans), or the recommended hybrid that dead-reckons continuously and
 uses cell/network fixes to constrain drift. Trusted GPS remains preferred in all three modes.
 Each group starts with a short explanation; the map group also distinguishes routing packs (which
@@ -92,14 +92,14 @@ and validation. Once replacement starts, it finishes or rolls back to the previo
 the actual result. A new import waits until cleanup finishes. Routing, map matching and address
 search retain their pack resources until each operation completes, before replacement can close them.
 The map opens at the phone's last GPS position (spoofed or out-of-area fixes are ignored) or, if set in
-**Settings → Everyday settings → Map start**, at a fixed place (typed coordinates, your position or the map centre).
-**Settings → Everyday settings → Navigation without GPS → Haptic feedback** disables both navigation
+**Settings → General → Starting map view**, at a fixed place (typed coordinates, your position or the map centre).
+**Settings → General → Navigation without GPS → Vibration** disables both navigation
 vibrations and app tap feedback. The preference is saved, applies immediately and cancels active
 navigation vibrations; it remains visible even on devices without a vibrator. When enabled, tap
 feedback still follows Android's touch-feedback setting. Vibration service calls run off the UI thread.
 The interface and voice follow the phone's language (Ukrainian, English or Russian) unless changed in
-**Settings → Everyday settings → Language**, and the phone's light/dark theme. Spoken directions can be disabled under
-**Settings → Everyday settings → Navigation without GPS**. The phone vibrates as well, with a different
+**Settings → General → Language**, and the phone's light/dark theme. Spoken directions can be disabled under
+**Settings → General → Navigation without GPS**. The phone vibrates as well, with a different
 pattern for an upcoming turn (one buzz), the turn itself (two), leaving the route (three short), GPS lost
 (long + short), GPS back, a new route and arrival, so alerts can be told apart without looking. Turn that off with
 **Vibrate on turns and alerts** in the same group. Start, Stop, the Car/Walk selector and choosing a destination

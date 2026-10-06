@@ -23,7 +23,7 @@
   transient sensor state and use that distance and the restored uncertainty. Kotlin also marks
   already passed route turns as consumed. Older recordings without `Q` retain their existing replay
   behavior. Accept the battery-optimisation exemption
-  when offered (**Settings → Everyday settings → Battery**) so this is rare.
+  when offered (**Settings → General → Battery**) so this is rare.
 - **Replay tool:** re-runs recordings through the engine on a computer, optionally hiding GPS after
   N seconds, and compares the engine against the real (trusted GPS) track:
 
@@ -61,8 +61,8 @@
   After a false stop, returning GOOD GPS or OBD speed can also be checked against the saved cruising
   speed, so valid highway-speed readings are not locked out by the near-zero stop model. Both models
   retain innovation gates; recovering speed does not erase accumulated position error.
-  **Settings → Everyday settings → Navigation without GPS → Position estimator** offers
-  **Classic navigation (default)** and **Kalman filter**. Classic is selected when no estimator
+  **Settings → General → Navigation without GPS → Navigation algorithm** offers
+  **Classic (default)** and **Kalman filter**. Classic is selected when no estimator
   preference has been saved; an existing explicit choice is preserved. Select before starting navigation;
   changes are locked during a trip. Native mode owns position, speed, uncertainty and the
   state used by guidance for both driving and walking. Walking uses step cadence × learned stride;

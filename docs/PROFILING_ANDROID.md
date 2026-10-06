@@ -2,8 +2,8 @@
 
 [Documentation index](../README.md) · [Trips and recordings](TRIPS.md)
 
-Every app build can create a local performance bundle. Open **Settings → Advanced and support →
-Diagnostics → Performance capture**, tap **Start capture**, use the app, then tap **Stop and prepare
+Every app build can create a local performance bundle. Open **Settings → Advanced →
+Diagnostics → Record performance**, tap **Start capture**, use the app, then tap **Stop and prepare
 ZIP**. Capture works during navigation and while using the map, search or settings. It continues
 until you stop it or the app process ends. Tap **Share ZIP** and choose a destination in Android's
 share menu. The app does not upload the ZIP to the cell-sharing server.

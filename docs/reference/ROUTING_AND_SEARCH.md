@@ -6,7 +6,7 @@
 
 Routes are computed on the phone with **GraphHopper 11** from a _routing pack_: a road graph with
 contraction hierarchies built on a computer from an OpenStreetMap extract. OSRM (online) is only a
-fallback, and can be switched off in **Settings → Maps and route planning → Offline routing**. Packs also provide real speed
+fallback, and can be switched off in **Settings → Maps and routes → Offline routing**. Packs also provide real speed
 limits (OSM `maxspeed`) for the speed sign and the dead-reckoning speed prior.
 
 Packs contain two profiles, **car** and **foot** (walking: footways, paths, steps, pedestrian
@@ -105,8 +105,8 @@ numbers built from the same OSM extract (~87 MB for Ukraine; skip with `--no-add
 work offline in a few milliseconds; street-type words are ignored and results near you rank first.
 The route panel uses the same text search for both the starting address and the destination; the
 current trusted position remains the default start until the user chooses another one.
-When the offline index finds nothing and online use is allowed (**Settings → Maps and route planning → Offline routing →
+When the offline index finds nothing and online use is allowed (**Settings → Maps and routes → Offline routing →
 Allow online routing and search**), a [Photon](https://github.com/komoot/photon) geocoder is asked.
-The public server `photon.komoot.io` is the default; **Settings → Maps and route planning → Address search** accepts your own
+The public server `photon.komoot.io` is the default; **Settings → Maps and routes → Address search** accepts your own
 server instead (a host such as `http://192.168.1.10:2322` or the full `…/api` URL), with a _Test_
 button that runs a sample query. Self-hosting keeps search text off third-party servers.
