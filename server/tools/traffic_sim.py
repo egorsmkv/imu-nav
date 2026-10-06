@@ -2,18 +2,23 @@
 """Drive the shipped server over loopback with repeatable Android-style sync traffic."""
 
 import argparse
+import contextlib
+import math
+import urllib.error
+from traffic_accounts import NAMES, enable, exercise, prepare
+from traffic_postgres import Postgres
 from http.cookiejar import CookieJar
 import gzip
 import hashlib
 import json
 import os
 import re
-import resource
 import selectors
 import sqlite3
 import statistics
 import subprocess
 import time
+import threading
 import urllib.request
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
@@ -28,20 +33,21 @@ def upload_body(device: int, round_number: int, rows: int) -> bytes:
         shared = index < rows * 3 // 4
         generation = 0 if index < rows // 5 else round_number
         cell = generation * rows + index if shared else 1_000_000 + device * 100_000 + generation * rows + index
-        lat = 50.3 + (cell % 300) * 0.0002 + device * 0.00002 + round_number * 0.000005
-        lon = 30.4 + (cell // 300 % 300) * 0.0002 - device * 0.00002 - round_number * 0.000005
+        # Binary-exact fractions keep weighted sums identical across concurrent row orders.
+        lat = 50.25 + (cell % 300) / 4096 + device / 65536 + round_number / 262144
+        lon = 30.5 + (cell // 300 % 300) / 4096 - device / 65536 - round_number / 262144
         radio = ("LTE", "LTE", "LTE", "UMTS", "GSM", "NR")[index % 6]
         mcc = 256 if index % 5 == 0 else 255
         range_m = 0 if index % 101 == 0 else 450 + index % 200
         samples = 3 + (device + index + round_number) % 25
-        lines.append(f"{radio},{mcc},1,1864,{cell},,{lon:.7f},{lat:.7f},{range_m},{samples},1,0,0,")
+        lines.append(f"{radio},{mcc},1,1864,{cell},,{lon:.18f},{lat:.18f},{range_m},{samples},1,0,0,")
     return gzip.compress(("\n".join(lines) + "\n").encode(), mtime=0)
 
 
 def request(base: str, path: str, method: str = "GET", body: bytes | None = None,
             device: int | None = None, token: str | None = None,
             opener: urllib.request.OpenerDirector | None = None,
-            content_type: str | None = None) -> tuple[bytes, float]:
+            content_type: str | None = None, expected: int | None = None) -> tuple[bytes, float]:
     headers = {}
     if token is not None:
         headers["Authorization"] = f"Bearer {token}"
@@ -53,14 +59,22 @@ def request(base: str, path: str, method: str = "GET", body: bytes | None = None
         headers["Content-Type"] = "text/csv"
     started = time.perf_counter()
     pending = urllib.request.Request(base + path, data=body, headers=headers, method=method)
-    with (opener.open(pending, timeout=120) if opener else urllib.request.urlopen(pending, timeout=120)) as response:
+    try:
+        response = opener.open(pending, timeout=120) if opener else urllib.request.build_opener(urllib.request.ProxyHandler({})).open(pending, timeout=120)
+    except urllib.error.HTTPError as error:
+        if error.code != expected:
+            raise RuntimeError(f"unexpected HTTP status {error.code}") from None
+        response = error
+    with response:
+        if expected is not None and response.status != expected:
+            raise RuntimeError(f"expected HTTP {expected}, got {response.status}")
         payload = response.read()
     return payload, (time.perf_counter() - started) * 1000
 
 
 def browser_session(base: str, email: str, destination: str) -> urllib.request.OpenerDirector:
     """Keep the separate browser cookie so HTML routes are measured after authentication."""
-    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(CookieJar()))
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPCookieProcessor(CookieJar()))
     body = urllib.parse.urlencode({"email": email, "password": "correct horse battery staple"}).encode()
     page, _ = request(base, "/login", "POST", body, opener=opener,
                       content_type="application/x-www-form-urlencoded")
@@ -82,15 +96,22 @@ def enable_diagnostics(base: str, browser: urllib.request.OpenerDirector) -> Non
         raise RuntimeError("diagnostic uploads were not enabled")
 
 
-def start_server(binary: Path, database: Path, profile: Path | None) -> tuple[subprocess.Popen[str], str]:
-    subprocess.run([str(binary), "--data", str(database), "--create-admin", "admin@example.org"],
-                   input="correct horse battery staple\n", text=True, check=True, stdout=subprocess.DEVNULL)
-    command = [str(binary), "--bind", "127.0.0.1", "--port", "0", "--data", str(database)]
+def drain(stream, path):
+    with path.open("a") as log:
+        for line in stream:
+            log.write(line)
+
+
+def start_server(binary: Path, database: Path, profile: Path | None, postgres: bool = False) -> tuple[subprocess.Popen[str], str, threading.Thread]:
+    environment = {key: value for key, value in os.environ.items()
+                   if not key.startswith(("CELLS_", "HOTPATH_"))}
+    environment.update({"RUST_LOG": "info", "NO_COLOR": "1", "HOTPATH_METRICS_SERVER_OFF": "true"})
+    database_args = ["--config" if postgres else "--data", str(database)]
+    subprocess.run([str(binary), *database_args, "--create-admin", "admin@example.org"],
+                   input="correct horse battery staple\n", text=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=environment)
+    command = [str(binary), "--bind", "127.0.0.1", "--port", "0", *database_args]
     if profile is not None:
         command.extend(["--profile-output", str(profile)])
-    environment = os.environ.copy()
-    environment.pop("CELLS_PROFILE_OUTPUT", None)
-    environment.update({"RUST_LOG": "info", "NO_COLOR": "1", "HOTPATH_METRICS_SERVER_OFF": "true"})
     server = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                               text=True, bufsize=1, env=environment)
     assert server.stdout is not None
@@ -103,31 +124,37 @@ def start_server(binary: Path, database: Path, profile: Path | None) -> tuple[su
             line = server.stdout.readline()
             match = re.search(r"address=127\.0\.0\.1:(\d+)", line)
             if match:
-                return server, f"http://127.0.0.1:{match.group(1)}"
+                # Drain request logs continuously so a full pipe cannot stall the server.
+                log_thread = threading.Thread(target=lambda: drain(server.stdout, database.parent / "server.log"), daemon=True)
+                log_thread.start()
+                return server, f"http://127.0.0.1:{match.group(1)}", log_thread
             if not line and server.poll() is not None:
                 raise RuntimeError("server exited before readiness")
     server.terminate()
+    server.wait(timeout=10)
     raise TimeoutError("server did not become ready")
 
 
-def database_fingerprint(database: Path) -> tuple[str, dict[str, int]]:
+def database_fingerprint(database: Path, postgres=None) -> tuple[str, dict[str, int]]:
     digest = hashlib.sha256()
     counts = {}
-    with sqlite3.connect(database) as connection:
+    with sqlite3.connect(":memory:" if postgres else database) as connection:
+        def query(sql):
+            return postgres.query(database.parent, sql) if postgres else connection.execute(sql)
         for table, columns, order in [
             ("contributions", "radio,mcc,mnc,area,cid,device,lat,lon,range_m,samples",
              "radio,mcc,mnc,area,cid,device"),
             ("consensus", "radio,mcc,mnc,area,cid,lat,lon,range_m,samples,devices,seeded",
              "radio,mcc,mnc,area,cid"),
         ]:
-            rows = connection.execute(f"SELECT {columns} FROM {table} ORDER BY {order}")
+            rows = query(f"SELECT {columns} FROM {table} ORDER BY {order}")
             count = 0
             for row in rows:
                 digest.update(repr(row).encode())
                 digest.update(b"\n")
                 count += 1
             counts[table] = count
-        diagnostic_rows = connection.execute(
+        diagnostic_rows = query(
             "SELECT s.client_id,e.seq,e.item,e.kind,e.elapsed_ms,e.line "
             "FROM debug_entries e JOIN debug_sessions s ON s.id=e.session_id "
             "ORDER BY s.client_id,e.seq,e.item"
@@ -137,7 +164,7 @@ def database_fingerprint(database: Path) -> tuple[str, dict[str, int]]:
             digest.update(repr(row).encode())
             digest.update(b"\n")
             counts["debug_entries"] += 1
-        moderation_rows = connection.execute(
+        moderation_rows = query(
             "SELECT radio,mcc,mnc,area,cid,quarantined FROM tower_moderation "
             "ORDER BY radio,mcc,mnc,area,cid"
         )
@@ -146,22 +173,32 @@ def database_fingerprint(database: Path) -> tuple[str, dict[str, int]]:
             digest.update(repr(row).encode())
             digest.update(b"\n")
             counts["moderation"] += 1
+        for table, columns, order in [
+            ("trip_archive", "account_id,id,document", "account_id,id"),
+            ("account_sync_entries", "account_id,kind,key,revision,value_json", "account_id,kind,key"),
+        ]:
+            rows = list(query(f"SELECT {columns} FROM {table} ORDER BY {order}"))
+            counts[table] = len(rows)
+            for row in rows:
+                digest.update(repr(row).encode())
+                digest.update(b"\n")
     return digest.hexdigest(), counts
 
 
 def run_once(binary: Path, directory: Path, rounds: int, rows: int,
-             profile: bool) -> dict:
+             profile: bool, postgres=None, trip_points=10000, sync_batch=128) -> dict:
     directory.mkdir()
-    database = directory / "cells.sqlite3"
+    database = postgres.database(directory) if postgres else directory / "cells.sqlite3"
+    fixtures = prepare(rounds, trip_points, sync_batch)
     bodies = [[upload_body(device, round_number, rows) for device in range(4)]
               for round_number in range(rounds)]
-    cpu_before = resource.getrusage(resource.RUSAGE_CHILDREN)
-    server, base = start_server(binary, database, directory / "hotpath.json" if profile else None)
+    server, base, log_thread = start_server(binary, database, directory / "hotpath.json" if profile else None, postgres is not None)
     timings: dict[str, list[float]] = {name: [] for name in (
         "upload", "download", "removals", "management", "tower_detail", "quarantine", "admin_page",
         "account_page", "account_export", "debug_start", "debug_batch", "debug_retry",
         "debug_status", "debug_finish", "debug_page", "debug_detail", "auth_me",
         "data_usage", "health")}
+    timings.update({name: [] for name in NAMES})
     accepted = rejected = downloaded = diagnostic_entries = 0
     try:
         request(base, "/health")  # Exclude process startup and the first SQLite open.
@@ -174,10 +211,17 @@ def run_once(binary: Path, directory: Path, rounds: int, rows: int,
         admin_browser = browser_session(base, "admin@example.org", "Management dashboard")
         phone_browser = browser_session(base, "phone-0@example.org", "My account")
         enable_diagnostics(base, admin_browser)
+        enable(request, base, tokens)
+        pg_before = postgres.usage() if postgres else None
         started = time.perf_counter()
         removal_record = None
         with ThreadPoolExecutor(max_workers=4) as pool:
             for round_number in range(rounds):
+                account_jobs = [pool.submit(exercise, request, base, token, round_number,
+                                            fixtures, sync_batch) for token in tokens]
+                for job in account_jobs:
+                    for name, values in job.result().items():
+                        timings[name].extend(values)
                 jobs = [pool.submit(request, base, "/v1/cells", "POST",
                                     bodies[round_number][device], device, tokens[device])
                         for device in range(4)]
@@ -195,7 +239,8 @@ def run_once(binary: Path, directory: Path, rounds: int, rows: int,
                 towers = json.loads(payload)["towers"]
                 assert 0 < len(towers) <= 500
                 timings["management"].append(elapsed)
-                key = next(tower for tower in towers if tower["devices"] >= 2)
+                # This shared row always exists; page order depends on wall-clock update times.
+                key = {"radio": "LTE", "mcc": 255, "mnc": 1, "area": 1864, "cid": 1}
                 path = f"/v1/towers/{key['radio']}/{key['mcc']}/{key['mnc']}/{key['area']}/{key['cid']}"
                 payload, elapsed = request(base, path, token=admin_token)
                 assert json.loads(payload)["cid"] == key["cid"]
@@ -216,7 +261,7 @@ def run_once(binary: Path, directory: Path, rounds: int, rows: int,
                 assert b"My observations" in payload and b"phone-0@example.org" in payload
                 timings["account_page"].append(elapsed)
                 payload, elapsed = request(base, "/account/export?mcc=255", opener=phone_browser)
-                assert gzip.decompress(payload).startswith(b"radio,")
+                assert any(json.loads(line)["type"] == "account_sync" for line in gzip.decompress(payload).splitlines())
                 timings["account_export"].append(elapsed)
                 payload, elapsed = request(base, "/admin?mcc=255&limit=100", opener=admin_browser)
                 assert b"Management dashboard" in payload
@@ -260,52 +305,100 @@ def run_once(binary: Path, directory: Path, rounds: int, rows: int,
                 assert payload.startswith(b"ok ")
                 timings["health"].append(elapsed)
         wall_ms = (time.perf_counter() - started) * 1000
+        process = Path(f"/proc/{server.pid}/stat").read_text().rsplit(")", 1)[1].split()
+        cpu_ms = (int(process[11]) + int(process[12])) * 1000 / os.sysconf("SC_CLK_TCK")
+        status = Path(f"/proc/{server.pid}/status").read_text()
+        peak_rss = int(re.search(r"VmHWM:\s+(\d+)", status).group(1)) * 1024
+        pg_after = postgres.usage() if postgres else None
     finally:
         server.terminate()
         try:
-            server.communicate(timeout=30)
+            server.wait(timeout=30)
         except subprocess.TimeoutExpired:
             server.kill()
-            server.communicate()
+            server.wait()
             raise
+        finally:
+            log_thread.join(timeout=5)
     if server.returncode != 0:
         raise RuntimeError(f"server failed: {server.returncode}")
-    cpu_after = resource.getrusage(resource.RUSAGE_CHILDREN)
-    cpu_ms = 1000 * (cpu_after.ru_utime + cpu_after.ru_stime
-                     - cpu_before.ru_utime - cpu_before.ru_stime)
-    if profile and not (directory / "hotpath.json").is_file():
-        raise RuntimeError("profiling report was not flushed")
-    fingerprint, counts = database_fingerprint(database)
+    if profile:
+        report = (directory / "hotpath.json").read_text()
+        parsed = json.loads(report)
+        assert isinstance(parsed["functions_timing"]["data"], list)
+        for name in ("trips::upload", "account_sync::write", "blocking_queue", "write_gate_wait"):
+            if name not in report:
+                raise RuntimeError(f"missing profiling probe: {name}")
+        for token in [admin_token, *tokens]:
+            if token in report:
+                raise RuntimeError("credential appeared in timing report")
+    fingerprint, counts = database_fingerprint(database, postgres)
     if counts["debug_entries"] != diagnostic_entries:
         raise RuntimeError("diagnostic upload count differs from stored entries")
-    return {"wall_ms": wall_ms, "server_cpu_ms": cpu_ms, "latency_ms": {
-        name: {"median": statistics.median(values), "max": max(values), "count": len(values)}
+    result = {"wall_ms": wall_ms, "server_cpu_ms": cpu_ms, "server_peak_rss_bytes": peak_rss,
+            "requests_per_second": sum(map(len, timings.values())) * 1000 / wall_ms,
+            "postgres": {"cpu_ms": pg_after["cpu_ms"] - pg_before["cpu_ms"],
+                         "container_peak_memory_bytes": pg_after["peak_memory_bytes"]} if postgres else None, "latency_ms": {
+        name: {"median": statistics.median(values), "p95": sorted(values)[math.ceil(.95 * len(values)) - 1], "max": max(values), "count": len(values)}
         for name, values in timings.items()}, "accepted": accepted, "rejected": rejected,
         "downloaded_rows": downloaded, "diagnostic_entries": diagnostic_entries,
         "database": counts, "fingerprint": fingerprint}
+    (directory / "metrics.json").write_text(json.dumps(result, indent=2) + "\n")
+    return result
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path, required=True)
+    parser.add_argument("--baseline", type=Path, help="Alternate candidate and baseline runs on the same backend")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--rounds", type=int, default=4)
     parser.add_argument("--rows", type=int, default=1000)
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument("--profile", action="store_true")
+    parser.add_argument("--backend", choices=("sqlite", "postgres"), default="sqlite")
+    parser.add_argument("--docker-runtime", help="Optional Docker runtime override for disposable PostgreSQL")
+    parser.add_argument("--trip-points", type=int, default=10000)
+    parser.add_argument("--sync-batch", type=int, default=128)
+    parser.add_argument("--warmups", type=int, default=1)
     args = parser.parse_args()
-    if min(args.rounds, args.rows, args.repetitions) < 1 or args.rounds > 30 or args.rows > 20_000:
-        parser.error("rounds, rows and repetitions must be positive; rounds <= 30 and rows <= 20000")
+    if min(args.rounds, args.repetitions) < 1 or args.rounds > 30 or not 4 <= args.rows <= 20_000:
+        parser.error("rounds and repetitions must be positive; rounds <= 30 and rows must be 4..20000")
+    if not 2 <= args.trip_points <= 100000 or not 1 <= args.sync_batch <= 128 or args.warmups < 0:
+        parser.error("trip-points must be 2..100000, sync-batch 1..128 and warmups >= 0")
     args.out.mkdir(parents=True, exist_ok=False)
-    runs = [run_once(args.binary.resolve(), args.out / f"run-{index}", args.rounds,
-                     args.rows, args.profile) for index in range(args.repetitions)]
-    if any(run["fingerprint"] != runs[0]["fingerprint"] for run in runs):
+    runs, baseline_runs = [], []
+    with Postgres(args.docker_runtime) if args.backend == "postgres" else contextlib.nullcontext() as postgres:
+        variants = [("candidate", args.binary, runs)]
+        if args.baseline:
+            variants.append(("baseline", args.baseline, baseline_runs))
+        for index in range(args.warmups):
+            for label, binary, _ in variants:
+                run_once(binary.resolve(), args.out / f"warmup-{label}-{index}", args.rounds,
+                         args.rows, args.profile, postgres, args.trip_points, args.sync_batch)
+        for index in range(args.repetitions):
+            for label, binary, results in variants if index % 2 == 0 else reversed(variants):
+                results.append(run_once(binary.resolve(), args.out / f"{label}-{index}", args.rounds,
+                                        args.rows, args.profile, postgres, args.trip_points, args.sync_batch))
+    if any(run["fingerprint"] != runs[0]["fingerprint"] for run in runs + baseline_runs):
         raise RuntimeError("traffic replay changed its stored result across repetitions")
     summary = {"config": {"rounds": args.rounds, "rows": args.rows,
-                          "repetitions": args.repetitions, "devices": 4},
+                          "repetitions": args.repetitions, "devices": 4, "backend": args.backend,
+                          "trip_points": args.trip_points, "sync_batch": args.sync_batch,
+                          "warmups": args.warmups, "profiling": args.profile,
+                          "binary_sha256": hashlib.sha256(args.binary.read_bytes()).hexdigest(),
+                          "working_tree_dirty": bool(subprocess.check_output(["git", "status", "--porcelain", "--untracked-files=no"], text=True).strip()),
+                          "revision": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
+                          "toolchain": subprocess.check_output(["rustc", "--version"], text=True).strip()},
                "median_wall_ms": statistics.median(run["wall_ms"] for run in runs),
                "median_server_cpu_ms": statistics.median(run["server_cpu_ms"] for run in runs),
                "runs": runs}
+    if baseline_runs:
+        summary["baseline"] = {"binary_sha256": hashlib.sha256(args.baseline.read_bytes()).hexdigest(),
+                               "median_wall_ms": statistics.median(run["wall_ms"] for run in baseline_runs),
+                               "median_server_cpu_ms": statistics.median(run["server_cpu_ms"] for run in baseline_runs),
+                               "runs": baseline_runs}
+        summary["candidate_to_baseline_wall_ratio"] = summary["median_wall_ms"] / summary["baseline"]["median_wall_ms"]
     (args.out / "report.json").write_text(json.dumps(summary, indent=2) + "\n")
     print(json.dumps({"median_wall_ms": summary["median_wall_ms"],
                       "median_server_cpu_ms": summary["median_server_cpu_ms"],

@@ -122,7 +122,10 @@ impl Connection {
             Self::Sqlite(connection) => Ok(Statement::Sqlite(connection.prepare(sql)?)),
             Self::Postgres(connection) => Ok(Statement::Postgres {
                 connection,
-                sql: sql.to_owned(),
+                statement: connection
+                    .borrow_mut()
+                    .prepare(&translate(sql))
+                    .map_err(pg_error)?,
             }),
         }
     }
@@ -243,7 +246,10 @@ impl Transaction<'_> {
             )),
             Self::Postgres { connection, .. } => Ok(Statement::Postgres {
                 connection,
-                sql: sql.to_owned(),
+                statement: connection
+                    .borrow_mut()
+                    .prepare(&translate(sql))
+                    .map_err(pg_error)?,
             }),
         }
     }
@@ -258,7 +264,10 @@ impl Transaction<'_> {
             )),
             Self::Postgres { connection, .. } => Ok(Statement::Postgres {
                 connection,
-                sql: sql.to_owned(),
+                statement: connection
+                    .borrow_mut()
+                    .prepare(&translate(sql))
+                    .map_err(pg_error)?,
             }),
         }
     }
@@ -304,7 +313,7 @@ pub(crate) enum Statement<'a> {
     CachedSqlite(rusqlite::CachedStatement<'a>),
     Postgres {
         connection: &'a RefCell<PooledConnection<PgManager>>,
-        sql: String,
+        statement: postgres::Statement,
     },
 }
 
@@ -317,9 +326,14 @@ impl Statement<'_> {
             Self::CachedSqlite(statement) => {
                 statement.execute(rusqlite::params_from_iter(params.into_params()))
             }
-            Self::Postgres { connection, sql } => {
-                execute_postgres(&mut connection.borrow_mut(), sql, params.into_params())
-            }
+            Self::Postgres {
+                connection,
+                statement,
+            } => execute_postgres_statement(
+                &mut connection.borrow_mut(),
+                statement,
+                params.into_params(),
+            ),
         }
     }
 
@@ -340,8 +354,11 @@ impl Statement<'_> {
                     columns,
                 })
             }
-            Self::Postgres { connection, sql } => Ok(Rows::Postgres {
-                rows: postgres_rows(&mut connection.borrow_mut(), sql, values)?.into(),
+            Self::Postgres {
+                connection,
+                statement,
+            } => Ok(Rows::Postgres {
+                rows: postgres_rows(&mut connection.borrow_mut(), statement, values)?.into(),
             }),
         }
     }
@@ -448,15 +465,46 @@ impl Row {
     }
 }
 
-fn pg_values(values: Vec<Value>) -> Vec<Box<dyn postgres::types::ToSql + Sync>> {
+/// Encode against the prepared parameter types, including typed NULLs and SQL integer literals.
+fn pg_values(
+    values: Vec<Value>,
+    kinds: &[PgType],
+) -> rusqlite::Result<Vec<Box<dyn postgres::types::ToSql + Sync>>> {
+    if values.len() != kinds.len() {
+        return Err(rusqlite::Error::InvalidParameterCount(
+            values.len(),
+            kinds.len(),
+        ));
+    }
     values
         .into_iter()
-        .map(|value| match value {
-            Value::Null => Box::new(Option::<i64>::None) as Box<dyn postgres::types::ToSql + Sync>,
-            Value::Integer(number) => Box::new(number),
-            Value::Real(number) => Box::new(number),
-            Value::Text(text) => Box::new(text),
-            Value::Blob(bytes) => Box::new(bytes),
+        .zip(kinds)
+        .map(|(value, kind)| {
+            let encoded: Box<dyn postgres::types::ToSql + Sync> = match (value, kind) {
+                (Value::Null, &PgType::INT2) => Box::new(Option::<i16>::None),
+                (Value::Null, &PgType::INT4) => Box::new(Option::<i32>::None),
+                (Value::Null, &PgType::INT8) => Box::new(Option::<i64>::None),
+                (Value::Null, &PgType::FLOAT4) => Box::new(Option::<f32>::None),
+                (Value::Null, &PgType::FLOAT8) => Box::new(Option::<f64>::None),
+                (Value::Null, &PgType::BOOL) => Box::new(Option::<bool>::None),
+                (Value::Null, &PgType::BYTEA) => Box::new(Option::<Vec<u8>>::None),
+                (Value::Null, _) => Box::new(Option::<String>::None),
+                (Value::Integer(number), &PgType::INT2) => {
+                    Box::new(i16::try_from(number).map_err(|error| {
+                        rusqlite::Error::ToSqlConversionFailure(Box::new(error))
+                    })?)
+                }
+                (Value::Integer(number), &PgType::INT4) => {
+                    Box::new(i32::try_from(number).map_err(|error| {
+                        rusqlite::Error::ToSqlConversionFailure(Box::new(error))
+                    })?)
+                }
+                (Value::Integer(number), _) => Box::new(number),
+                (Value::Real(number), _) => Box::new(number),
+                (Value::Text(text), _) => Box::new(text),
+                (Value::Blob(bytes), _) => Box::new(bytes),
+            };
+            Ok(encoded)
         })
         .collect()
 }
@@ -466,28 +514,36 @@ fn execute_postgres(
     sql: &str,
     params: Vec<Value>,
 ) -> rusqlite::Result<usize> {
-    let params = pg_values(params);
+    let statement = client.prepare(&translate(sql)).map_err(pg_error)?;
+    execute_postgres_statement(client, &statement, params)
+}
+
+/// Reusing the driver's prepared statement avoids a parse/describe round trip per batch item.
+fn execute_postgres_statement(
+    client: &mut postgres::Client,
+    statement: &postgres::Statement,
+    params: Vec<Value>,
+) -> rusqlite::Result<usize> {
+    let params = pg_values(params, statement.params())?;
     let refs = params
         .iter()
         .map(|value| value.as_ref() as &(dyn postgres::types::ToSql + Sync))
         .collect::<Vec<_>>();
-    let sql = translate(sql);
-    let count = client.execute(&sql, &refs).map_err(pg_error)?;
+    let count = client.execute(statement, &refs).map_err(pg_error)?;
     usize::try_from(count).map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))
 }
 
 fn postgres_rows(
     client: &mut postgres::Client,
-    sql: &str,
+    statement: &postgres::Statement,
     params: Vec<Value>,
 ) -> rusqlite::Result<Vec<Row>> {
-    let params = pg_values(params);
+    let params = pg_values(params, statement.params())?;
     let refs = params
         .iter()
         .map(|value| value.as_ref() as &(dyn postgres::types::ToSql + Sync))
         .collect::<Vec<_>>();
-    let sql = translate(sql);
-    let rows = client.query(&sql, &refs).map_err(pg_error)?;
+    let rows = client.query(statement, &refs).map_err(pg_error)?;
     rows.iter()
         .map(|row| {
             let values = row
@@ -578,4 +634,52 @@ fn translate(sql: &str) -> String {
         translated.push_str(" ON CONFLICT DO NOTHING");
     }
     translated
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// SQL may infer narrow integer types from literals; never truncate larger Rust values.
+    #[test]
+    fn postgres_parameters_reject_overflow_and_wrong_arity() {
+        assert!(pg_values(vec![Value::Integer(i64::MAX)], &[PgType::INT4]).is_err());
+        assert!(pg_values(vec![Value::Integer(i64::MAX)], &[PgType::INT2]).is_err());
+        assert!(pg_values(vec![Value::Null], &[]).is_err());
+    }
+
+    /// Test both NULL and non-NULL values on one prepared statement, as sync batches do.
+    #[test]
+    fn postgres_prepared_parameters_keep_their_sql_types() -> anyhow::Result<()> {
+        let Ok(url) = std::env::var("TEST_POSTGRES_URL") else {
+            return Ok(());
+        };
+        let tls = MakeTlsConnector::new(native_tls::TlsConnector::builder().build()?);
+        let mut client = postgres::Client::connect(&url, tls)?;
+        let statement = client.prepare("SELECT $1::SMALLINT,$2::INTEGER,$3::BIGINT,$4::TEXT,$5::DOUBLE PRECISION,$6::BYTEA,$7::BOOLEAN,$8::REAL")?;
+        let rows = postgres_rows(&mut client, &statement, vec![Value::Null; 8])?;
+        assert!(rows[0].values.iter().all(|value| *value == Value::Null));
+        let values = vec![
+            Value::Integer(7),
+            Value::Integer(8),
+            Value::Integer(9),
+            Value::Text("fixture".into()),
+            Value::Real(1.5),
+            Value::Blob(vec![1, 2]),
+        ];
+        let statement = client.prepare(
+            "SELECT $1::SMALLINT,$2::INTEGER,$3::BIGINT,$4::TEXT,$5::DOUBLE PRECISION,$6::BYTEA",
+        )?;
+        assert_eq!(
+            postgres_rows(&mut client, &statement, values.clone())?[0].values,
+            values
+        );
+        assert!(
+            postgres_rows(&mut client, &statement, vec![Value::Null; 6])?[0]
+                .values
+                .iter()
+                .all(|value| *value == Value::Null)
+        );
+        Ok(())
+    }
 }

@@ -1,7 +1,7 @@
 //! Private, revisioned account preferences and bookmark recipes. Never publishes location data.
 use crate::api::{ApiError, AppState, run_db};
 use crate::auth;
-use crate::db::params;
+use crate::db::{Connection, params};
 use crate::store::CellStore;
 use axum::extract::{DefaultBodyLimit, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -69,58 +69,81 @@ impl CellStore {
         )?)
     }
 
+    #[cfg(test)]
     pub(crate) fn sync_generation(&self, account: i64) -> anyhow::Result<i64> {
-        Ok(self
-            .connection()?
-            .query_row(
-                "SELECT generation FROM account_sync_state WHERE account_id=?1",
-                [account],
-                |row| row.get(0),
-            )
-            .optional()?
-            .unwrap_or(0))
+        sync_generation_on(&self.connection()?, account)
     }
 
     pub(crate) fn sync_entries(&self, account: i64) -> anyhow::Result<Vec<Entry>> {
-        let connection = self.connection()?;
-        let mut statement = connection.prepare("SELECT kind,key,revision,value_json FROM account_sync_entries WHERE account_id=?1 ORDER BY kind,key")?;
-        let rows = statement.query_map([account], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, i64>(2)?,
-                row.get::<_, Option<String>>(3)?,
-            ))
-        })?;
-        rows.map(|row| {
-            let (kind, key, revision, json) = row?;
-            Ok(Entry {
-                kind,
-                key,
-                revision,
-                value: json.map(|value| serde_json::from_str(&value)).transpose()?,
-            })
-        })
-        .collect()
+        sync_entries_on(&self.connection()?, account)
     }
 
-    /// Conditional writes share a transaction; retries compare values before reporting conflicts.
+    #[cfg(test)]
     fn update_sync(&self, account: i64, changes: &[Entry]) -> anyhow::Result<Option<Vec<String>>> {
-        let mut connection = self.connection()?;
-        let transaction = connection.transaction()?;
-        let mut count: i64 = transaction.query_row(
-            "SELECT COUNT(*) FROM account_sync_entries WHERE account_id=?1",
+        update_sync_on(&mut self.connection()?, account, changes)
+    }
+}
+
+fn sync_generation_on(connection: &Connection, account: i64) -> anyhow::Result<i64> {
+    Ok(connection
+        .query_row(
+            "SELECT generation FROM account_sync_state WHERE account_id=?1",
             [account],
             |row| row.get(0),
-        )?;
-        let mut conflicts = Vec::new();
-        for entry in changes {
-            let previous: Option<(i64,Option<String>)> = transaction.query_row("SELECT revision,value_json FROM account_sync_entries WHERE account_id=?1 AND kind=?2 AND key=?3",params![account,entry.kind,entry.key],|row| Ok((row.get(0)?,row.get(1)?))).optional()?;
-            let value = entry
-                .value
-                .as_ref()
-                .map(serde_json::to_string)
-                .transpose()?;
+        )
+        .optional()?
+        .unwrap_or(0))
+}
+
+fn sync_entries_on(connection: &Connection, account: i64) -> anyhow::Result<Vec<Entry>> {
+    let mut statement = connection.prepare("SELECT kind,key,revision,value_json FROM account_sync_entries WHERE account_id=?1 ORDER BY kind,key")?;
+    let rows = statement.query_map([account], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, Option<String>>(3)?,
+        ))
+    })?;
+    rows.map(|row| {
+        let (kind, key, revision, json) = row?;
+        Ok(Entry {
+            kind,
+            key,
+            revision,
+            value: json.map(|value| serde_json::from_str(&value)).transpose()?,
+        })
+    })
+    .collect()
+}
+
+/// Encode before opening the transaction and prepare each batch query only once.
+#[cfg_attr(feature = "profiling", hotpath::measure)]
+fn update_sync_on(
+    connection: &mut Connection,
+    account: i64,
+    changes: &[Entry],
+) -> anyhow::Result<Option<Vec<String>>> {
+    let encoded = changes
+        .iter()
+        .map(|entry| entry.value.as_ref().map(serde_json::to_string).transpose())
+        .collect::<Result<Vec<_>, _>>()?;
+    let transaction = connection.transaction()?;
+    let mut count: i64 = transaction.query_row(
+        "SELECT COUNT(*) FROM account_sync_entries WHERE account_id=?1",
+        [account],
+        |row| row.get(0),
+    )?;
+    let mut conflicts = Vec::new();
+    {
+        let mut previous_query = transaction.prepare("SELECT revision,value_json FROM account_sync_entries WHERE account_id=?1 AND kind=?2 AND key=?3")?;
+        let mut upsert = transaction.prepare("INSERT INTO account_sync_entries(account_id,kind,key,revision,value_json) VALUES (?1,?2,?3,?4,?5) ON CONFLICT(account_id,kind,key) DO UPDATE SET revision=excluded.revision,value_json=excluded.value_json")?;
+        for (entry, value) in changes.iter().zip(encoded) {
+            let previous: Option<(i64, Option<String>)> = previous_query
+                .query_row(params![account, entry.kind, entry.key], |row| {
+                    Ok((row.get(0)?, row.get(1)?))
+                })
+                .optional()?;
             let revision = previous.as_ref().map_or(0, |(revision, _)| *revision);
             if previous
                 .as_ref()
@@ -138,54 +161,53 @@ impl CellStore {
                     return Ok(None);
                 }
             }
-            transaction.execute("INSERT INTO account_sync_entries(account_id,kind,key,revision,value_json) VALUES (?1,?2,?3,?4,?5) ON CONFLICT(account_id,kind,key) DO UPDATE SET revision=excluded.revision,value_json=excluded.value_json", params![account,entry.kind,entry.key,revision+1,value])?;
+            upsert.execute(params![account, entry.kind, entry.key, revision + 1, value])?;
         }
-        transaction.commit()?;
-        Ok(Some(conflicts))
     }
+    transaction.commit()?;
+    Ok(Some(conflicts))
 }
 
-async fn snapshot(
-    state: &AppState,
+/// Read a snapshot on the operation's existing connection, under the caller's read/write gate.
+#[cfg_attr(feature = "profiling", hotpath::measure)]
+fn snapshot_on(
+    connection: &Connection,
     account: i64,
+    notice_version: String,
     conflicts: Vec<String>,
-) -> Result<Json<Snapshot>, ApiError> {
-    let notice_version = notice_version(state);
-    let version = notice_version.clone();
-    let store = state.store.clone();
-    let (enabled, generation, entries) = run_db(move || {
-        let enabled = store.has_privacy_consent(account, "account_sync", &version)?;
-        Ok((
-            enabled,
-            store.sync_generation(account)?,
-            if enabled {
-                store.sync_entries(account)?
-            } else {
-                Vec::new()
-            },
-        ))
-    })
-    .await?;
-    Ok(Json(Snapshot {
+) -> anyhow::Result<Snapshot> {
+    let enabled =
+        CellStore::has_privacy_consent_on(connection, account, "account_sync", &notice_version)?;
+    Ok(Snapshot {
         version: 1,
         account_id: account,
-        generation,
+        generation: sync_generation_on(connection, account)?,
         enabled,
+        entries: if enabled {
+            sync_entries_on(connection, account)?
+        } else {
+            Vec::new()
+        },
         notice_version,
-        entries,
         conflicts,
-    }))
+    })
 }
 
+#[cfg_attr(feature = "profiling", hotpath::measure)]
 async fn read(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Snapshot>, ApiError> {
     let account = auth::bearer_account(&state, &headers).await?;
-    let _gate = state.write_gate.read().await;
-    snapshot(&state, account.id, Vec::new()).await
+    let _gate = crate::api::read_gate_wait(&state).await;
+    let version = notice_version(&state);
+    let store = state.store.clone();
+    run_db(move || snapshot_on(&store.connection()?, account.id, version, Vec::new()))
+        .await
+        .map(Json)
 }
 
+#[cfg_attr(feature = "profiling", hotpath::measure)]
 async fn write(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -203,27 +225,32 @@ async fn write(
     {
         return Err(ApiError(StatusCode::BAD_REQUEST, "INVALID_SYNC_DATA"));
     }
-    let _gate = state.write_gate.write().await;
+    let _gate = crate::api::write_gate_wait(&state).await;
     let store = state.store.clone();
     let version = notice_version(&state);
-    let permitted = run_db(move || {
-        Ok(
-            store.has_privacy_consent(account.id, "account_sync", &version)?
-                && store.sync_generation(account.id)? == update.generation,
-        )
+    let result = run_db(move || {
+        let mut connection = store.connection()?;
+        if !CellStore::has_privacy_consent_on(&connection, account.id, "account_sync", &version)?
+            || sync_generation_on(&connection, account.id)? != update.generation
+        {
+            return Ok(Err("SYNC_CONSENT_CHANGED"));
+        }
+        let Some(conflicts) = update_sync_on(&mut connection, account.id, &update.changes)? else {
+            return Ok(Err("SYNC_QUOTA_EXCEEDED"));
+        };
+        snapshot_on(&connection, account.id, version, conflicts).map(Ok)
     })
     .await?;
-    if !permitted {
-        return Err(ApiError(StatusCode::CONFLICT, "SYNC_CONSENT_CHANGED"));
-    }
-    let store = state.store.clone();
-    let conflicts = run_db(move || store.update_sync(account.id, &update.changes))
-        .await?
-        .ok_or(ApiError(
-            StatusCode::PAYLOAD_TOO_LARGE,
-            "SYNC_QUOTA_EXCEEDED",
-        ))?;
-    snapshot(&state, account.id, conflicts).await
+    result.map(Json).map_err(|code| {
+        ApiError(
+            if code == "SYNC_QUOTA_EXCEEDED" {
+                StatusCode::PAYLOAD_TOO_LARGE
+            } else {
+                StatusCode::CONFLICT
+            },
+            code,
+        )
+    })
 }
 
 fn valid_entry(entry: &Entry) -> bool {

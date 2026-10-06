@@ -2,19 +2,20 @@
 
 [Server guide](readme.md) · [Newcomer glossary](glossary.md)
 
-Use repeatable local traffic to find expensive server operations and compare changes. The optional
-profiling feature records function timing; the uninstrumented release build is used for speed
-comparisons. These synthetic loopback numbers are not production latency.
+Use synthetic local traffic to find expensive operations. Use ordinary release builds to compare
+speed: instrumentation adds overhead, and loopback timings do not represent production latency.
 
-## Measure server work
+## Capture function timings
 
-The optional `profiling` feature adds hotpath-rs function timing around CSV parsing, upload
-transactions, movement checks, consensus recomputation, moderation visibility, account queries,
-diagnostic cleanup, and downloads. It is absent from ordinary server builds. Give the profiled
-server `--profile-output path.json` and stop it with SIGTERM or
-Ctrl-C to flush the report. Set `HOTPATH_METRICS_SERVER_OFF=true` to disable hotpath's optional
-local metrics listener; the JSON stays on disk and is not uploaded. Concurrent request spans
-overlap, so hotpath function percentages are not additive.
+The optional `profiling` feature enables the pinned hotpath-rs dependency. Ordinary builds do not
+include it. Existing cell-sharing probes are complemented by trip validation and storage, account
+sync, and finite air-alert provider and delivery operations.
+
+`blocking_queue` measures admission to Tokio's blocking pool; `blocking_work` measures the closure
+executed there. `read_gate_wait` and `write_gate_wait` measure lock admission for trips and sync.
+Handler spans include those waits. Overlapping spans are not additive, and elapsed time includes
+I/O waiting rather than only CPU execution. Long-lived WebSocket sessions and provider loops are
+not measured as single operations.
 
 ```bash
 cargo build --release --manifest-path server/Cargo.toml --features profiling
@@ -22,66 +23,104 @@ HOTPATH_METRICS_SERVER_OFF=true server/target/release/imu-nav-cell-server \
     --bind 127.0.0.1 --port 8080 --data cells.sqlite3 --profile-output server-hotpath.json
 ```
 
-`tools/traffic_sim.py` drives the **actual HTTP server** on loopback with app-compatible gzip CSV.
-Four simulated phones make concurrent uploads over four sync rounds. Each 1,000-row upload mixes
-LTE, UMTS, GSM and NR cells across MCC 255/256, mostly shared cells, private cells, small repeat
-updates and 1% invalid ranges.
+Stop with SIGTERM or Ctrl-C to flush the local JSON report. Disable the metrics listener with
+`HOTPATH_METRICS_SERVER_OFF=true`. Probes use static function names, without arguments, credentials,
+account IDs, SQL parameters, provider URLs, or trip coordinates. Reports are not uploaded.
 
-Each round follows uploads with a full or incremental gzip download,
-removals CSV, tower list and detail, authenticated account and administrator pages, account export,
-authentication status, diagnostic session upload and retry, diagnostic pages, Data Usage, and health.
-The first round also quarantines one published tower.
+## Repeatable HTTP workloads
 
-Browser pages use actual login cookies and
-the diagnostics setting uses its administrator form and CSRF token. The driver
-prepares payloads before timing, starts a fresh SQLite database for each repetition, and checks a
-stable database fingerprint covering towers, contributions, moderation and diagnostic entries while
-excluding wall-clock update timestamps.
+The Python driver starts the actual server on loopback. Four synthetic accounts concurrently upload
+cells, synchronize bookmarks, and archive trips. It also exercises browser login and CSRF,
+diagnostics, moderation, exports, trip playback downloads, paginated lists, deletions, retries,
+revision conflicts, and tombstones. All fixtures are synthetic.
 
-It reports wall time and server process CPU time separately.
-It needs Python 3 on Linux and uses only the standard library.
+Each repetition uses a new database. Payload preparation, registration, consent, and pagination
+fixtures precede the timed phase. One warm-up repetition is excluded by default. Stored results
+are fingerprinted, excluding wall-clock timestamps, and HTTP responses are checked for correctness.
+Coordinate fixtures use exactly representable fractions, so concurrent upload order does not change
+floating-point sums. Moderation targets a fixed shared tower instead of choosing by update time.
+The driver requires Linux and Python 3 with its standard library.
 
 ```bash
 python3 server/tools/traffic_sim.py --binary server/target/release/imu-nav-cell-server \
     --out captures/server-profile --repetitions 1 --profile
-# Rebuild without --features profiling for comparable uninstrumented timing:
-cargo build --release --manifest-path server/Cargo.toml
+
+# PostgreSQL runs additionally require Docker and use postgres:18-bookworm.
 python3 server/tools/traffic_sim.py --binary server/target/release/imu-nav-cell-server \
-    --out captures/server-timing --repetitions 7
+    --backend postgres --out captures/server-profile-pg --repetitions 1 --profile
 ```
 
-The initial profile put upload transactions well ahead of CSV decoding and consensus arithmetic.
-The transaction previously prepared the same movement, contribution, recomputation and consensus
-SQL again for each row. Those statements now use rusqlite's per-connection statement cache within
-the existing transaction. A before/after run used the same Python driver, host, compiler, inputs,
-seven repetitions and uninstrumented release builds. All repetitions matched the same accepted /
-rejected totals (15,840 / 160), contribution count (13,464), consensus count (6,342), and database
-fingerprint.
+PostgreSQL uses a disposable container bound only to loopback with trust authentication and synthetic
+data. Use `--docker-runtime runc` if the host needs an explicit OCI runtime. It accepts no external database URL and stops the container on exit. Each repetition gets a
+separate database. Never use this trust configuration for a deployed server.
 
-| Upload size           | Median wall time before → after | Median server CPU before → after |
-| --------------------- | ------------------------------: | -------------------------------: |
-| 1,000 rows per upload |       1,251 → 782 ms (38% less) |          775 → 373 ms (52% less) |
-| 100 rows per upload   |         392 → 233 ms (41% less) |          252 → 126 ms (50% less) |
+Tune the workload with `--rounds`, `--rows`, `--trip-points`, and `--sync-batch`. Defaults are four
+rounds, 1,000 cell rows, 10,000 trip positions, and 128 sync entries per batch. Bounds keep fixture
+sizes within server limits. Use a fresh output directory for each invocation.
 
-Local gitignored evidence is in `captures/server-traffic-reviewed-{before,after}/`,
-`captures/server-traffic-reviewed-small-{before,after}/` and the hotpath captures under
-`captures/server-traffic-profile-{before,after}/`. These are synthetic local protocol loads, not
-observed production traffic or Internet latency measurements.
+## What the current optimizations do
 
-An expanded route profile found repeated moderation lookups after uploads and while rendering the
-administrator tower page. Upload notifications now fetch quarantined keys in bounded batches on one
-database connection, and the dashboard query returns moderation status with each tower.
+Account synchronization reuses one connection for each snapshot or update operation. A batch
+prepares its lookup and upsert statements once. PostgreSQL retains the driver's prepared statement,
+so repeated executions avoid parsing the same SQL again. Values are encoded using the statement's
+parameter types, including nullable bookmark values.
 
-With the same
-expanded driver, compiler and host, three uninstrumented release repetitions of two rounds with
-1,000 rows per phone reduced median wall time from 1,997 to 512 ms (74%). All runs produced the
-same 7,920 accepted and 80 rejected rows, 200 stored diagnostic entries, and database fingerprint.
-These measurements are synthetic loopback traffic on a development host.
+Trip uploads validate and serialize their documents on blocking workers before waiting for the
+write gate. Consent and quota enforcement remain inside the protected database operation. The
+existing transaction and write-gate ordering still coordinates privacy changes and concurrent writes.
+
+## Compare an optimization
+
+Save the baseline binary as `captures/server-before` before editing the implementation, then build the candidate with
+the same toolchain and release configuration. `--baseline` alternates run order and checks baseline and
+candidate fingerprints together. Use identical workload arguments for both backends.
+
+```bash
+cargo build --release --manifest-path server/Cargo.toml
+python3 server/tools/traffic_sim.py --binary server/target/release/imu-nav-cell-server \
+    --baseline captures/server-before --out captures/server-timing --repetitions 7
+python3 server/tools/traffic_sim.py --binary server/target/release/imu-nav-cell-server \
+    --baseline captures/server-before --backend postgres --out captures/server-timing-pg --repetitions 7
+```
+
+Reports include binary hash, source revision, toolchain, workload configuration, throughput, and
+per-endpoint median/p95/max latency. Source revision and dirty status describe the checkout at
+invocation; the binary hash identifies the exact executable. Compare fingerprints between baseline and candidate as well as
+across repetitions. Investigate a reproducible regression on either backend before keeping a change.
+Avoid running unrelated CPU-intensive jobs during measurement.
+
+Server CPU and peak RSS are sampled from `/proc` after the measured phase. They include server
+startup and fixture setup, excluding the separate administrator setup process and shutdown/profile
+flushing. CPU uses kernel clock ticks, so small differences below that resolution are not meaningful.
+Wall time and throughput cover only measured requests. PostgreSQL CPU covers the measured phase plus
+the small cost of container probes. Its peak memory is the container's cumulative cgroup peak,
+including database cache and earlier repetitions. These are separate from server process costs.
+Do not compare SQLite server CPU with PostgreSQL server CPU as total database cost.
+
+Keep machine-specific measurements and profiles in gitignored `captures/`, rather than treating
+historical timings as universal crate documentation. CI runs correctness smoke workloads without
+hardware-dependent latency thresholds.
+
+## Air-alert delivery
+
+A bounded test uses a local mock provider and four WebSocket subscribers. It alternates twenty
+synthetic alerts and clears, checking duplicate suppression and delivery. It never contacts the
+real provider. Run it alone when collecting a report so unrelated tests cannot enter its profile.
+
+```bash
+mkdir -p captures
+HOTPATH_METRICS_SERVER_OFF=true AIR_ALERT_PROFILE_OUTPUT="$PWD/captures/air-alerts.json" \
+    cargo test --manifest-path server/Cargo.toml --features profiling --lib \
+    air_alerts::tests::profile_air_alert_delivery -- --exact
+```
+
+## Correctness checks
 
 ```bash
 cargo test --manifest-path server/Cargo.toml
-cargo clippy --manifest-path server/Cargo.toml --all-targets -- -W clippy::pedantic -D warnings
+cargo test --manifest-path server/Cargo.toml --features profiling
+cargo clippy --manifest-path server/Cargo.toml --all-targets --all-features -- -D warnings
 ```
 
-PostgreSQL integration tests also run when `TEST_POSTGRES_URL` points at a disposable database.
-The CI coverage job supplies PostgreSQL 18 and includes these tests in the server coverage gate.
+Set `TEST_POSTGRES_URL` to a disposable test database to exercise PostgreSQL contracts. CI provides
+PostgreSQL 18 for these tests and enforces the server coverage gate.

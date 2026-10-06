@@ -497,6 +497,7 @@ impl CellStore {
         Ok(())
     }
 
+    #[cfg_attr(feature = "profiling", hotpath::measure)]
     pub(crate) fn connection(&self) -> Result<Connection> {
         let connection = match &self.backend {
             StoreBackend::Sqlite(path) => {
@@ -536,7 +537,16 @@ impl CellStore {
         purpose: &str,
         version: &str,
     ) -> Result<bool> {
-        let connection = self.connection()?;
+        Self::has_privacy_consent_on(&self.connection()?, account_id, purpose, version)
+    }
+
+    /// Reuse the caller's connection while the write gate keeps consent ordering stable.
+    pub(crate) fn has_privacy_consent_on(
+        connection: &Connection,
+        account_id: i64,
+        purpose: &str,
+        version: &str,
+    ) -> Result<bool> {
         let current: Option<(String, bool)> = connection.query_row(
             "SELECT notice_version,granted FROM privacy_consents WHERE account_id=?1 AND purpose=?2 ORDER BY id DESC LIMIT 1",
             params![account_id,purpose], |row| Ok((row.get(0)?,row.get(1)?)),

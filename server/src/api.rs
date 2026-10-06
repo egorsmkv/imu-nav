@@ -655,10 +655,18 @@ pub(crate) fn path_key(
 pub(crate) async fn run_db<T: Send + 'static>(
     operation: impl FnOnce() -> anyhow::Result<T> + Send + 'static,
 ) -> Result<T, ApiError> {
-    tokio::task::spawn_blocking(operation)
-        .await
-        .map_err(ApiError::from)?
-        .map_err(ApiError::from)
+    #[cfg(feature = "profiling")]
+    let queued = hotpath::MeasurementGuardSync::new("blocking_queue", false, false);
+    tokio::task::spawn_blocking(move || {
+        #[cfg(feature = "profiling")]
+        drop(queued);
+        #[cfg(feature = "profiling")]
+        let _work = hotpath::MeasurementGuardSync::new("blocking_work", false, false);
+        operation()
+    })
+    .await
+    .map_err(ApiError::from)?
+    .map_err(ApiError::from)
 }
 
 fn valid_device_id(value: &str) -> bool {
@@ -693,3 +701,15 @@ fn now_s() -> i64 {
 
 #[cfg(test)]
 mod tests;
+
+/// Measure only admission waiting, leaving the existing privacy/write ordering unchanged.
+#[cfg_attr(feature = "profiling", hotpath::measure)]
+pub(crate) async fn write_gate_wait(state: &AppState) -> tokio::sync::RwLockWriteGuard<'_, ()> {
+    state.write_gate.write().await
+}
+
+/// Read admission is separate from the work performed while holding the guard.
+#[cfg_attr(feature = "profiling", hotpath::measure)]
+pub(crate) async fn read_gate_wait(state: &AppState) -> tokio::sync::RwLockReadGuard<'_, ()> {
+    state.write_gate.read().await
+}

@@ -96,12 +96,7 @@ fn main() -> Result<()> {
         }
     }
     #[cfg(feature = "profiling")]
-    let _profile_guard = options.profile_output.as_ref().map(|path| {
-        hotpath::HotpathGuardBuilder::new("imu-nav-cell-server")
-            .format(hotpath::Format::JsonPretty)
-            .output_path(path)
-            .build()
-    });
+    let _profile_guard = start_profile(options.profile_output.as_deref());
     let default_policy = Policy {
         min_devices: settings.min_devices,
         max_samples_per_device: settings.max_samples,
@@ -149,7 +144,7 @@ fn main() -> Result<()> {
     import_seed_towers(&options, &store, &policy)?;
     let (published, contributions) = store.counts(&policy)?;
     let state = AppState::new(
-        store,
+        store.clone(),
         ServerConfig {
             trip_archive: settings.trip_archive.clone(),
             mail,
@@ -171,7 +166,22 @@ fn main() -> Result<()> {
         policy.min_devices,
     ));
     drop(runtime);
+    // Synchronous PostgreSQL connections own runtimes. Keep the pool alive until all async
+    // tasks have stopped, then close its last owner outside Tokio (including error exits).
+    drop(store);
     result
+}
+
+/// Keep profiling local and optional; the guard flushes after server shutdown.
+#[cfg(feature = "profiling")]
+fn start_profile(output: Option<&std::path::Path>) -> Option<hotpath::HotpathGuard> {
+    output.map(|path| {
+        hotpath::HotpathGuardBuilder::new("imu-nav-cell-server")
+            .format(hotpath::Format::JsonPretty)
+            .functions_limit(200)
+            .output_path(path)
+            .build()
+    })
 }
 
 fn import_seed_towers(options: &Options, store: &CellStore, policy: &Policy) -> Result<()> {

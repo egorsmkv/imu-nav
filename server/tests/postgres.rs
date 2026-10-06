@@ -646,6 +646,33 @@ async fn exercise_account_sync(base: &str) -> Result<()> {
         .json()
         .await?;
     assert_eq!(saved["entries"][0]["value"], "uk");
+    // One prepared upsert handles both a tombstone and JSON without retaining old parameters.
+    let mixed = json!({"version":1,"generation":0,"changes":[
+        {"kind":"setting","key":"language","revision":0,"value":"en"},
+        {"kind":"bookmark","key":"deleted","revision":0,"value":null},
+        {"kind":"bookmark","key":"place","revision":0,"value":{"type":"place","name":"Synthetic","endpoint":{"point":{"lat":50,"lon":30},"label":null}}}
+    ]});
+    for _ in 0..2 {
+        let result: serde_json::Value = client
+            .put(&endpoint)
+            .bearer_auth(token)
+            .json(&mixed)
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        assert_eq!(result["conflicts"], json!(["setting:language"]));
+        assert_eq!(result["entries"].as_array().unwrap().len(), 3);
+        assert!(
+            result["entries"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|entry| entry["revision"] == 1)
+        );
+    }
+
     client
         .delete(&consent)
         .bearer_auth(token)
@@ -663,5 +690,23 @@ async fn exercise_account_sync(base: &str) -> Result<()> {
     assert_eq!(cleared["enabled"], false);
     assert_eq!(cleared["generation"], 1);
     assert_eq!(cleared["entries"], json!([]));
+    client
+        .put(&consent)
+        .bearer_auth(token)
+        .json(&json!({"notice_version":"v1"}))
+        .send()
+        .await?
+        .error_for_status()?;
+    assert_eq!(
+        client
+            .put(&endpoint)
+            .bearer_auth(token)
+            .json(&mixed)
+            .send()
+            .await?
+            .status(),
+        StatusCode::CONFLICT
+    );
+
     Ok(())
 }

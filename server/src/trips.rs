@@ -77,6 +77,7 @@ fn coordinate(lat: f64, lon: f64) -> bool {
         && (-180.0..=180.0).contains(&lon)
 }
 impl Document {
+    #[cfg_attr(feature = "profiling", hotpath::measure)]
     fn valid(&self) -> bool {
         let summary = &self.summary;
         self.version == 1
@@ -198,6 +199,7 @@ fn valid_id(id: &str) -> Result<(), ApiError> {
     }
 }
 impl CellStore {
+    #[cfg_attr(feature = "profiling", hotpath::measure)]
     fn trip(&self, account: i64, id: &str) -> anyhow::Result<Option<String>> {
         Ok(self
             .connection()?
@@ -208,6 +210,7 @@ impl CellStore {
             )
             .optional()?)
     }
+    #[cfg_attr(feature = "profiling", hotpath::measure)]
     fn save_trip(
         &self,
         account: i64,
@@ -260,6 +263,7 @@ impl CellStore {
         Ok("OK")
     }
 }
+#[cfg_attr(feature = "profiling", hotpath::measure)]
 async fn upload(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -268,18 +272,9 @@ async fn upload(
 ) -> Result<StatusCode, ApiError> {
     let account = owner(&state, &headers, true).await?;
     valid_id(&id)?;
-    if !document.valid() {
-        return Err(ApiError(StatusCode::BAD_REQUEST, "INVALID_TRIP"));
-    }
-    let encoded = serde_json::to_string(&document).map_err(anyhow::Error::from)?;
-    if encoded.len() > state.config.trip_archive.upload_bytes {
-        return Err(ApiError(StatusCode::PAYLOAD_TOO_LARGE, "TRIP_TOO_LARGE"));
-    }
-    let summary = serde_json::to_string(
-        &serde_json::json!({"summary":document.summary,"incomplete":document.incomplete}),
-    )
-    .map_err(anyhow::Error::from)?;
-    let _gate = state.write_gate.write().await;
+    let upload_bytes = state.config.trip_archive.upload_bytes;
+    let prepared = run_db(move || Ok(prepare_trip(&document, upload_bytes))).await??;
+    let _gate = crate::api::write_gate_wait(&state).await;
     let store = state.store.clone();
     let version = crate::account_sync::notice_version(&state);
     let limits = state.config.trip_archive.clone();
@@ -287,9 +282,9 @@ async fn upload(
         store.save_trip(
             account,
             &id,
-            &encoded,
-            &summary,
-            document.summary.start_ms,
+            &prepared.encoded,
+            &prepared.summary,
+            prepared.start_ms,
             (&limits, &version),
         )
     })
@@ -300,12 +295,41 @@ async fn upload(
         _ => Err(ApiError(StatusCode::CONFLICT, result)),
     }
 }
+/// Own the encoded upload so no document copy crosses the database boundary.
+struct PreparedTrip {
+    encoded: String,
+    summary: String,
+    start_ms: i64,
+}
+
+/// Large coordinate arrays must not monopolize a Tokio executor thread.
+#[cfg_attr(feature = "profiling", hotpath::measure)]
+fn prepare_trip(document: &Document, upload_bytes: usize) -> Result<PreparedTrip, ApiError> {
+    if !document.valid() {
+        return Err(ApiError(StatusCode::BAD_REQUEST, "INVALID_TRIP"));
+    }
+    let encoded = serde_json::to_string(document).map_err(anyhow::Error::from)?;
+    if encoded.len() > upload_bytes {
+        return Err(ApiError(StatusCode::PAYLOAD_TOO_LARGE, "TRIP_TOO_LARGE"));
+    }
+    let summary = serde_json::to_string(
+        &serde_json::json!({"summary":document.summary,"incomplete":document.incomplete}),
+    )
+    .map_err(anyhow::Error::from)?;
+    Ok(PreparedTrip {
+        encoded,
+        summary,
+        start_ms: document.summary.start_ms,
+    })
+}
+
 #[derive(Default, Deserialize)]
 struct Filter {
     offset: Option<usize>,
     from_ms: Option<i64>,
     to_ms: Option<i64>,
 }
+#[cfg_attr(feature = "profiling", hotpath::measure)]
 async fn list(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -316,7 +340,7 @@ async fn list(
     let version = crate::account_sync::notice_version(&state);
     let notice = state.config.privacy.clone();
     let limits = state.config.trip_archive.clone();
-    let _gate = state.write_gate.read().await;
+    let _gate = crate::api::read_gate_wait(&state).await;
     run_db(move || {
         let enabled = store.has_privacy_consent(account,"trip_archive",&version)?;
         let connection = store.connection()?;
@@ -327,6 +351,7 @@ async fn list(
         Ok(Json(serde_json::json!({"trips":trips,"more":more,"bytes":bytes,"count":count,"limits":limits,"enabled":enabled,"notice_version":version,"notice":notice})))
     }).await
 }
+#[cfg_attr(feature = "profiling", hotpath::measure)]
 async fn read(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -334,7 +359,7 @@ async fn read(
 ) -> Result<Response, ApiError> {
     let account = owner(&state, &headers, false).await?;
     valid_id(&id)?;
-    let _gate = state.write_gate.read().await;
+    let _gate = crate::api::read_gate_wait(&state).await;
     let store = state.store.clone();
     let document = run_db(move || store.trip(account, &id))
         .await?
@@ -348,6 +373,7 @@ async fn read(
     )
         .into_response())
 }
+#[cfg_attr(feature = "profiling", hotpath::measure)]
 async fn delete(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -355,7 +381,7 @@ async fn delete(
 ) -> Result<StatusCode, ApiError> {
     let account = owner(&state, &headers, true).await?;
     valid_id(&id)?;
-    let _gate = state.write_gate.write().await;
+    let _gate = crate::api::write_gate_wait(&state).await;
     let store = state.store.clone();
     run_db(move || {
         store.connection()?.execute(
@@ -418,6 +444,27 @@ mod tests {
 
     fn example() -> Value {
         json!({"version":1,"incomplete":false,"summary":{"start_ms":1000,"end_ms":5000,"mode":"CAR","arrived":true,"distance_m":300.0,"duration_s":4.0,"moving_s":4.0,"blind_s":2.0,"blind_m":100.0,"max_uncertainty_m":10.0,"route_length_m":350.0,"reroutes":1},"positions":[{"time_ms":0,"segment":0,"lat":50.0,"lon":30.0,"uncertainty_m":5.0,"source":"GPS"},{"time_ms":1000,"segment":0,"lat":50.001,"lon":30.001,"uncertainty_m":10.0,"source":"DR"}],"routes":[{"time_ms":0,"segment":0,"points":[[30.0,50.0],[30.001,50.001]]}]})
+    }
+
+    #[test]
+    fn prepared_upload_preserves_validation_and_size_errors() {
+        let document = || serde_json::from_value::<Document>(example()).unwrap();
+        let prepared = prepare_trip(&document(), usize::MAX).unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(&prepared.encoded).unwrap(),
+            example()
+        );
+        assert!(prepare_trip(&document(), prepared.encoded.len()).is_ok());
+        let error = prepare_trip(&document(), prepared.encoded.len() - 1)
+            .err()
+            .unwrap();
+        assert_eq!(error.0, StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(error.1, "TRIP_TOO_LARGE");
+        let mut invalid = document();
+        invalid.positions.clear();
+        let error = prepare_trip(&invalid, 0).err().unwrap();
+        assert_eq!(error.0, StatusCode::BAD_REQUEST);
+        assert_eq!(error.1, "INVALID_TRIP");
     }
 
     #[test]

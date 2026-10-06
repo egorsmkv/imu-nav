@@ -102,6 +102,16 @@ jobs:
         env:
           TEST_POSTGRES_URL: postgresql://postgres:test@127.0.0.1:5432/imu_nav_test?sslmode=disable
         run: python3 tools/rust_coverage.py --suite '${{ matrix.suite }}'
+      - name: Build optional server profiling and smoke both backends
+        if: matrix.suite == 'server'
+        env:
+          RUSTUP_TOOLCHAIN: nightly-2026-09-25
+          HOTPATH_METRICS_SERVER_OFF: 'true'
+        run: |
+          cargo build --manifest-path server/Cargo.toml --features profiling
+          python3 server/tools/traffic_sim.py --binary server/target/debug/imu-nav-cell-server --out captures/server-smoke-sqlite --backend sqlite --rounds 1 --rows 100 --trip-points 100 --sync-batch 8 --warmups 0 --repetitions 1 --profile
+          python3 server/tools/traffic_sim.py --binary server/target/debug/imu-nav-cell-server --out captures/server-smoke-postgres --backend postgres --rounds 1 --rows 100 --trip-points 100 --sync-batch 8 --warmups 0 --repetitions 1 --profile
+          AIR_ALERT_PROFILE_OUTPUT="$PWD/captures/air-alerts.json" cargo test --manifest-path server/Cargo.toml --features profiling --lib air_alerts::tests::profile_air_alert_delivery -- --exact
       - name: Upload reports and diagnostics
         if: always()
         uses: actions/upload-artifact@v4

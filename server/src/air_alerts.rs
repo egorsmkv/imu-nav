@@ -134,6 +134,7 @@ impl AirAlertHub {
     }
 
     /// A valid full snapshot is the only source of published starts and all-clears.
+    #[cfg_attr(feature = "profiling", hotpath::measure)]
     fn apply(&self, active: Vec<AlertRegion>) -> bool {
         let mut snapshot = self.snapshot.write().expect("alert snapshot lock poisoned");
         let prior = snapshot
@@ -348,6 +349,7 @@ async fn stream(mut socket: WebSocket, state: AppState, token: String, account_i
     }
 }
 
+#[cfg_attr(feature = "profiling", hotpath::measure)]
 async fn stream_allowed(state: &AppState, token: &str, account_id: i64) -> bool {
     let store = state.store.clone();
     let token = token.to_owned();
@@ -360,6 +362,7 @@ async fn stream_allowed(state: &AppState, token: &str, account_id: i64) -> bool 
     .unwrap_or(false)
 }
 
+#[cfg_attr(feature = "profiling", hotpath::measure)]
 async fn send(socket: &mut WebSocket, message: &AlertMessage) -> anyhow::Result<()> {
     socket
         .send(Message::Text(serde_json::to_string(message)?.into()))
@@ -405,6 +408,7 @@ struct ProviderAlert {
     alert_type: String,
 }
 
+#[cfg_attr(feature = "profiling", hotpath::measure)]
 fn parse_regions(body: &[u8]) -> anyhow::Result<Vec<AlertRegion>> {
     let regions: Vec<ProviderRegion> = serde_json::from_slice(body)?;
     let mut active = BTreeMap::new();
@@ -494,6 +498,7 @@ async fn run_provider(hub: Arc<AirAlertHub>) {
     }
 }
 
+#[cfg_attr(feature = "profiling", hotpath::measure)]
 async fn fetch_snapshot(
     client: &reqwest::Client,
     config: &AirAlertConfig,
@@ -524,6 +529,7 @@ async fn fetch_snapshot(
     Ok(hub.apply(parse_regions(&bytes)?))
 }
 
+#[cfg_attr(feature = "profiling", hotpath::measure)]
 async fn register_webhook(client: &reqwest::Client, config: &AirAlertConfig) -> anyhow::Result<()> {
     let url = format!(
         "{}/v1/air-alerts/provider/{}",
@@ -737,6 +743,150 @@ mod tests {
         assert!(!hub.snapshot.read().unwrap().stale);
         worker.abort();
         server.abort();
+    }
+
+    /// Build synthetic account state without involving an external provider or operator settings.
+    fn profile_state(store: crate::CellStore, config: AirAlertConfig) -> anyhow::Result<AppState> {
+        crate::create_admin(
+            &store,
+            "synthetic@example.org",
+            "correct horse battery staple",
+        )?;
+        let state = AppState::new(
+            store,
+            crate::ServerConfig {
+                trip_archive: crate::TripArchiveLimits::default(),
+                mail: None,
+                policy: crate::Policy::default(),
+                trust_proxy: false,
+                secure_cookies: false,
+                privacy: None,
+            },
+        )?;
+        state.configure_air_alerts(config);
+        Ok(state)
+    }
+
+    #[cfg(feature = "profiling")]
+    fn verify_profile(path: &std::path::Path, secrets: &[&str]) -> anyhow::Result<()> {
+        let report = std::fs::read_to_string(path)?;
+        for name in [
+            "fetch_snapshot",
+            "parse_regions",
+            "stream_allowed",
+            "air_alerts::send",
+        ] {
+            assert!(report.contains(name), "missing probe {name}");
+        }
+        for secret in secrets {
+            assert!(
+                !report.contains(secret),
+                "profiling must not capture credentials"
+            );
+        }
+        Ok(())
+    }
+
+    /// A bounded provider-to-WebSocket workload. Run alone when writing a hotpath report.
+    #[tokio::test]
+    async fn profile_air_alert_delivery() -> anyhow::Result<()> {
+        #[cfg(feature = "profiling")]
+        let profile_path = std::env::var_os("AIR_ALERT_PROFILE_OUTPUT");
+        #[cfg(feature = "profiling")]
+        let profile = profile_path.as_ref().map(|path| {
+            hotpath::HotpathGuardBuilder::new("air_alert_delivery")
+                .format(hotpath::Format::JsonPretty)
+                .functions_limit(200)
+                .output_path(std::path::PathBuf::from(path))
+                .build()
+        });
+        let body = Arc::new(RwLock::new("[]".to_owned()));
+        let (provider_base, provider) = mock_provider(body.clone(), StatusCode::NO_CONTENT).await;
+        let config = test_config(provider_base);
+        let file = tempfile::NamedTempFile::new()?;
+        let store = crate::CellStore::open(file.path())?;
+        let state = profile_state(store, config.clone())?;
+        let hub = state.air_alerts.clone();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let address = listener.local_addr()?;
+        let server = tokio::spawn(async move {
+            axum::serve(
+                listener,
+                crate::router(state).into_make_service_with_connect_info::<std::net::SocketAddr>(),
+            )
+            .await
+            .unwrap();
+        });
+        let client = reqwest::Client::new();
+        register_webhook(&client, &config).await?;
+        fetch_snapshot(&client, &config, &hub).await?;
+        let login: serde_json::Value = client.post(format!("http://{address}/v1/auth/login"))
+            .json(&serde_json::json!({"email":"synthetic@example.org","password":"correct horse battery staple"}))
+            .send().await?.error_for_status()?.json().await?;
+        let token = login["access_token"].as_str().unwrap();
+        client
+            .put(format!("http://{address}/v1/air-alerts/preferences"))
+            .bearer_auth(token)
+            .json(&serde_json::json!({"enabled":true}))
+            .send()
+            .await?
+            .error_for_status()?;
+        let mut sockets = Vec::new();
+        for _ in 0..4 {
+            let mut request =
+                format!("ws://{address}/v1/air-alerts/stream").into_client_request()?;
+            request
+                .headers_mut()
+                .insert("Authorization", format!("Bearer {token}").parse()?);
+            let (mut socket, _) = tokio_tungstenite::connect_async(request).await?;
+            let message = tokio::time::timeout(Duration::from_secs(3), socket.next())
+                .await?
+                .unwrap()?;
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(message.to_text()?)?["type"],
+                "snapshot"
+            );
+            sockets.push(socket);
+        }
+        for index in 0..20 {
+            *body.write().unwrap() = if index % 2 == 0 {
+                r#"[{"regionId":"14","regionType":"State","regionName":"Київська","regionEngName":"Kyiv","activeAlerts":[{"type":"AIR"}]}]"#.to_owned()
+            } else {
+                "[]".to_owned()
+            };
+            assert!(fetch_snapshot(&client, &config, &hub).await?);
+            assert!(!fetch_snapshot(&client, &config, &hub).await?);
+            for socket in &mut sockets {
+                let message = tokio::time::timeout(Duration::from_secs(3), socket.next())
+                    .await?
+                    .unwrap()?;
+                let value: serde_json::Value = serde_json::from_str(message.to_text()?)?;
+                assert_eq!(value["type"], "changes");
+                assert_eq!(
+                    value[if index % 2 == 0 { "started" } else { "cleared" }]
+                        .as_array()
+                        .unwrap()
+                        .len(),
+                    1
+                );
+            }
+        }
+        for socket in &mut sockets {
+            socket.close(None).await?;
+        }
+        server.abort();
+        provider.abort();
+        #[cfg(feature = "profiling")]
+        {
+            drop(profile);
+            if let Some(path) = profile_path {
+                verify_profile(
+                    std::path::Path::new(&path),
+                    &[token, &config.api_key, &config.webhook_secret],
+                )?;
+            }
+        }
+        Ok(())
     }
 
     #[tokio::test]
