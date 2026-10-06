@@ -32,6 +32,9 @@
 -keep class org.imunav.app.nativecore.NativeLogging {
     native <methods>;
 }
+-keep class org.imunav.app.nativecore.NativeProfiler {
+    native <methods>;
+}
 -keep class org.imunav.app.nativecore.NativeRouteFilter {
     native <methods>;
 }

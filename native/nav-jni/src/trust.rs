@@ -99,6 +99,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeTrustEvaluator_nativ
     doubles: JDoubleArray,
     longs: JLongArray,
 ) -> jintArray {
+    let _profile = crate::device_profile::measure(crate::device_profile::TRUST_EVALUATE);
     catch_unwind(AssertUnwindSafe(|| {
         if env.get_array_length(&doubles).ok()? < 14 || env.get_array_length(&longs).ok()? < 11 {
             return None;

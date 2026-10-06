@@ -250,6 +250,21 @@
     <string name="action_reset_confirm">Сбросить</string>
 
     <string name="sec_diagnostics">Диагностика</string>
+    <string name="profile_capture_title">Запись производительности</string>
+    <string name="profile_capture_summary">Записывайте время работы приложения и нативного кода, использование памяти, события поездки и журнал до остановки. Место отправки выбираете вы; автоматической загрузки нет.</string>
+    <string name="profile_action_start">Начать запись</string>
+    <string name="profile_action_stop">Остановить и подготовить ZIP</string>
+    <string name="profile_action_share">Поделиться ZIP</string>
+    <string name="profile_status_idle">Записи нет</string>
+    <string name="profile_status_starting">Начало записи…</string>
+    <string name="profile_status_recording">Запись идёт до остановки</string>
+    <string name="profile_status_finishing">Подготовка ZIP…</string>
+    <string name="profile_status_ready">ZIP готов к отправке</string>
+    <string name="profile_status_interrupted">Частичный ZIP восстановлен после перезапуска</string>
+    <string name="profile_status_error">Ошибка записи</string>
+    <string name="profile_share_title">Поделиться записью производительности?</string>
+    <string name="profile_share_warning">ZIP может содержать точные координаты, данные датчиков и диагностический журнал. Отправляйте его только тем, кому доверяете.</string>
+    <string name="profile_share_failed">Не удалось поделиться ZIP. Проверьте свободное место и повторите попытку.</string>
     <string name="dev_diagnostics">Диагностика для разработчиков</string>
     <string name="dev_diagnostics_summary">Включите перед поездкой, чтобы отправлять координаты, данные датчиков, журнал и основные настройки приложения и устройства на сервер вашей учётной записи. Работает через Wi-Fi или мобильную сеть. Выключите, чтобы удалить неотправленные данные.</string>
     <string name="dev_diagnostics_status">Состояние отправки</string>

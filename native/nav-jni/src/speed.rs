@@ -17,6 +17,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeSpeedFusion_nativeFu
     network_samples: jint,
     network_span_s: jdouble,
 ) -> jdouble {
+    let _profile = crate::device_profile::measure(crate::device_profile::SPEED_FUSE);
     catch_unwind(AssertUnwindSafe(|| {
         let network = optional(network_speed_mps).map(|speed_mps| SpeedEstimate {
             speed_mps,

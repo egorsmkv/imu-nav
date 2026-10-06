@@ -4,6 +4,7 @@
 //! registry identifiers rather than native pointers, so stale and double-destroyed handles fail
 //! cleanly instead of dereferencing freed memory.
 
+mod device_profile;
 mod estimator;
 mod logging;
 mod network;

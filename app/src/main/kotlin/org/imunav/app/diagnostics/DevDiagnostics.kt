@@ -249,9 +249,7 @@ class DevDiagnostics(private val context: Context, private val cells: CellManage
         }
     }
 
-    private fun redact(line: String): String = line
-        .replace(Regex("(?i)(token|password|authorization|secret|api_key)=\\S+"), "$1=[redacted]")
-        .replace(Regex("(?i)Bearer\\s+\\S+"), "Bearer [redacted]")
+    private fun redact(line: String): String = DiagnosticRedaction.redact(line)
 
     private companion object {
         const val MAX_ENTRIES = 100

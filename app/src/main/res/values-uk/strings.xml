@@ -250,6 +250,21 @@
     <string name="action_reset_confirm">Скинути</string>
 
     <string name="sec_diagnostics">Діагностика</string>
+    <string name="profile_capture_title">Запис продуктивності</string>
+    <string name="profile_capture_summary">Записуйте час роботи застосунку й нативного коду, використання пам’яті, події поїздки та журнал до зупинки. Місце надсилання обираєте ви; автоматичного завантаження немає.</string>
+    <string name="profile_action_start">Почати запис</string>
+    <string name="profile_action_stop">Зупинити й підготувати ZIP</string>
+    <string name="profile_action_share">Поділитися ZIP</string>
+    <string name="profile_status_idle">Запису немає</string>
+    <string name="profile_status_starting">Початок запису…</string>
+    <string name="profile_status_recording">Запис триває до зупинки</string>
+    <string name="profile_status_finishing">Підготовка ZIP…</string>
+    <string name="profile_status_ready">ZIP готовий до надсилання</string>
+    <string name="profile_status_interrupted">Частковий ZIP відновлено після перезапуску</string>
+    <string name="profile_status_error">Помилка запису</string>
+    <string name="profile_share_title">Поділитися записом продуктивності?</string>
+    <string name="profile_share_warning">ZIP може містити точні координати, дані датчиків і діагностичний журнал. Надсилайте його лише тим, кому довіряєте.</string>
+    <string name="profile_share_failed">Не вдалося поділитися ZIP. Перевірте вільне місце й повторіть спробу.</string>
     <string name="dev_diagnostics">Діагностика для розробників</string>
     <string name="dev_diagnostics_summary">Увімкніть перед поїздкою, щоб надсилати координати, дані датчиків, журнал і базові налаштування застосунку та пристрою на сервер вашого облікового запису. Працює через Wi-Fi або мобільну мережу. Вимкніть, щоб видалити ненадіслані дані.</string>
     <string name="dev_diagnostics_status">Стан надсилання</string>

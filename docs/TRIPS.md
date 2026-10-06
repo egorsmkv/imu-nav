@@ -22,6 +22,8 @@ If the app is killed during a trip, starting it again within three hours can res
 
 The recording contains precise location and sensor data. Turn the switch off to stop capture and discard unsent batches. Data already received by the server remains until you delete it or it expires. Passwords and account tokens are not part of the upload.
 
+For a local performance capture that you share yourself, see [Capture app performance on Android](PROFILING_ANDROID.md).
+
 ## Replay a recording on a computer
 
 1. Extract the `.rec` file from a shared ZIP, copy your own `.rec.gz` recording from app storage, or use a directory of recordings.

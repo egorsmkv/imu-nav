@@ -1,5 +1,6 @@
 package org.imunav.app.ui
 
+import android.content.Intent
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -53,6 +54,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -72,6 +74,7 @@ import org.imunav.app.R
 import org.imunav.app.UiState
 import org.imunav.app.cells.CellSource
 import org.imunav.app.diagnostics.DiagnosticPhase
+import org.imunav.app.diagnostics.ProfilePhase
 import org.imunav.core.cells.Radio
 import java.text.NumberFormat
 
@@ -87,10 +90,13 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
     val telegramGroupUrl = stringResource(R.string.telegram_group_url)
+    val profileShareLabel = stringResource(R.string.profile_action_share)
+    val profileShareFailed = stringResource(R.string.profile_share_failed)
     val c = ui.cells
     val mgr = app.cells
     val busy = c.busy != null
     val snackbar = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
     val scroll = TopAppBarDefaults.pinnedScrollBehavior()
 
     var mccs by remember { mutableStateOf(c.mccs) }
@@ -101,6 +107,7 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
     var accountPassword by remember { mutableStateOf("") }
     var autoSync by remember { mutableStateOf(c.autoSync) }
     var confirmReset by remember { mutableStateOf(false) }
+    var confirmProfileShare by remember { mutableStateOf(false) }
     val accountUrlAllowed = syncUrl.trim().startsWith("https://") || syncUrl.trim().startsWith("http://localhost:") ||
         syncUrl.trim().startsWith("http://127.0.0.1:") || syncUrl.trim().startsWith("http://10.0.2.2:")
 
@@ -120,6 +127,7 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
     }
     val routing by app.offlineRouting.status.collectAsStateWithLifecycle()
     val diagnostics by app.diagnostics.status.collectAsStateWithLifecycle()
+    val profileStatus by app.profileCapture.status.collectAsStateWithLifecycle()
     var packUrl by remember { mutableStateOf(routing.packUrl) }
     val pickPack = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) app.offlineRouting.importZip { context.contentResolver.openInputStream(uri) }
@@ -382,6 +390,35 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                         )
                     }
                     ListItem(
+                        headlineContent = { Text(stringResource(R.string.profile_capture_title)) },
+                        supportingContent = {
+                            Column {
+                                Text(stringResource(R.string.profile_capture_summary))
+                                val phaseLabel = when (profileStatus.phase) {
+                                    ProfilePhase.IDLE -> R.string.profile_status_idle
+                                    ProfilePhase.STARTING -> R.string.profile_status_starting
+                                    ProfilePhase.RECORDING -> R.string.profile_status_recording
+                                    ProfilePhase.FINISHING -> R.string.profile_status_finishing
+                                    ProfilePhase.READY -> R.string.profile_status_ready
+                                    ProfilePhase.INTERRUPTED -> R.string.profile_status_interrupted
+                                    ProfilePhase.ERROR -> R.string.profile_status_error
+                                }
+                                Text(stringResource(phaseLabel) + profileStatus.detail.takeIf(String::isNotBlank)?.let { ": $it" }.orEmpty())
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    if (profileStatus.phase in setOf(ProfilePhase.IDLE, ProfilePhase.READY, ProfilePhase.INTERRUPTED, ProfilePhase.ERROR)) {
+                                        TextButton(onClick = app.profileCapture::start) { Text(stringResource(R.string.profile_action_start)) }
+                                    }
+                                    if (profileStatus.phase == ProfilePhase.RECORDING) {
+                                        TextButton(onClick = app.profileCapture::stop) { Text(stringResource(R.string.profile_action_stop)) }
+                                    }
+                                    if (profileStatus.archive != null && profileStatus.phase in setOf(ProfilePhase.READY, ProfilePhase.INTERRUPTED)) {
+                                        TextButton(onClick = { confirmProfileShare = true }) { Text(stringResource(R.string.profile_action_share)) }
+                                    }
+                                }
+                            }
+                        },
+                    )
+                    ListItem(
                         headlineContent = { Text(stringResource(R.string.trip_log)) },
                         supportingContent = { Text(stringResource(R.string.trip_log_summary)) },
                         leadingContent = { Icon(Icons.AutoMirrored.Filled.Article, contentDescription = null) },
@@ -442,6 +479,22 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                 }
             },
             dismissButton = { TextButton(onClick = { confirmReset = false }) { Text(stringResource(R.string.action_cancel)) } },
+        )
+    }
+    if (confirmProfileShare) {
+        AlertDialog(
+            onDismissRequest = { confirmProfileShare = false },
+            title = { Text(stringResource(R.string.profile_share_title)) },
+            text = { Text(stringResource(R.string.profile_share_warning)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmProfileShare = false
+                    runCatching {
+                        context.startActivity(Intent.createChooser(app.profileCapture.shareIntent(), profileShareLabel))
+                    }.onFailure { scope.launch { snackbar.showSnackbar(profileShareFailed) } }
+                }) { Text(stringResource(R.string.profile_action_share)) }
+            },
+            dismissButton = { TextButton(onClick = { confirmProfileShare = false }) { Text(stringResource(R.string.action_cancel)) } },
         )
     }
 }

@@ -155,6 +155,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNavigationEstimator_
     doubles: JDoubleArray,
     longs: JLongArray,
 ) -> jdoubleArray {
+    let _profile = crate::device_profile::measure(crate::device_profile::ESTIMATOR_TICK);
     catch_unwind(AssertUnwindSafe(|| {
         let double_count = env.get_array_length(&doubles).ok()?;
         let long_count = env.get_array_length(&longs).ok()?;

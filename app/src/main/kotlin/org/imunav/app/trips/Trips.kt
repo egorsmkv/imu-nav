@@ -96,6 +96,9 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
     /** Optional diagnostics sink; recording remains independent of upload availability. */
     var onDiagnosticStart: ((String) -> Unit)? = null
     var onDiagnosticEvent: ((TripEvent) -> Unit)? = null
+
+    /** Session-only export sink, independent of developer diagnostics upload. */
+    var onProfileEvent: ((TripEvent) -> Unit)? = null
     var onDiagnosticEnd: ((String) -> Unit)? = null
     private val dir = File(context.filesDir, "trips").apply { mkdirs() }
     private val index = File(dir, "index.jsonl")
@@ -342,7 +345,10 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
             File(dir, recordingName),
             io,
             append,
-            onRecorded = { event -> onDiagnosticEvent?.invoke(event) },
+            onRecorded = { event ->
+                onDiagnosticEvent?.invoke(event)
+                onProfileEvent?.invoke(event)
+            },
             onFailure = { log("trip_record_failed ${it.message}") },
         )
         recorder = next

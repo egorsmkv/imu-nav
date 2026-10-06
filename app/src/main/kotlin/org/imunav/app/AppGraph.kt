@@ -22,6 +22,7 @@ import org.imunav.app.bookmarks.BookmarkDatabase
 import org.imunav.app.bookmarks.Bookmarks
 import org.imunav.app.cells.CellManager
 import org.imunav.app.diagnostics.DevDiagnostics
+import org.imunav.app.diagnostics.ProfileCapture
 import org.imunav.app.haptics.Haptics
 import org.imunav.app.maps.OfflineMap
 import org.imunav.app.nativecore.NativeEstimatorBridge
@@ -322,6 +323,9 @@ class AppGraph(private val context: Context) {
 
     /** Opt-in trip diagnostics use the same signed-in server but have separate local and server storage. */
     val diagnostics = DevDiagnostics(context, cells)
+
+    /** Local performance capture shared only through Android's chooser. */
+    val profileCapture = ProfileCapture(context)
 
     /** Owns the foreground service, trip recorder, native resources, engine, and OBD session as one transaction. */
     private val navigationSession =
@@ -675,8 +679,10 @@ class AppGraph(private val context: Context) {
             )
         }
         trips.onDiagnosticEvent = diagnostics::onEvent
+        trips.onProfileEvent = profileCapture::onEvent
         trips.onDiagnosticEnd = diagnostics::endTrip
         tripLog.onDiagnosticLine = diagnostics::onLog
+        tripLog.onProfileLine = profileCapture::onLog
         // The process was killed mid-trip (or the system restarted the sticky service): resume navigation.
         if (trips.restore()) {
             tripLog.startTrip()

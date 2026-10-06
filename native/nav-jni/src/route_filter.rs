@@ -171,6 +171,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteGeometry_native
     _class: JClass,
     coordinates: JDoubleArray,
 ) -> jlong {
+    let _profile = crate::device_profile::measure(crate::device_profile::ROUTE_CREATE);
     catch_unwind(AssertUnwindSafe(|| {
         let Ok(length) = env.get_array_length(&coordinates) else {
             return None;
@@ -237,6 +238,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteGeometry_native
     ahead_m: jdouble,
     global_if_farther_m: jdouble,
 ) -> jdoubleArray {
+    let _profile = crate::device_profile::measure(crate::device_profile::ROUTE_PROJECT);
     catch_unwind(AssertUnwindSafe(|| {
         let route = {
             let registry = routes().lock().ok()?;

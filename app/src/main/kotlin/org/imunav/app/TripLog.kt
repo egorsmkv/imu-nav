@@ -23,6 +23,9 @@ import java.util.Locale
 class TripLog(context: Context, maxFileBytes: Long = 15L * 1024 * 1024) {
     /** Optional sink for an explicitly enabled developer session. */
     @Volatile var onDiagnosticLine: ((String, Long) -> Unit)? = null
+
+    /** Optional non-blocking sink for a local profiling session. */
+    @Volatile var onProfileLine: ((String, Long) -> Unit)? = null
     private val files = TripFileLog(File(context.filesDir, "logs"), maxFileBytes, { Log.w(TAG, "log_write_failed", it) })
 
     /** The last [MAX_RECENT] lines, for the UI. Guarded by `synchronized(tail)`. */
@@ -53,6 +56,7 @@ class TripLog(context: Context, maxFileBytes: Long = 15L * 1024 * 1024) {
         }
         files.write(line)
         onDiagnosticLine?.invoke(line, elapsedMs)
+        onProfileLine?.invoke(line, elapsedMs)
     }
 
     private companion object {

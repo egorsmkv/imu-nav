@@ -26,6 +26,7 @@ Start with [getting started](docs/GETTING_STARTED.md). Look up unfamiliar terms 
 - [Landscape driving and Android Auto](docs/ANDROID_AUTO.md)
 - [Bookmarks](docs/BOOKMARKS.md)
 - [Trip recording, history, replay and opt-in developer diagnostics](docs/TRIPS.md)
+- [Capture and share Android performance data](docs/PROFILING_ANDROID.md)
 - [Cell towers and sharing server](docs/CELL_TOWERS.md)
 
 ### Build and verify

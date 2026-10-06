@@ -252,6 +252,21 @@
     <string name="action_reset_confirm">Reset</string>
 
     <string name="sec_diagnostics">Diagnostics</string>
+    <string name="profile_capture_title">Performance capture</string>
+    <string name="profile_capture_summary">Record app and native timings, memory use, trip events and logs until you stop. Sharing uses your choice of app; nothing is uploaded automatically.</string>
+    <string name="profile_action_start">Start capture</string>
+    <string name="profile_action_stop">Stop and prepare ZIP</string>
+    <string name="profile_action_share">Share ZIP</string>
+    <string name="profile_status_idle">No capture</string>
+    <string name="profile_status_starting">Starting capture…</string>
+    <string name="profile_status_recording">Capturing until you stop</string>
+    <string name="profile_status_finishing">Preparing ZIP…</string>
+    <string name="profile_status_ready">ZIP ready to share</string>
+    <string name="profile_status_interrupted">Partial ZIP recovered after app restart</string>
+    <string name="profile_status_error">Capture failed</string>
+    <string name="profile_share_title">Share performance capture?</string>
+    <string name="profile_share_warning">This ZIP may contain precise locations, sensor data and diagnostic logs. Share it only with someone you trust.</string>
+    <string name="profile_share_failed">Could not share the ZIP. Check available storage and try again.</string>
     <string name="dev_diagnostics">Developer diagnostics</string>
     <string name="dev_diagnostics_summary">Turn on before a trip to send its location, sensors, trip log and basic app/device settings to your signed-in server for debugging. Uses Wi-Fi or mobile data. Turn off to discard unsent data.</string>
     <string name="dev_diagnostics_status">Upload status</string>

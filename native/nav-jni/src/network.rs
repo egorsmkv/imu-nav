@@ -83,6 +83,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNetworkTracker_nativ
     position_m: jdouble,
     accuracy_m: jdouble,
 ) -> jint {
+    let _profile = crate::device_profile::measure(crate::device_profile::NETWORK_GATE);
     guarded_code(|| {
         match with_network_tracker(handle, |tracker| {
             tracker.gate(elapsed_ms, position_m, accuracy_m)
@@ -167,6 +168,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNetworkTracker_nativ
     now_ms: jlong,
     strict: jint,
 ) -> jdoubleArray {
+    let _profile = crate::device_profile::measure(crate::device_profile::NETWORK_ESTIMATE);
     catch_unwind(AssertUnwindSafe(|| {
         let estimate = with_network_tracker(handle, |tracker| {
             if strict == 0 {

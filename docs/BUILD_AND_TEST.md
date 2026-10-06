@@ -35,5 +35,6 @@ build. F-Droid release tags still build regardless of changed paths; all manual 
 available.
 
 For release rules, see [F-Droid](FDROID.md). For measurements, see [Kotlin coverage](KOTLIN_COVERAGE.md), [Rust coverage](RUST_COVERAGE.md) and [native verification](NATIVE_VERIFICATION.md).
+For a performance trace from an installed app, see [Android performance capture](PROFILING_ANDROID.md).
 
 The [detailed build reference](reference/BUILD_AND_TEST.md) has signing fields, dependency checks, replay and performance commands.
