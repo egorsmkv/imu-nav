@@ -31,7 +31,7 @@ permissions produce a phone-setup action instead of starting an unprotected trip
 Android Auto host auto-drive mode simulates a reviewed route in the car session only. It is labelled
 **DEMO**, does not inject fixes or write trips/learning data, and ends on Stop or session teardown.
 A real trip started on the phone supersedes the demo. Release builds validate hosts; debug and
-benchmark builds permit development hosts. IMU Nav remains a research prototype, not a safety system.
+benchmark builds permit development hosts.
 
 For device validation, use a benchmark build (debug GraphHopper cannot load routing packs) with
 Android Auto's Desktop Head Unit. Exercise phone-visible/hidden, connect/disconnect/reconnect,

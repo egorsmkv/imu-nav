@@ -5,8 +5,6 @@
 [Kani](https://model-checking.github.io/kani/) verifies selected contracts in `imu-nav-core` by
 exploring symbolic inputs within the harness bounds. This complements Rust tests, JNI parity tests,
 trip replay and [production coverage](rust_coverage.md). It does not prove the whole navigator correct.
-IMU Nav remains a research prototype, not a safety system.
-
 ## Run locally
 
 On Linux x86-64, install the pinned verifier and its bundled compiler/solver:

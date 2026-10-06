@@ -11,7 +11,7 @@ The Android app keeps its authenticated WebSocket open only while its screen is 
 the current snapshot without notifying about alerts that were already active on connection, then
 posts a system notification for later changes. Android notification permission and channel
 settings can suppress delivery. Provider outages, network loss, and webhook delays can also make
-the feed late or stale. IMU Nav is a research prototype, not a safety system; use official warning
+the feed late or stale. Use official warning
 channels for decisions about personal safety.
 
 ## Configure the provider

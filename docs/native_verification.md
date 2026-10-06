@@ -2,7 +2,7 @@
 
 [Documentation index](../README.md)
 
-Kani checks selected Rust navigation rules over many bounded inputs. It complements tests and replay; it does not prove that the whole app is correct. IMU Nav remains a research prototype, not a safety system.
+Kani checks selected Rust navigation rules over many bounded inputs. It complements tests and replay; it does not prove that the whole app is correct.
 
 ## Run the checks
 

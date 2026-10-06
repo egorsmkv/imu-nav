@@ -159,10 +159,10 @@
     <string name="navigation_estimator_title">Navigation algorithm</string>
     <string name="navigation_estimator_kotlin">Classic (default)</string>
     <string name="navigation_estimator_native">Kalman filter</string>
-    <string name="navigation_estimator_summary">Choose before a trip. Classic uses the method below and terrain matching. Kalman combines position and speed estimates for driving or walking. Accuracy may vary. Research prototype, not a safety system.</string>
+    <string name="navigation_estimator_summary">Choose before a trip. Classic uses the method below and terrain matching. Kalman combines position and speed estimates for driving or walking. Accuracy may vary.</string>
     <string name="navigation_estimator_locked">Stop navigation to change the algorithm.</string>
     <string name="inertial_experiment_title">Experimental sensor recording</string>
-    <string name="inertial_experiment_summary">Records raw sensors and tests an inertial filter without changing navigation. Driving only, with the phone mounted. Needs trusted GPS and orientation to start. Uses more battery and storage. Change between trips. Accuracy unproven; not a safety system.</string>
+    <string name="inertial_experiment_summary">Records raw sensors and tests an inertial filter without changing navigation. Driving only, with the phone mounted. Needs trusted GPS and orientation to start. Uses more battery and storage. Change between trips. Accuracy unproven.</string>
     <string name="navigation_method_dr">Motion sensors</string>
     <string name="navigation_method_cells">Cell towers</string>
     <string name="navigation_method_hybrid">Hybrid</string>
@@ -311,7 +311,6 @@
     <string name="sec_about">About</string>
     <string name="about_version">Version %1$s</string>
     <string name="about_credits">Cell data: OpenCellID contributors (CC BY-SA 4.0) and Mozilla Location Service (public domain). Maps and routing data © OpenStreetMap contributors (ODbL), OpenFreeMap. Routing: GraphHopper, OSRM. Source code: MIT licence.</string>
-    <string name="about_disclaimer">Research prototype. Never rely on it as a safety system.</string>
     <string name="telegram_group">Telegram group</string>
     <string name="telegram_group_url">https://t.me/imu_nav_en</string>
     <string name="proxy_title">Network proxy</string>
@@ -530,7 +529,7 @@
     </plurals>
     <!-- First-run permission and offline-data checklist. -->
     <string name="setup_title">Set up IMU Nav</string>
-    <string name="setup_intro">Allow access for navigation and prepare offline data. You can continue if you decline access. IMU Nav is a research prototype, not a safety system.</string>
+    <string name="setup_intro">Allow access for navigation and prepare offline data. You can continue if you decline access.</string>
     <string name="setup_location">Precise location</string>
     <string name="setup_location_hint">Needed for GPS measurements and nearby cell towers. Choose precise location in Android’s dialog.</string>
     <string name="setup_notifications">Notifications</string>
@@ -618,7 +617,7 @@
     <string name="privacy_sign_in_first">Sign in to the selected sharing server first.</string>
     <string name="privacy_manage_account">Export or delete server data</string>
     <string name="air_alerts_title">Air-raid alerts for Ukraine</string>
-    <string name="air_alerts_summary">Notify me of air-raid alerts and all-clears across Ukraine while the app is open. Research prototype, not a safety system.</string>
+    <string name="air_alerts_summary">Notify me of air-raid alerts and all-clears across Ukraine while the app is open.</string>
     <string name="air_alerts_sign_in">Sign in to the sharing server to enable air-raid alerts.</string>
     <string name="air_alerts_unavailable">Air-raid alerts are not set up on this server.</string>
     <string name="air_alerts_active">Oblasts with active air-raid alerts: %1$d</string>

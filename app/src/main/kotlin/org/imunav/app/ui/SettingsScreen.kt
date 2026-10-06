@@ -547,7 +547,7 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                     }
                     ListItem(
                         headlineContent = { Text(stringResource(R.string.about_version, version)) },
-                        supportingContent = { Text(stringResource(R.string.about_credits) + "\n\n" + stringResource(R.string.about_disclaimer)) },
+                        supportingContent = { Text(stringResource(R.string.about_credits)) },
                     )
                 }
 

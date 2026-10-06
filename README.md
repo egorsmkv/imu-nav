@@ -11,8 +11,6 @@ builds an importable archive for offline routes and address search. The separate
 produces the streets shown on screen.
 The app also links to map and routing ZIP archives from **Settings → Community links**.
 
-IMU Nav is a research prototype, not a safety system.
-
 ## Documentation
 
 Start with [getting started](docs/getting_started.md). Look up unfamiliar terms in the

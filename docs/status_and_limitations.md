@@ -2,7 +2,7 @@
 
 [Documentation index](../README.md)
 
-IMU Nav is a research prototype, not a safety system. It has not been validated as a replacement for normal navigation or driver attention.
+It has not been validated as a replacement for normal navigation or driver attention.
 
 ## Before relying on a feature
 

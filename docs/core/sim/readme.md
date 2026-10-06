@@ -11,8 +11,6 @@ The simulator creates the same inputs from the same settings and seed. This help
 exercise GPS loss, delayed observations, stops, reroutes and difficult route shapes, then check
 whether a core change preserves the outputs. It also measures where a Linux host process spends
 time and allocates memory. Synthetic results do not establish road accuracy or Android performance.
-IMU Nav remains a research prototype, not a safety system.
-
 ## Read by task
 
 1. [Build and run](run.md) starts a complete capture or a smaller targeted workload.

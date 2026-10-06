@@ -157,10 +157,10 @@
     <string name="navigation_estimator_title">Оценка положения</string>
     <string name="navigation_estimator_kotlin">Классическая навигация (по умолчанию)</string>
     <string name="navigation_estimator_native">Фильтр Калмана</string>
-    <string name="navigation_estimator_summary">Выберите перед началом маршрута. Фильтр Калмана определяет положение и скорость для авто и пешком. Пешком использует GPS и шаги × изученную длину шага; без шагов — свежие данные о движении, а без них и свежего GPS удерживает позицию. OBD и поправки от вышек и поворотов — только для авто. Классическая навигация использует резервный метод ниже и привязку к рельефу. Улучшение точности не гарантировано; это исследовательский прототип, а не система безопасности.</string>
+    <string name="navigation_estimator_summary">Выберите перед началом маршрута. Фильтр Калмана определяет положение и скорость для авто и пешком. Пешком использует GPS и шаги × изученную длину шага; без шагов — свежие данные о движении, а без них и свежего GPS удерживает позицию. OBD и поправки от вышек и поворотов — только для авто. Классическая навигация использует резервный метод ниже и привязку к рельефу. Улучшение точности не гарантировано.</string>
     <string name="navigation_estimator_locked">Остановите навигацию, чтобы изменить алгоритм.</string>
     <string name="inertial_experiment_title">Инерциальный ESKF в фоновом сравнении</string>
-    <string name="inertial_experiment_summary">Эксперимент только для авто с закреплённым телефоном. Записывает сырые данные датчиков и запускает отдельный инерциальный фильтр для сравнения записей. Не меняет навигацию и не поддерживает ходьбу. Для запуска нужны надёжный GPS и ориентация; увеличивает расход заряда и памяти. Точность не доказана. Исследовательский прототип, не система безопасности. Меняйте между поездками.</string>
+    <string name="inertial_experiment_summary">Эксперимент только для авто с закреплённым телефоном. Записывает сырые данные датчиков и запускает отдельный инерциальный фильтр для сравнения записей. Не меняет навигацию и не поддерживает ходьбу. Для запуска нужны надёжный GPS и ориентация; увеличивает расход заряда и памяти. Точность не доказана. Меняйте между поездками.</string>
     <string name="navigation_method_dr">Счисление пути</string>
     <string name="navigation_method_cells">Вышки связи</string>
     <string name="navigation_method_hybrid">Гибридный</string>
@@ -309,7 +309,6 @@
     <string name="sec_about">О приложении</string>
     <string name="about_version">Версия %1$s</string>
     <string name="about_credits">Данные вышек: участники OpenCellID (CC BY-SA 4.0) и Mozilla Location Service (общественное достояние). Карты и данные маршрутов © участники OpenStreetMap (ODbL), OpenFreeMap. Маршрутизация: GraphHopper, OSRM. Исходный код: лицензия MIT.</string>
-    <string name="about_disclaimer">Исследовательский прототип. Никогда не полагайтесь на него как на систему безопасности.</string>
     <string name="telegram_group">Группа в Telegram</string>
     <string name="telegram_group_url">https://t.me/imu_nav</string>
     <string name="proxy_title">Сетевой прокси</string>
@@ -540,7 +539,7 @@
     </plurals>
     <!-- First-run permission and offline-data checklist. -->
     <string name="setup_title">Настройка IMU Nav</string>
-    <string name="setup_intro">Предоставьте доступ для навигации и подготовьте офлайн-данные. Вы можете продолжить, если откажете в доступе. IMU Nav — исследовательский прототип, а не система безопасности.</string>
+    <string name="setup_intro">Предоставьте доступ для навигации и подготовьте офлайн-данные. Вы можете продолжить, если откажете в доступе.</string>
     <string name="setup_location">Точное местоположение</string>
     <string name="setup_location_hint">Нужно для измерений GPS и поиска ближайших вышек. Выберите точное местоположение в диалоге Android.</string>
     <string name="setup_notifications">Уведомления</string>
@@ -628,7 +627,7 @@
     <string name="privacy_sign_in_first">Сначала войдите на выбранный сервер обмена.</string>
     <string name="privacy_manage_account">Управлять данными сервера: экспорт или удаление</string>
     <string name="air_alerts_title">Воздушные тревоги в Украине</string>
-    <string name="air_alerts_summary">Уведомлять о начале и отбое воздушной тревоги в любой области Украины, пока приложение открыто. Исследовательский прототип, не система безопасности.</string>
+    <string name="air_alerts_summary">Уведомлять о начале и отбое воздушной тревоги в любой области Украины, пока приложение открыто.</string>
     <string name="air_alerts_sign_in">Войдите на сервер обмена, чтобы включить уведомления о тревогах.</string>
     <string name="air_alerts_unavailable">Этот сервер не настроил уведомления о тревогах.</string>
     <string name="air_alerts_active">Областей с активной воздушной тревогой: %1$d</string>

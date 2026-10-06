@@ -36,4 +36,4 @@ The app keeps at most three ZIPs and removes older ZIPs when
 preparing another capture. Android may clear them from app cache earlier.
 
 **Before sharing:** trip events and logs may contain precise locations and sensor data. Check the
-destination carefully. IMU Nav remains a research prototype, not a safety system.
+destination carefully.

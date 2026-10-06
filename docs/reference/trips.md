@@ -96,7 +96,7 @@
   This is a route-constrained linear Kalman filter, not a full inertial EKF.
 
   Better real-drive accuracy
-  is not yet established; the app remains a research prototype, not a safety system.
+  is not yet established.
 
   The choice is persisted with the active trip and recorded as a `K` event. During asynchronous
   native restoration, navigation holds position and suppresses guidance until the estimator is ready.
@@ -145,8 +145,7 @@
   long outages and unobservable biases can still cause severe drift.
 
   Sigma is **not a safety radius**.
-  Synthetic tests validate mechanics, not improved real-drive accuracy: this remains a research
-  prototype, not a safety system.
+  Synthetic tests validate mechanics, not improved real-drive accuracy.
 
   For a new raw-sensor recording, run:
 

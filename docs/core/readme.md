@@ -15,7 +15,7 @@ On Android, Kotlin supplies sensor and location observations to `imu-nav-jni`, w
 `imu-nav-core`. The simulator calls the same core without a phone. The native trust classifier,
 jamming detector, route projector, network tracker and speed fusion take part in live navigation.
 The native `NavigationEstimator` currently runs beside the Kotlin engine for comparison; it does
-not choose the position shown to the user. IMU Nav remains a research prototype, not a safety system.
+not choose the position shown to the user.
 
 ## Read by topic
 

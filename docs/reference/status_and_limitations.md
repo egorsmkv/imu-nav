@@ -14,4 +14,4 @@
   `Tuning` already carries the camera parameters.
 - The engine differs from the analysed app in a few places: the gyro bias estimate is applied to
   turn integration, and projections compute exact arc-length.
-- Not road-tested. Treat as a research prototype, never as a safety system.
+- Not road-tested.

@@ -17,4 +17,4 @@ bookmark; browsing and management remain available during navigation.
 Bookmarks persist locally in a separate SQLite database and survive routing-pack replacement.
 Saved routes contain their own endpoint copies, so renaming or deleting a place does not change
 any route. There is no synchronization, file import/export or backup; existing Android backup
-exclusions apply. This remains a research prototype, not a safety system.
+exclusions apply.

@@ -5,8 +5,6 @@
 The server lets phones share cell-tower observations. A phone uploads what it learned, the server
 keeps each device's contribution, and a consensus decides which tower positions are ready for
 public download. Accounts control uploads; administrators can review and moderate the data.
-IMU Nav remains a research prototype, not a safety system.
-
 `server/` is **one Cargo package**, `imu-nav-cell-server`. It builds two Rust crates, or targets:
 
 | Target | In plain English |

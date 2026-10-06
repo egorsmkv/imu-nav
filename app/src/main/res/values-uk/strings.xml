@@ -157,10 +157,10 @@
     <string name="navigation_estimator_title">Алгоритм навігації</string>
     <string name="navigation_estimator_kotlin">Класичний (типово)</string>
     <string name="navigation_estimator_native">Фільтр Калмана</string>
-    <string name="navigation_estimator_summary">Оберіть перед поїздкою. Класичний алгоритм використовує метод нижче та враховує рельєф. Фільтр Калмана поєднує оцінки місцеположення й швидкості для авто та ходьби. Точність може відрізнятися. Дослідницький прототип, не система безпеки.</string>
+    <string name="navigation_estimator_summary">Оберіть перед поїздкою. Класичний алгоритм використовує метод нижче та враховує рельєф. Фільтр Калмана поєднує оцінки місцеположення й швидкості для авто та ходьби. Точність може відрізнятися.</string>
     <string name="navigation_estimator_locked">Зупиніть навігацію, щоб змінити алгоритм.</string>
     <string name="inertial_experiment_title">Експериментальний запис датчиків</string>
-    <string name="inertial_experiment_summary">Записує необроблені дані датчиків і перевіряє інерціальний фільтр без змін у навігації. Лише для авто із закріпленим телефоном. Для запуску потрібні надійний GPS і визначена орієнтація. Витрачає більше заряду й місця. Змінюйте між поїздками. Точність не доведена; це не система безпеки.</string>
+    <string name="inertial_experiment_summary">Записує необроблені дані датчиків і перевіряє інерціальний фільтр без змін у навігації. Лише для авто із закріпленим телефоном. Для запуску потрібні надійний GPS і визначена орієнтація. Витрачає більше заряду й місця. Змінюйте між поїздками. Точність не доведена.</string>
     <string name="navigation_method_dr">Датчики руху</string>
     <string name="navigation_method_cells">Вишки зв’язку</string>
     <string name="navigation_method_hybrid">Комбінований</string>
@@ -309,7 +309,6 @@
     <string name="sec_about">Про застосунок</string>
     <string name="about_version">Версія %1$s</string>
     <string name="about_credits">Дані вишок: учасники OpenCellID (CC BY-SA 4.0) і Mozilla Location Service (суспільне надбання). Карти й дані маршрутів © учасники OpenStreetMap (ODbL), OpenFreeMap. Маршрути: GraphHopper, OSRM. Вихідний код: ліцензія MIT.</string>
-    <string name="about_disclaimer">Дослідницький прототип. Ніколи не покладайтеся на нього як на систему безпеки.</string>
     <string name="telegram_group">Група в Telegram</string>
     <string name="telegram_group_url">https://t.me/imu_nav</string>
     <string name="proxy_title">Мережевий проксі</string>
@@ -540,7 +539,7 @@
     </plurals>
     <!-- First-run permission and offline-data checklist. -->
     <string name="setup_title">Налаштування IMU Nav</string>
-    <string name="setup_intro">Надайте доступ для навігації та підготуйте офлайн-дані. Ви можете продовжити, якщо відмовите в доступі. IMU Nav — дослідницький прототип, а не система безпеки.</string>
+    <string name="setup_intro">Надайте доступ для навігації та підготуйте офлайн-дані. Ви можете продовжити, якщо відмовите в доступі.</string>
     <string name="setup_location">Точне місцезнаходження</string>
     <string name="setup_location_hint">Потрібне для вимірювань GPS і пошуку найближчих вишок. Виберіть точне місцезнаходження в діалозі Android.</string>
     <string name="setup_notifications">Сповіщення</string>
@@ -628,7 +627,7 @@
     <string name="privacy_sign_in_first">Спершу ввійдіть на вибраний сервер обміну.</string>
     <string name="privacy_manage_account">Експортувати або видалити дані на сервері</string>
     <string name="air_alerts_title">Повітряні тривоги в Україні</string>
-    <string name="air_alerts_summary">Сповіщати про повітряні тривоги й відбої по всій Україні, поки застосунок відкритий. Дослідницький прототип, не система безпеки.</string>
+    <string name="air_alerts_summary">Сповіщати про повітряні тривоги й відбої по всій Україні, поки застосунок відкритий.</string>
     <string name="air_alerts_sign_in">Увійдіть на сервер обміну, щоб увімкнути сповіщення про тривоги.</string>
     <string name="air_alerts_unavailable">На цьому сервері не налаштовано сповіщення про повітряні тривоги.</string>
     <string name="air_alerts_active">Областей з активною повітряною тривогою: %1$d</string>

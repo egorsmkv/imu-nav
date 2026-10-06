@@ -2,7 +2,7 @@
 
 [Server guide](readme.md) · [Accounts](accounts.md) · [Configuration](configuration.md)
 
-IMU Nav is a research prototype, not a safety system. A public cell server is operated by the person or organization that deploys it. Before enabling public mode, identify that controller, a contact for privacy requests, the actual hosting region, recipients and processors, any international transfers, and the lawful bases used for account and security records.
+A public cell server is operated by the person or organization that deploys it. Before enabling public mode, identify that controller, a contact for privacy requests, the actual hosting region, recipients and processors, any international transfers, and the lawful bases used for account and security records.
 
 Review the English, Ukrainian, and Russian notice text in `server/config.production.toml` for the real deployment. Increase `CELLS_PRIVACY_VERSION` whenever a material notice change requires new consent. The server rejects uploads under an older version; downloads and sign-in remain available.
 

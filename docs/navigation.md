@@ -2,7 +2,7 @@
 
 [Documentation index](../README.md)
 
-The app tries to use trusted GPS first. When GPS is unreliable, it estimates progress along your planned route from phone sensors, cell towers and map information. This is a research prototype, not a safety system.
+The app tries to use trusted GPS first. When GPS is unreliable, it estimates progress along your planned route from phone sensors, cell towers and map information.
 
 ## Start a trip
 

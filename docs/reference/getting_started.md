@@ -31,7 +31,7 @@ Play builds can include the routing archive; F-Droid builds
 require a routing pack imported or downloaded in Settings. Missing archives or denied permissions
 do not block **Continue with limited functionality**, and preparation continues in the background.
 Reopen the checklist from **Settings → Set up IMU Nav**. Previously removed routing packs stay removed
-until explicitly reinstalled. IMU Nav is a research prototype, not a safety system.
+until explicitly reinstalled.
 
 ## Network proxy
 
