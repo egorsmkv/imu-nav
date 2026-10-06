@@ -5,9 +5,9 @@ implementation of the approach used by the BlindDriver app: instead of trusting 
 classifies every fix, and when GPS is unusable it dead-reckons **along the planned route** using
 the phone's IMU, network location and map knowledge. Offline maps, routes and cell data use regional packs.
 
-The [offline routing pack CI workflow](docs/ROUTING_AND_SEARCH.md#build-an-offline-routing-pack-in-ci)
+The [offline routing pack CI workflow](docs/routing_and_search.md#build-an-offline-routing-pack-in-ci)
 builds an importable archive for offline routes and address search. The separate
-[offline map pack CI workflow](docs/ROUTING_AND_SEARCH.md#build-an-offline-display-map-in-ci)
+[offline map pack CI workflow](docs/routing_and_search.md#build-an-offline-display-map-in-ci)
 produces the streets shown on screen.
 The app also links to map and routing ZIP archives from **Settings → Community links**.
 
@@ -15,40 +15,40 @@ IMU Nav is a research prototype, not a safety system.
 
 ## Documentation
 
-Start with [getting started](docs/GETTING_STARTED.md). Look up unfamiliar terms in the
-[glossary](docs/GLOSSARY.md). Each guide links to a detailed reference.
+Start with [getting started](docs/getting_started.md). Look up unfamiliar terms in the
+[glossary](docs/glossary.md). Each guide links to a detailed reference.
 
 ### Use the app
 
-- [Getting started and network proxy](docs/GETTING_STARTED.md)
-- [Navigation and positioning](docs/NAVIGATION.md)
-- [Offline routing and address search](docs/ROUTING_AND_SEARCH.md)
-- [Landscape driving and Android Auto](docs/ANDROID_AUTO.md)
-- [Bookmarks](docs/BOOKMARKS.md)
-- [Trip recording, history, replay and opt-in developer diagnostics](docs/TRIPS.md)
-- [Capture and share Android performance data](docs/PROFILING_ANDROID.md)
-- [Cell towers and sharing server](docs/CELL_TOWERS.md)
+- [Getting started and network proxy](docs/getting_started.md)
+- [Navigation and positioning](docs/navigation.md)
+- [Offline routing and address search](docs/routing_and_search.md)
+- [Landscape driving and Android Auto](docs/android_auto.md)
+- [Bookmarks](docs/bookmarks.md)
+- [Trip recording, history, replay and opt-in developer diagnostics](docs/trips.md)
+- [Capture and share Android performance data](docs/profiling_android.md)
+- [Cell towers and sharing server](docs/cell_towers.md)
 
 ### Build and verify
 
-- [Build, testing and performance checks](docs/BUILD_AND_TEST.md)
-- [Native Rust crates: core, JNI bridge and simulator](docs/core/README.md)
-- [Cell-sharing server: setup, data and API](docs/server/README.md)
-- [F-Droid releases](docs/FDROID.md)
-- [Kotlin coverage](docs/KOTLIN_COVERAGE.md)
-- [Rust coverage](docs/RUST_COVERAGE.md)
-- [Native verification](docs/NATIVE_VERIFICATION.md)
+- [Build, testing and performance checks](docs/build_and_test.md)
+- [Native Rust crates: core, JNI bridge and simulator](docs/core/readme.md)
+- [Cell-sharing server: setup, data and API](docs/server/readme.md)
+- [F-Droid releases](docs/fdroid.md)
+- [Kotlin coverage](docs/kotlin_coverage.md)
+- [Rust coverage](docs/rust_coverage.md)
+- [Native verification](docs/native_verification.md)
 
 ### Project information
 
-- [Status and limitations](docs/STATUS_AND_LIMITATIONS.md)
-- [Licences and provenance](docs/LICENCES.md)
-- [Glossary](docs/GLOSSARY.md)
+- [Status and limitations](docs/status_and_limitations.md)
+- [Licences and provenance](docs/licences.md)
+- [Glossary](docs/glossary.md)
 
 ## Quick build
 
 Requires JDK 17+, Android SDK 36, the Android NDK and Rust with the Android targets. See
-[build and test](docs/BUILD_AND_TEST.md) for setup and release commands.
+[build and test](docs/build_and_test.md) for setup and release commands.
 
 ```bash
 ./gradlew check

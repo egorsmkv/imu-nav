@@ -1,6 +1,6 @@
 # Air-raid alerts
 
-[Server guide](README.md) · [API](api.md)
+[Server guide](readme.md) · [API](api.md)
 
 Air-raid alerts are optional and off for every account until the user enables them in Android
 Settings or the browser account page. The server accepts UkraineAlarm webhook callbacks and

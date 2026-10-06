@@ -1,6 +1,6 @@
 # Privacy deployment and data requests
 
-[Server guide](README.md) · [Accounts](accounts.md) · [Configuration](configuration.md)
+[Server guide](readme.md) · [Accounts](accounts.md) · [Configuration](configuration.md)
 
 IMU Nav is a research prototype, not a safety system. A public cell server is operated by the person or organization that deploys it. Before enabling public mode, identify that controller, a contact for privacy requests, the actual hosting region, recipients and processors, any international transfers, and the lawful bases used for account and security records.
 

@@ -1,6 +1,6 @@
 # Administration and moderation
 
-[Server guide](README.md) · [Newcomer glossary](glossary.md)
+[Server guide](readme.md) · [Newcomer glossary](glossary.md)
 
 Administrators review contributions, moderate towers, set publication policy and manage accounts.
 A quarantined tower stays out of public downloads until an administrator restores it. Seed imports

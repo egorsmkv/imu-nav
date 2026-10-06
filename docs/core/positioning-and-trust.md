@@ -1,6 +1,6 @@
 # Route geometry, GPS trust and speed
 
-[Rust core guide](README.md) · [Newcomer glossary](glossary.md)
+[Rust core guide](readme.md) · [Newcomer glossary](glossary.md)
 
 `imu-nav-core` first decides where a point would land on the route, whether satellite evidence is trustworthy, and how network positions or measured speeds can support the estimate. The trust classifier runs before a GPS fix can become a trusted position; the route filter has its own statistical gates as a second check.
 

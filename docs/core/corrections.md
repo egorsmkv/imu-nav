@@ -1,6 +1,6 @@
 # Cautious corrections without trusted GPS
 
-[Rust core guide](README.md) · [Newcomer glossary](glossary.md)
+[Rust core guide](readme.md) · [Newcomer glossary](glossary.md)
 
 Cell and network positions can help when GPS is unavailable, but they can be wrong by hundreds of
 metres. Turns can also hint at progress along a route, but a phone rotation is not proof that the

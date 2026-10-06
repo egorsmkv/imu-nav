@@ -1,6 +1,6 @@
 # Check the simulator crate
 
-[Simulator guide](README.md) · [Build and run](run.md)
+[Simulator guide](readme.md) · [Build and run](run.md)
 
 Run these from the repository root. The test command targets the simulator package; the clippy and
 format commands cover the whole `native/` workspace.

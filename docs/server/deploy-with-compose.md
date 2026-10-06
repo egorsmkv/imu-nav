@@ -1,6 +1,6 @@
 # Deploy with Compose, PostgreSQL and Caddy
 
-[Server guide](README.md) · [Newcomer glossary](glossary.md)
+[Server guide](readme.md) · [Newcomer glossary](glossary.md)
 
 Compose runs the Rust server, a PostgreSQL database and Caddy for HTTPS on the domain in
 `CELLS_PUBLIC_URL`. This guide covers initial deployment, backups and upgrading a PostgreSQL 16

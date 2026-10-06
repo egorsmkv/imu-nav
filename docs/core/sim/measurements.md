@@ -1,6 +1,6 @@
 # What the measurements mean
 
-[Simulator guide](README.md) · [Inspect and compare](compare.md) · [Glossary](glossary.md)
+[Simulator guide](readme.md) · [Inspect and compare](compare.md) · [Glossary](glossary.md)
 
 A capture uses different tools for memory, CPU activity and elapsed time. Read each result on its
 own terms: sampled live memory, total allocation traffic and host runtime answer different questions.

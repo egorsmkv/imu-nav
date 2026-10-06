@@ -15,6 +15,6 @@ uses or bundles keep their own licences:
 | OkHttp, Okio                                             | HTTP client                                                   | Apache License 2.0                                                                                                                                       |
 | AndroidX, Jetpack Compose, Kotlin, kotlinx.coroutines    | app                                                           | Apache License 2.0                                                                                                                                       |
 
-The [full licence list](docs/reference/LICENCES.md) includes versions, build tools, and online services.
+The [full licence list](docs/reference/licences.md) includes versions, build tools, and online services.
 
 The app shows these attributions in Settings → About and through the map's attribution button.

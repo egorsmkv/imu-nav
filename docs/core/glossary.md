@@ -1,6 +1,6 @@
 # Newcomer glossary for the Rust core
 
-[Rust core guide](README.md) · [Project glossary](../GLOSSARY.md)
+[Rust core guide](readme.md) · [Project glossary](../glossary.md)
 
 These are the terms used in the core guides. The descriptions explain what each term means in this
 project; the linked guides contain the exact rules and limits.
@@ -8,7 +8,7 @@ project; the linked guides contain the exact rules and limits.
 - **Cargo workspace** — A set of Rust packages built together. `native/` is the workspace for the
   navigation crates. The cell-sharing server has a separate Cargo manifest.
 - **Crate** — One Rust compilation unit. Here the core is an algorithm library, JNI is the Android
-  bridge, and the simulator is a desktop program. [Crate overview](README.md).
+  bridge, and the simulator is a desktop program. [Crate overview](readme.md).
 - **Host** — The development computer running tests, replay or simulation, rather than the phone.
 - **JNI** — Java Native Interface, the bridge that lets Kotlin call compiled Rust code.
   [Android bridge](jni-and-android.md).
@@ -47,7 +47,7 @@ project; the linked guides contain the exact rules and limits.
 - **Profiling** — Measuring where code uses time or memory. A host profile does not directly
   measure performance on Android. [Profiling guide](profiling.md).
 - **Simulator** — A desktop program that feeds repeatable synthetic trips into the core. It helps
-  compare behavior and performance changes without a phone. [Simulator guide](sim/README.md).
+  compare behavior and performance changes without a phone. [Simulator guide](sim/readme.md).
 - **Kani / bounded proof** — A tool and method for checking selected Rust rules across inputs
   within stated limits. Passing a bounded proof does not certify the entire navigator.
   [Verification guide](verification.md).

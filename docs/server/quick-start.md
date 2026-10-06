@@ -1,6 +1,6 @@
 # Build and start with SQLite
 
-[Server guide](README.md) · [Newcomer glossary](glossary.md)
+[Server guide](readme.md) · [Newcomer glossary](glossary.md)
 
 This starts one server process with a local SQLite database. It is the shortest way to try the
 protocol and create an administrator account. Run the commands from the repository root. Use the

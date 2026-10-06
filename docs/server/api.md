@@ -1,6 +1,6 @@
 # Cell server API
 
-[Server guide](README.md) · [Newcomer glossary](glossary.md)
+[Server guide](readme.md) · [Newcomer glossary](glossary.md)
 
 The Android app uploads tower observations and downloads published towers over HTTP. Accounts use
 short-lived access tokens, and management clients can subscribe to WebSocket events. These

@@ -1,6 +1,6 @@
 # Scenarios and inputs
 
-[Simulator guide](README.md) · [Build and run](run.md) · [Glossary](glossary.md)
+[Simulator guide](readme.md) · [Build and run](run.md) · [Glossary](glossary.md)
 
 Each scenario creates a repeatable route and observations for a particular part of `imu-nav-core`.
 The cases help compare behavior across code changes; they are synthetic and do not measure real-drive

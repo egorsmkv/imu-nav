@@ -1,6 +1,6 @@
 # Browser accounts and personal data
 
-[Server guide](README.md) · [Newcomer glossary](glossary.md)
+[Server guide](readme.md) · [Newcomer glossary](glossary.md)
 
 A person can sign in through browser pages to inspect, export or delete their own tower
 observations. Browser sessions use cookies; Android app sessions use separate JSON tokens.

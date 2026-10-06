@@ -1,6 +1,6 @@
 # Build and run the simulator
 
-[Simulator guide](README.md) · [Scenario list](scenarios.md) · [Glossary](glossary.md)
+[Simulator guide](readme.md) · [Scenario list](scenarios.md) · [Glossary](glossary.md)
 
 Run these commands from the repository root on Linux. The simulator is a desktop executable;
 Android and JNI are not needed. A complete run writes separate measurement results and a copy of

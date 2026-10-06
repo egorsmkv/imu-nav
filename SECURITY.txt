@@ -12,7 +12,7 @@ Sensitive data
 - Keep user data in app-private storage. Preserve the app's disabled backup
   policy. Share files only after a user action, through the existing
   FileProvider with narrow paths and temporary URI permissions. Do not add
-  automatic diagnostic uploads. See docs/TRIPS.md and docs/PROFILING_ANDROID.md.
+  automatic diagnostic uploads. See docs/trips.md and docs/profiling_android.md.
 - Collect and retain only what a feature needs. Diagnostic logs can contain
   precise location; treat them as private and warn before user-initiated
   sharing. Do not put credentials, tokens, request bodies, or session
@@ -29,7 +29,7 @@ Secrets and credentials
   maintainers privately and rotate or revoke it; deleting it from a later
   commit does not make the exposure safe.
 - Do not assume stored proxy credentials are encrypted by the app. See
-  docs/GETTING_STARTED.md before changing proxy settings or storage.
+  docs/getting_started.md before changing proxy settings or storage.
 
 Network and server boundaries
 -----------------------------
@@ -56,7 +56,7 @@ Navigation integrity
   TripEvent so replay can reveal real-world behavior changes. Check the
   relevant trust, terrain, routing, and replay tests before shipping changes.
 - Keep vehicle access read-only. Do not describe the app as a safety system.
-  See docs/reference/NAVIGATION.md for the navigation model.
+  See docs/reference/navigation.md for the navigation model.
 
 Before merging or reporting a problem
 -------------------------------------

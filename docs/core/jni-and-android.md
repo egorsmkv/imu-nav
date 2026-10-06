@@ -1,6 +1,6 @@
 # JNI bridge and Android integration
 
-[Rust core guide](README.md) · [Newcomer glossary](glossary.md)
+[Rust core guide](readme.md) · [Newcomer glossary](glossary.md)
 
 Android code cannot call a Rust function directly. The JNI crate is a small translator: it checks
 Kotlin inputs, calls the platform-independent core, and returns simple results that Kotlin can read.

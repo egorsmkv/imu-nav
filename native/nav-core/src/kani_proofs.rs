@@ -1,4 +1,4 @@
-//! Bounded contracts; see docs/NATIVE_VERIFICATION.md for domains and exclusions.
+//! Bounded contracts; see docs/native_verification.md for domains and exclusions.
 
 use super::*;
 

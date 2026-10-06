@@ -1,6 +1,6 @@
 # Build, test and compare recorded trips
 
-[Rust core guide](README.md) · [Newcomer glossary](glossary.md)
+[Rust core guide](readme.md) · [Newcomer glossary](glossary.md)
 
 Run these commands from the repository root. The host checks exercise Rust without Android. Replay then feeds the same recorded trip to the Kotlin engine and the Rust estimator, making their differences visible. The numerical examples below are controlled regressions, not road-accuracy claims.
 

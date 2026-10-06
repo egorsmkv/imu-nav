@@ -1,6 +1,6 @@
 # Manual configuration, storage and logging
 
-[Server guide](README.md) · [Newcomer glossary](glossary.md)
+[Server guide](readme.md) · [Newcomer glossary](glossary.md)
 
 Use a TOML file when running the server directly or choosing between SQLite and PostgreSQL. The
 same database settings must be used for startup and administrator commands. Public installations

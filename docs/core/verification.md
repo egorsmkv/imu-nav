@@ -1,6 +1,6 @@
 # Bounded verification of core rules
 
-[Rust core guide](README.md) · [Newcomer glossary](glossary.md)
+[Rust core guide](readme.md) · [Newcomer glossary](glossary.md)
 
 Kani explores many inputs inside stated bounds to check rules such as rejecting malformed evidence and leaving state unchanged after a failed update. These proofs complement tests and replay; they do not establish that every real drive is safe.
 
@@ -8,7 +8,7 @@ Kani explores many inputs inside stated bounds to check rules such as rejecting 
 
 The native core has a pinned Kani proof suite for input rejection, state preservation, conservative
 corrections, trust anchors, jamming hysteresis and network resets. Run `python3 tools/verify_native.py`
-from the repository root. See [setup, exact bounds and CI checks](../NATIVE_VERIFICATION.md);
+from the repository root. See [setup, exact bounds and CI checks](../native_verification.md);
 these bounded contracts complement replay/testing and do not certify the whole navigator.
 
 Finite inputs that overflow uncertainty or retained state calculations now return `FilterError`
@@ -19,7 +19,7 @@ sequences; real-geometry delayed-GPS rollback and retry are covered by Rust regr
 Timestamp proofs cover prediction-step progress, GPS/OBD ingress ordering and hint expiry. OBD
 calibration proofs cover accepted GOOD GPS eligibility, stability/age limits and the 0.8–1.2 scale
 interval. These decision helpers are shared with production; exact domains are documented in
-[the verification scope](../NATIVE_VERIFICATION.md).
+[the verification scope](../native_verification.md).
 
 Motion/walking proofs additionally check measured-speed priority, travel-mode isolation, repeated
 prior bounds, and stop recovery without a position anchor. They exercise production setters with

@@ -274,7 +274,7 @@ def verify():
     try:
         version = run_logged(['cargo', 'kani', '--version'], env, OUTPUT / 'version.log', 60)
         if f'Kani Rust Verifier {VERSION} (cargo plugin)\n' not in version:
-            raise RuntimeError(f'Install kani-verifier {VERSION}; see docs/NATIVE_VERIFICATION.md')
+            raise RuntimeError(f'Install kani-verifier {VERSION}; see docs/native_verification.md')
         print(f'Verifying {len(REQUIRED)} harnesses with Kani {VERSION}; logs: {OUTPUT}', flush=True)
         run_logged(['cargo', 'kani', '-p', 'imu-nav-core', '--lib', '--target-dir', str(OUTPUT / 'target'),
                     '-Z', 'unstable-options', '--export-json', str(report_path),

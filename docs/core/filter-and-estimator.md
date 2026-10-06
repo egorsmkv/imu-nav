@@ -1,6 +1,6 @@
 # Route filter and navigation estimator
 
-[Rust core guide](README.md) · [Newcomer glossary](glossary.md)
+[Rust core guide](readme.md) · [Newcomer glossary](glossary.md)
 
 The route filter keeps a best guess for how far the vehicle has travelled along its planned route.
 It also tracks speed and how uncertain those guesses are. The estimator decides when to advance

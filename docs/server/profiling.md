@@ -1,6 +1,6 @@
 # Profiling and traffic simulation
 
-[Server guide](README.md) · [Newcomer glossary](glossary.md)
+[Server guide](readme.md) · [Newcomer glossary](glossary.md)
 
 Use repeatable local traffic to find expensive server operations and compare changes. The optional
 profiling feature records function timing; the uninstrumented release build is used for speed

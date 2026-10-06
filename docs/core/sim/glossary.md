@@ -1,6 +1,6 @@
 # Simulator glossary
 
-[Simulator guide](README.md) · [Rust core glossary](../glossary.md)
+[Simulator guide](readme.md) · [Rust core glossary](../glossary.md)
 
 - **Cargo workspace** — Related Rust packages built together. `native/` contains the core, JNI
   bridge and simulator packages.

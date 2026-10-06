@@ -1,6 +1,6 @@
 # Inspect and compare captures
 
-[Simulator guide](README.md) · [Measurements](measurements.md) · [Glossary](glossary.md)
+[Simulator guide](readme.md) · [Measurements](measurements.md) · [Glossary](glossary.md)
 
 Use two complete captures with matching settings to check a core change. The simulator checks that
 the workload and deterministic outputs match before reporting differences in measurements.

@@ -1,14 +1,14 @@
 # Newcomer glossary for the cell server
 
-[Server guide](README.md) · [Project glossary](../GLOSSARY.md)
+[Server guide](readme.md) · [Project glossary](../glossary.md)
 
 These terms describe the server's data and deployment. The linked guides contain the exact API,
 limits and operational steps.
 
 - **Cargo package** — A manifest and source tree that Cargo builds. `server/` is one package with
-  a library crate and a binary crate. [Server overview](README.md).
+  a library crate and a binary crate. [Server overview](readme.md).
 - **Crate** — One Rust compilation unit. Here the library crate contains reusable server logic,
-  while the binary crate starts the process. [Server overview](README.md).
+  while the binary crate starts the process. [Server overview](readme.md).
 - **HTTP API** — Requests and responses used by the app and management tools to upload, download
   and inspect data. [API guide](api.md).
 - **WebSocket** — A connection that stays open so management clients can receive change events
@@ -20,7 +20,7 @@ limits and operational steps.
 - **MCC / MNC** — Country and mobile-network codes that are part of a cell key. They are identifiers,
   not coordinates. [Accounts guide](accounts.md).
 - **Contribution / observation** — One device's learned position for a cell. The server stores
-  contributions before deciding what to publish. [Server overview](README.md).
+  contributions before deciding what to publish. [Server overview](readme.md).
 - **Consensus** — The server's combined tower position based on eligible contributions. A tower
   normally needs observations from at least two devices before publication. [Administration](administration.md).
 - **Seed** — An imported starting tower position, such as an OpenCellID row. It does not replace
