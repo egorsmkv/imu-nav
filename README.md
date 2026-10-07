@@ -1,4 +1,4 @@
-# IMU Nav (open source)
+# IMU Nav
 
 Worldwide car navigation that keeps working when GPS is **jammed or spoofed**. An open Kotlin
 implementation of the approach used by the BlindDriver app: instead of trusting GPS, it
