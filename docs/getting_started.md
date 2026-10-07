@@ -6,11 +6,13 @@ IMU Nav can guide a trip when GPS becomes unreliable. You can finish setup with 
 
 ## Set up the app
 
-1. Open the app and choose the language for screens and voice directions.
+1. Open the app and use the language dropdown to choose the language for screens and voice directions. Choose **Phone default** to follow your phone’s language.
 2. Tap **Enable permissions**. Allow precise location for navigation. Allow notifications if you want trip updates. Walking uses the Physical activity permission; a Bluetooth car-speed adapter uses Nearby devices on newer Android versions.
 3. If the app says the phone's Location switch is off, open the offered Android settings and turn it on. A permission grant alone does not switch Location on.
 4. Choose **Install built-in routing pack** or **Install built-in towers** if those options are available and you want the offline data. Both are optional. F-Droid users can import or download a routing pack later in Settings.
 5. Tap **Continue with limited functionality** when you are ready. Any chosen data installation can finish in the background.
+
+You can also change the language in **Settings → General → Language**. Tap the current language to open the options; the change applies immediately.
 
 To return to the checklist, open **Settings → Set up IMU Nav**. Skipping a pack does not erase tower data already on the phone.
 
