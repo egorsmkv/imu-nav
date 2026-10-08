@@ -22,7 +22,6 @@ use tokio::sync::{Notify, broadcast};
 const PROVIDER_BASE: &str = "https://api.ukrainealarm.com";
 const RECONCILE_EVERY: Duration = Duration::from_mins(5);
 const REGISTER_RETRY: Duration = Duration::from_secs(30);
-const STREAM_CHECK_EVERY: Duration = Duration::from_secs(60);
 const MAX_PROVIDER_BYTES: usize = 2 * 1024 * 1024;
 
 /// The operator keeps these values out of repository files and server logs.
@@ -302,7 +301,8 @@ async fn stream_upgrade(
         .and_then(|value| value.strip_prefix("Bearer "))
         .unwrap_or_default()
         .to_owned();
-    Ok(websocket.on_upgrade(move |socket| stream(socket, state, token, account.id)))
+    Ok(crate::websocket::bounded_upgrade(websocket)
+        .on_upgrade(move |socket| stream(socket, state, token, account.id)))
 }
 
 async fn stream(mut socket: WebSocket, state: AppState, token: String, account_id: i64) {
@@ -321,7 +321,8 @@ async fn stream(mut socket: WebSocket, state: AppState, token: String, account_i
     if send(&mut socket, &snapshot).await.is_err() {
         return;
     }
-    let mut checks = tokio::time::interval(STREAM_CHECK_EVERY);
+    let mut checks = tokio::time::interval(crate::websocket::AUTH_CHECK_INTERVAL);
+    checks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         tokio::select! {
             _ = checks.tick() => {
@@ -364,10 +365,7 @@ async fn stream_allowed(state: &AppState, token: &str, account_id: i64) -> bool 
 
 #[cfg_attr(feature = "profiling", hotpath::measure)]
 async fn send(socket: &mut WebSocket, message: &AlertMessage) -> anyhow::Result<()> {
-    socket
-        .send(Message::Text(serde_json::to_string(message)?.into()))
-        .await?;
-    Ok(())
+    crate::websocket::send_json(socket, message).await
 }
 
 async fn provider_callback(

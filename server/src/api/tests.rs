@@ -1,5 +1,7 @@
 use super::*;
 
+mod security;
+
 #[test]
 fn rate_and_identity_limits_expire_only_after_their_windows() {
     let file = tempfile::NamedTempFile::new().unwrap();

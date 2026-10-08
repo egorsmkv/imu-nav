@@ -305,10 +305,18 @@ pub(crate) fn account_for_token(
     raw: &str,
     kind: &str,
 ) -> anyhow::Result<Option<(Account, String)>> {
+    account_for_token_hash(store, &digest(raw), kind)
+}
+
+fn account_for_token_hash(
+    store: &CellStore,
+    token_hash: &str,
+    kind: &str,
+) -> anyhow::Result<Option<(Account, String)>> {
     let connection = store.connection()?;
     connection.query_row(
         "SELECT users.id,users.email,users.admin,auth_tokens.session_id,users.email_verified,users.sharing_enabled FROM auth_tokens JOIN users ON users.id=auth_tokens.user_id WHERE token_hash=?1 AND kind=?2 AND expires_s>?3 AND users.suspended=0",
-        params![digest(raw), kind, now_s()],
+        params![token_hash, kind, now_s()],
         |row| Ok((Account { id: row.get(0)?, email: row.get(1)?, admin: row.get(2)?, email_verified: row.get(4)?, sharing_enabled: row.get(5)? }, row.get(3)?)),
     ).optional().map_err(Into::into)
 }
@@ -335,6 +343,65 @@ pub(crate) async fn admin_account(
     headers: &HeaderMap,
     peer: SocketAddr,
 ) -> Result<Account, ApiError> {
+    admin_stream_account(state, headers, peer)
+        .await
+        .map(|(account, _)| account)
+}
+
+// Retain credential digests, never raw tokens or passwords. Do not log or derive Debug for this
+// authorization snapshot.
+pub(crate) struct AdminStreamAuthorization {
+    account_id: i64,
+    credential: AdminStreamCredential,
+}
+
+enum AdminStreamCredential {
+    Bearer(String),
+    Basic {
+        email: String,
+        password_digest: String,
+    },
+}
+
+impl AdminStreamAuthorization {
+    pub(crate) async fn allowed(&self, state: &AppState) -> bool {
+        let store = state.store.clone();
+        let account_id = self.account_id;
+        match &self.credential {
+            AdminStreamCredential::Bearer(token_hash) => {
+                let token_hash = token_hash.clone();
+                run_db(move || {
+                    Ok(account_for_token_hash(&store, &token_hash, "access")?
+                        .is_some_and(|(account, _)| account.id == account_id && account.admin))
+                })
+                .await
+                .unwrap_or(false)
+            }
+            AdminStreamCredential::Basic {
+                email,
+                password_digest,
+            } => {
+                let email = email.clone();
+                let password_digest = password_digest.clone();
+                run_db(move || {
+                    let current: Option<String> = store.connection()?.query_row(
+                        "SELECT password_hash FROM users WHERE id=?1 AND email=?2 AND admin=1 AND suspended=0",
+                        params![account_id, email], |row| row.get(0),
+                    ).optional()?;
+                    Ok(current.is_some_and(|hash| digest(&hash) == password_digest))
+                })
+                .await
+                .unwrap_or(false)
+            }
+        }
+    }
+}
+
+pub(crate) async fn admin_stream_account(
+    state: &AppState,
+    headers: &HeaderMap,
+    peer: SocketAddr,
+) -> Result<(Account, AdminStreamAuthorization), ApiError> {
     let basic = headers
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
@@ -365,17 +432,34 @@ pub(crate) async fn admin_account(
         };
         let store = state.store.clone();
         let email_for_lookup = email.clone();
-        let account = run_db(move || login_account(&store, &email_for_lookup, &password)).await?;
-        if let Some(account) = account.filter(|account| account.admin) {
-            return Ok(account);
+        let verified =
+            run_db(move || login_account_with_hash(&store, &email_for_lookup, &password)).await?;
+        if let Some((account, hash)) = verified.filter(|(account, _)| account.admin) {
+            let authorization = AdminStreamAuthorization {
+                account_id: account.id,
+                credential: AdminStreamCredential::Basic {
+                    email: account.email.clone(),
+                    password_digest: digest(&hash),
+                },
+            };
+            return Ok((account, authorization));
         }
         return Err(ApiError(StatusCode::UNAUTHORIZED, "UNAUTHORIZED"));
     }
     let account = bearer_account(state, headers).await?;
-    account
-        .admin
-        .then_some(account)
-        .ok_or(ApiError(StatusCode::FORBIDDEN, "FORBIDDEN"))
+    if !account.admin {
+        return Err(ApiError(StatusCode::FORBIDDEN, "FORBIDDEN"));
+    }
+    let raw = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .ok_or(ApiError(StatusCode::UNAUTHORIZED, "UNAUTHORIZED"))?;
+    let authorization = AdminStreamAuthorization {
+        account_id: account.id,
+        credential: AdminStreamCredential::Bearer(digest(raw)),
+    };
+    Ok((account, authorization))
 }
 
 pub(crate) fn login_account(
@@ -383,6 +467,14 @@ pub(crate) fn login_account(
     email: &str,
     password: &str,
 ) -> anyhow::Result<Option<Account>> {
+    Ok(login_account_with_hash(store, email, password)?.map(|(account, _)| account))
+}
+
+fn login_account_with_hash(
+    store: &CellStore,
+    email: &str,
+    password: &str,
+) -> anyhow::Result<Option<(Account, String)>> {
     let connection = store.connection()?;
     let result: Option<(Account, String)> = connection
         .query_row(
@@ -402,7 +494,9 @@ pub(crate) fn login_account(
             },
         )
         .optional()?;
-    Ok(result.and_then(|(account, hash)| verify_password(password, &hash).then_some(account)))
+    // Return the exact hash that was verified, so a concurrent password change invalidates the
+    // stream instead of binding old credentials to a newly stored password.
+    Ok(result.filter(|(_, hash)| verify_password(password, hash)))
 }
 
 /// Create an account once, returning none when its normalized email already exists.
