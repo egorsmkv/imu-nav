@@ -14,6 +14,7 @@ mod model;
 mod privacy;
 mod store;
 mod web;
+mod websocket;
 
 pub use air_alerts::AirAlertConfig;
 pub use api::{AppState, ServerConfig, router};

@@ -53,6 +53,29 @@ uploads and, for administrators, management calls and WebSocket upgrades. Use
 to `/v1/auth/logout` to revoke the session. `GET /v1/auth/me` returns the signed-in account.
 Access tokens last 15 minutes and refresh tokens last 30 days.
 
+## WebSocket access and resource limits
+
+`/v1/events` requires an active administrator account throughout the connection. The server
+checks authorization before the initial `ready`, before each queued event or `resync_required`,
+and every 60 seconds while idle. Bearer connections close when their access token expires or
+their session is revoked. Both bearer and Basic connections close after account suspension or
+loss of administrator rights. Basic connections also close when the sign-in email or password
+changes. Basic checks use the credentials verified at the handshake without repeating password
+hashing or charging another sign-in attempt.
+
+`/v1/air-alerts/stream` checks its bearer session and the account's opt-in before sending
+snapshots or changes and every 60 seconds while idle. Neither stream accepts client application
+commands. Incoming frames and complete messages, including fragmented messages, are limited to
+4 KiB; normal ping/pong and close frames remain supported. A send that cannot finish within
+10 seconds ends the connection. Authorization checks can wait for the database, and a message
+already being sent may finish while credentials are revoked.
+
+After a disconnect, obtain valid credentials before reconnecting and reload the management list
+or use the new air-alert snapshot. A refreshed access token requires a new WebSocket connection;
+it does not replace the credentials on an existing connection.
+
+## Account recovery and upload permissions
+
 Password recovery needs all five environment variables: `CELLS_PUBLIC_URL` (an HTTPS base URL),
 `CELLS_SMTP_HOST`, `CELLS_SMTP_USERNAME`, `CELLS_SMTP_PASSWORD`, and `CELLS_SMTP_FROM`. The app
 calls `POST /v1/auth/password-reset/request` with an email. The one-use email link opens a

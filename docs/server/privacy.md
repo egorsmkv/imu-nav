@@ -22,6 +22,12 @@ Review the English, Ukrainian, and Russian notice text in `server/config.product
 
 The public `/v1/privacy` endpoint returns the operator notice. `/v1/privacy/me` returns the current account's two consent states. Each purpose has a separate authenticated `PUT` with the current notice version and `DELETE` for withdrawal. Deletion immediately removes the purpose's live data in one database transaction.
 
+Tower uploads, consent changes, sharing controls and account closure retain their admission lock
+until any started database write finishes, even if the HTTP client disconnects. A successful
+response also keeps that lock through management-event publication. Disconnecting is therefore
+not a way to cancel a write already in progress. After an interrupted request, sign in and check
+the account's consent and data state before retrying.
+
 Tower consensus and the removal feed are updated, although downloaded copies and preexisting exports cannot be recalled. Old clients with no receipt receive `CONSENT_REQUIRED` when uploading; they may still sign in and download. The Android app stops locally first and retries an offline withdrawal after a session is available. A pending withdrawal needs the user to sign in again if they signed out before the server received it.
 
 The account panel exports a gzip-compressed NDJSON file with account fields, the air-alert preference, tower observations, deleted-key markers, consent history, diagnostic sessions and entries, session metadata and audit entries made by the account. It excludes password hashes and token values. The browser's existing CSRF token protects withdrawal forms. Other access, correction, restriction or objection requests go to the configured rights contact; verify identity before disclosing data and record the response deadline. The [European Commission guidance on individual requests](https://commission.europa.eu/law/law-topic/data-protection/information-business-and-organisations/dealing-requests-individuals_en) describes the process.

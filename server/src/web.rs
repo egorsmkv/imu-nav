@@ -1,6 +1,6 @@
 //! Browser account pages backed by a separate cookie session and account-scoped store queries.
 
-use crate::api::{ApiError, AppState, run_db};
+use crate::api::{ApiError, AppState, run_db, run_db_guarded};
 use crate::auth::{self, Account};
 use crate::db::params;
 use crate::store::{OwnContributionChange, OwnContributionPage, OwnFilter};
@@ -1101,15 +1101,17 @@ async fn withdraw_privacy(
             "Privacy purpose not found.",
         ));
     }
-    let _gate = state.write_gate.write().await;
+    let gate = state.write_gate.clone().write_owned().await;
     let store = state.store.clone();
     let policy = state.policy();
     if purpose == "trip_archive" {
         crate::trips::owner(&state, &headers, false).await?;
     }
     let purpose_for_log = purpose.clone();
-    let changes =
-        run_db(move || store.withdraw_privacy_consent(account.id, &purpose, &policy)).await?;
+    let (changes, _gate) = run_db_guarded(gate, move || {
+        store.withdraw_privacy_consent(account.id, &purpose, &policy)
+    })
+    .await?;
     for change in changes {
         match change {
             crate::store::OwnContributionChange::Updated(tower) => {
@@ -1291,9 +1293,10 @@ async fn pause_sharing(
     if form.csrf != csrf_token(&raw) {
         return Ok(error_page(StatusCode::FORBIDDEN, "Invalid form token."));
     }
-    let _guard = state.write_gate.write().await;
+    let guard = state.write_gate.clone().write_owned().await;
     let store = state.store.clone();
-    run_db(move || store.set_account_sharing(account.id, false)).await?;
+    let (_, _guard) =
+        run_db_guarded(guard, move || store.set_account_sharing(account.id, false)).await?;
     Ok(redirect("/account"))
 }
 
@@ -1308,9 +1311,9 @@ async fn resume_sharing(
     if form.csrf != csrf_token(&raw) {
         return Ok(error_page(StatusCode::FORBIDDEN, "Invalid form token."));
     }
-    let _guard = state.write_gate.write().await;
+    let guard = state.write_gate.clone().write_owned().await;
     let store = state.store.clone();
-    let resumed = run_db(move || {
+    let (resumed, _guard) = run_db_guarded(guard, move || {
         if !auth::verify_account_password(&store, account.id, &form.password)? {
             return Ok(false);
         }
@@ -1401,10 +1404,10 @@ async fn close_account(
             "Administrator accounts cannot be closed here.",
         ));
     }
-    let _guard = state.write_gate.write().await;
+    let guard = state.write_gate.clone().write_owned().await;
     let store = state.store.clone();
     let policy = state.policy();
-    let changes = run_db(move || {
+    let (changes, _guard) = run_db_guarded(guard, move || {
         if !auth::verify_account_password(&store, account.id, &form.password)? {
             return Ok(None);
         }

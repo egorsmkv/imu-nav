@@ -1,6 +1,6 @@
 //! Published operator notice and independently revocable upload permissions.
 
-use crate::api::{ApiError, AppState, run_db};
+use crate::api::{ApiError, AppState, run_db, run_db_guarded};
 use crate::auth;
 use crate::store::OwnContributionChange;
 use axum::extract::{Path, State};
@@ -119,10 +119,12 @@ async fn grant(
     if request.notice_version != version {
         return Err(ApiError(StatusCode::CONFLICT, "NOTICE_CHANGED"));
     }
-    let _gate = state.write_gate.write().await;
+    let gate = state.write_gate.clone().write_owned().await;
     let store = state.store.clone();
-    run_db(move || store.grant_privacy_consent(account.id, &purpose, &request.notice_version))
-        .await?;
+    let ((), _gate) = run_db_guarded(gate, move || {
+        store.grant_privacy_consent(account.id, &purpose, &request.notice_version)
+    })
+    .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -136,12 +138,14 @@ async fn withdraw(
     if !matches!(purpose.as_str(), "account_sync" | "trip_archive") {
         configured(&state)?;
     }
-    let _gate = state.write_gate.write().await;
+    let gate = state.write_gate.clone().write_owned().await;
     let store = state.store.clone();
     let policy = state.policy();
     let purpose_for_log = purpose.clone();
-    let changes =
-        run_db(move || store.withdraw_privacy_consent(account.id, &purpose, &policy)).await?;
+    let (changes, _gate) = run_db_guarded(gate, move || {
+        store.withdraw_privacy_consent(account.id, &purpose, &policy)
+    })
+    .await?;
     for change in changes {
         match change {
             OwnContributionChange::Updated(tower) => {

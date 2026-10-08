@@ -273,11 +273,13 @@ async fn upload_cells(
             }
         })?;
     let store = state.store.clone();
-    let _write_guard = state.write_gate.read().await;
+    let write_guard = state.write_gate.clone().read_owned().await;
     check_upload_permission(&state, account.id).await?;
     let policy = state.policy();
-    let (result, changed) =
-        run_db(move || store.contribute(&device, &towers, now_s(), &policy)).await?;
+    let ((result, changed), _write_guard) = run_db_guarded(write_guard, move || {
+        store.contribute(&device, &towers, now_s(), &policy)
+    })
+    .await?;
     let visibility_store = state.store.clone();
     let visible = run_db(move || visibility_store.visible_changes(changed)).await?;
     for tower in visible {
@@ -588,14 +590,18 @@ async fn websocket_events(
     headers: HeaderMap,
     websocket: WebSocketUpgrade,
 ) -> Result<Response, ApiError> {
-    let account = auth::admin_account(&state, &headers, peer).await?;
+    let (account, authorization) = auth::admin_stream_account(&state, &headers, peer).await?;
     tracing::info!(account_id = account.id, "admin event stream connected");
-    Ok(websocket
-        .on_upgrade(move |socket| stream_events(socket, state))
+    Ok(crate::websocket::bounded_upgrade(websocket)
+        .on_upgrade(move |socket| stream_events(socket, state, authorization))
         .into_response())
 }
 
-async fn stream_events(mut socket: WebSocket, state: AppState) {
+async fn stream_events(
+    mut socket: WebSocket,
+    state: AppState,
+    authorization: auth::AdminStreamAuthorization,
+) {
     // Subscribe before the initial count so updates committed during that query remain queued.
     let mut events = state.events.subscribe();
     let visibility = state.activation_gate.read().await;
@@ -605,19 +611,26 @@ async fn stream_events(mut socket: WebSocket, state: AppState) {
         .await
         .map_or(0, |counts| counts.0);
     drop(visibility);
-    if send_event(&mut socket, &ServerEvent::Ready { published })
-        .await
-        .is_err()
+    if !authorization.allowed(&state).await
+        || send_event(&mut socket, &ServerEvent::Ready { published })
+            .await
+            .is_err()
     {
         return;
     }
+    let mut checks = tokio::time::interval(crate::websocket::AUTH_CHECK_INTERVAL);
+    checks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         tokio::select! {
+            _ = checks.tick() => {
+                if !authorization.allowed(&state).await { break; }
+            },
             event = events.recv() => match event {
-                Ok(event) if send_event(&mut socket, &event).await.is_err() => break,
-                Ok(_) => {}
+                Ok(event) => {
+                    if !authorization.allowed(&state).await || send_event(&mut socket, &event).await.is_err() { break; }
+                }
                 Err(broadcast::error::RecvError::Lagged(missed)) => {
-                    if send_event(&mut socket, &ServerEvent::ResyncRequired { missed }).await.is_err() {
+                    if !authorization.allowed(&state).await || send_event(&mut socket, &ServerEvent::ResyncRequired { missed }).await.is_err() {
                         break;
                     }
                 }
@@ -633,9 +646,7 @@ async fn stream_events(mut socket: WebSocket, state: AppState) {
 }
 
 async fn send_event(socket: &mut WebSocket, event: &ServerEvent) -> anyhow::Result<()> {
-    let json = serde_json::to_string(event)?;
-    socket.send(Message::Text(json.into())).await?;
-    Ok(())
+    crate::websocket::send_json(socket, event).await
 }
 
 pub(crate) fn path_key(
@@ -669,6 +680,16 @@ pub(crate) async fn run_db<T: Send + 'static>(
     .await
     .map_err(ApiError::from)?
     .map_err(ApiError::from)
+}
+
+/// Keep admission held through the worker and through publication of its result.
+pub(crate) async fn run_db_guarded<T: Send + 'static, G: Send + 'static>(
+    guard: G,
+    operation: impl FnOnce() -> anyhow::Result<T> + Send + 'static,
+) -> Result<(T, G), ApiError> {
+    // Started blocking work survives cancellation of its waiter. The guard must move into that
+    // work, then return to the caller so live-event publication still happens under admission.
+    run_db(move || Ok((operation()?, guard))).await
 }
 
 fn valid_device_id(value: &str) -> bool {
