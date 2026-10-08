@@ -20,6 +20,9 @@ internal class NetworkDeviationDetector {
             fastKey = null
             return null
         }
+        // This check precedes NetworkTracker.gate in the engine, so validate its own evidence.
+        if (fix.elapsedMs < 0 || fix.lat !in -90.0..90.0 || fix.lon !in -180.0..180.0) return null
+        if (!accuracyM.isFinite() || accuracyM < 0.0 || !projection.s.isFinite() || !projection.offsetM.isFinite() || projection.offsetM < 0.0) return null
         val remaining = car.route.length - car.s
         val offset = projection.offsetM
         if (remaining >= 1000.0 && accuracyM <= 300.0) {

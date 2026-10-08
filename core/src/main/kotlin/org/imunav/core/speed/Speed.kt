@@ -39,18 +39,27 @@ object SpeedFusion : SpeedFusionProvider {
     private const val GPS_SIGMA_PER_S = 0.08
     private const val MIN_NETWORK_SIGMA = 0.3
 
-    /** Fused speed in m/s (0 when there is no source at all). */
+    /** Fused speed in m/s; invalid sources are ignored and unusable arithmetic returns 0. */
     override fun fuse(lastGpsSpeed: Double?, gpsAgeMs: Long, routePrior: Double?, network: SpeedEstimate?): Double {
         val sources = buildList {
-            if (lastGpsSpeed != null) add(lastGpsSpeed to GPS_SIGMA + max(gpsAgeMs, 0L) / 1000.0 * GPS_SIGMA_PER_S)
-            if (routePrior != null) add(routePrior to ROUTE_PRIOR_SIGMA)
-            if (network != null) add(network.speedMps to max(network.sigmaMps, MIN_NETWORK_SIGMA))
+            if (lastGpsSpeed != null && lastGpsSpeed.isFinite() && lastGpsSpeed >= 0.0) add(lastGpsSpeed to GPS_SIGMA + max(gpsAgeMs, 0L) / 1000.0 * GPS_SIGMA_PER_S)
+            if (routePrior != null && routePrior.isFinite() && routePrior >= 0.0) add(routePrior to ROUTE_PRIOR_SIGMA)
+            if (network != null && validNetworkEstimate(network)) {
+                add(network.speedMps to max(network.sigmaMps, MIN_NETWORK_SIGMA))
+            }
         }
         if (sources.isEmpty()) return 0.0
         val weightSum = sources.sumOf { (_, sigma) -> 1.0 / (sigma * sigma) }
         val weightedSpeedSum = sources.sumOf { (speed, sigma) -> speed / (sigma * sigma) }
-        return (weightedSpeedSum / weightSum).coerceIn(0.0, MAX_SPEED_MPS)
+        if (!weightSum.isFinite() || weightSum <= 0.0 || !weightedSpeedSum.isFinite() || weightedSpeedSum < 0.0) return 0.0
+        val speed = weightedSpeedSum / weightSum
+        return if (speed.isFinite()) speed.coerceIn(0.0, MAX_SPEED_MPS) else 0.0
     }
+
+    /** Validate supplied metadata before the uncertainty floor can make it appear usable. */
+    private fun validNetworkEstimate(estimate: SpeedEstimate) = validNonNegative(estimate.speedMps) && validNonNegative(estimate.sigmaMps) && validNonNegative(estimate.spanS)
+
+    private fun validNonNegative(value: Double) = value.isFinite() && value >= 0.0
 }
 
 /**
@@ -68,14 +77,18 @@ class NetSpeedEstimator {
     /** `s = intercept + slope × seconds since t0`; [slopeSigma] = uncertainty of the slope. */
     private class Line(val intercept: Double, val slope: Double, val slopeSigma: Double, val t0: Long) {
         fun sAt(elapsedMs: Long) = intercept + slope * (elapsedMs - t0) / 1000.0
+
+        /** A finite fit with positive uncertainty is required before it can support movement. */
+        fun isValid() = intercept.isFinite() && slope.isFinite() && slopeSigma.isFinite() && slopeSigma > 0.0
     }
 
     private val samples = ArrayList<Sample>()
 
     fun clear() = samples.clear()
 
-    /** Add a network fix that projected to route position [s]. */
+    /** Add valid route evidence; rejection leaves the timestamp available for a corrected sample. */
     fun add(s: Double, accM: Double, elapsedMs: Long) {
+        if (!s.isFinite() || !accM.isFinite() || accM < 0.0) return
         if (samples.isNotEmpty() && elapsedMs <= samples.last().elapsedMs) return // keep time order
         samples += Sample(elapsedMs, s, accM)
         while (samples.size > MAX_SAMPLES) samples.removeAt(0)
@@ -90,18 +103,20 @@ class NetSpeedEstimator {
     fun strictEstimate(nowMs: Long): SpeedEstimate? = estimate(nowMs, windowMs = 90_000, minSpanS = 30.0)
 
     private fun estimate(nowMs: Long, windowMs: Long, minSpanS: Double): SpeedEstimate? {
-        var window = samples.filter { nowMs - it.elapsedMs <= windowMs }
+        // Future observations and overflowing ages cannot supply evidence for a historical query.
+        var window = samples.filter { it.elapsedMs <= nowMs && nowMs - it.elapsedMs in 0..windowMs }
         if (window.size < MIN_POINTS) return null
         var line = fit(window) ?: return null
         val inliers = window.filter { abs(it.s - line.sAt(it.elapsedMs)) <= max(250.0, weightAccuracy(it) * 3) }
-        if (inliers.size < window.size && inliers.size >= MIN_POINTS) {
+        if (inliers.size < MIN_POINTS) return null
+        if (inliers.size < window.size) {
             line = fit(inliers) ?: return null
             window = inliers
         }
         val spanS = (window.last().elapsedMs - window.first().elapsedMs) / 1000.0
         if (spanS < minSpanS) return null
         val sigma = line.slopeSigma * 1.5 // be a bit pessimistic: network errors are correlated
-        if (sigma > MAX_SIGMA) return null // too uncertain to be useful
+        if (!sigma.isFinite() || sigma <= 0.0 || sigma > MAX_SIGMA) return null // too uncertain to be useful
         return SpeedEstimate(max(line.slope, 0.0), sigma, window.size, spanS)
     }
 
@@ -123,7 +138,7 @@ class NetSpeedEstimator {
         val covarianceTS = points.sumOf { weight(it) * (seconds(it) - meanT) * (it.s - meanS) }
         if (varianceT <= 1e-9) return null
         val slope = covarianceTS / varianceT
-        return Line(meanS - meanT * slope, slope, sqrt(1.0 / varianceT), t0)
+        return Line(meanS - meanT * slope, slope, sqrt(1.0 / varianceT), t0).takeIf { it.isValid() }
     }
 
     private companion object {

@@ -52,7 +52,7 @@ class TrustClassifier(private val config: TrustConfig = TrustConfig(), private v
         val prevRaw = previousRaw
         previousRaw = fix
 
-        checkFix(fix, wallNowMs, r)
+        checkFix(fix, gnss, wallNowMs, r)
         checkAgainstLastGood(fix, lastGood, r)
         checkSequence(fix, prevRaw, r)
         checkNetwork(fix, lastNet, r)
@@ -79,11 +79,11 @@ class TrustClassifier(private val config: TrustConfig = TrustConfig(), private v
     }
 
     /** Checks on the fix alone: mock flag, service area, altitude, speed, accuracy, clock. */
-    private fun checkFix(fix: RawFix, wallNowMs: Long, r: Reasons) {
+    private fun checkFix(fix: RawFix, gnss: GnssSnapshot, wallNowMs: Long, r: Reasons) {
         val c = config
         val speed = fix.speedMps
         val acc = fix.accuracyM
-        if (!fix.lat.isFinite() || !fix.lon.isFinite() || fix.lat !in -90.0..90.0 || fix.lon !in -180.0..180.0) r.hard += "invalid"
+        if (!fix.lat.isFinite() || !fix.lon.isFinite() || fix.lat !in -90.0..90.0 || fix.lon !in -180.0..180.0 || invalidMeasurements(fix, gnss)) r.hard += "invalid"
         if (fix.isMock) r.hard += "mock"
         if (!area.contains(fix.lat, fix.lon)) r.hard += "outside_area"
         fix.altitudeM?.let { alt ->
@@ -93,7 +93,22 @@ class TrustClassifier(private val config: TrustConfig = TrustConfig(), private v
         if (speed != null && speed * 3.6 > c.maxSpeedKmh) r.hard += "speed=${(speed * 3.6).toInt()}"
         if (acc != null && acc > c.maxAccuracyM) r.hard += "acc=${acc.toInt()}"
         val skew = fix.timeMs - wallNowMs
-        if (abs(skew) > c.maxClockSkewMs) r.hard += "clock_skew=${skew / 1000}s"
+        if (!timestampsWithin(fix.timeMs, wallNowMs, c.maxClockSkewMs)) r.hard += "clock_skew=${skew / 1000}s"
+    }
+
+    /** Missing values remain optional; supplied malformed measurements follow the Rust trust boundary. */
+    private fun invalidMeasurements(fix: RawFix, gnss: GnssSnapshot): Boolean {
+        val supplied = listOfNotNull(
+            fix.altitudeM,
+            fix.speedMps?.toDouble(),
+            fix.bearingDeg?.toDouble(),
+            fix.accuracyM?.toDouble(),
+            fix.verticalAccuracyM?.toDouble(),
+            gnss.meanCn0Used?.toDouble(),
+            gnss.cn0SpreadUsed?.toDouble(),
+            gnss.agcDb?.toDouble(),
+        )
+        return supplied.any { !it.isFinite() } || listOfNotNull(fix.speedMps, fix.accuracyM, fix.verticalAccuracyM).any { it < 0f }
     }
 
     /** Physics against the last trusted fix: accuracy jump, reachable distance, speed vs. displacement. */
@@ -142,14 +157,14 @@ class TrustClassifier(private val config: TrustConfig = TrustConfig(), private v
         val speed = fix.speedMps
         val netAcc = lastNet?.accuracyM ?: return
         if (!validNetworkFix(lastNet)) return
-        val fresh = abs(fix.elapsedMs - lastNet.elapsedMs) <= 5000
+        val fresh = timestampsWithin(fix.elapsedMs, lastNet.elapsedMs, 5000)
         val slowEnough = speed == null || speed < c.netDiffMaxSpeedMps
         if (netAcc >= c.netMaxAccM || !fresh || !slowEnough) return
         val d = Geo.distance(lastNet.lat, lastNet.lon, fix.lat, fix.lon)
         if (d > max(c.netDiffMinM, ((fix.accuracyM ?: 10f) + netAcc) * 3.0)) r.soft += "net_diff=${d.toInt()}m"
     }
 
-    private fun gnssFresh(fix: RawFix, gnss: GnssSnapshot) = gnss.elapsedMs > 0 && fix.elapsedMs - gnss.elapsedMs < 5000
+    private fun gnssFresh(fix: RawFix, gnss: GnssSnapshot) = gnss.elapsedMs > 0 && gnss.elapsedMs <= fix.elapsedMs && fix.elapsedMs - gnss.elapsedMs < 5000
 
     /** AGC jamming: hard jamming makes the fix BAD unless the constellation looks healthy and is confirmed. */
     private fun checkJamming(fix: RawFix, lastNet: RawFix?, gnss: GnssSnapshot, jammed: Boolean, r: Reasons) {
@@ -184,13 +199,19 @@ class TrustClassifier(private val config: TrustConfig = TrustConfig(), private v
         if (lastNet == null || !validNetworkFix(lastNet)) return false
         val netAcc = lastNet.accuracyM
         return (netAcc ?: Float.MAX_VALUE) <= c.jamStrongNetMaxAccM &&
-            abs(fix.elapsedMs - lastNet.elapsedMs) <= c.jamStrongNetMaxAgeMs &&
+            timestampsWithin(fix.elapsedMs, lastNet.elapsedMs, c.jamStrongNetMaxAgeMs) &&
             Geo.distance(lastNet.lat, lastNet.lon, fix.lat, fix.lon) <= c.jamStrongNetM + (fix.accuracyM ?: 10f) + (netAcc ?: 0f)
     }
 
     /** Malformed ancillary evidence must neither confirm nor discredit a satellite fix. */
     private fun validNetworkFix(fix: RawFix): Boolean = fix.lat in -90.0..90.0 &&
         fix.lon in -180.0..180.0 && fix.accuracyM?.let { it.isFinite() && it >= 0f } == true
+
+    /** An overflowing non-negative difference becomes negative and must never appear fresh. */
+    private fun timestampsWithin(firstMs: Long, secondMs: Long, maximumMs: Long): Boolean {
+        val difference = if (firstMs >= secondMs) firstMs - secondMs else secondMs - firstMs
+        return difference in 0..maximumMs
+    }
 
     private fun chainedJamStrong(fix: RawFix) = jamStrongAtMs >= 0 && fix.elapsedMs - jamStrongAtMs in 1..config.jamStrongChainMs
 
@@ -230,7 +251,7 @@ class JamDetector(private val enterDb: Float = -12f, private val exitDb: Float =
 
     /** @return true if the state changed. */
     override fun update(agcDb: Float?, nowMs: Long): Boolean {
-        if (agcDb == null) return false
+        if (agcDb == null || !agcDb.isFinite()) return false
         val before = jammed
         if (!jammed) {
             aboveSinceMs = -1L

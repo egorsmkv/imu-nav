@@ -427,15 +427,17 @@ fn longitude_scale(point: GeoPoint) -> f64 {
 fn distance_m(first: GeoPoint, second: GeoPoint) -> f64 {
     let half_delta_latitude = (second.latitude_deg - first.latitude_deg) * PI / 360.0;
     let half_delta_longitude = (second.longitude_deg - first.longitude_deg) * PI / 360.0;
-    let haversine = half_delta_latitude.sin().powi(2)
+    // Roundoff at antipodes must not make the square-root domain negative.
+    let haversine = (half_delta_latitude.sin().powi(2)
         + half_delta_longitude.sin().powi(2)
             * (first.latitude_deg * PI / 180.0).cos()
-            * (second.latitude_deg * PI / 180.0).cos();
+            * (second.latitude_deg * PI / 180.0).cos())
+    .clamp(0.0, 1.0);
     haversine.sqrt().atan2((1.0 - haversine).sqrt()) * EARTH_DIAMETER_M
 }
 
 #[cfg(test)]
 mod tests;
 
-#[cfg(kani)]
+#[cfg(any(test, kani))]
 pub(crate) mod kani_proofs;

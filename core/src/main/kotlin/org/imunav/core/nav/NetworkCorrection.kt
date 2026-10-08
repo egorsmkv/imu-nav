@@ -64,11 +64,17 @@ internal class NetworkCorrection(private val net: NetworkPositionTracker, privat
         if (usable.size < 3) return
         val predicted = usable.map { it.s + currentSpeed * (nowMs - it.elapsedMs) / 1000.0 }
         if (usable.indices.any { car.s - predicted[it] < max(200.0, usable[it].accM * 2.0) }) return
-        val weights = usable.map { 1.0 / (it.accM * it.accM) }
-        val mean = usable.indices.sumOf { weights[it] * predicted[it] } / weights.sum()
+        // Zero-accuracy contributors dominate the inverse-variance limit; never divide by zero.
+        val exact = usable.indices.filter { usable[it].accM == 0.0 }
+        val mean = if (exact.isNotEmpty()) {
+            exact.map { predicted[it] }.average()
+        } else {
+            val weights = usable.map { 1.0 / (it.accM * it.accM) }
+            usable.indices.sumOf { weights[it] * predicted[it] } / weights.sum()
+        }
         var target = max(mean, car.s - 300.0)
         confirmedTurnS?.let { target = max(target, it) }
-        if (target >= car.s) return
+        if (!mean.isFinite() || target >= car.s) return
         lastNetBackMs = nowMs
         log("net_back from_s=${car.s.toInt()} to_s=${target.toInt()} n=${usable.size}")
         car.moveTo(target)

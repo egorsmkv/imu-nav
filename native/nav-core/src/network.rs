@@ -116,12 +116,15 @@ impl NetworkTracker {
         GateResult::Rejected
     }
 
+    /// Invalid records must not alter samples, speed evidence, or cached-coordinate tracking.
     pub fn record(&mut self, sample: NetworkSample, latitude_deg: f64, longitude_deg: f64) {
-        if !sample.position_m.is_finite()
+        if sample.elapsed_ms < 0
+            || !sample.position_m.is_finite()
             || !sample.accuracy_m.is_finite()
+            || sample.accuracy_m < 0.0
             || !sample.offset_m.is_finite()
-            || !latitude_deg.is_finite()
-            || !longitude_deg.is_finite()
+            || !(-90.0..=90.0).contains(&latitude_deg)
+            || !(-180.0..=180.0).contains(&longitude_deg)
         {
             return;
         }

@@ -623,8 +623,10 @@ fn distance_m(first: LocationFix, second: LocationFix) -> f64 {
     let lat2 = second.latitude_deg * PI / 180.0;
     let delta_lat = (second.latitude_deg - first.latitude_deg) * PI / 180.0;
     let delta_lon = (second.longitude_deg - first.longitude_deg) * PI / 180.0;
-    let a =
-        (delta_lat / 2.0).sin().powi(2) + lat1.cos() * lat2.cos() * (delta_lon / 2.0).sin().powi(2);
+    // A valid antipodal jump must retain a finite distance for the physical reachability check.
+    let a = ((delta_lat / 2.0).sin().powi(2)
+        + lat1.cos() * lat2.cos() * (delta_lon / 2.0).sin().powi(2))
+    .clamp(0.0, 1.0);
     2.0 * EARTH_RADIUS_M * a.sqrt().atan2((1.0 - a).sqrt())
 }
 
