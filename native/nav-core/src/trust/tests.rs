@@ -1,6 +1,28 @@
 use super::*;
 
 #[test]
+fn antipodal_jump_cannot_bypass_physical_reachability() {
+    for latitude in -89..=89 {
+        let mut classifier = TrustClassifier::new(TrustConfig::default());
+        let first = LocationFix {
+            latitude_deg: f64::from(latitude),
+            longitude_deg: -179.0,
+            ..fix(1_000)
+        };
+        assert_eq!(classifier.evaluate(input(first)).level, TrustLevel::Good);
+        let second = LocationFix {
+            latitude_deg: -f64::from(latitude),
+            longitude_deg: 1.0,
+            ..fix(2_000)
+        };
+        let verdict = classifier.evaluate(input(second));
+        assert_eq!(verdict.level, TrustLevel::Bad, "latitude={latitude}");
+        assert!(verdict.reasons.contains(&Reason::Jump));
+        assert_eq!(classifier.last_good(), Some(first));
+    }
+}
+
+#[test]
 fn malformed_network_uncertainty_cannot_confirm_hard_jamming() {
     for accuracy in [-1.0, f64::NEG_INFINITY, f64::INFINITY, f64::NAN] {
         let mut context = input(fix(1_000));

@@ -135,11 +135,8 @@ class NetworkTracker : NetworkPositionTracker {
 
     /** Record a valid sample. Invalid input cannot alter history or cached-coordinate tracking; cached fixes do not feed speed. */
     override fun record(sample: NetSample, lat: Double, lon: Double) {
-        if (sample.elapsedMs < 0 || !sample.s.isFinite() || !sample.accM.isFinite() || sample.accM < 0.0 ||
-            !sample.offsetM.isFinite() || lat !in -90.0..90.0 || lon !in -180.0..180.0
-        ) {
-            return
-        }
+        if (sample.elapsedMs < 0 || !sample.s.isFinite() || !sample.accM.isFinite() || sample.accM < 0.0) return
+        if (!sample.offsetM.isFinite() || lat !in -90.0..90.0 || lon !in -180.0..180.0) return
         recent += sample
         while (recent.size > 4) recent.removeAt(0)
         val duplicate = lat == lastLat && lon == lastLon

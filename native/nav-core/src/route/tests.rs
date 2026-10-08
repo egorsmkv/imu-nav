@@ -1,5 +1,39 @@
 use super::*;
 
+#[test]
+fn proof_geometry_matches_the_constructed_route_and_its_index() {
+    let proof = kani_proofs::straight_route();
+    let actual = RouteGeometry::new(proof.points.clone()).unwrap();
+    assert_eq!(proof.points, actual.points);
+    assert_eq!(proof.blocks, actual.blocks);
+    assert!((proof.length_m() - actual.length_m()).abs() < 1.0e-9);
+    assert_eq!(proof.turns, actual.turns);
+    let landmarks = vec![RouteTurn {
+        position_m: 1_000.0,
+        angle_deg: 90.0,
+    }];
+    let landmark_route = kani_proofs::with_landmarks(landmarks.clone());
+    assert_eq!(landmark_route.turns, landmarks);
+    assert_eq!(landmark_route.blocks, actual.blocks);
+}
+
+#[test]
+fn antipodal_routes_keep_a_finite_cumulative_length() {
+    for latitude in -89..=89 {
+        let first = GeoPoint {
+            latitude_deg: f64::from(latitude),
+            longitude_deg: -179.0,
+        };
+        let second = GeoPoint {
+            latitude_deg: -f64::from(latitude),
+            longitude_deg: 1.0,
+        };
+        let route = RouteGeometry::new(vec![first, second]).unwrap();
+        assert!(route.length_m().is_finite(), "latitude={latitude}");
+        assert!((route.length_m() - PI * EARTH_DIAMETER_M / 2.0).abs() < 0.2);
+    }
+}
+
 fn route() -> RouteGeometry {
     RouteGeometry::new(vec![
         GeoPoint {

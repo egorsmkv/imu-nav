@@ -24,8 +24,11 @@ object Geo {
     fun distance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
         val halfDeltaLat = Math.toRadians(lat2 - lat1) / 2
         val halfDeltaLon = Math.toRadians(lon2 - lon1) / 2
-        val haversine = sin(halfDeltaLat) * sin(halfDeltaLat) +
-            sin(halfDeltaLon) * sin(halfDeltaLon) * cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2))
+        // At antipodes rounding can exceed 1 by one ulp; retain the mathematical domain of sqrt.
+        val haversine = (
+            sin(halfDeltaLat) * sin(halfDeltaLat) +
+                sin(halfDeltaLon) * sin(halfDeltaLon) * cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2))
+            ).coerceIn(0.0, 1.0)
         return atan2(sqrt(haversine), sqrt(1 - haversine)) * EARTH_DIAMETER_M
     }
 
