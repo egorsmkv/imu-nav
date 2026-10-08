@@ -83,8 +83,7 @@ the uncertainty floor. Overflowed fusion is unavailable (Rust `None`, Kotlin/JNI
 regression rejects malformed observations, future/expired samples, too few surviving inliers and
 non-finite fits. Historical queries leave stored observations available for later queries.
 
-Kotlin network deviation checks validate evidence independently because they run before the tracker
-gate. For the marker-ahead correction, zero-accuracy observations dominate the weighted mean without
-division by zero; positive-accuracy observations keep the existing inverse-variance calculation and
-the 300 m correction limit. A non-finite correction mean leaves route progress untouched.
+For parameter units, exact regression windows, return values and Kotlin correction boundaries, see
+the [navigation input contract reference](input-contracts.md). The reference also explains why a
+successful physical gate does not replace validation at the recording boundary.
 

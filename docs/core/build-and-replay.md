@@ -6,16 +6,22 @@ Run these commands from the repository root. The host checks exercise Rust witho
 
 ## Building and testing
 
-Run the host-side Rust checks from the repository root:
+With Rust 1.99+ installed, run the host-side Rust workspace checks from the repository root.
+These checks do not need a JDK, Android SDK or NDK:
 
 ```bash
 cargo fmt --manifest-path native/Cargo.toml --all --check
-cargo test --manifest-path native/Cargo.toml
-cargo clippy --manifest-path native/Cargo.toml --all-targets -- -W clippy::pedantic -D warnings
+cargo test --manifest-path native/Cargo.toml --workspace --locked
+cargo clippy --manifest-path native/Cargo.toml --workspace --all-targets --locked -- -W clippy::pedantic -D warnings
 ```
 
-The root Gradle `check` task runs the same checks through `rustFmtCheck`, `rustTest` and
-`rustClippy`.
+`--locked` keeps dependency resolution consistent with `native/Cargo.lock`. Tests cover the core,
+JNI crate and simulator; look for successful test results and no Clippy warnings. The root Gradle
+`check` task invokes native formatting, tests and Clippy through `rustFmtCheck`, `rustTest` and
+`rustClippy`, along with Kotlin, Android and server checks. Those Gradle tasks currently omit
+`--locked`; the commands above make the lockfile requirement explicit for a manual run.
+
+Before building an Android APK, complete the [Android tool setup](../build_and_test.md#prepare-the-tools).
 
 Android builds invoke [`scripts/build-rust-android.sh`](../../scripts/build-rust-android.sh). The script
 uses the Android NDK to build `imu-nav-jni` for:
@@ -37,9 +43,17 @@ The JVM replay tool can load this exact JNI implementation alongside the Kotlin 
 ./gradlew :replay:test
 ```
 
-Both require Rust 1.99+ and a JDK, but no Android SDK. The replay module compiles the app's pure-JVM
+Both require Rust 1.99+ and JDK 17+. They use host JNI and do not build Android native libraries.
+The replay module compiles the app's pure-JVM
 JNI wrappers directly, preserving their exported JNI names. Gradle tracks the host library as a
 test input so Rust changes invalidate the JNI integration tests.
+
+`trips/` must contain recordings in the app's `.rec.gz` format; it is an input directory,
+not a downloadable example dataset. Export your own recording through [trip history](../trips.md),
+or use the synthetic JNI tests in `:replay:test` without personal trip data. With
+`--compare-native`, the output directory contains `summary.txt` and `native-errors-<run>.csv`
+alongside the Kotlin error CSV and comparison GeoJSON for each run.
+See the [replay reference](../reference/trips.md) for options and result interpretation.
 
 Comparison samples use exact trusted GPS timestamps; hidden GPS only reaches an independent
 reference classifier. CSV retains off-route samples, while summary statistics exclude reference

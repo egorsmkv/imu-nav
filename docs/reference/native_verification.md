@@ -10,7 +10,8 @@ trip replay and [production coverage](rust_coverage.md). It does not prove the w
 On Linux x86-64, install the pinned verifier and its bundled compiler/solver:
 
 ```bash
-cargo install --locked kani-verifier --version 0.68.0
+rustup toolchain install nightly-2026-08-21 --profile minimal
+cargo +nightly-2026-08-21 install --locked kani-verifier --version 0.68.0
 cargo kani setup
 python3 -m unittest discover -s tools/tests -v
 python3 tools/verify_native.py
@@ -21,7 +22,9 @@ which satisfies the workspace's Rust 1.99 minimum. This is separate from the pin
 toolchain. Use the compiler, CBMC and solvers bundled with that pinned release, rather than external
 replacements. Most harnesses use default CaDiCaL; the recent/old three-source fusion harnesses
 explicitly select bundled Kissat 4.0.1 with `#[kani::solver(kissat)]`. Kani is a developer tool,
-not a Cargo or Android runtime dependency. The core remains dependency-free.
+not a Cargo or Android runtime dependency. The core's runtime dependencies are declared in
+[`native/nav-core/Cargo.toml`](../../native/nav-core/Cargo.toml); they include `tracing`, with
+`hotpath` available through the optional profiling feature.
 
 The runner checks the tool version, selects only `imu-nav-core`, uses two solver workers, allows
 five minutes per harness, and imposes a 40-minute overall verification deadline. It retains Kani's
@@ -30,11 +33,16 @@ is an explicit loop bound; exceeding it fails verification rather than assuming 
 No production function is stubbed. The speed-storage and covariance-family inventories increase the overall
 budget; the five-minute per-harness deadline and two-worker memory limit are unchanged.
 
-CI gives installation its own 15-minute step budget and verification a 42-minute step budget,
+The manually dispatched [workflow](../../.github/workflows/native-verification.yml) gives
+installation its own 15-minute step budget and verification a 42-minute step budget,
 inside a 65-minute job. This leaves room for the runner's 40-minute deadline to report failure
 and for artifact upload after a cold installation. The cache includes the `cargo-kani` and `kani`
 launchers as well as the verifier bundle and compiler; installation is skipped only when the
 cached launcher reports the exact pinned version.
+
+The workflow has no push or pull-request trigger. Proof descriptions below state what the
+harnesses check; they do not record a successful run at the current revision. Inspect the
+uploaded summary and diagnostics for a specific run before reporting proof results.
 
 The runner prints elapsed-time progress every 30 seconds while retaining detailed output in its
 log. On `SIGINT` or `SIGTERM`, it kills the solver process group and records an interrupted failure
@@ -57,8 +65,11 @@ proof, but reaching such a construct does. Successful assertions must exist in e
 
 ## Verified contracts and bounds
 
-Proof modules are separate `kani_proofs.rs` files behind `#[cfg(kani)]`. They are absent from normal
-builds and excluded from production coverage. The runner inventory in `tools/verify_native.py` is
+Proof harnesses are separate `kani_proofs.rs` files behind `#[cfg(kani)]`, absent from normal
+production builds and excluded from production coverage. The route geometry fixture is also
+compiled under `#[cfg(test)]` so an ordinary unit test can check its segment index against the
+real constructor; that test does not execute symbolic proofs. The runner inventory in
+`tools/verify_native.py` is
 the authoritative list of required harnesses and named `kani::cover!` witnesses.
 
 | Area                                 | Contract                                                                                                                                                                                  | Domain / limits                                                                                                                                                                                                                                                                                                                                                                                            |
@@ -477,11 +488,11 @@ road turn. Existing real-route/delayed-GPS regression tests remain the integrati
 
 ## CI and adding proofs
 
-`.github/workflows/native-verification.yml` runs on every pull request, main push and manual dispatch,
-without an Android SDK or JNI build. The failing check is **Native core bounded proofs**. Repository
-branch protection/rulesets must list that check as required to enforce it at merge time; a workflow
-file alone cannot configure repository rules. Reports/logs are uploaded even on failure, retained
-for 14 days; the job deadline is 65 minutes.
+`.github/workflows/native-verification.yml` runs only on manual dispatch, without an Android SDK
+or JNI build. Its job is **Native core bounded proofs**. It does not automatically verify each
+pull request or push to `main`. Reports/logs are uploaded even on failure and retained for
+14 days; the job deadline is 65 minutes. Record the code revision when running proofs and use
+those results only for that revision.
 
 Add a harness beside its production module, declare the assumptions and explicit unwind bound,
 include named reachability witnesses, and add it to `REQUIRED`. Do not assume an accepted/rejected
@@ -501,4 +512,5 @@ cargo kani -p imu-nav-core --harness 'kani_proofs::coarse_position_is_conservati
 Turn genuine counterexamples into ordinary Rust regression tests and fix the production defect.
 For timeouts or unwind failures, investigate solver complexity or increase a justified bound;
 do not disable overflow/unwinding checks, remove witnesses, or stub the failing production operation.
-The reproduction command is diagnostic; only the complete runner is the CI gate.
+The reproduction command is diagnostic; only the complete runner checks the full required
+proof inventory and its witnesses.
