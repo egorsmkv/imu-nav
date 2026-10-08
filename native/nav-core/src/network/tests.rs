@@ -1,6 +1,91 @@
 use super::*;
 
 #[test]
+fn recording_preserves_zero_accuracy_and_coordinate_boundaries() {
+    let mut tracker = NetworkTracker::default();
+    for (elapsed_ms, latitude, longitude) in [(0, -90.0, -180.0), (1_000, 90.0, 180.0)] {
+        tracker.record(
+            NetworkSample {
+                elapsed_ms,
+                position_m: 0.0,
+                accuracy_m: 0.0,
+                offset_m: 0.0,
+            },
+            latitude,
+            longitude,
+        );
+    }
+    assert_eq!(tracker.recent().len(), 2);
+    assert_eq!(tracker.history().len(), 2);
+    assert!(tracker.last_two_consistent());
+}
+
+#[test]
+fn malformed_records_do_not_change_samples_or_duplicate_tracking() {
+    let valid = NetworkSample {
+        elapsed_ms: 1_000,
+        position_m: 10.0,
+        accuracy_m: 20.0,
+        offset_m: 0.0,
+    };
+    for (sample, latitude, longitude) in [
+        (
+            NetworkSample {
+                elapsed_ms: -1,
+                ..valid
+            },
+            50.0,
+            30.0,
+        ),
+        (
+            NetworkSample {
+                accuracy_m: -1.0,
+                ..valid
+            },
+            50.0,
+            30.0,
+        ),
+        (
+            NetworkSample {
+                position_m: f64::NAN,
+                ..valid
+            },
+            50.0,
+            30.0,
+        ),
+        (
+            NetworkSample {
+                accuracy_m: f64::INFINITY,
+                ..valid
+            },
+            50.0,
+            30.0,
+        ),
+        (
+            NetworkSample {
+                offset_m: f64::NAN,
+                ..valid
+            },
+            50.0,
+            30.0,
+        ),
+        (valid, 91.0, 30.0),
+        (valid, 50.0, 181.0),
+        (valid, f64::NAN, 30.0),
+    ] {
+        let mut tracker = NetworkTracker::default();
+        tracker.record(sample, latitude, longitude);
+        assert_eq!(tracker.recent(), []);
+        assert_eq!(tracker.history(), []);
+        assert!(tracker.speed_estimate(1_000).is_none());
+        // Rejection must not mark these coordinates as already seen.
+        tracker.record(valid, 50.0, 30.0);
+        assert_eq!(tracker.recent(), &[valid]);
+        assert_eq!(tracker.history(), &[valid]);
+    }
+}
+
+#[test]
 fn stale_gate_cannot_rewind_anchor_or_expand_later_reachability() {
     let mut tracker = NetworkTracker::default();
     assert_eq!(tracker.gate(10_000, 0.0, 30.0), GateResult::Accepted);

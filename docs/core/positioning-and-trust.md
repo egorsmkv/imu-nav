@@ -54,6 +54,11 @@ The physical gate rejects negative, duplicate and out-of-order timestamps before
 anchor or a pending reanchor chain. A fix must be newer than both the current anchor and the latest
 pending candidate. This prevents stale input from increasing the time available for a later jump.
 
+Recording is a separate public boundary: Rust and Kotlin both ignore samples with negative elapsed
+time or accuracy, non-finite position/accuracy/offset, or coordinates outside latitude ±90° and
+longitude ±180°. Rejection leaves recent samples, history, speed evidence and duplicate-coordinate
+tracking untouched. Valid zero accuracy and boundary coordinates remain accepted.
+
 ## `speed.rs`: speed estimation and fusion
 
 This module contains two related components:

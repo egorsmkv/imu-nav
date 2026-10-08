@@ -5,6 +5,7 @@ import org.imunav.core.gnss.GnssSnapshot
 import org.imunav.core.gnss.RawFix
 import org.imunav.core.gnss.TrustClassifier
 import org.imunav.core.gnss.TrustLevel
+import org.imunav.core.nav.NetSample
 import org.imunav.core.nav.NetworkTracker
 import org.junit.Test
 import kotlin.test.assertEquals
@@ -13,6 +14,40 @@ import kotlin.test.assertTrue
 
 /** Synthetic regressions for the same malformed inputs rejected by the live Rust core. */
 class PositioningIngressTest {
+    @Test
+    fun recordingPreservesZeroAccuracyAndCoordinateBoundaries() {
+        val tracker = NetworkTracker()
+        tracker.record(NetSample(0, 0.0, 0.0, 0.0), -90.0, -180.0)
+        tracker.record(NetSample(1_000, 0.0, 0.0, 0.0), 90.0, 180.0)
+        assertEquals(2, tracker.recent.size)
+        assertEquals(2, tracker.history.size)
+        assertTrue(tracker.lastTwoConsistent())
+    }
+
+    @Test
+    fun malformedRecordsDoNotChangeSamplesOrDuplicateTracking() {
+        val valid = NetSample(1_000, 10.0, 20.0, 0.0)
+        for ((sample, latitude, longitude) in listOf(
+            Triple(valid.copy(elapsedMs = -1), 50.0, 30.0),
+            Triple(valid.copy(accM = -1.0), 50.0, 30.0),
+            Triple(valid.copy(s = Double.NaN), 50.0, 30.0),
+            Triple(valid.copy(accM = Double.POSITIVE_INFINITY), 50.0, 30.0),
+            Triple(valid.copy(offsetM = Double.NaN), 50.0, 30.0),
+            Triple(valid, 91.0, 30.0),
+            Triple(valid, 50.0, 181.0),
+            Triple(valid, Double.NaN, 30.0),
+        )) {
+            val tracker = NetworkTracker()
+            tracker.record(sample, latitude, longitude)
+            assertTrue(tracker.recent.isEmpty())
+            assertTrue(tracker.history.isEmpty())
+            assertEquals(null, tracker.speedEstimate(1_000))
+            tracker.record(valid, 50.0, 30.0)
+            assertEquals(listOf(valid), tracker.recent)
+            assertEquals(listOf(valid), tracker.history)
+        }
+    }
+
     @Test
     fun staleNetworkFixCannotRewindAnchorOrExpandReachability() {
         val tracker = NetworkTracker()
