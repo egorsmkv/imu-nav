@@ -1,7 +1,7 @@
 //! Stateful route estimator used by the Android JNI boundary.
 
 use crate::route::{GeoPoint, Projection, RouteGeometry};
-use crate::{Estimate, FilterError, RouteFilter};
+use crate::{Estimate, FilterError, RouteFilter, validate_sigma};
 use std::collections::VecDeque;
 use std::sync::Arc;
 
@@ -193,6 +193,9 @@ impl NavigationEstimator {
         mode: TravelMode,
         now_ms: i64,
     ) -> Result<Self, FilterError> {
+        // Flooring protects against overconfidence, but must not turn malformed input into
+        // a precise initial state (f64::max ignores a single NaN operand).
+        validate_sigma(initial.position_sigma_m)?;
         let mut state = FilterState {
             filter: RouteFilter::new(
                 initial.position_m,
@@ -528,6 +531,14 @@ impl NavigationEstimator {
         &mut self,
         observation: GpsObservation,
     ) -> Result<(Option<Projection>, bool, bool), FilterError> {
+        // Validate supplied accuracy before applying any floors or trust multipliers. Missing
+        // fields retain the documented defaults; invalid fields fail the whole tick atomically.
+        if let Some(sigma) = observation.position_accuracy_m {
+            validate_sigma(sigma)?;
+        }
+        if let Some(sigma) = observation.speed_accuracy_mps {
+            validate_sigma(sigma)?;
+        }
         let projected = self
             .route
             .project(
@@ -639,6 +650,7 @@ impl NavigationEstimator {
         position_m: f64,
         position_sigma_m: f64,
     ) -> Result<(), FilterError> {
+        validate_sigma(position_sigma_m)?;
         self.state
             .filter
             .anchor_position(position_m, position_sigma_m.max(MIN_POSITION_SIGMA_M))?;
@@ -657,6 +669,9 @@ mod tests;
 
 #[cfg(test)]
 mod regression_tests;
+
+#[cfg(test)]
+mod uncertainty_tests;
 
 #[cfg(kani)]
 mod kani_proofs;

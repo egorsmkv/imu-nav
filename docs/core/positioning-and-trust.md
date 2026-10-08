@@ -36,6 +36,10 @@ The same module contains `JamDetector`, an AGC-based state machine with hysteres
 separate from Kalman innovation gating because a gradual spoofing signal may remain statistically
 plausible.
 
+Independent network evidence must have valid geographic coordinates and a finite, non-negative
+horizontal accuracy. Malformed network fixes are ignored for both disagreement and hard-jamming
+confirmation; they cannot establish the exception that downgrades hard jamming to `Suspect`.
+
 ## `network.rs`: cell/network position tracking
 
 `NetworkTracker` handles route-projected network and cell observations. It:
@@ -45,6 +49,10 @@ plausible.
 - keeps short recent and 30-second history views;
 - detects whether the last two samples are mutually consistent; and
 - feeds suitable, non-duplicate samples to the network speed estimator.
+
+The physical gate rejects negative, duplicate and out-of-order timestamps before changing an
+anchor or a pending reanchor chain. A fix must be newer than both the current anchor and the latest
+pending candidate. This prevents stale input from increasing the time available for a later jump.
 
 ## `speed.rs`: speed estimation and fusion
 
