@@ -28,5 +28,9 @@ not choose the position shown to the user.
 7. [Native simulator](sim/readme.md) explains its crate, controlled workloads and capture commands.
 8. [Bounded verification](verification.md) explains the Kani proof suite and its limits.
 
+For exact units, rejection behavior, timestamp rules and runnable Rust/Kotlin speed examples,
+use the [navigation input contract reference](input-contracts.md). It distinguishes the live JNI
+path from the pure-JVM implementation and the comparison estimator.
+
 Start with the [newcomer glossary](glossary.md) for terms such as *route coordinate*, *uncertainty*,
 *innovation gate* and *JNI handle*. The [project glossary](../glossary.md) covers the whole app.

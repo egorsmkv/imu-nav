@@ -7,6 +7,9 @@ Android SDK 36, the Android NDK and Rust 1.99+ (edition 2024) with the `aarch64-
 `armv7-linux-androideabi` and `x86_64-linux-android` targets. Set `ANDROID_NDK_HOME` when the NDK
 is outside the Android SDK. Android builds compile and package the Rust estimator automatically.
 
+For SDK/NDK selection, Rust target installation, APK output paths and setup failures, follow
+the [tool preparation steps](../build_and_test.md#prepare-the-tools).
+
 ```bash
 ./gradlew test                # Kotlin engine, routing/search and replay tests
 ./gradlew :app:assemblePlayDebug    # normal development build
@@ -29,7 +32,8 @@ verifier launchers and gives setup a separate budget from the 40-minute proof de
 Future-only speed queries return before allocating a window; bounded proofs check both query APIs
 and unchanged stored observations.
 
-The PR check verifies speed-fusion guards, sample storage, network-speed windows and surviving
+The manually dispatched [Native formal verification workflow](../../.github/workflows/native-verification.yml)
+checks speed-fusion guards, sample storage, network-speed windows and surviving
 evidence, network reanchoring,
 trust timestamp/frozen-position and receiver/jamming policies, turn correction
 gates/bounds, network evidence allocation/recovery, motion/walking priorities,
@@ -38,6 +42,8 @@ and bounds, correlated covariance families (PSD tolerance, variance floors and r
 finite-state guards, bounded estimator rollback, and filter, trust, jamming and network
 contracts; see
 [proof scope, setup and counterexample reproduction](native_verification.md).
+It is not automatically triggered by pull requests. Test results and a successful Kani report
+are separate evidence; record which checks actually ran at the revision under review.
 
 **Rust coverage.** Linux host coverage combines Rust tests, actual JVM JNI calls (default and
 `heap-profile` builds), simulator subprocesses and server CLI/HTTP/WebSocket tests. Run

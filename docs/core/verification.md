@@ -8,8 +8,12 @@ Kani explores many inputs inside stated bounds to check rules such as rejecting 
 
 The native core has a pinned Kani proof suite for input rejection, state preservation, conservative
 corrections, trust anchors, jamming hysteresis and network resets. Run `python3 tools/verify_native.py`
-from the repository root. See [setup, exact bounds and CI checks](../native_verification.md);
+from the repository root. See [setup, exact bounds and the manual workflow](../native_verification.md);
 these bounded contracts complement replay/testing and do not certify the whole navigator.
+
+The workflow is manually dispatched. Descriptions on this page explain harness scope, not the
+result of a run at the current revision. Ordinary Rust tests also compile and check the route
+geometry fixture; they do not execute the Kani harnesses.
 
 Finite inputs that overflow uncertainty or retained state calculations now return `FilterError`
 before publishing the update. Failed OBD predictions also restore earlier prediction steps,
