@@ -52,8 +52,10 @@ impl NetworkTracker {
         self.speed.clear();
     }
 
+    /// Ignore duplicate/out-of-order evidence before it can rewind an anchor or candidate chain.
     pub fn gate(&mut self, elapsed_ms: i64, position_m: f64, accuracy_m: f64) -> GateResult {
-        if !position_m.is_finite() || !accuracy_m.is_finite() || accuracy_m < 0.0 {
+        if elapsed_ms < 0 || !position_m.is_finite() || !accuracy_m.is_finite() || accuracy_m < 0.0
+        {
             return GateResult::Rejected;
         }
         let fix = Anchor {
@@ -68,6 +70,14 @@ impl NetworkTracker {
             }
             return GateResult::Rejected;
         };
+        if fix.time_s <= current.time_s
+            || self
+                .candidates
+                .last()
+                .is_some_and(|candidate| fix.time_s <= candidate.time_s)
+        {
+            return GateResult::Rejected;
+        }
         if accuracy_m > COARSE_ACCURACY_M {
             return if reachable(current, fix) {
                 GateResult::Accepted

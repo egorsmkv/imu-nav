@@ -80,9 +80,14 @@ class NetworkTracker : NetworkPositionTracker {
 
     /** Decide whether a network fix at route position [s] (accuracy [acc] m) can be believed. */
     override fun gate(elapsedMs: Long, s: Double, acc: Double): GateResult {
+        if (elapsedMs < 0 || !s.isFinite() || !acc.isFinite() || acc < 0.0) return GateResult.REJECTED
         val timeS = elapsedMs / 1000.0
         val current = anchor
         val fix = Anchor(timeS, s, acc)
+
+        // A stale fix cannot rewind an anchor or restart a newer confirmation chain.
+        if (current != null && timeS <= current.tS) return GateResult.REJECTED
+        if (candidates.lastOrNull()?.let { timeS <= it.tS } == true) return GateResult.REJECTED
 
         // Very coarse fixes may confirm the anchor, but never replace it.
         if (acc > COARSE_ACCURACY_M) {

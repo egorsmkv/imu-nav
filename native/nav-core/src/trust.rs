@@ -445,7 +445,8 @@ impl TrustClassifier {
         let Some(network_accuracy) = network.horizontal_accuracy_m else {
             return;
         };
-        if fix.elapsed_ms.abs_diff(network.elapsed_ms) > 5_000
+        if !valid_network_fix(network)
+            || fix.elapsed_ms.abs_diff(network.elapsed_ms) > 5_000
             || network_accuracy >= self.config.network_max_accuracy_m
             || fix
                 .speed_mps
@@ -552,11 +553,12 @@ impl TrustClassifier {
 
     /// Age and precision eligibility are independent of geographic distance computation.
     fn network_confirmation_eligible(&self, fix: LocationFix, network: LocationFix) -> bool {
-        network.horizontal_accuracy_m.is_some_and(|accuracy| {
-            accuracy <= self.config.strong_jam_network_max_accuracy_m
-                && fix.elapsed_ms.abs_diff(network.elapsed_ms)
-                    <= u64::try_from(self.config.strong_jam_network_max_age_ms).unwrap_or(0)
-        })
+        valid_network_fix(network)
+            && network.horizontal_accuracy_m.is_some_and(|accuracy| {
+                accuracy <= self.config.strong_jam_network_max_accuracy_m
+                    && fix.elapsed_ms.abs_diff(network.elapsed_ms)
+                        <= u64::try_from(self.config.strong_jam_network_max_age_ms).unwrap_or(0)
+            })
     }
 
     fn check_receiver(&self, input: &TrustInput, hard: &mut Vec<Reason>, soft: &mut Vec<Reason>) {
@@ -596,6 +598,16 @@ impl TrustClassifier {
             soft.push(Reason::HeadingDifference);
         }
     }
+}
+
+/// Ancillary network evidence must be geographically valid with a finite, non-negative error.
+/// Ignore malformed evidence instead of allowing it to confirm or discredit the GNSS fix.
+fn valid_network_fix(fix: LocationFix) -> bool {
+    (-90.0..=90.0).contains(&fix.latitude_deg)
+        && (-180.0..=180.0).contains(&fix.longitude_deg)
+        && fix
+            .horizontal_accuracy_m
+            .is_some_and(|accuracy| accuracy.is_finite() && accuracy >= 0.0)
 }
 
 fn receiver_fresh(fix: LocationFix, receiver: ReceiverHealth) -> bool {

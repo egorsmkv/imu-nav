@@ -1,6 +1,40 @@
 use super::*;
 
 #[test]
+fn stale_gate_cannot_rewind_anchor_or_expand_later_reachability() {
+    let mut tracker = NetworkTracker::default();
+    assert_eq!(tracker.gate(10_000, 0.0, 30.0), GateResult::Accepted);
+    let before = tracker.clone();
+    for time in [-1, 0, 9_999, 10_000] {
+        assert_eq!(tracker.gate(time, 50.0, 30.0), GateResult::Rejected);
+        assert_eq!(
+            tracker.anchor.unwrap().time_s,
+            before.anchor.unwrap().time_s
+        );
+        assert_eq!(
+            tracker.anchor.unwrap().position_m,
+            before.anchor.unwrap().position_m
+        );
+        assert!(tracker.candidates.is_empty());
+    }
+    assert_eq!(tracker.gate(11_000, 400.0, 30.0), GateResult::Rejected);
+}
+
+#[test]
+fn stale_gate_cannot_reset_a_newer_reanchor_candidate() {
+    let mut tracker = NetworkTracker::default();
+    assert_eq!(tracker.gate(0, 0.0, 30.0), GateResult::Accepted);
+    assert_eq!(tracker.gate(10_000, 2_000.0, 30.0), GateResult::Rejected);
+    for time in [9_000, 10_000] {
+        assert_eq!(tracker.gate(time, 0.0, 30.0), GateResult::Rejected);
+        assert_eq!(tracker.candidates.len(), 1);
+        assert_eq!(tracker.candidates[0].time_s, 10.0);
+        assert_eq!(tracker.candidates[0].position_m, 2_000.0);
+    }
+    assert_eq!(tracker.gate(22_000, 2_100.0, 30.0), GateResult::Reanchored);
+}
+
+#[test]
 fn rejects_impossible_fix_then_reanchors_on_consistent_evidence() {
     let mut tracker = NetworkTracker::default();
     assert_eq!(tracker.gate(0, 0.0, 30.0), GateResult::Accepted);

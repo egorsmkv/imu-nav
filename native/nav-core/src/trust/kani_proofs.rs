@@ -545,7 +545,7 @@ fn independent_confirmation_requires_age_and_precision() {
         age <= 10_000
             && network
                 .horizontal_accuracy_m
-                .is_some_and(|value| value <= 150.0)
+                .is_some_and(|value| value.is_finite() && (0.0..=150.0).contains(&value))
     );
     kani::cover!(
         eligible && age == 10_000 && network.horizontal_accuracy_m == Some(150.0),

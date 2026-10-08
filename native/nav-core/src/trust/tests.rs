@@ -1,5 +1,37 @@
 use super::*;
 
+#[test]
+fn malformed_network_uncertainty_cannot_confirm_hard_jamming() {
+    for accuracy in [-1.0, f64::NEG_INFINITY, f64::INFINITY, f64::NAN] {
+        let mut context = input(fix(1_000));
+        context.receiver.agc_db = Some(-20.0);
+        context.network_fix = Some(LocationFix {
+            horizontal_accuracy_m: Some(accuracy),
+            ..context.fix
+        });
+        let verdict = TrustClassifier::new(TrustConfig::default()).evaluate(context);
+        assert_eq!(verdict.level, TrustLevel::Bad);
+        assert!(verdict.reasons.contains(&Reason::Jam));
+        assert!(!verdict.reasons.contains(&Reason::JamStrong));
+    }
+}
+
+#[test]
+fn invalid_network_coordinates_do_not_supply_confirmation_or_disagreement() {
+    for (latitude, longitude) in [(91.0, 30.0), (50.0, 181.0), (f64::NAN, 30.0)] {
+        let mut context = input(fix(1_000));
+        context.fix.speed_mps = Some(0.0);
+        context.network_fix = Some(LocationFix {
+            latitude_deg: latitude,
+            longitude_deg: longitude,
+            ..context.fix
+        });
+        let verdict = TrustClassifier::new(TrustConfig::default()).evaluate(context);
+        assert_eq!(verdict.level, TrustLevel::Good);
+        assert_eq!(verdict.reasons, []);
+    }
+}
+
 fn fix(elapsed_ms: i64) -> LocationFix {
     LocationFix {
         wall_time_ms: 1_700_000_000_000 + elapsed_ms,

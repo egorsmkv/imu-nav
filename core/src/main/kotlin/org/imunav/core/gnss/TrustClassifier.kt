@@ -141,6 +141,7 @@ class TrustClassifier(private val config: TrustConfig = TrustConfig(), private v
         val c = config
         val speed = fix.speedMps
         val netAcc = lastNet?.accuracyM ?: return
+        if (!validNetworkFix(lastNet)) return
         val fresh = abs(fix.elapsedMs - lastNet.elapsedMs) <= 5000
         val slowEnough = speed == null || speed < c.netDiffMaxSpeedMps
         if (netAcc >= c.netMaxAccM || !fresh || !slowEnough) return
@@ -180,12 +181,16 @@ class TrustClassifier(private val config: TrustConfig = TrustConfig(), private v
 
     private fun networkAgrees(fix: RawFix, lastNet: RawFix?): Boolean {
         val c = config
-        if (lastNet == null) return false
+        if (lastNet == null || !validNetworkFix(lastNet)) return false
         val netAcc = lastNet.accuracyM
         return (netAcc ?: Float.MAX_VALUE) <= c.jamStrongNetMaxAccM &&
             abs(fix.elapsedMs - lastNet.elapsedMs) <= c.jamStrongNetMaxAgeMs &&
             Geo.distance(lastNet.lat, lastNet.lon, fix.lat, fix.lon) <= c.jamStrongNetM + (fix.accuracyM ?: 10f) + (netAcc ?: 0f)
     }
+
+    /** Malformed ancillary evidence must neither confirm nor discredit a satellite fix. */
+    private fun validNetworkFix(fix: RawFix): Boolean = fix.lat in -90.0..90.0 &&
+        fix.lon in -180.0..180.0 && fix.accuracyM?.let { it.isFinite() && it >= 0f } == true
 
     private fun chainedJamStrong(fix: RawFix) = jamStrongAtMs >= 0 && fix.elapsedMs - jamStrongAtMs in 1..config.jamStrongChainMs
 

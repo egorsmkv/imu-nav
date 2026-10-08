@@ -98,3 +98,10 @@ of stop detection; the estimator remains comparison-only in this research protot
 
 It returns a `TickOutcome` containing the estimate, optional route projection, and whether the
 position and speed measurements passed their innovation gates.
+
+Supplied initial, reroute and GNSS uncertainties are validated before applying minimum uncertainty
+floors. Negative values return `FilterError::InvalidSigma`; NaN and infinities return
+`FilterError::NonFinite`. A failed GNSS tick or reroute leaves the filter, route, history, calibration
+and timestamp watermarks unchanged. Zero and small finite uncertainties still use the existing
+floors, and absent GNSS accuracy fields still use the documented defaults. Future, stale and
+duplicate GNSS fixes remain ignored before their numerical fields are evaluated.
