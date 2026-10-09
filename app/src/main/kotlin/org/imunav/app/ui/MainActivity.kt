@@ -26,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -151,7 +152,7 @@ private fun AppRoot(app: AppGraph, hasLocation: Boolean, requestPermission: () -
     }
     var overlayWidth by remember { mutableIntStateOf(0) }
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val besideMap = screen == Screen.BOOKMARKS && drivingPaneWidth(maxWidth, maxHeight) != null
+        val besideMap = screen == Screen.BOOKMARKS && drivingPaneWidth(maxWidth, maxHeight, LocalDensity.current.fontScale) != null
         // The map screen stays composed under every other screen. Rebuilding it cost ~0.5 s (a new
         // MapView, style and tiles) each time the user came back; while covered it only stops drawing.
         MapScreen(

@@ -135,6 +135,17 @@ address search and the trip log keep content above the keyboard, and the setup a
 limit their height so the main content remains reachable.
 System font scaling is preserved.
 
+Search and saved places use a side pane only when the landscape window can fit a 320 dp pane
+(increased with the system font scale) while leaving at least 60% of the width for the map.
+Narrower windows use the full-screen search/bookmark view and the bottom route panel.
+Bookmark filters and navigation actions have separately scrollable height limits so they cannot
+push results or route details out of a short window. Bookmark content consumes the scaffold's
+system insets before adding keyboard padding, avoiding a duplicate bottom gap.
+The map control rail respects the status and navigation bars in landscape. Speed and speed-limit
+indicators wrap instead of shrinking each other in narrow panels.
+
+For the device verification matrix, see [Responsive UI checks](../responsive_ui.md).
+
 Text trip logs are written to
 `files/logs/`, trip recordings to `files/trips/` in app storage. Log writes and trip boundaries share one worker, so queued messages stay with their original trip.
 Log files have unique suffixes and buffered writes flush within five seconds (or at rotation/trip end); an abrupt process kill can lose the last buffered lines.

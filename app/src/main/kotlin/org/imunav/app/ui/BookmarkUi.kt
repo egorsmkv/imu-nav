@@ -1,14 +1,19 @@
 package org.imunav.app.ui
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
@@ -38,6 +43,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.imunav.app.AppGraph
@@ -54,6 +60,8 @@ import org.imunav.core.geo.GeoPoint
 import org.imunav.core.route.TravelMode
 import java.util.Locale
 import java.util.UUID
+
+private const val BOOKMARK_CONTROLS_HEIGHT_FRACTION = 0.5f
 
 /** No reverse geocoding is needed to save a point chosen offline on the map. */
 private fun BookmarkPoint.displayLabel(): String = label?.trim()?.takeIf { it.isNotBlank() } ?: String.format(Locale.ROOT, "%.5f, %.5f", point.lat, point.lon)
@@ -103,7 +111,7 @@ fun BookmarkDialogs(bookmarks: Bookmarks) {
             onDismissRequest = bookmarks::dismissEditor,
             title = { Text(stringResource(R.string.bookmark_name)) },
             text = {
-                Column {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
                     OutlinedTextField(
                         value = draft.name,
                         onValueChange = bookmarks::nameChanged,
@@ -128,7 +136,7 @@ fun BookmarkDialogs(bookmarks: Bookmarks) {
             onDismissRequest = bookmarks::dismissDelete,
             title = { Text(stringResource(R.string.action_delete)) },
             text = {
-                Column {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
                     Text(stringResource(R.string.bookmark_delete_confirm, bookmark.name))
                     if (state.failed) Text(stringResource(R.string.bookmark_error), color = MaterialTheme.colorScheme.error)
                 }
@@ -149,68 +157,74 @@ fun BookmarksScreen(app: AppGraph, onBack: () -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
     val items = state.items.matching(query).filter { if (tab == 0) it is SavedPlace else it is SavedRoute }
     Scaffold(topBar = {
-        TopAppBar(title = { Text(stringResource(R.string.bookmarks)) }, navigationIcon = {
+        TopAppBar(title = { Text(stringResource(R.string.bookmarks), maxLines = 1, overflow = TextOverflow.Ellipsis) }, navigationIcon = {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.cd_back)) }
         })
     }) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).imePadding()) {
-            PrimaryTabRow(selectedTabIndex = tab) {
-                listOf(R.string.bookmark_places, R.string.bookmark_routes).forEachIndexed { index, title ->
-                    Tab(selected = tab == index, onClick = { tab = index }, text = { Text(stringResource(title)) })
+        BoxWithConstraints(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
+            val controlsMaxHeight = maxHeight * BOOKMARK_CONTROLS_HEIGHT_FRACTION
+            Column(Modifier.fillMaxSize()) {
+                // Keep results reachable even when the keyboard, tabs and large text fill a short pane.
+                Column(Modifier.heightIn(max = controlsMaxHeight).verticalScroll(rememberScrollState())) {
+                    PrimaryTabRow(selectedTabIndex = tab) {
+                        listOf(R.string.bookmark_places, R.string.bookmark_routes).forEachIndexed { index, title ->
+                            Tab(selected = tab == index, onClick = { tab = index }, text = { Text(stringResource(title)) })
+                        }
+                    }
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        singleLine = true,
+                        label = { Text(stringResource(R.string.bookmark_filter)) },
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    )
+                    if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                    if (state.failed) BookmarkFailure(app.bookmarks::reload, !state.busy)
+                    if (ui.guidance.active) Text(stringResource(R.string.bookmark_active), Modifier.padding(16.dp))
                 }
-            }
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                singleLine = true,
-                label = { Text(stringResource(R.string.bookmark_filter)) },
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
-            )
-            if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-            if (state.failed) BookmarkFailure(app.bookmarks::reload, !state.busy)
-            if (ui.guidance.active) Text(stringResource(R.string.bookmark_active), Modifier.padding(16.dp))
-            LazyColumn(Modifier.weight(1f)) {
-                if (state.loaded && items.isEmpty()) {
-                    item { Text(stringResource(if (query.isBlank()) R.string.bookmark_empty else R.string.search_no_results), Modifier.padding(16.dp)) }
-                }
-                items(items, key = { it.id }) { bookmark ->
-                    var menu by remember { mutableStateOf(false) }
-                    ListItem(
-                        headlineContent = { Text(bookmark.name) },
-                        supportingContent = { Text(bookmarkDescription(bookmark)) },
-                        leadingContent = { Icon(Icons.Filled.Bookmark, contentDescription = null) },
-                        trailingContent = {
-                            Box {
-                                IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, stringResource(R.string.driving_more)) }
-                                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                                    val editable = !ui.guidance.active && !ui.startingNavigation
-                                    if (bookmark is SavedPlace) {
-                                        DropdownMenuItem(text = { Text(stringResource(R.string.bookmark_use_start)) }, enabled = editable, onClick = {
+                LazyColumn(Modifier.weight(1f)) {
+                    if (state.loaded && items.isEmpty()) {
+                        item { Text(stringResource(if (query.isBlank()) R.string.bookmark_empty else R.string.search_no_results), Modifier.padding(16.dp)) }
+                    }
+                    items(items, key = { it.id }) { bookmark ->
+                        var menu by remember { mutableStateOf(false) }
+                        ListItem(
+                            headlineContent = { Text(bookmark.name) },
+                            supportingContent = { Text(bookmarkDescription(bookmark)) },
+                            leadingContent = { Icon(Icons.Filled.Bookmark, contentDescription = null) },
+                            trailingContent = {
+                                Box {
+                                    IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, stringResource(R.string.driving_more)) }
+                                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                                        val editable = !ui.guidance.active && !ui.startingNavigation
+                                        if (bookmark is SavedPlace) {
+                                            DropdownMenuItem(text = { Text(stringResource(R.string.bookmark_use_start)) }, enabled = editable, onClick = {
+                                                menu = false
+                                                if (app.useBookmark(bookmark, true)) onBack()
+                                            })
+                                            DropdownMenuItem(text = { Text(stringResource(R.string.bookmark_use_destination)) }, enabled = editable, onClick = {
+                                                menu = false
+                                                if (app.useBookmark(bookmark, false)) onBack()
+                                            })
+                                        } else if (bookmark is SavedRoute) {
+                                            DropdownMenuItem(text = { Text(stringResource(R.string.bookmark_open)) }, enabled = editable, onClick = {
+                                                menu = false
+                                                if (app.openBookmark(bookmark)) onBack()
+                                            })
+                                        }
+                                        DropdownMenuItem(text = { Text(stringResource(R.string.bookmark_rename)) }, enabled = !state.busy, onClick = {
                                             menu = false
-                                            if (app.useBookmark(bookmark, true)) onBack()
+                                            app.bookmarks.edit(bookmark)
                                         })
-                                        DropdownMenuItem(text = { Text(stringResource(R.string.bookmark_use_destination)) }, enabled = editable, onClick = {
+                                        DropdownMenuItem(text = { Text(stringResource(R.string.action_delete)) }, enabled = !state.busy, onClick = {
                                             menu = false
-                                            if (app.useBookmark(bookmark, false)) onBack()
-                                        })
-                                    } else if (bookmark is SavedRoute) {
-                                        DropdownMenuItem(text = { Text(stringResource(R.string.bookmark_open)) }, enabled = editable, onClick = {
-                                            menu = false
-                                            if (app.openBookmark(bookmark)) onBack()
+                                            app.bookmarks.requestDelete(bookmark)
                                         })
                                     }
-                                    DropdownMenuItem(text = { Text(stringResource(R.string.bookmark_rename)) }, enabled = !state.busy, onClick = {
-                                        menu = false
-                                        app.bookmarks.edit(bookmark)
-                                    })
-                                    DropdownMenuItem(text = { Text(stringResource(R.string.action_delete)) }, enabled = !state.busy, onClick = {
-                                        menu = false
-                                        app.bookmarks.requestDelete(bookmark)
-                                    })
                                 }
-                            }
-                        },
-                    )
+                            },
+                        )
+                    }
                 }
             }
         }

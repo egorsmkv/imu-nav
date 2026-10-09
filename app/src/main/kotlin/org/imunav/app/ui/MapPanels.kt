@@ -362,7 +362,7 @@ internal fun NavigationPanel(nav: GuidanceState, showActions: Boolean, onStop: (
 @Composable
 private fun SpeedBadge(speedKmh: Int, limitKmh: Int?) {
     val res = LocalResources.current
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text("$speedKmh", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text(stringResource(R.string.unit_kmh, speedKmh).substringAfter(' '), style = MaterialTheme.typography.labelSmall)
