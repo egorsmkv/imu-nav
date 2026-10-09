@@ -41,7 +41,7 @@ class ElevationMatcher {
 
     /** A barometer reading. Heights are low-pass filtered (~2 s) to remove sensor noise and door slams. */
     fun onPressure(hPa: Double, elapsedMs: Long) {
-        if (hPa !in MIN_HPA..MAX_HPA) return
+        if (hPa !in MIN_HPA..MAX_HPA || elapsedMs < 0 || elapsedMs <= lastPressureMs) return
         val height = heightFromPressure(hPa)
         val previous = smoothedHeight
         val dtS = if (lastPressureMs < 0) 0.0 else ((elapsedMs - lastPressureMs) / 1000.0).coerceIn(0.0, 5.0)
