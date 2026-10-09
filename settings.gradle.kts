@@ -14,7 +14,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "blind-driver-opensource"
+rootProject.name = "imu-nav"
 
 include(":core")
 include(":app")

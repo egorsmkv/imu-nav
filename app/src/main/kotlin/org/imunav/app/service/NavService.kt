@@ -66,7 +66,7 @@ class NavService : LifecycleService() {
         }
         if (wakeLock == null) {
             wakeLock = getSystemService(PowerManager::class.java)
-                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "blinddriver:nav")
+                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "imunav:nav")
                 .apply { acquire(MAX_WAKE_LOCK_MS) } // with a timeout, in case we are never stopped
         }
         val app = graph

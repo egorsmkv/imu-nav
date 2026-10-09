@@ -9,7 +9,7 @@ import org.maplibre.android.MapLibre
 import org.maplibre.android.module.http.HttpRequestUtil
 
 /** The Application object: created once per process, before any screen. It builds the [AppGraph]. */
-class BlindDriverApp : Application() {
+class ImuNavApp : Application() {
     lateinit var graph: AppGraph
         private set
 
@@ -39,4 +39,4 @@ private fun enableStrictMode() {
 }
 
 /** Shortcut to the process-wide [AppGraph] from any Context (`context.graph`). */
-val Context.graph: AppGraph get() = (applicationContext as BlindDriverApp).graph
+val Context.graph: AppGraph get() = (applicationContext as ImuNavApp).graph

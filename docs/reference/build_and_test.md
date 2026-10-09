@@ -107,7 +107,7 @@ Play release builds are signed from `keystore.properties` in the project root (g
 ```properties
 storeFile=keystore/release.jks
 storePassword=...
-keyAlias=blinddriver
+keyAlias=imunav
 keyPassword=...
 ```
 

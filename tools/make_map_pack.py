@@ -47,7 +47,7 @@ SPRITE_FILES = ["ofm.json", "ofm.png", "ofm@2x.json", "ofm@2x.png"]
 # arrows, math, box drawing, geometric shapes. Characters outside these simply are not drawn.
 GLYPH_RANGES = [0, 256, 512, 768, 1024, 1280, 7424, 7680, 7936, 8192, 8448, 8704, 9472, 9728]
 
-USER_AGENT = "blind-driver-opensource map pack builder"
+USER_AGENT = "imu-nav map pack builder"
 
 
 def fetch(url: str) -> bytes:

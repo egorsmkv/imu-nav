@@ -32,7 +32,7 @@
     <uses-permission android:name="androidx.car.app.ACCESS_SURFACE" />
 
     <application
-        android:name=".BlindDriverApp"
+        android:name=".ImuNavApp"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -41,7 +41,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="false"
         android:usesCleartextTraffic="true"
-        android:theme="@style/Theme.BlindDriver">
+        android:theme="@style/Theme.ImuNav">
 
         <meta-data android:name="com.google.android.gms.car.application" android:resource="@xml/automotive_app_desc" />
         <meta-data android:name="androidx.car.app.minCarApiLevel" android:value="7" />

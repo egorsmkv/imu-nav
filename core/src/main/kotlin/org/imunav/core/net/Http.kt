@@ -21,7 +21,7 @@ import java.util.concurrent.TimeUnit
  */
 object Http {
     /** Sent with every request so server operators can tell where the traffic comes from. */
-    const val USER_AGENT = "blind-driver-opensource/0.7"
+    const val USER_AGENT = "imu-nav/0.7"
 
     /** Default client: 20 s to connect, 60 s without data before a read fails. */
     private val baseClient: OkHttpClient by lazy {

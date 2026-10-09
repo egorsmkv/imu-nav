@@ -86,7 +86,7 @@ import kotlin.time.Duration.Companion.milliseconds
 /**
  * The app's "object graph": creates every long-lived component once and connects them.
  *
- * There is one instance per process, created in [BlindDriverApp.onCreate] and reachable from any
+ * There is one instance per process, created in [ImuNavApp.onCreate] and reachable from any
  * `Context` as `context.graph`. This is plain manual dependency injection — no framework —
  * so you can read top to bottom how the pieces fit:
  *

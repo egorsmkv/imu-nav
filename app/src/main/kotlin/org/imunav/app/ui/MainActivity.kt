@@ -35,7 +35,7 @@ import org.imunav.app.AppLanguage
 import org.imunav.app.UiState
 import org.imunav.app.graph
 import org.imunav.app.trips.TripSummary
-import org.imunav.app.ui.theme.BlindDriverTheme
+import org.imunav.app.ui.theme.ImuNavTheme
 
 /**
  * The app's screens. Navigation between them is a simple state variable in [AppRoot]
@@ -96,7 +96,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val language by app.language.collectAsStateWithLifecycle()
             LaunchedEffect(language) { if (language != languageAtCreation) recreate() }
-            BlindDriverTheme {
+            ImuNavTheme {
                 HapticFeedbackProvider(app.haptics) {
                     AppRoot(app, hasLocation, ::requestPermissions, ::setKeepScreenOn, ::refreshPermissions)
                 }

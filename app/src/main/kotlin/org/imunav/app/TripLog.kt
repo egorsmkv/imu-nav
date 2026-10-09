@@ -12,7 +12,7 @@ import java.util.Locale
 /**
  * The app's text log.
  *
- * - Every line goes to Logcat (tag `BlindDriver`) and to an in-memory [recent] list the log screen shows.
+ * - Every line goes to Logcat (tag `ImuNav`) and to an in-memory [recent] list the log screen shows.
  * - During a trip it is also appended to `files/logs/trip-<time>.log` (a new file every 15 MB).
  *
  * Lines are short `key=value` messages such as `gps_state=LOST` or `turn_snap step=4 …`, which
@@ -63,7 +63,7 @@ class TripLog(context: Context, maxFileBytes: Long = 15L * 1024 * 1024) {
     }
 
     private companion object {
-        const val TAG = "BlindDriver"
+        const val TAG = "ImuNav"
         const val MAX_RECENT = 200
         val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss.SSS", Locale.US)
     }

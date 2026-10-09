@@ -1,13 +1,13 @@
 Categories:
   - Navigation
 License: MIT
-SourceCode: https://github.com/egorsmkv/blinddriver-os
+SourceCode: https://github.com/egorsmkv/imu-nav
 # TODO: add IssueTracker after the repository is public and GitHub Issues is enabled.
 
 AutoName: IMU Nav
 
 RepoType: git
-Repo: https://github.com/egorsmkv/blinddriver-os.git
+Repo: https://github.com/egorsmkv/imu-nav.git
 
 Builds:
   - versionName: 0.6.0
