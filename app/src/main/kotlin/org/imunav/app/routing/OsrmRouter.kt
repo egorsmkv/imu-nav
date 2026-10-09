@@ -13,6 +13,7 @@ import org.json.JSONObject
 import java.io.IOException
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import kotlin.math.pow
 
 /** Something that computes routes: the offline GraphHopper pack, the online OSRM server, or both ([SmartRouter]). */
 interface Router {
@@ -127,7 +128,7 @@ class OsrmRouter(private val baseUrl: String = "https://router.project-osrm.org"
 
         /** Decode Google's "encoded polyline" format (OSRM uses 6 decimal places). */
         fun decodePolyline(encoded: String, precision: Int): List<GeoPoint> {
-            val factor = Math.pow(10.0, precision.toDouble())
+            val factor = 10.0.pow(precision.toDouble())
             val out = ArrayList<GeoPoint>()
             var index = 0
             var lat = 0L

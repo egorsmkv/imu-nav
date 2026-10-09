@@ -2,6 +2,7 @@ package org.imunav.app.maps
 
 import android.graphics.Color
 import androidx.core.graphics.toColorInt
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import org.imunav.core.geo.GeoPoint
 import org.imunav.core.route.Route
@@ -98,7 +99,7 @@ fun addNavigationLayers(s: Style) {
 /** Encoding a large polyline belongs on a worker; both renderers share this representation. */
 suspend fun routeFeatures(route: Route?): FeatureCollection {
     val coordinates = route?.geometry?.map { point ->
-        coroutineContext.ensureActive()
+        currentCoroutineContext().ensureActive()
         Point.fromLngLat(point.lon, point.lat)
     }
     return FeatureCollection.fromFeatures(

@@ -23,7 +23,6 @@ import org.imunav.core.search.ResultKind
 import org.imunav.core.search.SearchDb
 import org.imunav.core.search.SearchResult
 import org.imunav.core.search.StreetRow
-import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import java.io.File

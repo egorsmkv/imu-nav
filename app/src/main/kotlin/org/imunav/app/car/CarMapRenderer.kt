@@ -155,7 +155,7 @@ class CarMapRenderer(
         initializeMap(loaded)
         val desiredPrefetch = graph.powerProfile.value.mapPrefetchZoomDelta
         if (prefetch != desiredPrefetch) {
-            loaded.setPrefetchZoomDelta(desiredPrefetch)
+            loaded.prefetchZoomDelta = desiredPrefetch
             prefetch = desiredPrefetch
         }
         if (guidanceZoomPending) {

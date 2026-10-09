@@ -28,6 +28,7 @@ import org.imunav.core.car.CarDestination
 import org.imunav.core.nav.NavigationEngine
 import org.imunav.core.route.TravelMode
 import java.util.UUID
+import kotlin.time.Duration.Companion.milliseconds
 
 /** Projected Android Auto entry point, included in both distribution flavors. */
 class NavigationCarService : CarAppService() {
@@ -200,7 +201,7 @@ class NavigationCarSession :
                 while (isActive) {
                     val state = demo?.state(SystemClock.elapsedRealtime()) ?: break
                     publish(preview.copy(guidance = state, currentPosition = state.position, destination = state.destination))
-                    delay(NavigationEngine.TICK_MS * graph.powerProfile.value.uiEveryTicks)
+                    delay((NavigationEngine.TICK_MS * graph.powerProfile.value.uiEveryTicks).milliseconds)
                 }
             }
         } else {

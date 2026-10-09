@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -74,6 +73,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.time.Duration.Companion.milliseconds
 
 /** Categories that reduce a busy diagnostic log to the subsystem the user is investigating. */
 private enum class LogFilter(@get:StringRes val label: Int) {
@@ -103,7 +103,7 @@ fun LogScreen(app: AppGraph, onBack: () -> Unit) {
     LaunchedEffect(Unit) {
         while (true) {
             lines = app.tripLog.recent
-            delay(1000)
+            delay(1000.milliseconds)
         }
     }
     LaunchedEffect(visibleLines.lastOrNull(), followNewest, query, filter) {

@@ -29,7 +29,7 @@ class NetworkManeuverComparisonTest {
             assertTrue(learned.nativeBlind.count >= 530, learned.summary())
             assertTrue(learned.nativeBlind.p95M < scenario.p95LimitM, learned.summary())
             assertTrue(learned.nativeBlind.maxM < scenario.peakLimitM, learned.summary())
-            scenario.recoveryLimitS?.let { limit -> assertTrue(recoverySeconds(learned)?.let { it <= limit } == true, learned.summary()) }
+            scenario.recoveryLimitS?.let { limit -> assertEquals(true, recoverySeconds(learned)?.let { it <= limit }, learned.summary()) }
             assertEquals(baseline.samples.map { it.kotlinS }, learned.samples.map { it.kotlinS })
         }
     }

@@ -81,6 +81,7 @@ import org.imunav.core.route.TravelMode
 import org.imunav.core.speed.SpeedProfile
 import org.json.JSONObject
 import java.util.Locale
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * The app's "object graph": creates every long-lived component once and connects them.
@@ -393,7 +394,7 @@ class AppGraph(private val context: Context) {
             idleRefresh = scope.launch {
                 while (isActive) {
                     if (!engine.state.active) refresh()
-                    delay(NavigationEngine.TICK_MS * powerProfile.value.uiEveryTicks)
+                    delay((NavigationEngine.TICK_MS * powerProfile.value.uiEveryTicks).milliseconds)
                 }
             }
         } else if (!displays.visible) {

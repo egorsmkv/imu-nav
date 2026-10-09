@@ -74,11 +74,11 @@ private fun ArchiveUpload(app: AppGraph, trip: TripSummary) {
                     checkProfile()
                 }.onFailure { failure ->
                     if (failure is CancellationException) throw failure
-                    error = when {
-                        failure is HttpException && failure.code == 413 -> R.string.trip_archive_quota
-                        failure is HttpException && failure.code == 404 -> R.string.trip_archive_unavailable
-                        failure is HttpException && failure.code == 409 -> R.string.trip_archive_conflict
-                        failure is IllegalArgumentException -> R.string.trip_archive_invalid
+                    error = when (failure) {
+                        is HttpException if failure.code == 413 -> R.string.trip_archive_quota
+                        is HttpException if failure.code == 404 -> R.string.trip_archive_unavailable
+                        is HttpException if failure.code == 409 -> R.string.trip_archive_conflict
+                        is IllegalArgumentException -> R.string.trip_archive_invalid
                         else -> R.string.trip_archive_failed
                     }
                 }

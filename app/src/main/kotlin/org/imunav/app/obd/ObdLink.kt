@@ -35,7 +35,7 @@ data class ObdStatus(val state: State = State.OFF, val speedKmh: Int? = null, va
  * [onSpeed] on the main thread, several times a second.
  *
  * The user pairs the adapter in the phone's Bluetooth settings and picks it here once; the link is
- * opened while navigating by car ([start]) and closed afterwards ([stop]). Lost connections are
+ * opened while navigating by car ([start]) and closed afterward ([stop]). Lost connections are
  * retried with a growing pause. Bluetooth reads cannot time out, so a watchdog closes the socket
  * when the adapter goes silent, which unblocks the reading thread.
  *

@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import org.imunav.app.R
@@ -15,7 +16,6 @@ import org.imunav.core.net.HttpException
 import java.io.File
 import java.io.InputStream
 import java.security.MessageDigest
-import kotlin.coroutines.coroutineContext
 
 /** Performs cell imports, exports, and sync I/O while the manager owns task lifetime and UI state. */
 internal class CellTransfers(
@@ -28,7 +28,7 @@ internal class CellTransfers(
 ) {
     /** Import a user-selected CSV, stopping promptly when its owning task is cancelled. */
     suspend fun importFile(open: () -> InputStream?, mccs: Set<Int>): Long {
-        val owner = coroutineContext
+        val owner = currentCoroutineContext()
         return withContext(Dispatchers.IO) {
             (open() ?: error("cannot open file")).use { input ->
                 db.importStream(CellSource.OPENCELLID, input, mccs) { read, kept ->
@@ -65,7 +65,7 @@ internal class CellTransfers(
 
     /** Stream the Mozilla archive without staging its full contents on the phone. */
     suspend fun downloadMozilla(mccs: Set<Int>): Long {
-        val owner = coroutineContext
+        val owner = currentCoroutineContext()
         return withContext(Dispatchers.IO) {
             var lastReport = 0L
             val input = ResumableHttpInputStream(CellManager.MOZILLA_URL, onProgress = { bytes, total ->
@@ -150,7 +150,7 @@ internal class CellTransfers(
         client.download(mccs, since) { batch += it }
         db.applySharedSync(removals, batch, replaceSnapshot)
         prefs.edit {
-            putLong("last_download_s", (removalDownload.serverEpochS ?: startedMs / 1000) - 60)
+            putLong("last_download_s", (removalDownload.serverEpochS ?: (startedMs / 1000)) - 60)
             putBoolean("shared_removal_sync_v1", true)
         }
         uploaded to batch.size

@@ -6,6 +6,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -36,7 +37,6 @@ import org.maplibre.geojson.Point
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
-import kotlin.coroutines.coroutineContext
 
 /** The online map styles (OpenFreeMap). Used when no offline map pack is installed. */
 object MapStyles {
@@ -243,7 +243,7 @@ class OfflineMap(private val context: Context, private val scope: CoroutineScope
      * the zip are kept (sprites/, fonts/…) but may not escape the folder ("zip slip").
      */
     private suspend fun install(input: InputStream): String {
-        val job = coroutineContext
+        val job = currentCoroutineContext()
         val staging = File(root, "staging").apply {
             deleteRecursively()
             mkdirs()

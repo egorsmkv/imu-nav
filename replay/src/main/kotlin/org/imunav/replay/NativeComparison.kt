@@ -145,7 +145,7 @@ class NativeComparison(
 
                 is TripEvent.Mode -> mode = event.mode
 
-                // This is an explicit paired experiment, regardless of which estimator drove the recorded trip.
+                // This is an explicit-paired experiment, regardless of which estimator drove the recorded trip.
                 is TripEvent.Estimator, is TripEvent.Inertial -> Unit
 
                 is TripEvent.RouteSet -> installRoute(event)
@@ -247,7 +247,7 @@ class NativeComparison(
             val estimate = estimator.tick(timeMs, snapshot.lastUsableGps.takeUnless { hidden }, motion, network, turn)
             val truth = reference.lastGood?.takeIf { it.elapsedMs == timeMs } ?: return
             val route = engine.route ?: return
-            // Global projection avoids favouring either estimator's route position when scoring.
+            // Global projection avoids favoring either estimator's route position when scoring.
             val projected = route.project(truth.point, 0.0, 0.0, route.length, 0.0)
             samples += ComparisonSample(
                 timeMs, hidden, projected.s, projected.offsetM, engine.progressS, estimate.positionM, estimate.positionSigmaM, estimate.safetyRadiusM,

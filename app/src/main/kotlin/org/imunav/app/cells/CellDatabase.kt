@@ -197,10 +197,10 @@ class CellDatabase(context: Context) :
         if (towers.isEmpty()) return
         val db = writableDatabase
         db.transaction {
-            for (t in towers) {
+            for ((key, lat, lon, rangeM, samples) in towers) {
                 db.execSQL(
                     "INSERT OR REPLACE INTO ${source.table} (radio, mcc, mnc, area, cid, lat, lon, range, samples) VALUES (?,?,?,?,?,?,?,?,?)",
-                    arrayOf<Any>(t.key.radio.ordinal, t.key.mcc, t.key.mnc, t.key.area, t.key.cid, t.lat, t.lon, t.rangeM, t.samples),
+                    arrayOf<Any>(key.radio.ordinal, key.mcc, key.mnc, key.area, key.cid, lat, lon, rangeM, samples),
                 )
             }
         }
@@ -211,16 +211,16 @@ class CellDatabase(context: Context) :
         val db = writableDatabase
         db.transaction {
             if (replace) db.execSQL("DELETE FROM shared")
-            for (key in removals) {
+            for ((radio, mcc, mnc, area, cid) in removals) {
                 db.execSQL(
                     "DELETE FROM shared WHERE radio=? AND mcc=? AND mnc=? AND area=? AND cid=?",
-                    arrayOf<Any>(key.radio.ordinal, key.mcc, key.mnc, key.area, key.cid),
+                    arrayOf<Any>(radio.ordinal, mcc, mnc, area, cid),
                 )
             }
-            for (tower in towers) {
+            for ((key, lat, lon, rangeM, samples) in towers) {
                 db.execSQL(
                     "INSERT OR REPLACE INTO shared (radio,mcc,mnc,area,cid,lat,lon,range,samples) VALUES (?,?,?,?,?,?,?,?,?)",
-                    arrayOf<Any>(tower.key.radio.ordinal, tower.key.mcc, tower.key.mnc, tower.key.area, tower.key.cid, tower.lat, tower.lon, tower.rangeM, tower.samples),
+                    arrayOf<Any>(key.radio.ordinal, key.mcc, key.mnc, key.area, key.cid, lat, lon, rangeM, samples),
                 )
             }
         }

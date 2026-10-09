@@ -24,6 +24,7 @@ import org.imunav.app.ui.formatDistance
 import org.imunav.app.ui.formatDuration
 import org.imunav.app.ui.instructionLine
 import org.imunav.core.nav.NavigationEngine
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Keeps navigation running while the screen is off or another app is in front.
@@ -78,7 +79,7 @@ class NavService : LifecycleService() {
                     if (!app.engine.state.active) break
                     if (tickCount % NOTIFY_EVERY_TICKS == 0) updateNotification()
                     tickCount++
-                    delay(NavigationEngine.TICK_MS)
+                    delay(NavigationEngine.TICK_MS.milliseconds)
                 }
                 stopSelf()
             }

@@ -7,6 +7,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,7 +35,6 @@ import org.imunav.routing.PackInfo
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
-import kotlin.coroutines.coroutineContext
 
 /** State of the offline routing pack, for the Settings screen. */
 data class OfflineRoutingStatus(
@@ -299,7 +299,7 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
 
     /** Unzip into a staging folder, validate, then atomically replace the current pack. */
     private suspend fun install(input: InputStream, totalBytes: Long = 0): String {
-        val job = coroutineContext // to notice cancellation inside the blocking loop
+        val job = currentCoroutineContext() // to notice cancellation inside the blocking loop
         val staging = File(root, "staging").apply {
             deleteRecursively()
             mkdirs()

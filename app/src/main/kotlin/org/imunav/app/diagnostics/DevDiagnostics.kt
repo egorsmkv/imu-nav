@@ -181,10 +181,10 @@ class DevDiagnostics(private val context: Context, private val cells: CellManage
     private fun recordFailure(failure: Throwable) {
         retryCount = (retryCount + 1).coerceAtMost(6)
         retryAtMs = SystemClock.elapsedRealtime() + (1L shl retryCount) * 1000L
-        val phase = when {
-            failure is HttpException && failure.code == 403 && failure.bodyStart.contains("DEBUG_DISABLED") -> DiagnosticPhase.SERVER_DISABLED
-            failure is HttpException && failure.code == 413 -> DiagnosticPhase.QUOTA_FULL
-            failure is SignInRequired -> DiagnosticPhase.SIGN_IN
+        val phase = when (failure) {
+            is HttpException if failure.code == 403 && failure.bodyStart.contains("DEBUG_DISABLED") -> DiagnosticPhase.SERVER_DISABLED
+            is HttpException if failure.code == 413 -> DiagnosticPhase.QUOTA_FULL
+            is SignInRequired -> DiagnosticPhase.SIGN_IN
             else -> DiagnosticPhase.RETRYING
         }
         _status.value = DiagnosticStatus(true, phase, detail = if (phase == DiagnosticPhase.RETRYING) failure.message.orEmpty().take(100) else "")

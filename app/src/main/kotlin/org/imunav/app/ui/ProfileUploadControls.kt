@@ -74,10 +74,10 @@ private fun ProfileUpload(app: AppGraph, archive: File, identity: String) {
             } catch (error: CancellationException) {
                 throw error
             } catch (error: IOException) {
-                failure = when {
-                    error is HttpException && error.code == 413 -> R.string.profile_upload_too_large
-                    error is HttpException && error.code in setOf(403, 404) -> R.string.profile_upload_unavailable
-                    error is HttpException && error.code == 409 -> R.string.profile_upload_notice_changed
+                failure = when (error) {
+                    is HttpException if error.code == 413 -> R.string.profile_upload_too_large
+                    is HttpException if error.code in setOf(403, 404) -> R.string.profile_upload_unavailable
+                    is HttpException if error.code == 409 -> R.string.profile_upload_notice_changed
                     else -> R.string.profile_upload_failed
                 }
             } catch (_: JSONException) {

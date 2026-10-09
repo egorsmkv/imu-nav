@@ -77,7 +77,7 @@ import org.imunav.app.setup.Preparation
 /** One feature's grant, with API-gated permission names and a localized explanation. */
 private data class SetupPermission(val title: Int, val explanation: Int, val permissions: List<String>)
 
-/** Visual urgency for a checklist item, kept independent from its localized status text. */
+/** Visual urgency for a checklist item, kept independent of its localized status text. */
 private enum class SetupStatus { READY, ATTENTION, WORKING, OPTIONAL, ERROR }
 
 /** Only runtime permissions supported by this Android version are offered. */

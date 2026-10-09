@@ -48,7 +48,7 @@ class Voice(context: Context, private var locale: Locale = Locale.forLanguageTag
     /** Use [locale]; if the phone has no voice for it, fall back to the phone's own language. */
     private fun applyLanguage() {
         val result = tts.setLanguage(locale)
-        if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) tts.setLanguage(Locale.getDefault())
+        if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) tts.language = Locale.getDefault()
     }
 
     /**

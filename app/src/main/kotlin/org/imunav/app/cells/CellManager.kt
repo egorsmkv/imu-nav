@@ -9,6 +9,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,7 +21,6 @@ import kotlinx.coroutines.withContext
 import org.imunav.app.R
 import org.imunav.app.setup.Preparation
 import org.imunav.app.setup.bundledCellPreparation
-import org.imunav.core.cells.CellTower
 import org.imunav.core.cells.Radio
 import org.imunav.core.cells.cellLearningKeys
 import org.imunav.core.gnss.PositioningHub
@@ -31,8 +31,6 @@ import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
-import kotlin.coroutines.coroutineContext
-import kotlin.math.abs
 
 /**
  * Owns the offline cell pipeline: scanning, the multi-source tower database, learning from trusted
@@ -395,7 +393,7 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
                     }
                 }
             }
-            coroutineContext.ensureActive()
+            currentCoroutineContext().ensureActive()
             if (n == 0L) throw IOException(str(R.string.setup_failed))
             prefs.edit { putString("bundled_sha256", hash) }
             _status.update { it.copy(preparation = Preparation.READY) }

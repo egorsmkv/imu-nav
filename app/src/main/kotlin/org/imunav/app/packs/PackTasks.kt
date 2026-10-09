@@ -6,7 +6,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.imunav.core.util.PackOperation
 
-/** Main-thread task ownership includes cancelled work's final cleanup, so staging directories cannot overlap. */
+/** Main-thread task ownership includes canceled work's final cleanup, so staging directories cannot overlap. */
 class PackTasks(private val scope: CoroutineScope) {
     private var task: Job? = null
     private var operation: PackOperation? = null

@@ -56,6 +56,7 @@ import org.imunav.core.bookmarks.matching
 import org.imunav.core.geo.GeoPoint
 import org.imunav.core.search.ResultKind
 import org.imunav.core.search.SearchResult
+import kotlin.time.Duration.Companion.milliseconds
 
 /** Full-screen search: type-ahead offline results (online fallback), recent picks when empty. */
 @Composable
@@ -84,7 +85,7 @@ fun SearchScreen(
             loading = false
             return@LaunchedEffect
         }
-        delay(250) // debounce typing
+        delay(250.milliseconds) // debounce typing
         loading = true
         results = search.search(query, near)
         loading = false

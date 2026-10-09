@@ -22,6 +22,7 @@ import org.imunav.core.bookmarks.SavedRoute
 import org.imunav.core.bookmarks.matching
 import org.imunav.core.route.TravelMode
 import org.imunav.core.search.SearchResult
+import kotlin.time.Duration.Companion.milliseconds
 
 /** Cancellable typeahead shares the phone's offline search and recent selections. */
 class CarSearchScreen(context: CarContext, private val start: Boolean, initialQuery: String = "") :
@@ -55,7 +56,7 @@ class CarSearchScreen(context: CarContext, private val start: Boolean, initialQu
         loading = true
         invalidate()
         job = lifecycleScope.launch {
-            delay(250)
+            delay(250.milliseconds)
             results =
                 if (query.isBlank()) {
                     graph.search.recent.value

@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -91,7 +90,6 @@ import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
-import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory
@@ -102,7 +100,6 @@ import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
 import java.util.Date
 import kotlin.coroutines.coroutineContext
-import android.graphics.Color as AColor
 
 private val GpsGreen = Color(0xFF1E8E3E)
 private val EngineRed = Color(0xFFD93025)
@@ -446,7 +443,7 @@ private fun TrackMap(
     LaunchedEffect(mapRef, visible, power) {
         if (visible) {
             mapView.setMaximumFps(power.mapMaxFps)
-            mapRef?.setPrefetchZoomDelta(power.mapPrefetchZoomDelta)
+            mapRef?.prefetchZoomDelta = power.mapPrefetchZoomDelta
         }
     }
 

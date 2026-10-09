@@ -6,6 +6,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -122,7 +123,7 @@ fun NavMap(
     var appliedRoute by remember { mutableStateOf<Pair<Style, Route?>?>(null) }
     var appliedTowers by remember { mutableStateOf<Pair<Style, TowerLayer?>?>(null) }
     var requestedStyle by remember { mutableStateOf<Pair<Boolean, String?>?>(null) }
-    var styleGeneration by remember { mutableStateOf(0L) }
+    var styleGeneration by remember { mutableLongStateOf(0L) }
     var disposed by remember { mutableStateOf(false) }
     var initializedMap by remember { mutableStateOf(false) }
 
@@ -291,7 +292,7 @@ fun NavMap(
     LaunchedEffect(renderable, loadedMap, maxFps, prefetchZoomDelta) {
         if (renderable) {
             mapView.setMaximumFps(maxFps)
-            loadedMap?.setPrefetchZoomDelta(prefetchZoomDelta)
+            loadedMap?.prefetchZoomDelta = prefetchZoomDelta
         }
     }
 

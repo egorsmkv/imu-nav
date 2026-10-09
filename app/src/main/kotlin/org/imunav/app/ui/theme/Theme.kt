@@ -34,7 +34,7 @@ private val DarkColors = darkColorScheme(
     onSecondaryContainer = Color(0xFFFFE170),
 )
 
-/** Material 3 theme following the system light/dark setting, with dynamic colour on Android 12+. */
+/** Material 3 theme following the system light/dark setting, with dynamic color on Android 12+. */
 @Composable
 fun BlindDriverTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
     val context = LocalContext.current

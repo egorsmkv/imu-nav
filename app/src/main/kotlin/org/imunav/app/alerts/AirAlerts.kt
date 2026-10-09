@@ -37,6 +37,7 @@ import org.imunav.core.net.Http
 import org.imunav.core.net.HttpException
 import org.json.JSONObject
 import java.io.IOException
+import kotlin.time.Duration.Companion.milliseconds
 
 /** One official oblast in the latest UkraineAlarm snapshot. */
 data class AirAlertRegion(val id: String, val nameUk: String, val nameEn: String)
@@ -101,7 +102,7 @@ class AirAlerts(private val context: Context, private val scope: CoroutineScope,
                 if (credentials == null) {
                     val allowed = withContext(Dispatchers.IO) { notificationsAllowed() }
                     _status.value = AirAlertStatus(notificationsAllowed = allowed)
-                    delay(RETRY_MS)
+                    delay(RETRY_MS.milliseconds)
                     continue
                 }
                 val (url, token) = credentials
@@ -112,16 +113,16 @@ class AirAlerts(private val context: Context, private val scope: CoroutineScope,
                 }
                 if (preference.first && preference.second) {
                     receive(url, token)
-                    delay(RETRY_MS)
+                    delay(RETRY_MS.milliseconds)
                 } else {
                     _status.update { it.copy(connected = false, active = emptyList()) }
-                    delay(RETRY_MS)
+                    delay(RETRY_MS.milliseconds)
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
                 _status.update { it.copy(connected = false, stale = true, error = true) }
-                delay(RETRY_MS)
+                delay(RETRY_MS.milliseconds)
             }
         }
     }
@@ -154,7 +155,7 @@ class AirAlerts(private val context: Context, private val scope: CoroutineScope,
                     closed.complete(Unit)
                 }
 
-                override fun onFailure(webSocket: WebSocket, error: Throwable, response: Response?) {
+                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                     closed.complete(Unit)
                 }
             },

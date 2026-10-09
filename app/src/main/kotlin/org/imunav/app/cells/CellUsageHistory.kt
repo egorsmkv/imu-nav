@@ -24,7 +24,6 @@ import org.imunav.core.cells.Radio
 import org.imunav.core.gnss.RawFix
 import java.io.File
 import java.util.UUID
-import kotlin.coroutines.coroutineContext
 
 /** Small UI snapshot; the complete history stays on disk rather than growing in memory. */
 data class CellUsageStatus(val total: Long = 0, val recent: List<CellUsageRecord> = emptyList(), val failed: Boolean = false)
