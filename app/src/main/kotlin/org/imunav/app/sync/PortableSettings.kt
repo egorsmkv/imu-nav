@@ -58,8 +58,7 @@ internal class PortableSettings(private val app: AppGraph) {
 
     fun apply(values: Map<String, String>) {
         val current = capture()
-        // Travel mode can start route planning, which would block a subsequent estimator change.
-        val changes = values.filter { it.key.startsWith("setting:") && current[it.key] != it.value }.entries.sortedBy { it.key == "setting:travel_mode" }
+        val changes = preferenceChanges(current, values)
         changes.forEach { (key, text) ->
             val value = SyncCodec.parse(text)
             when (key.removePrefix("setting:")) {
