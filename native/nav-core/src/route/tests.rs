@@ -234,6 +234,34 @@ fn long_segments_crossing_the_query_survive_endpoint_bounds() {
 }
 
 #[test]
+fn equal_block_bounds_preserve_the_earliest_projection() {
+    // Repeated laps give every full block identical bounds and equal-distance candidates.
+    // Include a partial final block and exercise both indexed projection specializations.
+    let points = (0..98)
+        .map(|index| GeoPoint {
+            latitude_deg: 50.0 + if index % 2 == 0 { 0.0 } else { 0.01 },
+            longitude_deg: 30.0,
+        })
+        .collect();
+    let route = RouteGeometry::new(points).unwrap();
+    for longitude_deg in [30.0, 30.001, 30.1] {
+        let query = GeoPoint {
+            latitude_deg: 50.005,
+            longitude_deg,
+        };
+        let expected = exhaustive_projection(&route, query, 0, route.points.len() - 2);
+        assert_eq!(expected.segment, 0);
+        for actual in [
+            route.project_indexed::<false>(query, longitude_scale(query)),
+            route.project_indexed::<true>(query, longitude_scale(query)),
+        ] {
+            assert_eq!(actual.unwrap(), expected);
+        }
+        assert_eq!(route.project_unambiguous(query, 2.0).unwrap(), None);
+    }
+}
+
+#[test]
 fn block_index_matches_exhaustive_search_on_long_winding_and_parallel_routes() {
     for parallel_return in [false, true] {
         let points: Vec<_> = (0..1_025)
