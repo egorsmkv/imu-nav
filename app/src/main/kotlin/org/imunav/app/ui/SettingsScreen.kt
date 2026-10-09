@@ -231,6 +231,8 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                     ProxySettingsSection(app.proxySettings)
                 }
 
+                DataUsageSettings()
+
                 MapsSettings(app, routing, offlineMap, packUrl, onPackUrlChange = { packUrl = it }, onPickPack = {
                     pickPack.launch(arrayOf("application/zip", "application/octet-stream", "*/*"))
                 })
