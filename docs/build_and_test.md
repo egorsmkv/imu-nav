@@ -38,8 +38,9 @@ rustc --version
 ./gradlew --version
 ```
 
-These checks should find the selected JDK, Rust compiler and Gradle wrapper. There is no separate
-Kotlin installation step: Gradle resolves the version pinned in
+These checks should find the selected JDK, Rust compiler and Gradle wrapper. The wrapper pins
+Gradle 9.8.1 and verifies its downloaded distribution against the official SHA-256 checksum.
+There is no separate Kotlin installation step: Gradle resolves the version pinned in
 [`gradle/libs.versions.toml`](../gradle/libs.versions.toml).
 
 ## Build the app

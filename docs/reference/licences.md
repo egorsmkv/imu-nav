@@ -76,7 +76,7 @@ These tools are not distributed with the app.
 | ------------------------------------------------- | ------------- | ---------- |
 | Android Gradle Plugin, Android Lint               | 9.2.0         | Apache 2.0 |
 | Kotlin compiler / Gradle plugin, Compose compiler | 2.3.21        | Apache 2.0 |
-| Gradle                                            | 9.6.1         | Apache 2.0 |
+| Gradle                                            | 9.8.1         | Apache 2.0 |
 | detekt                                            | 2.0.0-alpha.6 | Apache 2.0 |
 | Spotless                                          | 8.10.3        | Apache 2.0 |
 | ktlint                                            | 1.8.0         | MIT        |

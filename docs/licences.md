@@ -4,6 +4,8 @@
 
 The project source code is MIT-licensed. Bundled map and cell data have their own terms, so check them before redistributing an APK or data pack.
 
+The build uses Gradle 9.8.1 under Apache 2.0; it is not packaged in the APK.
+
 ## Check what you may share
 
 1. Read the project [LICENSE](../LICENSE) for the source code.
