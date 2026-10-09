@@ -152,3 +152,16 @@ Log files have unique suffixes and buffered writes flush within five seconds (or
 
 The in-app trip-log viewer shows timestamps, highlights problems, and can search,
 filter, follow, copy or share the latest diagnostic events as a text file.
+
+## Route projection window
+
+Both the Kotlin replay projector and the Rust Android projector restrict a local match to
+`[around - behind, around + ahead]`, clipped to the route length. The boundary segments are
+clipped too: a long segment cannot silently move progress outside this interval. A zero-width
+window returns that route position, and the behind window permits backward motion. Repeated
+vertices and zero-length segments do not require division by zero.
+
+If the local offset exceeds the configured threshold, the existing global fallback may return
+a position outside the window, but only if its offset is strictly smaller. This also applies
+when a route has just one segment. Equal-distance candidates retain the existing scan-order
+tie behavior; this change does not resolve all ambiguity at loops or parallel roads.

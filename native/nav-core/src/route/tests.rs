@@ -406,3 +406,121 @@ fn rejects_invalid_coordinates_and_search_windows() {
         Err(RouteError::InvalidSearch),
     );
 }
+
+#[test]
+fn long_segment_clamps_to_arc_window_including_backward_motion() {
+    let route = RouteGeometry::new(vec![
+        GeoPoint {
+            latitude_deg: 50.0,
+            longitude_deg: 30.0,
+        },
+        GeoPoint {
+            latitude_deg: 50.02,
+            longitude_deg: 30.0,
+        },
+    ])
+    .unwrap();
+    // Independent oracle: on this meridian, latitude and arc-length fractions agree.
+    for center in [0.0_f64, 0.25, 0.5, 1.0] {
+        for radius in [0.0_f64, 0.1, 1.0] {
+            for query in [0.9_f64, 0.6, 0.3, 0.0] {
+                let expected = query.clamp((center - radius).max(0.0), (center + radius).min(1.0));
+                let result = route
+                    .project(
+                        GeoPoint {
+                            latitude_deg: 50.0 + 0.02 * query,
+                            longitude_deg: 30.0,
+                        },
+                        center * route.length_m(),
+                        radius * route.length_m(),
+                        radius * route.length_m(),
+                        1e9,
+                    )
+                    .unwrap();
+                assert!((result.position_m - expected * route.length_m()).abs() < 1e-6);
+                assert!((result.point.latitude_deg - (50.0 + 0.02 * expected)).abs() < 1e-10);
+                assert!((result.offset_m - (query - expected).abs() * 0.02 * 110_540.0).abs() < 1e-6);
+            }
+        }
+    }
+}
+
+#[test]
+fn global_fallback_escapes_window_inside_a_single_segment() {
+    let route = RouteGeometry::new(vec![
+        GeoPoint {
+            latitude_deg: 50.0,
+            longitude_deg: 30.0,
+        },
+        GeoPoint {
+            latitude_deg: 50.02,
+            longitude_deg: 30.0,
+        },
+    ])
+    .unwrap();
+    let query = GeoPoint {
+        latitude_deg: 50.018,
+        longitude_deg: 30.0,
+    };
+    let local = route
+        .project(query, route.length_m() * 0.5, 0.0, 0.0, 1e9)
+        .unwrap();
+    let global = route
+        .project(query, route.length_m() * 0.5, 0.0, 0.0, 20.0)
+        .unwrap();
+    assert!((local.position_m - route.length_m() * 0.5).abs() < 1e-6);
+    assert!((global.position_m - route.length_m() * 0.9).abs() < 1e-6);
+    assert!(global.offset_m < 1e-6);
+}
+
+#[test]
+fn repeated_vertices_loops_and_parallel_returns_respect_window() {
+    for return_longitude in [30.0, 30.0001] {
+        let route = RouteGeometry::new(vec![
+            GeoPoint {
+                latitude_deg: 50.0,
+                longitude_deg: 30.0,
+            },
+            GeoPoint {
+                latitude_deg: 50.02,
+                longitude_deg: 30.0,
+            },
+            GeoPoint {
+                latitude_deg: 50.02,
+                longitude_deg: 30.0,
+            },
+            GeoPoint {
+                latitude_deg: 50.02,
+                longitude_deg: return_longitude,
+            },
+            GeoPoint {
+                latitude_deg: 50.0,
+                longitude_deg: return_longitude,
+            },
+        ])
+        .unwrap();
+        let first_length = route.cumulative_m[1];
+        let result = route
+            .project(
+                GeoPoint {
+                    latitude_deg: 50.005,
+                    longitude_deg: return_longitude,
+                },
+                first_length * 0.8,
+                first_length * 0.1,
+                first_length * 0.1,
+                1e9,
+            )
+            .unwrap();
+        assert!((result.position_m - first_length * 0.7).abs() < 1e-6);
+        assert_eq!(result.segment, 0);
+    }
+    let point = GeoPoint {
+        latitude_deg: 50.0,
+        longitude_deg: 30.0,
+    };
+    let route = RouteGeometry::new(vec![point, point, point]).unwrap();
+    let result = route.project(point, 0.0, 0.0, 0.0, 1e9).unwrap();
+    assert_eq!(result.position_m, 0.0);
+    assert_eq!(result.offset_m, 0.0);
+}
