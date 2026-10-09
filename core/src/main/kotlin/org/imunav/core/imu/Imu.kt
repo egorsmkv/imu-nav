@@ -35,18 +35,22 @@ class GyroBiasEstimator {
 
     /** When the current standstill started, -1 when moving. */
     private var stillSinceMs = -1L
+    private var lastGpsMs = -1L
 
     /** Current bias estimate, deg/s. Subtract it from raw yaw rates. */
     var biasDegS = 0.0
         private set
 
     fun addYawRate(elapsedMs: Long, yawRateDegS: Double) {
+        if (elapsedMs < 0 || !yawRateDegS.isFinite() || samples.lastOrNull()?.let { elapsedMs <= it.first } == true) return
         samples.addLast(elapsedMs to yawRateDegS)
         while (samples.isNotEmpty() && elapsedMs - samples.first().first > HISTORY_MS) samples.removeFirst()
     }
 
     fun onGpsSpeed(elapsedMs: Long, speedMps: Float?) {
-        val standingStill = speedMps != null && speedMps < STILL_SPEED_MPS
+        if (elapsedMs < 0 || elapsedMs <= lastGpsMs) return
+        lastGpsMs = elapsedMs
+        val standingStill = speedMps != null && speedMps in 0f..<STILL_SPEED_MPS
         if (!standingStill) {
             stillSinceMs = -1L
             return
@@ -56,7 +60,7 @@ class GyroBiasEstimator {
             return
         }
         if (elapsedMs - stillSinceMs < STILL_MIN_MS) return
-        val window = samples.filter { (time, _) -> time >= stillSinceMs }
+        val window = samples.filter { (time, _) -> time in stillSinceMs..elapsedMs }
         if (window.size >= MIN_SAMPLES) {
             val mean = window.sumOf { (_, rate) -> rate } / window.size
             // A mean above 3 °/s is not bias (someone is turning the phone): ignore it.

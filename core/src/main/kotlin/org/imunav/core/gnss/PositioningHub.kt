@@ -107,6 +107,10 @@ class PositioningHub(
 
             FixSource.GPS -> Unit
         }
+        // Keep the hub's latest GPS, bias input and observers monotonic as well as the classifier.
+        if (lastJudged?.let { fix.elapsedMs <= it.fix.elapsedMs } == true) {
+            return Verdict(TrustLevel.BAD, listOf("dup_time"))
+        }
         val verdict = classifier.evaluate(fix, lastGood, lastNet, gnss, jammed, compassDeg, wallClock())
         val judged = JudgedFix(fix, verdict)
         lastJudged = judged

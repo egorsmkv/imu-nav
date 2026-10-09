@@ -504,3 +504,30 @@ fn extreme_jam_chain_age_cannot_extend_confirmation() {
     assert!(verdict.reasons.contains(&Reason::Jam));
     assert!(classifier.strong_jam_at_ms.is_none());
 }
+
+#[test]
+fn rejected_time_does_not_rewind_sequence_or_detector_state() {
+    let mut classifier = TrustClassifier::new(TrustConfig::default());
+    let latest = fix(10_000);
+    classifier.evaluate(input(latest));
+    classifier.frozen_since_ms = Some(1000);
+    classifier.strong_jam_at_ms = Some(9000);
+    for rejected in [
+        fix(9000),
+        latest,
+        LocationFix {
+            wall_time_ms: latest.wall_time_ms,
+            ..fix(11_000)
+        },
+    ] {
+        let verdict = classifier.evaluate(input(rejected));
+        assert_eq!(verdict.level, TrustLevel::Bad);
+        assert_eq!(verdict.reasons, vec![Reason::DuplicateTime]);
+        assert_eq!(classifier.previous_raw, Some(latest));
+        assert_eq!(classifier.last_good(), Some(latest));
+        assert_eq!(classifier.frozen_since_ms, Some(1000));
+        assert_eq!(classifier.strong_jam_at_ms, Some(9000));
+    }
+    classifier.reset();
+    assert_eq!(classifier.evaluate(input(fix(1000))).level, TrustLevel::Good);
+}

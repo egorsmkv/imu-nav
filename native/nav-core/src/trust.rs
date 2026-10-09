@@ -248,6 +248,15 @@ impl TrustClassifier {
 
     pub fn evaluate(&mut self, input: TrustInput) -> Verdict {
         let fix = input.fix;
+        // Reject before changing sequence, frozen-position or jamming state.
+        if self.previous_raw.is_some_and(|previous| {
+            fix.elapsed_ms <= previous.elapsed_ms || fix.wall_time_ms <= previous.wall_time_ms
+        }) {
+            return Verdict {
+                level: TrustLevel::Bad,
+                reasons: vec![Reason::DuplicateTime],
+            };
+        }
         let previous = self.previous_raw.replace(fix);
         let mut hard = Vec::new();
         let mut soft = Vec::new();

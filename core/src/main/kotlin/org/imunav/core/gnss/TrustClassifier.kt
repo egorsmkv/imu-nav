@@ -50,6 +50,10 @@ class TrustClassifier(private val config: TrustConfig = TrustConfig(), private v
     override fun evaluate(fix: RawFix, lastGood: RawFix?, lastNet: RawFix?, gnss: GnssSnapshot, jammed: Boolean, compassDeg: Float?, wallNowMs: Long): Verdict {
         val r = Reasons()
         val prevRaw = previousRaw
+        // Reject before changing sequence, frozen-position or jamming state.
+        if (prevRaw != null && (fix.elapsedMs <= prevRaw.elapsedMs || fix.timeMs <= prevRaw.timeMs)) {
+            return Verdict(TrustLevel.BAD, listOf("dup_time"))
+        }
         previousRaw = fix
 
         checkFix(fix, gnss, wallNowMs, r)
@@ -136,7 +140,6 @@ class TrustClassifier(private val config: TrustConfig = TrustConfig(), private v
     private fun checkSequence(fix: RawFix, prevRaw: RawFix?, r: Reasons) {
         val c = config
         val speed = fix.speedMps
-        if (prevRaw != null && (fix.elapsedMs <= prevRaw.elapsedMs || fix.timeMs <= prevRaw.timeMs)) r.hard += "dup_time"
         val frozen = prevRaw != null && fix.lat == prevRaw.lat && fix.lon == prevRaw.lon && speed != null && speed > c.frozenMinSpeedMps
         if (prevRaw == null || !frozen) {
             frozenSinceMs = -1L

@@ -24,7 +24,7 @@ class MotionDetector(private val tuning: () -> Tuning) {
     private var quietSinceMs = -1L
     private var noisySinceMs = -1L
     private var resumedAtMs = -1L
-    private var lastSampleMs = 0L
+    private var lastSampleMs = -1L
 
     /** Expiry of the latest IMU evidence; repeated navigation ticks must not refresh it. */
     val validUntilMs: Long get() = lastSampleMs + SAMPLE_MAX_AGE_MS
@@ -55,6 +55,7 @@ class MotionDetector(private val tuning: () -> Tuning) {
         if (acc.isNaN()) return
         val t = tuning()
         val now = sample.elapsedMs
+        if (now < 0 || now <= lastSampleMs) return
         lastSampleMs = now
         val yaw = (sample.yawRateDegS?.toDouble() ?: 0.0) - yawBiasDegS
         samples.addLast(Sample(now, acc, yaw, sample.gyroMagnitude))
