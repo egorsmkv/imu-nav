@@ -97,6 +97,7 @@ internal val BadRed = Color(0xFFD93025)
 internal val InfoBlue = Color(0xFF1A73E8)
 private const val MAP_HEADER_HEIGHT_FRACTION = 0.4f
 private const val MAP_CONTROLS_HEIGHT_FRACTION = 0.45f
+private const val MAP_ACTIONS_HEIGHT_FRACTION = 0.4f
 private const val SELECTED_PLACE_ZOOM = 17.0
 internal val MapButtonSize = 48.dp
 internal val MapButtonSpacing = 10.dp
@@ -204,7 +205,7 @@ fun MapScreen(
     }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val paneWidth = drivingPaneWidth(maxWidth, maxHeight)
+        val paneWidth = drivingPaneWidth(maxWidth, maxHeight, LocalDensity.current.fontScale)
         val landscape = paneWidth != null
         val shortWindow = maxWidth > maxHeight
         val showControls = controlsVisible && searchTarget == null
@@ -336,7 +337,7 @@ fun MapScreen(
 
             // ---- Right: map controls
             val mapControlsModifier = if (landscape) {
-                Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 12.dp, bottom = 12.dp)
+                Modifier.align(Alignment.BottomEnd).statusBarsPadding().navigationBarsPadding().padding(end = 12.dp, bottom = 12.dp)
             } else {
                 Modifier.align(Alignment.CenterEnd).offset { IntOffset(0, (topInsetPx - bottomInsetPx) / 2) }.padding(end = 12.dp)
             }
@@ -375,26 +376,29 @@ fun MapScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 if (shortWindow) {
-                    if (nav.active) {
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // Wrapped actions must not consume the entire panel in a short window at large font sizes.
+                    Column(Modifier.heightIn(max = panelMaxHeight * MAP_ACTIONS_HEIGHT_FRACTION).verticalScroll(rememberScrollState())) {
+                        if (nav.active) {
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                                    app.stopNavigation()
+                                }) { Text(stringResource(R.string.action_stop)) }
+                                OutlinedButton(onClick = { app.engine.requestManualReroute() }, enabled = !nav.rerouting) { Text(stringResource(R.string.action_reroute)) }
+                            }
+                        } else if (landscape) {
                             Button(onClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.Confirm)
-                                app.stopNavigation()
-                            }) { Text(stringResource(R.string.action_stop)) }
-                            OutlinedButton(onClick = { app.engine.requestManualReroute() }, enabled = !nav.rerouting) { Text(stringResource(R.string.action_reroute)) }
+                                requestBatteryExemptionOnce(context)
+                                app.startNavigation()
+                            }, enabled = hasLocation && ui.destination != null && !ui.planning && (ui.hasTrustedPosition || ui.manualStart != null)) {
+                                Text(stringResource(R.string.action_start))
+                            }
                         }
-                    } else if (landscape) {
-                        Button(onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.Confirm)
-                            requestBatteryExemptionOnce(context)
-                            app.startNavigation()
-                        }, enabled = hasLocation && ui.destination != null && !ui.planning && (ui.hasTrustedPosition || ui.manualStart != null)) {
-                            Text(stringResource(R.string.action_start))
-                        }
-                    }
-                    if (!landscape) {
-                        TextButton(onClick = { expanded = !expanded }) {
-                            Text(stringResource(if (expanded) R.string.driving_collapse else R.string.driving_expand))
+                        if (!landscape) {
+                            TextButton(onClick = { expanded = !expanded }) {
+                                Text(stringResource(if (expanded) R.string.driving_collapse else R.string.driving_expand))
+                            }
                         }
                     }
                 }
@@ -403,7 +407,7 @@ fun MapScreen(
                         StatusPill(ui) { showDiagnostics = true }
                         if (nav.active && !nav.arrived) ManeuverBanner(nav)
                         if (!nav.active) {
-                            Row {
+                            FlowRow {
                                 IconButton(onClick = onOpenSettings) { Icon(Icons.Filled.Settings, stringResource(R.string.cd_settings)) }
                                 IconButton(onClick = onOpenHistory) { Icon(Icons.Filled.History, stringResource(R.string.cd_history)) }
                                 if (!hasLocation) {
