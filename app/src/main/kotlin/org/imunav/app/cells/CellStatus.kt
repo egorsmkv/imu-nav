@@ -22,7 +22,7 @@ data class CellStatus(
     val seen: Int = 0,
     /** How many of them are in the database (used for the position). */
     val located: Int = 0,
-    /** Accuracy of the current cell fix, metres. */
+    /** Accuracy of the current cell fix, meters. */
     val accuracyM: Double? = null,
     /** Towers per source in the database. */
     val counts: Map<CellSource, Long> = emptyMap(),

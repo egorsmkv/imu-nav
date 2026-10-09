@@ -10,8 +10,8 @@ import kotlin.math.sqrt
  * the phone's barometer measured on the way ("terrain matching").
  *
  * The barometer only knows height *changes* well: absolute pressure also moves with the weather,
- * but over a few minutes that is far below a metre. So we keep the recent history as
- * (distance travelled, barometric height) pairs, remove the mean height, and slide that little
+ * but over a few minutes that is far below a meter. So we keep the recent history as
+ * (distance traveled, barometric height) pairs, remove the mean height, and slide that little
  * height trace along the route's elevation profile. Where it fits best is where we are.
  *
  * Distances in the history come from the engine's odometer (speed × time), not from the marker's
@@ -62,7 +62,7 @@ class ElevationMatcher {
 
     /** Reject future readings; discard expired traces even when no travel ticks occurred. */
     private fun pressureFresh(nowMs: Long): Boolean {
-        if (lastPressureMs < 0 || nowMs < lastPressureMs) return false
+        if (lastPressureMs !in 0..nowMs) return false
         if (nowMs - lastPressureMs > PRESSURE_MAX_AGE_MS) {
             clearTrace()
             return false
@@ -76,7 +76,7 @@ class ElevationMatcher {
         smoothedHeight = null
     }
 
-    /** Distance covered by the history so far, metres. */
+    /** Distance covered by the history so far, meters. */
     val windowM: Double get() = if (history.size < 2) 0.0 else history.last().odometerM - history.first().odometerM
 
     /**
@@ -106,7 +106,7 @@ class ElevationMatcher {
         val best = candidates.minByOrNull { it.rmsM } ?: return null
         // Relief of the road under the best fit: on a flat road every position fits equally well.
         if (best.reliefM < MIN_RELIEF_M || best.rmsM > MAX_RMS_M) return null
-        // The best place must clearly beat every other place (not just its own neighbours).
+        // The best place must clearly beat every other place (not just its own neighbors).
         val rival = candidates.filter { abs(it.s - best.s) > RIVAL_SEPARATION_M }.minByOrNull { it.rmsM }
         val ratio = rival?.let { it.rmsM / best.rmsM.coerceAtLeast(MIN_RMS_FOR_RATIO) } ?: Double.MAX_VALUE
         if (ratio < MIN_RIVAL_RATIO) return null
@@ -160,10 +160,10 @@ class ElevationMatcher {
         /** Candidate positions every 5 m. */
         private const val STEP_M = 5.0
 
-        /** The road must rise and fall by at least this much (RMS) inside the window, metres. */
+        /** The road must rise and fall by at least this much (RMS) inside the window, meters. */
         const val MIN_RELIEF_M = 4.0
 
-        /** A good fit follows the profile within this RMS, metres (DEM + barometer noise). */
+        /** A good fit follows the profile within this RMS, meters (DEM + barometer noise). */
         const val MAX_RMS_M = 2.5
 
         /** Another candidate this far away must fit at least [MIN_RIVAL_RATIO] times worse. */
@@ -184,6 +184,6 @@ class ElevationMatcher {
 
 /**
  * A trustworthy terrain match: the car is at [s]; the odometer scale that fitted best, the RMS
- * misfit and the road's relief in the window (metres), and how much worse the best rival fitted.
+ * misfit and the road's relief in the window (meters), and how much worse the best rival fitted.
  */
 data class ElevationMatch(val s: Double, val scale: Double, val rmsM: Double, val reliefM: Double, val rivalRatio: Double)

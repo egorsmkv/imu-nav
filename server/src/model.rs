@@ -186,7 +186,7 @@ pub enum ServerEvent {
     ResyncRequired { missed: u64 },
 }
 
-/// Great-circle distance in metres.
+/// Great-circle distance in meters.
 pub(crate) fn distance_m(a_lat: f64, a_lon: f64, b_lat: f64, b_lon: f64) -> f64 {
     const EARTH_RADIUS_M: f64 = 6_371_000.0;
     let lat1 = a_lat.to_radians();

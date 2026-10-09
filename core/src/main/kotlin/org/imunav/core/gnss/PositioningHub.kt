@@ -62,7 +62,7 @@ class PositioningHub(
         private set
     val jammed: Boolean get() = jamDetector.jammed
 
-    /** Odometer over GOOD fixes (steps < 5 m ignored), metres. */
+    /** Odometer over GOOD fixes (steps < 5 m ignored), meters. */
     var goodOdometerM = 0.0
         private set
 

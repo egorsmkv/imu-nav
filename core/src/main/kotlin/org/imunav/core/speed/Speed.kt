@@ -206,7 +206,7 @@ object RouteSpeedPrior {
     /**
      * Expected speed at [s], in m/s, from the best information available:
      *  1. the speed limit × this driver's usual ratio,
-     *  2. the router's modelled speed for this segment,
+     *  2. the router's modeled speed for this segment,
      *  3. the average speed of the current step, clamped to sane values per road class.
      */
     fun at(route: Route, s: Double, profile: SpeedProfile): Double? {
@@ -238,7 +238,7 @@ object SpeedPlan {
      */
     fun cap(hazards: List<Hazard>, s: Double, noNetworkSpeed: Boolean): Double? {
         val caps = hazards.mapNotNull { hazard ->
-            val ahead = hazard.s - s // metres until the hazard (negative = just passed it)
+            val ahead = hazard.s - s // meters until the hazard (negative = just passed it)
             when (hazard.kind) {
                 HazardKind.TRAFFIC_SIGNAL -> SIGNAL_CAP_MPS.takeIf { noNetworkSpeed && ahead in -5.0..45.0 }
                 HazardKind.TRAFFIC_CALMING -> CALMING_CAP_MPS.takeIf { ahead in -6.0..20.0 }

@@ -100,7 +100,7 @@ impl CellStore {
         )?;
         Ok(())
     }
-    /// Import trusted seeds one row at a time. A cancelled or failed transaction publishes nothing.
+    /// Import trusted seeds one row at a time. A canceled or failed transaction publishes nothing.
     #[cfg(test)]
     pub(crate) fn import_seeds(
         &self,

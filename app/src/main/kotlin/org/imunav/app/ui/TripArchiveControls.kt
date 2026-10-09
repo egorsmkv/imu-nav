@@ -37,7 +37,7 @@ import org.imunav.app.trips.playbackDocument
 import org.imunav.core.net.HttpException
 import org.json.JSONObject
 
-/** Recreates the upload scope on account/server changes, cancelling requests and discarding receipts. */
+/** Recreates the upload scope on account/server changes, canceling requests and discarding receipts. */
 @Composable
 internal fun TripArchiveControls(app: AppGraph, trip: TripSummary) {
     val status by app.cells.status.collectAsState()

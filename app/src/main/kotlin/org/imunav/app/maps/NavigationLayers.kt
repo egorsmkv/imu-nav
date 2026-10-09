@@ -114,7 +114,7 @@ fun updateMapPoint(style: Style, source: String, point: GeoPoint?) {
     )
 }
 
-/** The same uncertainty radius is shown on the phone and car, in metres at every zoom level. */
+/** The same uncertainty radius is shown on the phone and car, in meters at every zoom level. */
 fun updateMapPosition(style: Style, position: GeoPoint?, accuracyM: Double?) {
     updateMapPoint(style, "marker", position)
     if (position == null) return

@@ -216,7 +216,7 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
         towerDisplay.setVisible(on)
     }
 
-    /** Map camera settled: load towers for the visible area (debounced by cancelling the previous query). */
+    /** Map camera settled: load towers for the visible area (debounced by canceling the previous query). */
     fun onViewport(south: Double, west: Double, north: Double, east: Double, zoom: Double) = towerDisplay.onViewport(south, west, north, east, zoom)
 
     /** Save the sharing-server and country settings from the Settings screen. */
@@ -303,7 +303,7 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
                 str(R.string.task_failed, e.message ?: e.javaClass.simpleName)
             }
             log("cells_task ${msg.lowercase()}")
-            // After a cancel this coroutine is cancelled: without NonCancellable, reloadCounts() would
+            // After a cancel this coroutine is canceled: without NonCancellable, reloadCounts() would
             // throw immediately and the busy indicator would never clear.
             withContext(NonCancellable) {
                 reloadCounts()

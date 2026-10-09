@@ -63,7 +63,7 @@ class MapController {
         m.animateCamera(CameraUpdateFactory.zoomTo(z), 250)
     }
 
-    /** Centre on [p] north up; skip animation when changing overlays could interrupt it. */
+    /** Center on [p] north up; skip animation when changing overlays could interrupt it. */
     fun moveTo(p: GeoPoint, zoom: Double? = null, animate: Boolean = true) {
         val m = map ?: return
         val z = zoom ?: m.cameraPosition.zoom.coerceAtLeast(14.0)
@@ -75,7 +75,7 @@ class MapController {
 /**
  * MapLibre map: route, position dot with accuracy circle, destination, optional cell-tower layer.
  * While [following], the camera tracks [position]; any pan gesture calls [onUserPan] so the screen
- * can pause following (standard maps behaviour).
+ * can pause following (standard maps behavior).
  */
 @Composable
 fun NavMap(
@@ -93,7 +93,7 @@ fun NavMap(
     onViewport: (south: Double, west: Double, north: Double, east: Double, zoom: Double) -> Unit,
     onUserPan: () -> Unit,
     modifier: Modifier = Modifier,
-    /** Heights (px) covered by overlays at the top and bottom; the camera centres between them. */
+    /** Heights (px) covered by overlays at the top and bottom; the camera centers between them. */
     insetTopPx: Int = 0,
     insetBottomPx: Int = 0,
     /** Camera-only padding for layouts where an overlay covers just the left or bottom map pane. */
@@ -273,7 +273,7 @@ fun NavMap(
         val st = readyStyle ?: return@LaunchedEffect
         if (appliedTowers?.first === st && appliedTowers?.second === towers) return@LaunchedEffect
 
-        /** Towers as GeoJSON points, tagged with their radio type for colouring. */
+        /** Towers as GeoJSON points, tagged with their radio type for coloring. */
         fun features(list: List<CellTower>) = FeatureCollection.fromFeatures(
             list.map { t -> Feature.fromGeometry(Point.fromLngLat(t.lon, t.lat)).also { it.addStringProperty("radio", t.key.radio.name) } },
         )
@@ -303,7 +303,7 @@ fun NavMap(
         val zoom = controller.followZoom ?: followZoomDefault
         val cam = m.cameraPosition
         val target = LatLng(position.lat, position.lon)
-        // Standing still: don't redraw the map for sub-metre / sub-degree changes.
+        // Standing still: don't redraw the map for sub-meter / sub-degree changes.
         val moved = cam.target?.distanceTo(target) ?: Double.MAX_VALUE
         val turned = abs(((bearingDeg - cam.bearing + 540.0) % 360.0) - 180.0)
         if (moved < 1.0 && turned < 2.0 && abs(cam.zoom - zoom) < 0.01) return@LaunchedEffect

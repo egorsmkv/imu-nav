@@ -177,7 +177,7 @@ class AppGraph(private val context: Context) {
         planRoutePreview()
     }
 
-    /** Fallback used when GPS is unavailable; hybrid preserves the original app behaviour. */
+    /** Fallback used when GPS is unavailable; hybrid preserves the original app behavior. */
     val navigationMethod = navigationPreferences.navigationMethod
 
     fun setNavigationMethod(method: NavigationMethod) {
@@ -224,7 +224,7 @@ class AppGraph(private val context: Context) {
     val mapStartMode = MutableStateFlow(mapStart.mode)
     val mapStartFixed = MutableStateFlow(mapStart.fixed)
 
-    /** Centre of the map as last seen by the map screen, for "use map centre" in Settings. */
+    /** Center of the map as last seen by the map screen, for "use map center" in Settings. */
     @Volatile var lastMapCenter: GeoPoint? = null
 
     /** Save the map-start setting (Settings → Map start). */

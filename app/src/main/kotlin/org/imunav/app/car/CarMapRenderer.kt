@@ -204,7 +204,7 @@ class CarMapRenderer(
         styleInitialized = true
     }
 
-    /** Geometry encoding runs only for a new route or style and is cancelled while hidden. */
+    /** Geometry encoding runs only for a new route or style and is canceled while hidden. */
     private fun updateRoute(ui: UiState, loaded: MapLibreMap, targetStyle: Style) {
         val route = ui.guidance.route ?: ui.previewRoute
         if (!routeInitialized || encodedRoute !== route) {

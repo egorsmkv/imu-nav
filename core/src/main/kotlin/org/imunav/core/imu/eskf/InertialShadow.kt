@@ -120,7 +120,7 @@ class InertialShadow(private val onEstimate: (InertialEstimate) -> Unit = {}) {
         val acc = acceleration
         val gyro = gyroscope
         val fresh = acc != null && gyro != null && timestampNs - acc.timestampNs in 0..MAX_SENSOR_AGE_NS && timestampNs - gyro.timestampNs in 0..MAX_SENSOR_AGE_NS
-        if (!fresh || !current.predict(timestampNs, requireNotNull(acc).vector, requireNotNull(gyro).vector)) {
+        if (!fresh || !current.predict(timestampNs, acc.vector, gyro.vector)) {
             filter = null
             projection = null
             resets++
@@ -192,8 +192,7 @@ class InertialShadow(private val onEstimate: (InertialEstimate) -> Unit = {}) {
         fix.lon.isFinite() && fix.lon in -180.0..180.0 && fix.accuracyM?.let { it.isFinite() && it > 0f } == true
 
     private fun valid(sample: InertialSample): Boolean {
-        if (!sample.vector.isFinite() || !sample.scalar.isFinite()) return false
-        return when (sample.kind) {
+        return !(!sample.vector.isFinite() || !sample.scalar.isFinite()) && when (sample.kind) {
             InertialKind.ACCELEROMETER -> sample.vector.norm() <= 200.0
             InertialKind.GYROSCOPE -> sample.vector.norm() <= 35.0
             InertialKind.ATTITUDE -> (sample.vector.norm().let { it * it } + sample.scalar * sample.scalar) in 0.9..1.1

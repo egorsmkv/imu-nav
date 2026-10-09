@@ -130,7 +130,7 @@ pub enum FilterError {
     InvalidCovariance,
 }
 
-/// Fixed-size linear Kalman filter for `[s, v]`, where `s` is metres along the route.
+/// Fixed-size linear Kalman filter for `[s, v]`, where `s` is meters along the route.
 #[derive(Clone, Debug)]
 #[cfg_attr(any(test, kani), derive(PartialEq))]
 pub struct RouteFilter {
@@ -173,8 +173,8 @@ impl RouteFilter {
     /// Constant-velocity prediction with a piecewise-constant unknown acceleration.
     ///
     /// `acceleration_sigma_mps2` determines random process covariance. The separate
-    /// `systematic_drift_per_m` grows a conservative allowance linearly with travelled distance,
-    /// modelling lasting speed bias that ordinary white-noise covariance would underestimate.
+    /// `systematic_drift_per_m` grows a conservative allowance linearly with traveled distance,
+    /// modeling lasting speed bias that ordinary white-noise covariance would underestimate.
     ///
     /// # Errors
     ///

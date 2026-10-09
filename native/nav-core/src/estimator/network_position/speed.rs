@@ -127,7 +127,7 @@ impl SpeedBatch {
         self.samples = [None; MAX_BATCH_SIZE];
         self.count = 0;
         if estimate.is_none() && self.relearning {
-            // A mixed manoeuvre window is not a speed measurement. Give subsequent fixes to
+            // A mixed maneuver window is not a speed measurement. Give subsequent fixes to
             // position while the window clears, then collect a completely new speed batch.
             self.recovery_until_ms = elapsed_ms.saturating_add(MANEUVER_POSITION_MS);
             self.reserve_next = true;
@@ -157,7 +157,7 @@ impl SpeedBatch {
         self.relearning
     }
 
-    /// Consecutive departures from the last fitted trend mark a manoeuvre even if the old prior is
+    /// Consecutive departures from the last fitted trend mark a maneuver even if the old prior is
     /// worse. A useful prior can still be restored immediately; otherwise only a coherent full fit
     /// may change speed. Comparing against the fitted trend avoids repeatedly flagging model lag.
     fn observe_change(&mut self, candidate: Candidate, current_speed_mps: f64) -> Option<f64> {

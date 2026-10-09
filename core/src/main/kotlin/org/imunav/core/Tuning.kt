@@ -25,7 +25,7 @@ data class Tuning(
     val resumeAccMean: Double = 0.5,
     val resumeAccStd: Double = 0.5,
     val resumeGyro: Double = 0.1,
-    /** …for this long (filters out doors closing, people moving in the car). */
+    /** …for this long (filters outdoors closing, people moving in the car). */
     val resumeConfirmMs: Long = 700,
     /** After a stop the car accelerates: estimated speed ramps from 15 % to 100 % over this time. */
     val resumeRampMs: Long = 8000,
@@ -33,7 +33,7 @@ data class Tuning(
     val resumeSlowMs: Long = 3000,
     val resumeSlowCap: Double = 0.6,
 
-    // --- Gyro turn matching: recognise route turns from the gyroscope
+    // --- Gyro turn matching: recognize route turns from the gyroscope
     /** Route turns sharper than this (degrees) count as "real" turns. */
     val turnMinDeg: Double = 35.0,
     /** A measured turn may differ from the route's turn angle by this much and still match. */

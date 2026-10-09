@@ -11,7 +11,7 @@ class Pedometer {
     /** Times of recent steps (elapsed ms), the last [WINDOW_MS]. */
     private val steps = ArrayDeque<Long>()
 
-    /** Learned stride length, metres. */
+    /** Learned stride length, meters. */
     var strideM = DEFAULT_STRIDE_M
         private set
 

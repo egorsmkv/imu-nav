@@ -126,7 +126,7 @@ android {
 
     packaging {
         resources {
-            // GraphHopper's dependencies ship overlapping licence/manifest files.
+            // GraphHopper's dependencies ship overlapping license/manifest files.
             excludes += listOf("META-INF/DEPENDENCIES", "META-INF/LICENSE*", "META-INF/NOTICE*", "META-INF/INDEX.LIST", "META-INF/*.md")
         }
     }

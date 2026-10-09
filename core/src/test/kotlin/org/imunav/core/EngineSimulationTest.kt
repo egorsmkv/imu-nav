@@ -23,7 +23,7 @@ import kotlin.test.assertTrue
 
 /**
  * Drives a synthetic car along an L-shaped route (800 m north, right turn, 800 m east). GPS is
- * available for the first 10 s only; afterwards the engine has nothing but IMU and map.
+ * available for the first 10 s only; afterward the engine has nothing but IMU and map.
  */
 class EngineSimulationTest {
     private val origin = GeoPoint(50.45, 30.52)

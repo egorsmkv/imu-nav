@@ -11,7 +11,7 @@ import kotlin.math.tan
 /**
  * The area around a route that should be available offline (map tiles along the way).
  *
- * The corridor is a chain of overlapping squares centred on points every [spacingM] along the
+ * The corridor is a chain of overlapping squares centered on points every [spacingM] along the
  * route, each reaching [radiusM] in every direction. Squares are simple for the map library to
  * handle and cover curves well enough when the spacing is smaller than the radius.
  */
@@ -44,11 +44,11 @@ object RouteCorridor {
         var total = 0L
         for (z in minZoom..maxZoom) {
             val tiles = HashSet<Long>()
-            for (box in boxes) {
-                val x0 = tileX(box.minLon, z)
-                val x1 = tileX(box.maxLon, z)
-                val y0 = tileY(box.maxLat, z) // tile rows grow southwards
-                val y1 = tileY(box.minLat, z)
+            for ((minLat, minLon, maxLat, maxLon) in boxes) {
+                val x0 = tileX(minLon, z)
+                val x1 = tileX(maxLon, z)
+                val y0 = tileY(maxLat, z) // tile rows grow southward
+                val y1 = tileY(minLat, z)
                 for (x in x0..x1) for (y in y0..y1) tiles += x.toLong() shl 32 or y.toLong()
             }
             total += tiles.size

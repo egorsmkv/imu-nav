@@ -29,11 +29,11 @@ interface NetworkPositionTracker {
  *
  * Gate: a new fix is accepted only if it is reachable from the last accepted anchor at
  * 150 km/h (|Δs| ≤ vmax·Δt + acc₁ + acc₂). Rejected fixes become *candidates*; if at least two
- * mutually consistent candidates span ≥ 12 s and do not move backwards faster than 6 m/s, the
+ * mutually consistent candidates span ≥ 12 s and do not move backward faster than 6 m/s, the
  * anchor was wrong and the tracker re-anchors on them.
  */
 class NetworkTracker : NetworkPositionTracker {
-    /** A trusted reference point: route position [s] at time [tS] (seconds), accurate to [acc] metres. */
+    /** A trusted reference point: route position [s] at time [tS] (seconds), accurate to [acc] meters. */
     private class Anchor(val tS: Double, val s: Double, val acc: Double)
 
     enum class GateResult {
@@ -168,7 +168,7 @@ class NetworkTracker : NetworkPositionTracker {
         const val COARSE_ACCURACY_M = 300.0
         const val REANCHOR_MIN_SPAN_S = 12.0
 
-        /** Network fixes wobble; a real car does not drive backwards along the route faster than this. */
+        /** Network fixes wobble; a real car does not drive backward along the route faster than this. */
         const val MAX_BACKWARDS_MPS = -6.0
     }
 }

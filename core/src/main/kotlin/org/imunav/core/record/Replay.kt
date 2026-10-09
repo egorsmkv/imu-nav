@@ -98,13 +98,13 @@ class TripReplayer(private val tuning: Tuning = Tuning.DEFAULT, private val area
         val sorted = TripTimeline.schedule(events)
         val session = Session(sorted.firstOrNull()?.elapsedMs ?: 0L, hideGpsAfterS)
         var nextTick = Long.MIN_VALUE
-        for (e in sorted) {
-            if (nextTick == Long.MIN_VALUE) nextTick = e.elapsedMs
-            while (nextTick <= e.elapsedMs) {
+        for ((event, elapsedMs) in sorted) {
+            if (nextTick == Long.MIN_VALUE) nextTick = elapsedMs
+            while (nextTick <= elapsedMs) {
                 session.tick(nextTick)
                 nextTick += NavigationEngine.TICK_MS
             }
-            session.apply(e.event, e.elapsedMs)
+            session.apply(event, elapsedMs)
         }
         return session.result(sorted)
     }

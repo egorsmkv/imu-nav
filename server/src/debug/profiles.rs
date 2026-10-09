@@ -75,7 +75,7 @@ async fn upload(State(state): State<AppState>, request: Request) -> Result<Json<
     .map_err(|_| ApiError(StatusCode::REQUEST_TIMEOUT, "PROFILE_TIMEOUT"))?
     .map_err(|_| ApiError(StatusCode::PAYLOAD_TOO_LARGE, "PROFILE_TOO_LARGE"))?;
     let store = state.store.clone();
-    // An owned guard remains held even if the request is cancelled while its DB worker runs.
+    // An owned guard remains held even if the request is canceled while its DB worker runs.
     let gate = state.write_gate.clone().write_owned().await;
     run_db(move || {
         let _permit = permit;

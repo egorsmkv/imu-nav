@@ -35,7 +35,7 @@ import kotlin.math.min
 /**
  * Route-constrained dead-reckoning navigator.
  *
- * The only state is `s`, the distance travelled along the planned route. Call [tick] every
+ * The only state is `s`, the distance traveled along the planned route. Call [tick] every
  * [TICK_MS] with a fresh [PositioningSnapshot] and feed every IMU sample to [onImu].
  *
  * Per tick:
@@ -118,7 +118,7 @@ class NavigationEngine(
     // Dead reckoning
     private var currentSpeed = 0.0
 
-    /** How far off dead reckoning may have drifted since the last anchor (GPS, cell or terrain fix), metres. */
+    /** How far off dead reckoning may have drifted since the last anchor (GPS, cell or terrain fix), meters. */
     private var drDriftM = 0.0
     private var lastCellProcessedMs = -1L
     private var cellAccuracyM = 0.0
@@ -144,7 +144,7 @@ class NavigationEngine(
     /** Height history and matching; also exposes the smoothed barometric height. */
     val elevation = ElevationMatcher()
 
-    /** Distance travelled according to speed × time, never corrected (terrain matching needs raw odometry). */
+    /** Distance traveled according to speed × time, never corrected (terrain matching needs raw odometry). */
     private var odometerM = 0.0
     private var lastTerrainTryMs = -TERRAIN_EVERY_MS
 
@@ -644,7 +644,7 @@ class NavigationEngine(
         return speed * vehicleSpeedScale
     }
 
-    /** With trusted GPS: learn how the adapter's speed relates to the real one (tyre wear, speedometer offset). */
+    /** With trusted GPS: learn how the adapter's speed relates to the real one (tire wear, speedometer offset). */
     private fun learnVehicleSpeedScale(gpsSpeed: Double, fixMs: Long) {
         val vehicle = vehicleSpeedMps ?: return
         if (gpsSpeed < SCALE_LEARN_MIN_MPS || vehicle < SCALE_LEARN_MIN_MPS || abs(fixMs - vehicleSpeedAtMs) > 1000) return
@@ -653,7 +653,7 @@ class NavigationEngine(
         vehicleSpeedScale += (ratio - vehicleSpeedScale) * 0.05
     }
 
-    /** Dead-reckoning drift per metre: ~8 % with estimated speed, ~2 % with the car's own speed. */
+    /** Dead-reckoning drift per meter: ~8 % with estimated speed, ~2 % with the car's own speed. */
     private fun driftPerMetre(): Double = if (vehicleSpeedInUse) VEHICLE_SPEED_DRIFT else ESTIMATED_SPEED_DRIFT
 
     /**
@@ -965,7 +965,7 @@ class NavigationEngine(
         private const val TERRAIN_MAX_SEARCH_M = 1_000.0
         private const val TERRAIN_MIN_SHIFT_M = 20.0
 
-        /** After a terrain fix the position is known to about this, metres (DEM resolution + fit). */
+        /** After a terrain fix the position is known to about this, meters (DEM resolution + fit). */
         private const val TERRAIN_DRIFT_AFTER_M = 40.0
     }
 }

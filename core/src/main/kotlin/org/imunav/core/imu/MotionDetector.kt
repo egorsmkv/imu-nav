@@ -133,11 +133,11 @@ class MotionDetector(private val tuning: () -> Tuning) {
     }
 
     /**
-     * Fraction of the modelled cruising speed the car is doing right now:
+     * Fraction of the modeled cruising speed the car is doing right now:
      * null = no fresh IMU data, 0 = stopped, ramp after a resume, otherwise 1.
      */
     fun motionFactor(nowMs: Long): Double? {
-        if (lastSampleMs <= 0 || nowMs < lastSampleMs || nowMs >= validUntilMs) return null
+        if (lastSampleMs !in 1..nowMs || nowMs >= validUntilMs) return null
         if (stopped) return 0.0
         if (resumedAtMs > 0) {
             val t = tuning()

@@ -18,7 +18,7 @@ class ProxySettings(context: Context) {
         Http.configureProxy(_config.value)
     }
 
-    /** Apply validated settings to future requests without cancelling ongoing downloads. */
+    /** Apply validated settings to future requests without canceling ongoing downloads. */
     fun save(config: ProxyConfig) {
         prefs.edit {
             putString("mode", config.mode.name)

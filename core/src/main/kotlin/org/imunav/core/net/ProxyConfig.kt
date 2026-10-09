@@ -1,6 +1,5 @@
 package org.imunav.core.net
 
-import okhttp3.Authenticator
 import okhttp3.Credentials
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
@@ -22,17 +21,15 @@ data class ProxyConfig private constructor(val mode: ProxyMode, val host: String
         val proxy = Proxy(if (mode == ProxyMode.HTTP) Proxy.Type.HTTP else Proxy.Type.SOCKS, InetSocketAddress.createUnresolved(host, port))
         builder.proxy(proxy)
         if (mode == ProxyMode.HTTP && username.isNotEmpty()) {
-            builder.proxyAuthenticator(
-                Authenticator { route, response ->
-                    // Never send credentials to an origin or a different proxy, and do not loop on rejected passwords.
-                    val supported = response.challenges().any { it.scheme.equals("Basic", true) || it.scheme == "OkHttp-Preemptive" }
-                    if (route?.proxy != proxy || !supported || response.request.header("Proxy-Authorization") != null) {
-                        null
-                    } else {
-                        response.request.newBuilder().header("Proxy-Authorization", Credentials.basic(username, password)).build()
-                    }
-                },
-            )
+            builder.proxyAuthenticator { route, response ->
+                // Never send credentials to an origin or a different proxy, and do not loop on rejected passwords.
+                val supported = response.challenges().any { it.scheme.equals("Basic", true) || it.scheme == "OkHttp-Preemptive" }
+                if (route?.proxy != proxy || !supported || response.request.header("Proxy-Authorization") != null) {
+                    null
+                } else {
+                    response.request.newBuilder().header("Proxy-Authorization", Credentials.basic(username, password)).build()
+                }
+            }
         }
         return builder
     }

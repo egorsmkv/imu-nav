@@ -57,7 +57,7 @@ class PackSmokeTest {
         assumeTrue("GRAPH_DIR not set", dir != null && File(dir, "properties").exists())
         OfflineGraph.load(dir!!).use { g ->
             assumeTrue("pack has no walking data", g.supports(TravelMode.FOOT))
-            // Odesa centre: pedestrians cut across Cathedral Square and pedestrian streets; cars must go round.
+            // Odesa center: pedestrians cut across Cathedral Square and pedestrian streets; cars must go around.
             val from = GeoPoint(46.48445, 30.73180)
             val to = GeoPoint(46.48510, 30.74000)
             val walk = g.route(listOf(from, to), TravelMode.FOOT)

@@ -112,7 +112,7 @@ class ReplayTest {
                 add(TripEvent.Mode(1000, mode))
                 add(TripEvent.RouteSet(1000, route))
                 add(TripEvent.Resume(1000, 850.0))
-                // A second right turn near the already-driven route turn must not snap backwards.
+                // A second right turn near the already-driven route turn must not snap backward.
                 for (time in 1020L..4020L step 20) {
                     add(TripEvent.Imu(ImuSample(time, null, 30f, floatArrayOf(1f, 0f, 0f), floatArrayOf(0f, 0f, 0.5f))))
                 }

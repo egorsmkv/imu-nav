@@ -25,6 +25,7 @@ import java.net.URLEncoder
 import java.util.Locale
 import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
+import kotlin.math.roundToInt
 
 /** Reject non-finite numeric payloads before they can enter replay state. */
 private fun String.recordingDouble(): Double = toDouble().also { require(it.isFinite()) }
@@ -63,7 +64,7 @@ sealed class TripEvent {
 
     data class Agc(override val elapsedMs: Long, val agcDb: Float?) : TripEvent()
 
-    /** Navigation started (or restored) towards [destination]. */
+    /** Navigation started (or restored) toward [destination]. */
     data class Start(override val elapsedMs: Long, val destination: GeoPoint, val waypoints: List<GeoPoint>, val startAccuracyM: Double) : TripEvent()
 
     /** A route became active (at start and after each reroute). */
@@ -373,8 +374,8 @@ object RouteCodec {
         }
         val limits = r.maxspeedKmh.joinToString(":") { it?.toString().orEmpty() }
         val signals = r.signals.joinToString(";") { String.format(Locale.US, "%.6f:%.6f", it.lat, it.lon) }
-        // Heights in whole decimetres keep long routes compact; empty = no elevation data.
-        val heights = r.elevationM?.joinToString(":") { Math.round(it * 10).toString() }.orEmpty()
+        // Heights in whole decimeters keep long routes compact; empty = no elevation data.
+        val heights = r.elevationM?.joinToString(":") { (it * 10).roundToInt().toString() }.orEmpty()
         return listOf(String.format(Locale.US, "%.1f", r.durationS), geom, steps, limits, signals, esc(r.summary), heights).joinToString("|")
     }
 

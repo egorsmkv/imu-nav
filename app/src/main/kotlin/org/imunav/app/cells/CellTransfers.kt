@@ -26,7 +26,7 @@ internal class CellTransfers(
     private val privacy: CellPrivacy,
     private val progress: (String) -> Unit,
 ) {
-    /** Import a user-selected CSV, stopping promptly when its owning task is cancelled. */
+    /** Import a user-selected CSV, stopping promptly when its owning task is canceled. */
     suspend fun importFile(open: () -> InputStream?, mccs: Set<Int>): Long {
         val owner = currentCoroutineContext()
         return withContext(Dispatchers.IO) {

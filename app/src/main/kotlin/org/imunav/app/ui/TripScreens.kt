@@ -346,7 +346,7 @@ private fun Stat(label: String, value: String) {
     }
 }
 
-/** A coloured line sample with a label, for the map legend. */
+/** A colored line sample with a label, for the map legend. */
 @Composable
 private fun LegendDot(color: Color, label: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {

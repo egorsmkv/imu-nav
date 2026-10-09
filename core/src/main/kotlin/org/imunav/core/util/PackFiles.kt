@@ -23,7 +23,7 @@ class PackOperation {
 
     @Volatile var result: String? = null
 
-    /** Cancellation after commit begins cannot misreport a successfully installed pack as cancelled. */
+    /** Cancellation after commit begins cannot misreport a successfully installed pack as canceled. */
     @Synchronized
     fun cancel() {
         if (!committing) cancelled = true

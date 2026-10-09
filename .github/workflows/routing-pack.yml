@@ -17,7 +17,7 @@ on:
         description: Expected OSM SHA-256; leave blank to record the downloaded file's checksum
         required: false
 
-# Manual builds and tags keep independent runs; only superseded validation is cancelled.
+# Manual builds and tags keep independent runs; only superseded validation is canceled.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}

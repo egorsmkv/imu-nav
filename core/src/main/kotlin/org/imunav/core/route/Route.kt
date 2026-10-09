@@ -25,14 +25,14 @@ data class Step(
 /** Things on the road that make cars slow down or stop. */
 enum class HazardKind { TRAFFIC_SIGNAL, TRAFFIC_CALMING }
 
-/** A hazard [s] metres from the start of the route. */
+/** A hazard [s] meters from the start of the route. */
 data class Hazard(val s: Double, val kind: HazardKind)
 
 /**
  * A planned route.
  *
  * The road is a polyline: a list of points ([geometry]) joined by straight *segments*. Positions
- * along the route are given as **`s` = metres from the start, measured along the road** (the
+ * along the route are given as **`s` = meters from the start, measured along the road** (the
  * "arc length"). The whole navigation engine works in `s`: "the car is at s = 1234 m" is
  * all it needs to know, because the car cannot leave the road sideways.
  *
@@ -46,10 +46,10 @@ class Route(
     val maxspeedKmh: List<Int?> = emptyList(),
     val signals: List<GeoPoint> = emptyList(),
     val summary: String = "",
-    /** Optional per-segment modelled travel speed from the router (m/s), used when no limit is known. */
+    /** Optional per-segment modeled travel speed from the router (m/s), used when no limit is known. */
     val segmentSpeedMps: List<Double?> = emptyList(),
     /**
-     * Height above sea level of every [geometry] point, metres (offline packs built with elevation).
+     * Height above sea level of every [geometry] point, meters (offline packs built with elevation).
      * The engine compares it with the barometer to find where along the route the car is.
      */
     val elevationM: DoubleArray? = null,
@@ -66,7 +66,7 @@ class Route(
         for (i in 1 until geometry.size) cum[i] = cum[i - 1] + Geo.distance(geometry[i - 1], geometry[i])
     }
 
-    /** Total route length, metres. */
+    /** Total route length, meters. */
     val length: Double get() = cumulative.lastOrNull() ?: 0.0
 
     /** Index of the segment that contains position [s] (binary search, fast even for long routes). */
@@ -85,7 +85,7 @@ class Route(
     /** Posted speed limit on [segment] in km/h, or null if unknown. */
     fun maxspeedAtSegment(segment: Int): Int? = maxspeedKmh.getOrNull(segment)?.takeIf { it > 0 }
 
-    /** The router's modelled travel speed on [segment] in m/s, or null if unknown. */
+    /** The router's modeled travel speed on [segment] in m/s, or null if unknown. */
     fun modelledSpeedAtSegment(segment: Int): Double? = segmentSpeedMps.getOrNull(segment)?.takeIf { it > 0.5 }
 
     /** Position `s` of step [i]'s maneuver (where the driver turns). */
@@ -145,7 +145,7 @@ class Route(
 
     /** Closest point to [p] on segments [from]..[to], clipped to the arc-length window. */
     private fun projectRange(p: GeoPoint, from: Int, to: Int, startS: Double = 0.0, endS: Double = length): Projection {
-        // Work in flat metres with p at the origin (0, 0): the maths becomes simple 2-D vectors.
+        // Work in flat meters with p at the origin (0, 0): the math becomes simple 2-D vectors.
         val flat = LocalProjection(p)
         var best = Projection(0.0, Double.MAX_VALUE, from, geometry[from])
         for (i in from..minOf(to, geometry.size - 2)) {
@@ -200,7 +200,7 @@ data class RoutePoint(val point: GeoPoint, val bearingDeg: Double, val segment: 
 
 /**
  * Result of [Route.project]: the closest route position [s], how far the original point was from
- * the road ([offsetM], metres), and the closest [point] itself.
+ * the road ([offsetM], meters), and the closest [point] itself.
  */
 data class Projection(val s: Double, val offsetM: Double, val segment: Int, val point: GeoPoint)
 

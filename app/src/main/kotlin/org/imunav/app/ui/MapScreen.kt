@@ -166,7 +166,7 @@ fun MapScreen(
     LaunchedEffect(nav.active, nav.arrived) { panelScroll.scrollTo(0) }
     LaunchedEffect(nav.active, hasLocation, ui.locationEnabled) { headerScroll.scrollTo(0) }
     // GPS mode: jump to the first live trusted position once, so the map shows where the user is.
-    // Fixed mode keeps the chosen place; the re-centre button still goes to the position.
+    // Fixed mode keeps the chosen place; the re-center button still goes to the position.
     LaunchedEffect(ui.currentPosition != null, controller.map) {
         val p = ui.currentPosition
         if (!centeredOnce && controller.map != null && p != null && !nav.active && startMode == MapStartMode.GPS) {
@@ -530,5 +530,5 @@ private fun requestBatteryExemptionOnce(context: Context) {
     }
 }
 
-/** Is the app exempt from battery optimisation? */
+/** Is the app exempt from battery optimization? */
 fun isBatteryUnrestricted(context: Context): Boolean = context.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(context.packageName)

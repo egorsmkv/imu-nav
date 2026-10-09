@@ -56,7 +56,7 @@ data class GuidanceState(
     /** Navigation is running. */
     val active: Boolean = false,
     val route: Route? = null,
-    /** Distance travelled along the route, m. */
+    /** Distance traveled along the route, m. */
     val s: Double = 0.0,
     /** The marker's position on the map. */
     val position: GeoPoint? = null,
@@ -85,7 +85,7 @@ data class GuidanceState(
     val destination: GeoPoint? = null,
     /** Seconds since the last usable GPS fix. */
     val blindS: Int = 0,
-    /** How far off the marker may be, metres (drawn as the blue circle). */
+    /** How far off the marker may be, meters (drawn as the blue circle). */
     val uncertaintyM: Double = 0.0,
     /** GPS just came back after jamming; suspicious fixes are accepted more generously for a while. */
     val jamRecovering: Boolean = false,
@@ -139,7 +139,7 @@ interface NavListener {
     fun onRerouteRequested(from: GeoPoint, destination: GeoPoint, via: List<GeoPoint>, auto: Boolean) {}
 }
 
-/** Localised voice / UI phrases. */
+/** Localized voice / UI phrases. */
 interface Phrases {
     fun maneuver(step: Step, distanceM: Double?): String
     fun arrived(): String

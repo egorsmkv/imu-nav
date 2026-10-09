@@ -9,14 +9,14 @@ import kotlin.math.sqrt
 /** A position on Earth in degrees (WGS 84, the system GPS uses). North and east are positive. */
 data class GeoPoint(val lat: Double, val lon: Double)
 
-/** Small geometry helpers. Angles are in degrees, distances in metres. */
+/** Small geometry helpers. Angles are in degrees, distances in meters. */
 object Geo {
     private const val EARTH_DIAMETER_M = 12_742_000.0
     const val M_PER_DEG_LAT = 110_540.0
     const val M_PER_DEG_LON_EQUATOR = 111_320.0
 
     /**
-     * Distance between two points along the Earth's surface, in metres.
+     * Distance between two points along the Earth's surface, in meters.
      *
      * Uses the haversine formula, which treats the Earth as a sphere. That is accurate to about
      * 0.5 %, far better than any GPS fix, and stays numerically stable for very short distances.
@@ -60,10 +60,10 @@ object Geo {
 }
 
 /**
- * Converts lat/lon to flat x/y metres around [origin] (x = east, y = north), so that nearby
- * geometry can use plain 2-D maths. Accurate to well under 1 % within tens of kilometres.
+ * Converts lat/lon to flat x/y meters around [origin] (x = east, y = north), so that nearby
+ * geometry can use plain 2-D math. Accurate to well under 1 % within tens of kilometers.
  *
- * (A degree of longitude gets shorter towards the poles, hence the `cos(latitude)` factor.)
+ * (A degree of longitude gets shorter toward the poles, hence the `cos(latitude)` factor.)
  */
 class LocalProjection(val origin: GeoPoint) {
     private val mPerDegLon = Geo.M_PER_DEG_LON_EQUATOR * cos(Math.toRadians(origin.lat))
@@ -93,7 +93,7 @@ class Polygon(private val lons: DoubleArray, private val lats: DoubleArray) {
      * we cross. An odd count means the point is inside.
      */
     fun contains(lat: Double, lon: Double): Boolean {
-        if (lon < minLon || lon > maxLon || lat < minLat || lat > maxLat) return false
+        if (lon !in minLon..maxLon || lat < minLat || lat > maxLat) return false
         var inside = false
         var j = lons.size - 1
         for (i in lons.indices) {

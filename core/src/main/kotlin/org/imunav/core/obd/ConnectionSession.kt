@@ -34,7 +34,7 @@ class ConnectionSession<T : Closeable> {
         return connection.also { connection = null }
     }
 
-    /** Release only the supplied attempt, never a later reconnect's resource. */
+    /** Release only the supplied attempt, never a later reconnects resource. */
     fun release(value: T) {
         synchronized(this) {
             if (connection === value) connection = null

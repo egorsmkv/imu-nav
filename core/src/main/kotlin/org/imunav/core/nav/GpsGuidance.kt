@@ -5,7 +5,7 @@ import kotlin.math.exp
 import kotlin.math.max
 
 /**
- * Moves the Kotlin marker smoothly towards a GPS anchor extrapolated with GPS speed: never backwards
+ * Moves the Kotlin marker smoothly toward a GPS anchor extrapolated with GPS speed: never backward
  * by less than 25 m, and forward with a 0.4 s time constant. Native mode does not use this smoother.
  */
 internal class MarkerSmoother {

@@ -34,7 +34,7 @@ data class UiState(
     /** Address shown for a start chosen in search; null for a point chosen directly on the map. */
     val manualStartLabel: String? = null,
     val hasTrustedPosition: Boolean = false,
-    /** Accuracy of the best trusted position, metres (null = none). */
+    /** Accuracy of the best trusted position, meters (null = none). */
     val trustedAccuracyM: Double? = null,
     /** The trusted position comes from a GOOD GPS fix (else from cell/network). */
     val trustedFromGps: Boolean = false,

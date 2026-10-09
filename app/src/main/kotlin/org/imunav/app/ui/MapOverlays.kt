@@ -145,7 +145,7 @@ internal fun StatusPill(ui: UiState, onClick: () -> Unit) {
 
 // ------------------------------------------------------------------ map controls
 
-/** Round button on the map's right edge (zoom, re-centre, towers). */
+/** Round button on the map's right edge (zoom, re-center, towers). */
 @Composable
 internal fun MapButton(icon: ImageVector, description: String, selected: Boolean = false, onClick: () -> Unit) {
     SmallFloatingActionButton(
@@ -164,7 +164,7 @@ internal fun Crosshair(modifier: Modifier) {
     }
 }
 
-/** Legend for the cell-tower layer (colours per radio type and how many are drawn). */
+/** Legend for the cell-tower layer (colors per radio type and how many are drawn). */
 @Composable
 internal fun TowerLegend(layer: TowerLayer, radios: Set<Radio>) {
     Surface(

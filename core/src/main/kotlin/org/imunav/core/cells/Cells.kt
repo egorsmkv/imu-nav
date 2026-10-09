@@ -22,7 +22,7 @@ data class CellTower(
     val key: CellKey,
     val lat: Double,
     val lon: Double,
-    /** Approximate coverage radius, metres. */
+    /** Approximate coverage radius, meters. */
     val rangeM: Double,
     val samples: Int,
 )
@@ -64,7 +64,7 @@ class InMemoryCellTowerDb(towers: Collection<CellTower> = emptyList()) : CellTow
 /**
  * Offline position from visible cell towers: weighted centroid of the known tower locations.
  *
- * Weights favour the serving cell, strong signals and small cells (small range ⇒ the phone must be
+ * Weights favor the serving cell, strong signals and small cells (small range ⇒ the phone must be
  * close). Towers farther than 25 km from the median are treated as database errors and dropped.
  * Valid LTE timing advance can tighten the single-serving-cell accuracy heuristic.
  */
@@ -75,7 +75,7 @@ object CellPositioner {
     private const val TA_METERS = 78.12
     private const val MAX_LTE_TIMING_ADVANCE = 1282
 
-    /** A seen cell whose tower position we know, with its flat x/y (metres) and its weight. */
+    /** A seen cell whose tower position we know, with its flat x/y (meters) and its weight. */
     private class Located(val observation: CellObservation, val tower: CellTower, val x: Double, val y: Double, val weight: Double)
 
     /**
@@ -91,7 +91,7 @@ object CellPositioner {
         if (known.size >= 3) known = dropFarTowers(known)
         if (known.isEmpty()) return null
 
-        // Flat x/y metres around the first tower, so averaging positions is plain arithmetic.
+        // Flat x/y meters around the first tower, so averaging positions is plain arithmetic.
         val flat = LocalProjection(GeoPoint(known[0].second.lat, known[0].second.lon))
         val located = known.map { (obs, tower) ->
             val towerPoint = GeoPoint(tower.lat, tower.lon)
@@ -173,7 +173,7 @@ object CellLearning {
     fun update(existing: CellTower?, key: CellKey, lat: Double, lon: Double, accuracyM: Double): CellTower {
         if (existing == null) return CellTower(key, lat, lon, max(accuracyM, 100.0), 1)
         val count = existing.samples
-        // Running average: move the old centre 1/(n+1) of the way towards the new sighting.
+        // Running average: move the old center 1/(n+1) of the way toward the new sighting.
         val newLat = existing.lat + (lat - existing.lat) / (count + 1)
         val newLon = existing.lon + (lon - existing.lon) / (count + 1)
         val distance = Geo.distance(newLat, newLon, lat, lon)
@@ -221,10 +221,10 @@ object OpenCellIdCsv {
  * Estimates a site (mast) position from the known positions of its sectors — used when the exact
  * cell is unknown but sibling sectors of the same LTE eNB are. Crowd-sourced sector positions are
  * noisy, so the estimate is robust:
- *  - centre = component-wise median;
+ *  - center = component-wise median;
  *  - sectors farther than max(3 × MAD, [MIN_OUTLIER_M]) from it are dropped (MAD = median distance);
  *  - with exactly two sectors disagreeing by more than [PAIR_CONFLICT_M], the better-sampled one wins;
- *  - range = max(median sector range, farthest kept sector from the centre).
+ *  - range = max(median sector range, farthest kept sector from the center).
  */
 object CellSite {
     const val MIN_OUTLIER_M = 500.0

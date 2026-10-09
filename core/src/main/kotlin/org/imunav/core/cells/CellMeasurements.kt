@@ -8,7 +8,7 @@ import org.imunav.core.gnss.RawFix
 data class CellMeasurement(val observation: CellObservation, val elapsedMs: Long)
 
 /** Reject missing, future and stale measurement times before subtracting, avoiding overflow. */
-fun isFreshCellMeasurement(elapsedMs: Long, nowMs: Long): Boolean = elapsedMs > 0 && elapsedMs <= nowMs && nowMs - elapsedMs <= Tuning.CELL_MAX_AGE_MS
+fun isFreshCellMeasurement(elapsedMs: Long, nowMs: Long): Boolean = elapsedMs in 1..nowMs && nowMs - elapsedMs <= Tuning.CELL_MAX_AGE_MS
 
 /** Both the GPS label and each cell must still be fresh when learning runs, even if scans stopped. */
 fun cellLearningKeys(measurements: List<CellMeasurement>, gpsElapsedMs: Long, nowMs: Long): List<CellKey> = if (isFreshCellMeasurement(gpsElapsedMs, nowMs)) {
@@ -37,7 +37,7 @@ class CellMeasurementTracker {
     }
 
     /**
-     * Date a fix by its oldest contributing measurement so newer neighbours cannot rejuvenate it.
+     * Date a fix by its oldest contributing measurement so newer neighbors cannot rejuvenate it.
      * Recheck age after database work; suppress repeated or out-of-order fixes before recording.
      */
     fun positionFix(fix: CellFix, measurements: List<CellMeasurement>, nowMs: Long, wallTimeMs: Long): RawFix? {
@@ -50,7 +50,7 @@ class CellMeasurementTracker {
         }
         val elapsedMs = contributors.values.minOrNull() ?: return null
         if (elapsedMs <= lastFixElapsedMs) return null
-        // Expiring an old neighbour must not turn the remaining cached cells into another sample.
+        // Expiring an old neighbor must not turn the remaining cached cells into another sample.
         if (contributors.none { (key, time) -> time > (lastContributors[key] ?: 0L) }) return null
         lastFixElapsedMs = elapsedMs
         lastContributors = contributors

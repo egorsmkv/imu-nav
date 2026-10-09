@@ -42,7 +42,7 @@ object AppLanguage {
         return base.createConfigurationContext(config)
     }
 
-    /** Save [choice] and switch the application's resources; activities must be recreated afterwards. */
+    /** Save [choice] and switch the application's resources; activities must be recreated afterward. */
     fun set(context: Context, choice: String) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putString(KEY, choice) }
         val locale = locale(choice)

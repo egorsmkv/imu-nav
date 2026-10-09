@@ -2,7 +2,7 @@
 
 style:
   # Thresholds and physical constants are named in Tuning / TrustConfig; formulas (unit conversions,
-  # Web-Mercator maths, CSV column indices) would only get noisier with a constant per number.
+  # Web-Mercator math, CSV column indices) would only get noisier with a constant per number.
   MagicNumber:
     active: false
   # Line length is enforced by ktlint (see .editorconfig) — one tool, one limit.

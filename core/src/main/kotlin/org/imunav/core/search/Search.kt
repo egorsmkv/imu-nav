@@ -41,7 +41,7 @@ object AddressSearch {
         "узвіз", "набережна", "наб", "майдан", "тупик", "проїзд", "алея", "місто", "м", "село", "с", "смт", "селище",
         "улица", "ул", "street", "st", "avenue", "ave", "square", "город", "г",
     )
-    private val HOUSE = Regex("^\\d{1,4}[\\p{L}]?(/\\d{1,4}[\\p{L}]?)?$")
+    private val HOUSE = Regex("^\\d{1,4}\\p{L}?(/\\d{1,4}\\p{L}?)?$")
 
     /** Lower-case, unify apostrophes, drop punctuation — the same function builds the index. */
     fun normalize(s: String): String = s.lowercase(Locale.ROOT)
@@ -78,25 +78,25 @@ object AddressSearch {
 
         // House numbers on the best-matching streets come first.
         if (number != null) {
-            for (st in rankStreets(streets, near).take(5)) {
-                val hits = runCatching { db.addresses(st.id, number) }.getOrDefault(emptyList())
-                for (a in hits.take(2)) {
-                    out += -1e9 + (dist(a.lat, a.lon) ?: 0.0) to SearchResult(
+            for ((id, name, _, placeName) in rankStreets(streets, near).take(5)) {
+                val hits = runCatching { db.addresses(id, number) }.getOrDefault(emptyList())
+                for ((number1, lat, lon) in hits.take(2)) {
+                    out += -1e9 + (dist(lat, lon) ?: 0.0) to SearchResult(
                         ResultKind.ADDRESS,
-                        "${st.name}, ${a.number}",
-                        st.placeName.orEmpty(),
-                        GeoPoint(a.lat, a.lon),
-                        dist(a.lat, a.lon),
+                        "$name, $number1",
+                        placeName.orEmpty(),
+                        GeoPoint(lat, lon),
+                        dist(lat, lon),
                     )
                 }
             }
         }
-        for (p in places) {
-            val d = dist(p.lat, p.lon)
-            val weight = (KIND_WEIGHT[p.kind] ?: 1.0) * (1 + ln(1.0 + p.population / 1000.0))
-            val exact = if (normalize(p.name) == words.joinToString(" ")) 4.0 else 1.0
+        for ((_, name, kind, lat, lon, population) in places) {
+            val d = dist(lat, lon)
+            val weight = (KIND_WEIGHT[kind] ?: 1.0) * (1 + ln(1.0 + population / 1000.0))
+            val exact = if (normalize(name) == words.joinToString(" ")) 4.0 else 1.0
             out += -(weight * exact * 1e6) / (1 + (d ?: 50_000.0) / 20_000.0) to
-                SearchResult(ResultKind.PLACE, p.name, p.kind, GeoPoint(p.lat, p.lon), d)
+                SearchResult(ResultKind.PLACE, name, kind, GeoPoint(lat, lon), d)
         }
         for ((i, s) in rankStreets(streets, near).withIndex()) {
             val d = dist(s.lat, s.lon)

@@ -30,7 +30,7 @@ sealed interface CarDestination {
                     coordinates.size == 2 && lat != null && lon != null ->
                         if (lat.isFinite() && lon.isFinite() && lat in -90.0..90.0 && lon in -180.0..180.0) Point(GeoPoint(lat, lon)) else null
 
-                    query != null && query.isNotBlank() && query.length <= 256 && query.none(Char::isISOControl) -> Query(query)
+                    !query.isNullOrBlank() && query.length <= 256 && query.none(Char::isISOControl) -> Query(query)
 
                     else -> null
                 }

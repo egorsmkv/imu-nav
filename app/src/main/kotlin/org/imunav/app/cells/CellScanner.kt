@@ -172,10 +172,10 @@ class CellScanner(
         main.post { log("cell_scan seen=${observations.size} known=$known $cellsText") }
     }
 
-    /** Check modem ages before conversion, including the serving cell used to infer neighbour operators. */
+    /** Check modem ages before conversion, including the serving cell used to infer neighbor operators. */
     private fun toMeasurements(cells: List<CellInfo>, nowMs: Long): List<CellMeasurement> {
         val recent = cells.map { it to measurementElapsedMs(it) }.filter { isFreshCellMeasurement(it.second, nowMs) }
-        // Neighbour cells often omit MCC/MNC; they belong to the operator of the serving cell.
+        // Neighbor cells often omit MCC/MNC; they belong to the operator of the serving cell.
         val home = recent.map { it.first }.filter { it.isRegistered }.map { operator(it) }.firstOrNull { (mcc, mnc) -> mcc != null && mnc != null }
         return recent.mapNotNull { (cell, elapsedMs) ->
             val (ownMcc, ownMnc) = operator(cell)

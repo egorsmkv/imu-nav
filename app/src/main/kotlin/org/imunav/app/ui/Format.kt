@@ -108,7 +108,7 @@ fun formatDuration(res: Resources, seconds: Double): String {
 /** "± 30 m". */
 fun formatAccuracy(res: Resources, meters: Double): String = res.getString(R.string.accuracy_pm, formatDistance(res, meters))
 
-/** Localised name of a position source for the status pill. */
+/** Localized name of a position source for the status pill. */
 fun sourceLabel(res: Resources, source: PositionSource): String = res.getString(
     when (source) {
         PositionSource.NONE -> R.string.src_none

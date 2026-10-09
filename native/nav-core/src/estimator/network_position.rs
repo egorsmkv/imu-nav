@@ -235,7 +235,7 @@ impl NavigationEstimator {
         match allocation {
             NetworkUse::Reserved => Ok(Some(false)),
             NetworkUse::Speed(estimate) => {
-                // The mean describes a time window, not instantaneous speed during a manoeuvre.
+                // The mean describes a time window, not instantaneous speed during a maneuver.
                 let sigma =
                     estimate.sigma_mps + SPEED_SIGMA_PER_SECOND * milliseconds_to_seconds(age_ms);
                 let correction_limit = if self.state.network_evidence.speed.relearning() {

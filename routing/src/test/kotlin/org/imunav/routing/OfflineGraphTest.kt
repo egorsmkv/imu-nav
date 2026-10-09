@@ -75,7 +75,7 @@ class OfflineGraphTest {
             val heights = assertNotNull(route.elevationM)
             assertEquals(route.geometry.size, heights.size)
             // Road points sit on the model (±1 m: heights are stored with limited precision). The snapped
-            // start and end points get an approximate height from GraphHopper; only the first/last metres matter.
+            // start and end points get an approximate height from GraphHopper; only the first/last meters matter.
             for (i in 1 until route.geometry.lastIndex) assertEquals(slope.getEle(route.geometry[i].lat, route.geometry[i].lon), heights[i], 1.0)
             assertEquals(slope.getEle(route.geometry[0].lat, route.geometry[0].lon), heights[0], 30.0)
             // Halfway up Northway (≈ 600 m in) the road is ~60 m higher than at the start.

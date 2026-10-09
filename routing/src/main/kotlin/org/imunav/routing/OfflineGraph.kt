@@ -59,7 +59,7 @@ object GraphSpec {
     const val FOOT_DISTANCE_INFLUENCE = 70.0
     const val HEADING_PENALTY_S = 300.0
 
-    /** Packs with elevation: extra height samples on edges longer than this, metres. */
+    /** Packs with elevation: extra height samples on edges longer than this, meters. */
     const val ELEVATION_SAMPLING_M = 60
 
     /**
@@ -238,7 +238,7 @@ class OfflineGraph private constructor(private val hopper: GraphHopper, val dir:
                 .putObject("graph.dataaccess.default_type", if (memoryMapped) "MMAP_RO" else "RAM_STORE")
             // init() copies every custom model through Jackson, which needs Class.getRecordComponents
             // (Android 14+) for GraphHopper's record classes. Our models are plain objects already, so
-            // initialise without them and hand the same profiles over directly.
+            // initialize without them and hand the same profiles over directly.
             hopper.init(cfg.setProfiles(emptyList()))
             hopper.setProfiles(profiles.map { GraphSpec.profile(it) })
             // A 3-D graph must be opened as 3-D (GraphHopper checks the stored dimension); no DEM is needed to read it.

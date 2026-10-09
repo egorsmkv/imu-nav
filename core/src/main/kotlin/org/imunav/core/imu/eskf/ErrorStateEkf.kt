@@ -16,7 +16,7 @@ data class InertialTuning(
     }
 }
 
-/** Nominal state. Biases are in device axes; position/velocity in local east/north/up metres and m/s. */
+/** Nominal state. Biases are in device axes; position/velocity in local east/north/up meters and m/s. */
 data class InertialState(
     val timestampNs: Long,
     val position: Vector3,

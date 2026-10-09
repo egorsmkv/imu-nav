@@ -24,7 +24,7 @@ interface Router {
 /**
  * OSRM HTTP client (defaults to the public demo server — fine for testing, run your own for real
  * use). Requests full polyline6 geometry, turn-by-turn steps and per-segment annotations
- * (speed limits when the server has them, otherwise modelled speeds).
+ * (speed limits when the server has them, otherwise modeled speeds).
  */
 class OsrmRouter(private val baseUrl: String = "https://router.project-osrm.org") : Router {
 
@@ -111,7 +111,7 @@ class OsrmRouter(private val baseUrl: String = "https://router.project-osrm.org"
             )
         }
 
-        /** Index of the geometry point nearest [p], searching from [from] onwards (maneuvers come in order). */
+        /** Index of the geometry point nearest [p], searching from [from] onward (maneuvers come in order). */
         private fun nearestIndex(geometry: List<GeoPoint>, p: GeoPoint, from: Int): Int {
             var best = from
             var bestD = Double.MAX_VALUE

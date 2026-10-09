@@ -166,7 +166,7 @@ internal fun DonationLink(title: String, url: String, openUrl: (String) -> Unit)
     }
 }
 
-/** Localised name of the position estimator selected for the next trip. */
+/** Localized name of the position estimator selected for the next trip. */
 @Composable
 internal fun navigationEstimatorName(estimator: NavigationEstimator): String = stringResource(
     when (estimator) {
@@ -175,7 +175,7 @@ internal fun navigationEstimatorName(estimator: NavigationEstimator): String = s
     },
 )
 
-/** Localised name of a navigation fallback method. */
+/** Localized name of a navigation fallback method. */
 @Composable
 internal fun navigationMethodName(method: NavigationMethod): String = stringResource(
     when (method) {
@@ -185,7 +185,7 @@ internal fun navigationMethodName(method: NavigationMethod): String = stringReso
     },
 )
 
-/** Localised name of a power mode. */
+/** Localized name of a power mode. */
 @Composable
 internal fun powerModeName(m: PowerMode): String = stringResource(
     when (m) {
@@ -196,7 +196,7 @@ internal fun powerModeName(m: PowerMode): String = stringResource(
     },
 )
 
-/** Localised name of a tower database source. */
+/** Localized name of a tower database source. */
 @Composable
 internal fun sourceName(s: CellSource): String = stringResource(
     when (s) {
