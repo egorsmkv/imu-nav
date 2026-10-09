@@ -59,3 +59,18 @@ Replay is a research check, not proof that a live drive will be safe. The [detai
 ## Browser trip history
 
 See [private browser trip history](server/trip_history.md) for manual uploads, playback, storage limits, consent and deletion.
+
+## Recovery and replay input rules
+
+The replay reader accepts plain `.rec` text and gzip recordings. If gzip reading fails, it
+retains decompressed events only through the last complete newline; a cut numeric field can
+still look valid and must not become a different event. An incomplete gzip header yields no
+events. Clean input may omit its final newline. Repair rewrites recovered events before a
+new gzip member is appended. Recovery cannot reconstruct bytes that were never flushed, and
+a checksum failure does not establish that recovered data is authentic.
+
+Unknown event types, malformed numeric fields, non-finite numbers (including Float overflow),
+partial IMU vectors and unpaired waypoint coordinates are skipped. Empty optional measurements
+remain supported. This is format validation, not a replacement for the positioning trust
+classifier. Replay sorts events by elapsed time and preserves file order for equal timestamps,
+so `Start`, `Mode` and `RouteSet` retain their recorded sequence.

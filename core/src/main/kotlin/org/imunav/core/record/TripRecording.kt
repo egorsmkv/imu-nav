@@ -26,6 +26,12 @@ import java.util.Locale
 import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
 
+/** Reject non-finite numeric payloads before they can enter replay state. */
+private fun String.recordingDouble(): Double = toDouble().also { require(it.isFinite()) }
+
+/** Float parsing can overflow even when the corresponding Double would be finite. */
+private fun String.recordingFloat(): Float = toFloat().also { require(it.isFinite()) }
+
 /** Everything the positioning pipeline consumed during a trip, in time order. */
 sealed class TripEvent {
     abstract val elapsedMs: Long
@@ -160,8 +166,8 @@ object TripFormat {
         val fields = if (line.startsWith("R,")) line.split(',', limit = 3) else line.split(',')
 
         // Field [i] as a number, or null when the field is empty ("unknown").
-        fun double(i: Int) = fields.getOrNull(i)?.takeIf { it.isNotEmpty() }?.toDouble()
-        fun float(i: Int) = fields.getOrNull(i)?.takeIf { it.isNotEmpty() }?.toFloat()
+        fun double(i: Int) = fields.getOrNull(i)?.takeIf { it.isNotEmpty() }?.recordingDouble()
+        fun float(i: Int) = fields.getOrNull(i)?.takeIf { it.isNotEmpty() }?.recordingFloat()
         val time = fields.getOrNull(1)?.toLongOrNull() ?: return null
         return runCatching {
             when (fields[0]) {
@@ -170,8 +176,8 @@ object TripFormat {
                     InertialSample(
                         fields[2].toLong(),
                         InertialKind.valueOf(fields[3]),
-                        Vector3(fields[4].toDouble(), fields[5].toDouble(), fields[6].toDouble()),
-                        fields[7].toDouble(),
+                        Vector3(fields[4].recordingDouble(), fields[5].recordingDouble(), fields[6].recordingDouble()),
+                        fields[7].recordingDouble(),
                     ),
                 )
 
@@ -180,17 +186,19 @@ object TripFormat {
                         FixSource.valueOf(
                             fields[2],
                         ),
-                        fields[3].toLong(), time, fields[4].toDouble(), fields[5].toDouble(), double(6), float(7), float(8), float(9), float(10), float(11),
+                        fields[3].toLong(), time, fields[4].recordingDouble(), fields[5].recordingDouble(), double(6), float(7), float(8), float(9), float(10), float(11),
                         fields.getOrNull(12) == "1",
                     ),
                 )
 
                 "I" -> {
                     // Three numbers x,y,z starting at field [first], or null when absent.
-                    fun vector(first: Int): FloatArray? = if (fields.getOrNull(first).isNullOrEmpty()) {
-                        null
-                    } else {
-                        floatArrayOf(requireNotNull(float(first)), requireNotNull(float(first + 1)), requireNotNull(float(first + 2)))
+                    fun vector(first: Int): FloatArray? {
+                        val x = float(first)
+                        val y = float(first + 1)
+                        val z = float(first + 2)
+                        if (x == null && y == null && z == null) return null
+                        return floatArrayOf(requireNotNull(x), requireNotNull(y), requireNotNull(z))
                     }
                     val acc = vector(4)
                     val gyro = vector(7)
@@ -201,16 +209,19 @@ object TripFormat {
 
                 "A" -> TripEvent.Agc(time, float(2))
 
-                "D" -> TripEvent.Start(
-                    time,
-                    GeoPoint(fields[2].toDouble(), fields[3].toDouble()),
-                    (5 until fields.size - 1 step 2).map { GeoPoint(fields[it].toDouble(), fields[it + 1].toDouble()) },
-                    double(4) ?: 0.0,
-                )
+                "D" -> {
+                    require(fields.size >= 5 && (fields.size - 5) % 2 == 0)
+                    TripEvent.Start(
+                        time,
+                        GeoPoint(fields[2].recordingDouble(), fields[3].recordingDouble()),
+                        (5 until fields.size step 2).map { GeoPoint(fields[it].recordingDouble(), fields[it + 1].recordingDouble()) },
+                        double(4) ?: 0.0,
+                    )
+                }
 
                 "R" -> TripEvent.RouteSet(time, RouteCodec.decode(fields[2]))
 
-                "Q" -> TripEvent.Resume(time, fields[2].toDouble())
+                "Q" -> TripEvent.Resume(time, fields[2].recordingDouble())
 
                 "X" -> TripEvent.Stop(time)
 
@@ -220,11 +231,14 @@ object TripFormat {
 
                 "K" -> TripEvent.Estimator(time, NavigationEstimator.valueOf(fields[2]))
 
-                "V" -> TripEvent.VehicleSpeed(time, fields[2].toFloat())
+                "V" -> TripEvent.VehicleSpeed(time, fields[2].recordingFloat())
 
-                "B" -> TripEvent.Pressure(time, fields[2].toFloat())
+                "B" -> TripEvent.Pressure(time, fields[2].recordingFloat())
 
-                "E" -> TripEvent.Estimate(time, fields[2].toDouble(), fields[3].toDouble(), fields[4].toDouble(), fields[5].toDouble(), fields.getOrNull(6).orEmpty())
+                "E" -> TripEvent.Estimate(
+                    time, fields[2].recordingDouble(), fields[3].recordingDouble(), fields[4].recordingDouble(),
+                    fields[5].recordingDouble(), fields.getOrNull(6).orEmpty(),
+                )
 
                 else -> null
             }
@@ -240,24 +254,32 @@ object TripFormat {
         buffered.mark(2)
         val magic = (buffered.read() shl 8) or buffered.read()
         buffered.reset()
-        val stream = if (magic == 0x1f8b) GZIPInputStream(buffered) else buffered
         // Decompress into memory first: readers buffer ahead and would drop the tail on an EOF error.
         val bytes = ByteArrayOutputStream()
         val buf = ByteArray(1 shl 14)
+        var incomplete = false
         try {
-            while (true) {
-                val n = stream.read(buf)
-                if (n < 0) break
-                bytes.write(buf, 0, n)
+            // Header construction can itself fail when a process died before writing the header.
+            val stream = if (magic == 0x1f8b) GZIPInputStream(buffered) else buffered
+            stream.use {
+                while (true) {
+                    val n = it.read(buf)
+                    if (n < 0) break
+                    bytes.write(buf, 0, n)
+                }
             }
         } catch (_: IOException) {
-            // Truncated stream: keep what was decompressed (a partial last line fails to decode).
+            incomplete = true
         } finally {
-            runCatching { stream.close() }
+            runCatching { buffered.close() }
         }
         val out = ArrayList<TripEvent>()
         // String(bytes, charset), not ByteArrayOutputStream.toString(Charset): the latter needs Android 13.
-        BufferedReader(String(bytes.toByteArray(), Charsets.UTF_8).reader()).lineSequence().forEach { line -> decode(line)?.let { out += it } }
+        val text = String(bytes.toByteArray(), Charsets.UTF_8)
+        // A cut number (e.g. X,123 -> X,12) can still parse: only newline-terminated events
+        // are trustworthy after an I/O failure. Clean text input may omit its final newline.
+        val complete = if (incomplete) text.substring(0, text.lastIndexOf('\n') + 1) else text
+        BufferedReader(complete.reader()).lineSequence().forEach { line -> decode(line)?.let { out += it } }
         return out
     }
 
@@ -343,19 +365,19 @@ object RouteCodec {
         val p = s.split('|')
         val geometry = p[1].split(';').filter { it.isNotEmpty() }.map {
             val (a, b) = it.split(':')
-            GeoPoint(a.toDouble(), b.toDouble())
+            GeoPoint(a.recordingDouble(), b.recordingDouble())
         }
         val steps = p[2].split(';').filter { it.isNotEmpty() }.map { st ->
             val f = st.split('~')
-            Step(unesc(f[0]), unesc(f[1]).ifEmpty { null }, unesc(f[2]), f[3].toDouble(), f[4].toDouble(), f[5].toInt(), f.getOrNull(6)?.toIntOrNull())
+            Step(unesc(f[0]), unesc(f[1]).ifEmpty { null }, unesc(f[2]), f[3].recordingDouble(), f[4].recordingDouble(), f[5].toInt(), f.getOrNull(6)?.toIntOrNull())
         }
         val limits = p.getOrNull(3).orEmpty().let { if (it.isEmpty()) emptyList() else it.split(':').map { v -> v.toIntOrNull() } }
         val signals = p.getOrNull(4).orEmpty().split(';').filter { it.isNotEmpty() }.map {
             val (a, b) = it.split(':')
-            GeoPoint(a.toDouble(), b.toDouble())
+            GeoPoint(a.recordingDouble(), b.recordingDouble())
         }
-        val heights = p.getOrNull(6).orEmpty().takeIf { it.isNotEmpty() }?.split(':')?.map { it.toDouble() / 10.0 }?.toDoubleArray()
+        val heights = p.getOrNull(6).orEmpty().takeIf { it.isNotEmpty() }?.split(':')?.map { it.recordingDouble() / 10.0 }?.toDoubleArray()
             ?.takeIf { it.size == geometry.size }
-        return Route(geometry, steps, p[0].toDouble(), limits, signals, unesc(p.getOrNull(5).orEmpty()), elevationM = heights)
+        return Route(geometry, steps, p[0].recordingDouble(), limits, signals, unesc(p.getOrNull(5).orEmpty()), elevationM = heights)
     }
 }
