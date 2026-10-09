@@ -90,6 +90,7 @@ class ReplayTest {
         assertTrue(blind.blind.count > 100, "blind samples: ${blind.blind}")
         assertTrue(blind.blind.p95M < 120, "dead reckoning along-track error: ${blind.blind}")
         assertTrue(blind.log.any { it.startsWith("turn_snap") }, "turn snapped during replay")
+        assertEquals(blind, TripReplayer().replay(events, hideGpsAfterS = 10.0), "identical inputs reproduce samples, tracks, logs and statistics")
         println(blind.summary())
     }
 

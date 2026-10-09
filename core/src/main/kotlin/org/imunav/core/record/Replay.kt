@@ -95,6 +95,7 @@ class TripReplayer(private val tuning: Tuning = Tuning.DEFAULT, private val area
         require(events.filterIsInstance<TripEvent.Estimator>().none { it.estimator == NavigationEstimator.NATIVE_KALMAN }) {
             "This trip used Native Kalman. Use -PnativeReplay and --compare-native to evaluate its raw inputs; legacy replay only runs Kotlin."
         }
+        // Stable ordering is intentional: Start, Mode and RouteSet can share a timestamp.
         val sorted = events.sortedBy { it.elapsedMs }
         val session = Session(sorted.firstOrNull()?.elapsedMs ?: 0L, hideGpsAfterS)
         var nextTick = Long.MIN_VALUE
