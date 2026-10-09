@@ -300,17 +300,8 @@ object TripFormat {
         return out
     }
 
-    /** Rewrite a possibly truncated recording as a clean gzip file (before appending to it). */
-    fun repair(file: File) {
-        if (!file.exists()) return
-        val events = read(file)
-        val tmp = File(file.parentFile, file.name + ".repair")
-        TripRecorder(tmp.outputStream()).use { rec -> events.forEach { rec.record(it) } }
-        if (!tmp.renameTo(file)) {
-            file.delete()
-            tmp.renameTo(file)
-        }
-    }
+    /** Repair via a completed temporary gzip and atomic replacement; failures leave the original in place. */
+    fun repair(file: File) = TripRepair.repair(file)
 
     fun read(file: File): List<TripEvent> = file.inputStream().use { read(it) }
 }
@@ -350,7 +341,7 @@ class TripRecorder(out: OutputStream, private val flushEveryMs: Long = 2000) : C
     override fun close() {
         if (closed) return
         closed = true
-        runCatching { writer.close() }
+        writer.close()
     }
 
     companion object {
