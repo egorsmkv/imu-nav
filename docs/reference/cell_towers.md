@@ -11,6 +11,25 @@ positioning and tower learning. Multi-SIM scans keep the newest measurement for 
 the oldest contributing measurement, and repeated cached measurements do not create new fixes or
 usage-history entries. Scan frequency still follows the selected power profile.
 
+The positioner computes a signal/range-weighted centroid, not trilateration from measured distances.
+It excludes non-finite/out-of-bounds coordinates, the `(0,0)` placeholder and non-finite coverage
+ranges before geometry calculations. Each cell identity contributes once; if a caller supplies
+duplicates, its first copy must be the freshest (the modem tracker already deduplicates by time).
+`towersSeen` remains the raw input count; `towersUsed` and contributions count retained identities.
+
+With at least three usable identities, towers farther than 25 km from the component-wise median
+are excluded. If none survive, the positioner returns no fix rather than restoring the conflicting
+records. This heuristic does not guarantee that every remaining cluster or a conflicting pair is
+correct. Distinct sectors can still be correlated, and the reported 150–5000 m accuracy is a heuristic,
+not a calibrated confidence interval.
+
+Only a single **serving LTE** cell may use timing advance to tighten that heuristic. Values outside
+`0..1282` are ignored, including Android's unavailable sentinel; this follows the
+[Android LTE timing-advance contract](https://developer.android.com/reference/android/telephony/CellSignalStrengthLte#getTimingAdvance()).
+The existing metres-per-step conversion and accuracy limits remain unchanged. A database location
+may represent where a cell was heard rather than the physical mast, so timing advance does not
+prove a geometric error bound around that location.
+
 Tower locations come from four sources, each in its own table and looked up in this order:
 
 | Source          | How it gets there                                                                                                                                                                                                                                                                                                                                                                   |
