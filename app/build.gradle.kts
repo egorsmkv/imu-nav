@@ -151,13 +151,30 @@ android {
     }
 }
 
+val androidSdkDirectory = androidComponents.sdkComponents.sdkDirectory
+
 val buildRustAndroid = tasks.register<Exec>("buildRustAndroid") {
     group = "build"
     description = "Builds the Rust navigation core for the Android ABIs"
     workingDir(rootProject.projectDir)
-    commandLine(rootProject.file("scripts/build-rust-android.sh"), layout.buildDirectory.dir("generated/rustJniLibs").get().asFile)
+    val outputDirectory = layout.buildDirectory.dir("generated/rustJniLibs").get().asFile
+    if (System.getProperty("os.name").startsWith("Windows")) {
+        commandLine(
+            "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File",
+            rootProject.file("scripts/build-rust-android.ps1"), "-OutputRoot", outputDirectory,
+        )
+    } else {
+        commandLine("bash", rootProject.file("scripts/build-rust-android.sh"), outputDirectory)
+    }
+    doFirst {
+        // Android Studio often selects its SDK through local.properties rather than environment variables.
+        val sdkDirectory = androidSdkDirectory.get().asFile.absolutePath
+        environment("ANDROID_HOME", sdkDirectory)
+        environment("ANDROID_SDK_ROOT", sdkDirectory)
+    }
     inputs.files(rootProject.fileTree("native") { exclude("target/**") })
     inputs.file(rootProject.file("scripts/build-rust-android.sh"))
+    inputs.file(rootProject.file("scripts/build-rust-android.ps1"))
     outputs.dir(layout.buildDirectory.dir("generated/rustJniLibs"))
 }
 

@@ -23,8 +23,11 @@ JNI crate and simulator; look for successful test results and no Clippy warnings
 
 Before building an Android APK, complete the [Android tool setup](../build_and_test.md#prepare-the-tools).
 
-Android builds invoke [`scripts/build-rust-android.sh`](../../scripts/build-rust-android.sh). The script
-uses the Android NDK to build `imu-nav-jni` for:
+Android builds invoke [`scripts/build-rust-android.sh`](../../scripts/build-rust-android.sh) through
+Bash on Linux/macOS, or [`scripts/build-rust-android.ps1`](../../scripts/build-rust-android.ps1)
+through Windows PowerShell on Windows. Gradle passes Android Studio's selected SDK location;
+an explicit `ANDROID_NDK_HOME` or `ANDROID_NDK_ROOT` still takes precedence. Both scripts
+use the Android NDK to build `imu-nav-jni` for:
 
 - `arm64-v8a`;
 - `armeabi-v7a`; and

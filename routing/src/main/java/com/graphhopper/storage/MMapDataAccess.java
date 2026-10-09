@@ -105,10 +105,10 @@ public final class MMapDataAccess extends AbstractDataAccess {
 
     @Override
     public boolean ensureCapacity(long bytes) {
-        return mapIt(HEADER_OFFSET, bytes);
+        return mapIt(bytes);
     }
 
-    private boolean mapIt(long offset, long byteCount) {
+    private boolean mapIt(long byteCount) {
         if (byteCount < 0)
             throw new IllegalArgumentException("new capacity has to be strictly positive");
 
@@ -126,10 +126,10 @@ public final class MMapDataAccess extends AbstractDataAccess {
         if (segmentsToMap == 0)
             throw new IllegalStateException("0 segments are not allowed.");
 
-        long bufferStart = offset;
+        long bufferStart = AbstractDataAccess.HEADER_OFFSET;
         int newSegments;
         int i = 0;
-        long newFileLength = offset + segmentsToMap * longSegmentSize;
+        long newFileLength = (long) AbstractDataAccess.HEADER_OFFSET + segmentsToMap * longSegmentSize;
         try {
             // ugly remapping
             // http://stackoverflow.com/q/14011919/194609
@@ -149,7 +149,7 @@ public final class MMapDataAccess extends AbstractDataAccess {
             // we could get an exception here if buffer is too small and area too large
             // e.g. I got an exception for the 65421th buffer (probably around 2**16 == 65536)
             throw new RuntimeException("Couldn't map buffer " + i + " of " + segmentsToMap + " with " + longSegmentSize
-                    + " for " + name + " at position " + bufferStart + " for " + byteCount + " bytes with offset " + offset
+                    + " for " + name + " at position " + bufferStart + " for " + byteCount + " bytes with offset " + (long) AbstractDataAccess.HEADER_OFFSET
                     + ", new fileLength:" + newFileLength + ", " + Helper.getMemInfo(), ex);
         }
     }
@@ -190,7 +190,7 @@ public final class MMapDataAccess extends AbstractDataAccess {
 
     @Override
     public boolean loadExisting() {
-        if (segments.size() > 0)
+        if (!segments.isEmpty())
             throw new IllegalStateException("already initialized");
 
         if (isClosed())
@@ -206,7 +206,7 @@ public final class MMapDataAccess extends AbstractDataAccess {
             if (byteCount < 0)
                 return false;
 
-            mapIt(HEADER_OFFSET, byteCount - HEADER_OFFSET);
+            mapIt(byteCount - HEADER_OFFSET);
             return true;
         } catch (IOException ex) {
             throw new RuntimeException("Problem while loading " + getFullName(), ex);
@@ -248,7 +248,7 @@ public final class MMapDataAccess extends AbstractDataAccess {
     @Override
     public void close() {
         super.close();
-        clean(0, segments.size());
+        clean(segments.size());
         segments.clear();
         Helper.close(raFile);
     }
@@ -405,11 +405,10 @@ public final class MMapDataAccess extends AbstractDataAccess {
      * afterwards.
      * <p>
      *
-     * @param from inclusive
-     * @param to   exclusive
+     * @param to exclusive
      */
-    private void clean(int from, int to) {
-        for (int i = from; i < to; i++) {
+    private void clean(int to) {
+        for (int i = 0; i < to; i++) {
             ByteBuffer bb = segments.get(i);
             cleanMappedByteBuffer(bb);
             segments.set(i, null);

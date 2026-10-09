@@ -259,8 +259,8 @@ class OfflineGraph private constructor(private val hopper: GraphHopper, val dir:
             val steps = ArrayList<Step>()
             var index = 0
             val instructions = path.instructions
-            for (i in 0 until instructions.size) {
-                val ins = instructions[i]
+            for ((i, element) in instructions.withIndex()) {
+                val ins = element
                 val (type, modifier) = stepKind(ins, first = i == 0)
                 val exit = (ins.extraInfoJSON["exit_number"] as? Number)?.toInt()
                 if (ins.sign != Instruction.IGNORE) {

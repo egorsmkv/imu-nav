@@ -25,15 +25,15 @@ CORE = ('core/src/',)
 ROUTING = ('routing/src/',)
 REPLAY = ('replay/src/',)
 COVERAGE = ('tools/rust_coverage.py', 'tools/rust_coverage_rustc.py', 'tools/tests/test_rust_coverage.py')
+ANDROID_RUST_BUILD = ('scripts/build-rust-android.sh', 'scripts/build-rust-android.ps1')
 SUITES = {
     'tools': ('tools/', '.github/workflows/kotlin-coverage.yml'),
     'fdroid': ('.github/workflows/fdroid.yml', 'app/src/main/', 'app/src/fdroid/',
-               'app/lint.xml', 'app/proguard-rules.pro', 'scripts/build-rust-android.sh') + CORE + ROUTING + NATIVE + RUST,
+               'app/lint.xml', 'app/proguard-rules.pro') + ANDROID_RUST_BUILD + CORE + ROUTING + NATIVE + RUST,
     'kotlin': ('.github/workflows/kotlin-coverage.yml', 'app/src/main/', 'app/src/fdroid/',
-               'app/src/test/', 'scripts/build-rust-android.sh', 'tools/kotlin_coverage.py',
-               'tools/tests/test_kotlin_coverage.py', 'config/kotlin-coverage-baseline.json') + CORE + ROUTING + REPLAY + NATIVE + SERVER + RUST,
-    'native': ('.github/workflows/rust-coverage.yml', 'app/src/main/kotlin/org/imunav/app/nativecore/',
-               'scripts/build-rust-android.sh') + CORE + REPLAY + NATIVE + COVERAGE + RUST,
+               'app/src/test/', 'tools/kotlin_coverage.py',
+               'tools/tests/test_kotlin_coverage.py', 'config/kotlin-coverage-baseline.json') + ANDROID_RUST_BUILD + CORE + ROUTING + REPLAY + NATIVE + SERVER + RUST,
+    'native': ('.github/workflows/rust-coverage.yml', 'app/src/main/kotlin/org/imunav/app/nativecore/') + ANDROID_RUST_BUILD + CORE + REPLAY + NATIVE + COVERAGE + RUST,
     'server': ('.github/workflows/rust-coverage.yml', 'server/tests/', 'server/tools/') + SERVER + COVERAGE + RUST,
     'map': ('.github/workflows/map-pack.yml', 'tools/make_map_pack.py',
             'tools/verify_map_pack.py', 'tools/tests/test_map_pack.py'),

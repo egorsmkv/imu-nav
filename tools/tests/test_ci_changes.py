@@ -26,6 +26,8 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(self.selected('app/src/test/kotlin/SomeTest.kt'), {'kotlin'})
 
     def test_shared_build_inputs_and_included_assets_are_selected(self):
+        for script in ci.ANDROID_RUST_BUILD:
+            self.assertEqual(self.selected(script), {'native', 'kotlin', 'fdroid'})
         self.assertEqual(self.selected('gradle/libs.versions.toml'), ci.GRADLE_SUITES)
         self.assertEqual(self.selected('links.properties'), ci.GRADLE_SUITES)
         self.assertEqual(self.selected('core/src/test/resources/fixture.json'), ci.GRADLE_SUITES)

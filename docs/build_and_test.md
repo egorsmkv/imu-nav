@@ -26,8 +26,13 @@ export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/<installed-version>"
 
 Replace `<installed-version>` with a directory present in your SDK. On macOS, the usual SDK
 directory is `$HOME/Library/Android/sdk`. An explicit `ANDROID_NDK_HOME` selects the NDK; otherwise
-the [native build script](../scripts/build-rust-android.sh) also checks `ANDROID_NDK_ROOT` and
-the SDK's `ndk/` directory. Android builds need Bash and the NDK's host LLVM toolchain.
+the native build scripts also check `ANDROID_NDK_ROOT` and the SDK's `ndk/` directory.
+Gradle passes the SDK location selected by Android Studio (including `local.properties`) to the script.
+Linux and macOS use [Bash](../scripts/build-rust-android.sh); Windows uses
+[Windows PowerShell](../scripts/build-rust-android.ps1) and the NDK's Windows LLVM toolchain.
+Windows builds do not require Bash or WSL. Install **NDK (Side by side)** from Android Studio's
+SDK Manager, then install the Rust targets below. Restart Android Studio after installing Rust
+so it inherits Cargo's updated `PATH`. Use `gradlew.bat` for Gradle commands on Windows.
 
 Install the targets in the Rust toolchain that will run the build:
 
@@ -81,7 +86,8 @@ it does not establish that Android lint, device behavior or the full check passe
 | Symptom | Check and action |
 | --- | --- |
 | `Android NDK not found` | Check `ANDROID_NDK_HOME` points to an installed NDK directory, then rerun the build. |
-| `Android linker not found` | Check that NDK contains `toolchains/llvm/prebuilt/<host>/bin/` and the API-26 Clang launchers used by the [build script](../scripts/build-rust-android.sh). |
+| `CreateProcess error=193` in `:app:buildRustAndroid` on Windows | Update to the Windows PowerShell build script, resync Gradle and install NDK (Side by side) in SDK Manager. The Unix `.sh` script cannot be launched directly by Windows. |
+| `Android linker not found` | Check that NDK contains `toolchains/llvm/prebuilt/<host>/bin/` and the API-26 Clang launchers (`*-clang.cmd` on Windows) used by the build scripts. |
 | Cargo cannot find an Android target's standard library | Run `rustup target list --installed` for the selected toolchain and add all three targets listed above. |
 | `NoClassDefFoundError: com/android/tools/r8/RecordTag` while loading a pack | Install a Benchmark APK built with R8, then retry the pack. A Debug APK cannot exercise offline routing. |
 

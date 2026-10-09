@@ -134,7 +134,7 @@ public class RAMDataAccess extends AbstractDataAccess {
                     byte[] bytes = new byte[segmentSizeInBytes];
                     int read = raFile.read(bytes);
                     if (read <= 0)
-                        throw new IllegalStateException("segment " + s + " is empty? " + toString());
+                        throw new IllegalStateException("segment " + s + " is empty? " + this);
 
                     segments[s] = bytes;
                 }
@@ -159,13 +159,12 @@ public class RAMDataAccess extends AbstractDataAccess {
                 writeHeader(raFile, len, segmentSizeInBytes);
                 raFile.seek(HEADER_OFFSET);
                 // raFile.writeInt() <- too slow, so copy into byte array
-                for (int s = 0; s < segments.length; s++) {
-                    byte[] area = segments[s];
+                for (byte[] area : segments) {
                     raFile.write(area);
                 }
             }
         } catch (Exception ex) {
-            throw new RuntimeException("Couldn't store bytes to " + toString(), ex);
+            throw new RuntimeException("Couldn't store bytes to " + this, ex);
         }
     }
 

@@ -274,13 +274,11 @@ object SearchIndexBuilder {
     /** Stream an .osm.pbf file element by element (constant memory, even for a whole country). */
     private fun readOsm(osm: File, skip: SkipOptions, onElement: (ReaderElement) -> Unit) {
         val input = OSMInputFile(osm).setWorkerThreads(2).setSkipOptions(skip).open()
-        try {
+        input.use { input ->
             while (true) {
                 val e = input.next ?: break
                 onElement(e)
             }
-        } finally {
-            input.close()
         }
     }
 }
