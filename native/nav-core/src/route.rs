@@ -179,10 +179,10 @@ impl RouteGeometry {
         {
             return Err(RouteError::InvalidSearch);
         }
-        let local = self.project_range(
+        let local = self.project_window(
             point,
-            self.segment_at(around_m - behind_m),
-            self.segment_at(around_m + ahead_m),
+            (around_m - behind_m).clamp(0.0, self.length_m()),
+            (around_m + ahead_m).clamp(0.0, self.length_m()),
         );
         if local.offset_m > global_if_farther_m {
             let global = if (-90.0..=90.0).contains(&point.latitude_deg)
@@ -330,6 +330,47 @@ impl RouteGeometry {
             }
         }
         Ok(best)
+    }
+
+    /// Clip endpoint segments as well as segment indices to the permitted arc lengths.
+    fn project_window(&self, point: GeoPoint, start_m: f64, end_m: f64) -> Projection {
+        let scale = longitude_scale(point);
+        let from = self.segment_at(start_m);
+        let to = self.segment_at(end_m);
+        let mut best = Projection {
+            position_m: start_m,
+            offset_m: f64::MAX,
+            segment: from,
+            point: self.points[from],
+        };
+        for index in from..=to {
+            let mut candidate =
+                self.project_range_scaled::<false>(point, index, index, scale, f64::MAX);
+            if candidate.position_m < start_m || candidate.position_m > end_m {
+                candidate.position_m = candidate.position_m.clamp(start_m, end_m);
+                let length = self.cumulative_m[index + 1] - self.cumulative_m[index];
+                let fraction = if length > 0.0 {
+                    ((candidate.position_m - self.cumulative_m[index]) / length).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                let start = self.points[index];
+                let end = self.points[index + 1];
+                candidate.point = GeoPoint {
+                    latitude_deg: start.latitude_deg
+                        + fraction * (end.latitude_deg - start.latitude_deg),
+                    longitude_deg: start.longitude_deg
+                        + fraction * (end.longitude_deg - start.longitude_deg),
+                };
+                candidate.offset_m = ((candidate.point.latitude_deg - point.latitude_deg)
+                    * METRES_PER_DEGREE_LATITUDE)
+                    .hypot((candidate.point.longitude_deg - point.longitude_deg) * scale);
+            }
+            if candidate.offset_m < best.offset_m {
+                best = candidate;
+            }
+        }
+        best
     }
 
     fn project_range(&self, point: GeoPoint, from: usize, to: usize) -> Projection {

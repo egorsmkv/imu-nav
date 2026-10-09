@@ -132,19 +132,19 @@ class Route(
             val only = geometry.firstOrNull() ?: p
             return Projection(0.0, Geo.distance(p, only), 0, only)
         }
-        val from = segmentAt(aroundS - behindM)
-        val to = segmentAt(aroundS + aheadM)
-        val local = projectRange(p, from, to)
-        // Hazard projection already covers every segment; a second global scan is identical.
-        if (local.offsetM > globalIfFartherM && (from != 0 || to != geometry.size - 2)) {
+        val startS = (aroundS - behindM).coerceIn(0.0, length)
+        val endS = (aroundS + aheadM).coerceIn(0.0, length)
+        val local = projectRange(p, segmentAt(startS), segmentAt(endS), startS, endS)
+        // A window can cover every segment index while covering only part of those segments.
+        if (local.offsetM > globalIfFartherM && (startS > 0.0 || endS < length)) {
             val global = projectRange(p, 0, geometry.size - 2)
             if (global.offsetM < local.offsetM) return global
         }
         return local
     }
 
-    /** Closest point to [p] on segments [from]..[to]. */
-    private fun projectRange(p: GeoPoint, from: Int, to: Int): Projection {
+    /** Closest point to [p] on segments [from]..[to], clipped to the arc-length window. */
+    private fun projectRange(p: GeoPoint, from: Int, to: Int, startS: Double = 0.0, endS: Double = length): Projection {
         // Work in flat metres with p at the origin (0, 0): the maths becomes simple 2-D vectors.
         val flat = LocalProjection(p)
         var best = Projection(0.0, Double.MAX_VALUE, from, geometry[from])
@@ -154,13 +154,20 @@ class Route(
             val dirX = flat.x(geometry[i + 1]) - startX
             val dirY = flat.y(geometry[i + 1]) - startY
             val lengthSquared = dirX * dirX + dirY * dirY
-            // Closest point on the (infinite) line, as a fraction of the segment, clamped to the segment.
-            val fraction = if (lengthSquared < 1e-6) 0.0 else ((-startX * dirX - startY * dirY) / lengthSquared).coerceIn(0.0, 1.0)
+            val segmentLength = cumulative[i + 1] - cumulative[i]
+            val minFraction = if (segmentLength > 0.0) ((startS - cumulative[i]) / segmentLength).coerceIn(0.0, 1.0) else 0.0
+            val maxFraction = if (segmentLength > 0.0) ((endS - cumulative[i]) / segmentLength).coerceIn(0.0, 1.0) else 0.0
+            // Clamp to the permitted part of the segment, including a zero-width window.
+            val fraction = if (lengthSquared < 1e-6) {
+                minFraction
+            } else {
+                ((-startX * dirX - startY * dirY) / lengthSquared).coerceIn(minFraction, maxFraction)
+            }
             val closestX = startX + dirX * fraction
             val closestY = startY + dirY * fraction
             val distance = sqrt(closestX * closestX + closestY * closestY)
             if (distance < best.offsetM) {
-                val s = cumulative[i] + fraction * (cumulative[i + 1] - cumulative[i])
+                val s = (cumulative[i] + fraction * segmentLength).coerceIn(startS, endS)
                 best = Projection(s, distance, i, flat.toGeo(closestX, closestY))
             }
         }
