@@ -3,25 +3,14 @@ name: F-Droid build
 on:
   workflow_dispatch:
   push:
-    # branches: [main]
     tags: ['v*']
   pull_request:
-    paths:
-      - '.github/workflows/fdroid.yml'
-      - 'app/build.gradle.kts'
-      - 'app/lint.xml'
-      - 'app/proguard-rules.pro'
-      - 'app/src/main/**'
-      - 'app/src/fdroid/**'
-      - 'core/**'
-      - 'routing/**'
-      - 'native/**'
-      - 'scripts/build-rust-android.sh'
-      - 'gradle/**'
-      - 'gradlew'
-      - 'build.gradle.kts'
-      - 'settings.gradle.kts'
-      - 'gradle.properties'
+  merge_group:
+
+# Manual builds and tags keep independent runs; only superseded validation is cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
 
 permissions:
   contents: read
@@ -29,28 +18,46 @@ permissions:
 jobs:
   fdroid:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - name: Check out source
         uses: actions/checkout@v4
-
+        with:
+          fetch-depth: 0
+      - name: Select affected work
+        id: changes
+        run: python3 tools/ci_changes.py --suite fdroid
+      - name: Cache Cargo downloads
+        if: steps.changes.outputs.run == 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('native/Cargo.lock', 'server/Cargo.lock') }}
+          restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
       - name: Set up OpenJDK 17
+        if: steps.changes.outputs.run == 'true'
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Set up Rust for Android
+        if: steps.changes.outputs.run == 'true'
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.99.0-beta
           targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
 
       - name: Set up Gradle
+        if: steps.changes.outputs.run == 'true'
         uses: gradle/actions/setup-gradle@v4
 
       - name: Build and lint F-Droid release
+        if: steps.changes.outputs.run == 'true'
         run: >-
-          ./gradlew --no-daemon clean
+          ./gradlew --no-daemon
           :core:test
           :app:verifyFdroidDependencies
           :app:assembleFdroidRelease
@@ -58,6 +65,7 @@ jobs:
           :app:lintFdroidRelease
 
       - name: Upload APKs
+        if: steps.changes.outputs.run == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: imu-nav-apks-${{ github.sha }}

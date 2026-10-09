@@ -2,16 +2,7 @@ name: Offline routing pack
 
 on:
   pull_request:
-    paths:
-      - '.github/workflows/routing-pack.yml'
-      - 'routing/**'
-      - 'core/**'
-      - 'tools/verify_routing_pack.py'
-      - 'gradle/**'
-      - 'gradlew'
-      - 'build.gradle.kts'
-      - 'settings.gradle.kts'
-      - 'gradle.properties'
+  merge_group:
   workflow_dispatch:
     inputs:
       pack_name:
@@ -26,28 +17,42 @@ on:
         description: Expected OSM SHA-256; leave blank to record the downloaded file's checksum
         required: false
 
+# Manual builds and tags keep independent runs; only superseded validation is cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+
 permissions:
   contents: read
 
 jobs:
   fixture:
-    if: github.event_name == 'pull_request'
+    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Select affected work
+        id: changes
+        run: python3 tools/ci_changes.py --suite routing
       - uses: actions/setup-java@v5
+        if: steps.changes.outputs.run == 'true'
         with:
           distribution: temurin
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
+        if: steps.changes.outputs.run == 'true'
       - name: Download small Monaco extract
+        if: steps.changes.outputs.run == 'true'
         run: |
           mkdir -p build/routing-source
           curl --fail --location --retry 3 --proto '=https' --proto-redir '=https' \
             https://download.geofabrik.de/europe/monaco-latest.osm.pbf \
             --output build/routing-source/monaco.osm.pbf
       - name: Build and verify importable archive
+        if: steps.changes.outputs.run == 'true'
         run: |
           ./gradlew --no-daemon :routing:run \
             --args="--osm build/routing-source/monaco.osm.pbf --out build/routing-work/graph --name Monaco"
