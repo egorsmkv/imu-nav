@@ -132,8 +132,11 @@ class Route(
             val only = geometry.firstOrNull() ?: p
             return Projection(0.0, Geo.distance(p, only), 0, only)
         }
-        val local = projectRange(p, segmentAt(aroundS - behindM), segmentAt(aroundS + aheadM))
-        if (local.offsetM > globalIfFartherM) {
+        val from = segmentAt(aroundS - behindM)
+        val to = segmentAt(aroundS + aheadM)
+        val local = projectRange(p, from, to)
+        // Hazard projection already covers every segment; a second global scan is identical.
+        if (local.offsetM > globalIfFartherM && (from != 0 || to != geometry.size - 2)) {
             val global = projectRange(p, 0, geometry.size - 2)
             if (global.offsetM < local.offsetM) return global
         }
