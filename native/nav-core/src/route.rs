@@ -291,14 +291,14 @@ impl RouteGeometry {
         let seed_block = self
             .blocks
             .iter()
-            .min_by(|left, right| {
-                let squared_bound = |block: &SegmentBlock| {
-                    let (latitude, longitude) =
-                        block.lower_bound_components_m(point, longitude_scale);
-                    latitude * latitude + longitude * longitude
-                };
-                squared_bound(left).total_cmp(&squared_bound(right))
+            .map(|block| {
+                let (latitude, longitude) = block.lower_bound_components_m(point, longitude_scale);
+                (block, latitude * latitude + longitude * longitude)
             })
+            // Carry the winning bound through the reduction instead of recalculating it for
+            // every comparison. min_by keeps the first equal bound, as before.
+            .min_by(|(_, left), (_, right)| left.total_cmp(right))
+            .map(|(block, _)| block)
             .ok_or(RouteError::TooShort)?;
         let mut best = self.project_range_scaled::<ENDPOINT_BOUNDS>(
             point,
