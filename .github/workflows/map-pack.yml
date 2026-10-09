@@ -2,11 +2,7 @@ name: Offline map pack
 
 on:
   pull_request:
-    paths:
-      - 'tools/make_map_pack.py'
-      - 'tools/verify_map_pack.py'
-      - 'tools/tests/test_map_pack.py'
-      - '.github/workflows/map-pack.yml'
+  merge_group:
   workflow_dispatch:
     inputs:
       osm_url:
@@ -17,6 +13,11 @@ on:
         description: Expected OSM SHA-256, if known; a mismatch fails the build
         required: false
 
+# Manual builds and tags keep independent runs; only superseded validation is cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+
 permissions:
   contents: read
 
@@ -25,20 +26,29 @@ env:
 
 jobs:
   fixture:
-    if: github.event_name == 'pull_request'
+    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Select affected work
+        id: changes
+        run: python3 tools/ci_changes.py --suite map
       - uses: actions/setup-java@v5
+        if: steps.changes.outputs.run == 'true'
         with:
           distribution: temurin
           java-version: '21'
       - name: Test map pack tools
+        if: steps.changes.outputs.run == 'true'
         run: python3 -m unittest discover -s tools/tests -p test_map_pack.py -v
       - name: Install pinned Planetiler
+        if: steps.changes.outputs.run == 'true'
         run: curl --fail --location --retry 3 "https://github.com/onthegomap/planetiler/releases/download/${PLANETILER_VERSION}/planetiler.jar" -o planetiler.jar
       - name: Build a small regional pack
+        if: steps.changes.outputs.run == 'true'
         run: |
           python3 tools/make_map_pack.py --prepare-resources build/map-resources
           curl --fail --location --retry 3 \

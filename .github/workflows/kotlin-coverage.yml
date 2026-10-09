@@ -2,55 +2,15 @@ name: Kotlin coverage
 
 on:
   pull_request:
-    paths:
-      - '.github/workflows/kotlin-coverage.yml'
-      - 'app/build.gradle.kts'
-      - 'app/src/main/**'
-      - 'app/src/fdroid/**'
-      - 'app/src/test/**'
-      - 'core/**'
-      - 'routing/**'
-      - 'replay/**'
-      - 'native/**'
-      - 'server/Cargo.toml'
-      - 'server/Cargo.lock'
-      - 'server/build.rs'
-      - 'server/src/**'
-      - 'server/templates/**'
-      - 'scripts/build-rust-android.sh'
-      - 'tools/**'
-      - 'config/kotlin-coverage-baseline.json'
-      - 'gradle/**'
-      - 'gradlew'
-      - 'build.gradle.kts'
-      - 'settings.gradle.kts'
-      - 'gradle.properties'
+  merge_group:
   push:
     branches: [main]
-    paths:
-      - '.github/workflows/kotlin-coverage.yml'
-      - 'app/build.gradle.kts'
-      - 'app/src/main/**'
-      - 'app/src/fdroid/**'
-      - 'app/src/test/**'
-      - 'core/**'
-      - 'routing/**'
-      - 'replay/**'
-      - 'native/**'
-      - 'server/Cargo.toml'
-      - 'server/Cargo.lock'
-      - 'server/build.rs'
-      - 'server/src/**'
-      - 'server/templates/**'
-      - 'scripts/build-rust-android.sh'
-      - 'tools/**'
-      - 'config/kotlin-coverage-baseline.json'
-      - 'gradle/**'
-      - 'gradlew'
-      - 'build.gradle.kts'
-      - 'settings.gradle.kts'
-      - 'gradle.properties'
   workflow_dispatch:
+
+# Manual builds and tags keep independent runs; only superseded validation is cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
 
 permissions:
   contents: read
@@ -62,31 +22,56 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Select affected work
+        id: changes
+        run: python3 tools/ci_changes.py --suite kotlin
+      - name: Select tooling tests
+        id: tools
+        run: python3 tools/ci_changes.py --suite tools
+      - name: Test CI and pack tooling
+        if: steps.tools.outputs.run == 'true'
+        run: python3 -m unittest discover -s tools/tests -v
+      - name: Cache Cargo downloads
+        if: steps.changes.outputs.run == 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('native/Cargo.lock', 'server/Cargo.lock') }}
+          restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
       - uses: actions/setup-java@v5
+        if: steps.changes.outputs.run == 'true'
         with:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@v3
+        if: steps.changes.outputs.run == 'true'
         with:
           # Override the action's default, which includes the retired SDK 'tools' package.
           packages: platform-tools
       - name: Install Android platform for app unit tests
+        if: steps.changes.outputs.run == 'true'
         run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
       - name: Install host Rust for JNI tests
+        if: steps.changes.outputs.run == 'true'
         run: rustup toolchain install nightly-2026-09-25 --profile minimal
       - uses: gradle/actions/setup-gradle@v4
-      - name: Test coverage validation
-        run: python3 -m unittest discover -s tools/tests -v
+        if: steps.changes.outputs.run == 'true'
       - name: Verify Kotlin client against Rust cell server
+        if: steps.changes.outputs.run == 'true'
         env:
           RUSTUP_TOOLCHAIN: nightly-2026-09-25
         run: ./gradlew --no-daemon :core:serverApiTest
       - name: Collect and verify Kotlin coverage
+        if: steps.changes.outputs.run == 'true'
         env:
           RUSTUP_TOOLCHAIN: nightly-2026-09-25
         run: python3 tools/kotlin_coverage.py
       - name: Upload reports and diagnostics
-        if: always()
+        if: (always()) && steps.changes.outputs.run == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: kotlin-coverage
