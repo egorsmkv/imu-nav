@@ -1,7 +1,6 @@
 package org.imunav.core.imu.eskf
 
 import kotlin.math.ceil
-import kotlin.math.sqrt
 
 /** Initial experimental noise densities (SI units / sqrt(Hz)); device calibration is still required. */
 data class InertialTuning(
@@ -11,7 +10,9 @@ data class InertialTuning(
     val gyroscopeBiasWalk: Double = 0.0005,
 ) {
     init {
-        require(listOf(accelerometerNoise, gyroscopeNoise, accelerometerBiasWalk, gyroscopeBiasWalk).all { it.isFinite() && it > 0.0 })
+        require(listOf(accelerometerNoise, gyroscopeNoise, accelerometerBiasWalk, gyroscopeBiasWalk).all { hasFinitePositiveSquare(it) }) {
+            "noise densities must have finite positive squares"
+        }
     }
 }
 
@@ -41,19 +42,14 @@ class ErrorStateEkf(initial: InertialState, positionSigmaM: Double, private val 
     init {
         require(initial.timestampNs >= 0 && initial.position.isFinite() && initial.velocity.isFinite())
         require(initial.accelerometerBias.isFinite() && initial.gyroscopeBias.isFinite())
-        require(positionSigmaM.isFinite() && positionSigmaM > 0.0 && (positionSigmaM * positionSigmaM).isFinite())
+        require(hasFinitePositiveSquare(positionSigmaM)) { "position sigma must have a finite positive square" }
         val sigmas = doubleArrayOf(positionSigmaM, positionSigmaM, 30.0, 5.0, 5.0, 5.0, 0.15, 0.15, 0.5, 0.3, 0.3, 0.3, 0.03, 0.03, 0.03)
         for (index in sigmas.indices) covariance[index, index] = sigmas[index] * sigmas[index]
     }
 
     /** Largest horizontal covariance eigenvalue's square root, including east/north correlation. */
     val horizontalSigmaM: Double
-        get() {
-            val east = covariance[0, 0]
-            val north = covariance[1, 1]
-            val cross = covariance[0, 1]
-            return sqrt((east + north + sqrt((east - north) * (east - north) + 4 * cross * cross)) / 2)
-        }
+        get() = horizontalPositionSigma(covariance[0, 0], covariance[1, 1], covariance[0, 1])
 
     /** Defensive copy for numerical diagnostics/tests; modifying it cannot change the filter. */
     fun covariance(): Array<DoubleArray> = Array(STATE_SIZE) { row -> DoubleArray(STATE_SIZE) { column -> covariance[row, column] } }

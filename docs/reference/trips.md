@@ -147,6 +147,21 @@
   Sigma is **not a safety radius**.
   Synthetic tests validate mechanics, not improved real-drive accuracy.
 
+  Numerically, horizontal sigma is the square root of the largest eigenvalue of the 2-D position
+  covariance, including east/north correlation. Its calculation scales the covariance before solving
+  for the eigenvalue so that finite very large/small entries do not overflow/underflow intermediate
+  squares. Covariance symmetrization also avoids overflowing a finite pair's average. Initial position
+  sigma and noise densities must have finite, strictly positive squares in `Double`; values whose
+  squares round to zero or infinity are rejected at construction. This is a representation check,
+  not a calibration or a guarantee that arbitrary parameters remain stable during propagation.
+
+  `ErrorStateEkfNumericsTest` covers these limits, the scalar Gaussian posterior and invariance to
+  measurement ordering. The correction reference is Solà,
+  [arXiv:1711.02508v1](https://arxiv.org/html/1711.02508v1), section 6.1, equations (274)–(276)
+  and footnote 26 (Joseph form); right-local injection/reset follows sections 6.2–6.3, equations
+  (283c), (286) and (288). The implementation holds gravity fixed, so its error state has 15 dimensions
+  rather than the reference's 18. These tests do not establish observability or real-drive accuracy.
+
   For a new raw-sensor recording, run:
 
   ```bash

@@ -1,8 +1,30 @@
 package org.imunav.core.imu.eskf
 
 import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.sin
 import kotlin.math.sqrt
+
+/** Noise densities and standard deviations must remain positive and finite when stored as variances. */
+internal fun hasFinitePositiveSquare(value: Double): Boolean {
+    val squared = value * value
+    return value > 0.0 && squared > 0.0 && squared.isFinite()
+}
+
+/**
+ * Largest standard deviation of a finite positive-semidefinite 2-D covariance.
+ * Scaling before the eigensolve avoids overflow in the trace/discriminant and underflow in their
+ * squares. Take the square roots before restoring scale: the eigenvalue itself may exceed Double.
+ */
+internal fun horizontalPositionSigma(east: Double, north: Double, cross: Double): Double {
+    val scale = maxOf(east, north)
+    if (scale == 0.0) return 0.0
+    val scaledEast = east / scale
+    val scaledNorth = north / scale
+    val scaledCross = cross / scale
+    val eigenvalue = (scaledEast + scaledNorth + hypot(scaledEast - scaledNorth, 2.0 * scaledCross)) / 2.0
+    return sqrt(scale) * sqrt(eigenvalue)
+}
 
 /** Immutable three-vector; body axes follow Android, navigation axes are east/north/up. */
 data class Vector3(val x: Double, val y: Double, val z: Double) {
@@ -88,7 +110,13 @@ internal class Matrix(val rows: Int, val columns: Int, init: (Int, Int) -> Doubl
     }
 
     /** Remove floating-point asymmetry, not negative variances or other evidence of filter failure. */
-    fun symmetric() = Matrix(rows, columns) { row, column -> (this[row, column] + this[column, row]) * 0.5 }
+    fun symmetric() = Matrix(rows, columns) { row, column ->
+        val forward = this[row, column]
+        val reverse = this[column, row]
+        val sum = forward + reverse
+        // Preserve subnormal entries on the usual path; halve first only when the sum overflows.
+        if (sum.isFinite()) sum * 0.5 else forward * 0.5 + reverse * 0.5
+    }
     fun finite() = data.all { it.isFinite() }
 
     /** Cholesky factorization fails closed when a covariance is not positive definite. */
