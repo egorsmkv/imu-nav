@@ -87,3 +87,17 @@ For parameter units, exact regression windows, return values and Kotlin correcti
 the [navigation input contract reference](input-contracts.md). The reference also explains why a
 successful physical gate does not replace validation at the recording boundary.
 
+
+## Duplicate and delayed measurements
+
+Both Kotlin and Rust trust classifiers reject a GPS fix with `dup_time` / `DuplicateTime`
+before changing classifier state when either its elapsed time or wall time is not strictly
+newer than the previous raw fix. This rejection reports only the timing reason; it does not
+run additional plausibility checks or reset frozen-position/jamming history. Reset explicitly
+starts a new sequence.
+
+The positioning hub still records raw GPS duplicates and delayed arrivals, but elapsed-time
+rejections do not replace its latest judged fix or notify navigation observers. Motion history
+and gyro-bias sampling similarly ignore repeated or older IMU timestamps. Gyro calibration
+uses yaw samples only through the GPS speed measurement's elapsed time, excluding future yaw.
+The existing wall-clock plausibility checks, motion expiry and ESKF equations are unchanged.

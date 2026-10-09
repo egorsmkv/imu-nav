@@ -44,6 +44,17 @@ class MotionEvidenceTest {
     }
 
     @Test
+    fun delayedAndDuplicateImuCannotChangeEvidence() {
+        start()
+        val before = assertNotNull(engine.motionEvidence(31_000))
+        for (time in listOf(30_000L, 31_000L)) {
+            engine.onImu(ImuSample(time, null, 90f, floatArrayOf(10f, 0f, 0f), floatArrayOf(1f, 0f, 0f)))
+        }
+        assertEquals(before, engine.motionEvidence(31_000))
+        assertNull(engine.motionEvidence(33_000))
+    }
+
+    @Test
     fun duplicateCellCoordinatesCannotRefreshMovementVeto() {
         start()
         for (index in 0..4) {
