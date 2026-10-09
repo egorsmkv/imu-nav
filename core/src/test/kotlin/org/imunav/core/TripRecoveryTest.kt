@@ -59,9 +59,14 @@ class TripRecoveryTest {
     fun nonFinitePayloadsAndFloatOverflowAreRejected() {
         for (number in listOf("NaN", "Infinity", "-Infinity", "1e999")) {
             val lines = listOf(
-                "V,1,$number", "B,1,$number", "A,1,$number", "I,1,$number,,,,,,,",
-                "F,1,GPS,123,$number,30,,,,,,,0", "D,1,50,30,$number",
-                "E,1,50,30,$number,10,GPS", "R,1,10|50:30;50.01:$number|||||",
+                "V,1,$number",
+                "B,1,$number",
+                "A,1,$number",
+                "I,1,$number,,,,,,,",
+                "F,1,GPS,123,$number,30,,,,,,,0",
+                "D,1,50,30,$number",
+                "E,1,50,30,$number,10,GPS",
+                "R,1,10|50:30;50.01:$number|||||",
             )
             for (line in lines) {
                 assertNull(TripFormat.decode(line), line)

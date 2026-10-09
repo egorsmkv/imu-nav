@@ -130,7 +130,7 @@ class NativeNavigationTest {
         assertEquals(0.72, engine.pedometer.strideM)
         engine.tick(6500, gps(5600))
         assertEquals(0.72, engine.pedometer.strideM, "delayed speed cannot calibrate a different cadence window")
-        engine.tick(6500, gps(6500))
+        engine.tick(7000, gps(7000))
         assertTrue(engine.pedometer.strideM > 0.72)
     }
 

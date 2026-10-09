@@ -241,8 +241,12 @@ object TripFormat {
                 "B" -> TripEvent.Pressure(time, fields[2].recordingFloat())
 
                 "E" -> TripEvent.Estimate(
-                    time, fields[2].recordingDouble(), fields[3].recordingDouble(), fields[4].recordingDouble(),
-                    fields[5].recordingDouble(), fields.getOrNull(6).orEmpty(),
+                    time,
+                    fields[2].recordingDouble(),
+                    fields[3].recordingDouble(),
+                    fields[4].recordingDouble(),
+                    fields[5].recordingDouble(),
+                    fields.getOrNull(6).orEmpty(),
                 )
 
                 else -> null

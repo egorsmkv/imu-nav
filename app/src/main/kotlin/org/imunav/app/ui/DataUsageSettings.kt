@@ -119,13 +119,19 @@ private fun DataUsageOverview(usage: DataUsage?) {
         maxItemsInEachRow = 2,
     ) {
         DataUsageCard(
-            stringResource(R.string.data_usage_received), formattedDataUsage(usage?.receivedBytes, loading), Icons.Filled.ArrowDownward,
-            MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer,
+            stringResource(R.string.data_usage_received),
+            formattedDataUsage(usage?.receivedBytes, loading),
+            Icons.Filled.ArrowDownward,
+            MaterialTheme.colorScheme.primaryContainer,
+            MaterialTheme.colorScheme.onPrimaryContainer,
             Modifier.weight(1f).widthIn(min = minimumCardWidth),
         )
         DataUsageCard(
-            stringResource(R.string.data_usage_sent), formattedDataUsage(usage?.sentBytes, loading), Icons.Filled.ArrowUpward,
-            MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer,
+            stringResource(R.string.data_usage_sent),
+            formattedDataUsage(usage?.sentBytes, loading),
+            Icons.Filled.ArrowUpward,
+            MaterialTheme.colorScheme.tertiaryContainer,
+            MaterialTheme.colorScheme.onTertiaryContainer,
             Modifier.weight(1f).widthIn(min = minimumCardWidth),
         )
     }

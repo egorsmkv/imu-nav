@@ -115,9 +115,8 @@ object CellPositioner {
     }
 
     /** Malformed database geometry must not poison the median, centroid or reported accuracy. */
-    private fun usableTower(tower: CellTower): Boolean =
-        tower.lat in -90.0..90.0 && tower.lon in -180.0..180.0 &&
-            (tower.lat != 0.0 || tower.lon != 0.0) && tower.rangeM.isFinite()
+    private fun usableTower(tower: CellTower): Boolean = tower.lat in -90.0..90.0 && tower.lon in -180.0..180.0 &&
+        (tower.lat != 0.0 || tower.lon != 0.0) && tower.rangeM.isFinite()
 
     /**
      * Towers farther than [OUTLIER_M] from the median position are almost certainly wrong in the

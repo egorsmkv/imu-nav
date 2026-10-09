@@ -3,6 +3,7 @@ package org.imunav.core
 import org.imunav.core.geo.GeoPoint
 import org.imunav.core.gnss.PositioningHub
 import org.imunav.core.nav.ElevationMatcher
+import org.imunav.core.nav.NavListener
 import org.imunav.core.nav.NavigationEngine
 import org.imunav.core.nav.PositionSource
 import org.imunav.core.route.Route
@@ -15,7 +16,7 @@ import kotlin.test.assertSame
 class SensorTimeOrderTest {
     private fun engine(): NavigationEngine {
         val route = Route(listOf(GeoPoint(50.0, 30.0), GeoPoint(50.1, 30.0)), emptyList(), 1000.0)
-        return NavigationEngine().also { it.start(route, route.geometry.last(), nowMs = 1000) }
+        return NavigationEngine(listener = object : NavListener {}).also { it.start(route, route.geometry.last(), nowMs = 1000) }
     }
 
     @Test
