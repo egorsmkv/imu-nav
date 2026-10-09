@@ -95,8 +95,7 @@ class TripReplayer(private val tuning: Tuning = Tuning.DEFAULT, private val area
         require(events.filterIsInstance<TripEvent.Estimator>().none { it.estimator == NavigationEstimator.NATIVE_KALMAN }) {
             "This trip used Native Kalman. Use -PnativeReplay and --compare-native to evaluate its raw inputs; legacy replay only runs Kotlin."
         }
-        // Stable ordering is intentional: Start, Mode and RouteSet can share a timestamp.
-        val sorted = events.sortedBy { it.elapsedMs }
+        val sorted = TripTimeline.schedule(events)
         val session = Session(sorted.firstOrNull()?.elapsedMs ?: 0L, hideGpsAfterS)
         var nextTick = Long.MIN_VALUE
         for (e in sorted) {
@@ -105,7 +104,7 @@ class TripReplayer(private val tuning: Tuning = Tuning.DEFAULT, private val area
                 session.tick(nextTick)
                 nextTick += NavigationEngine.TICK_MS
             }
-            session.apply(e)
+            session.apply(e.event, e.elapsedMs)
         }
         return session.result(sorted)
     }
@@ -157,8 +156,8 @@ class TripReplayer(private val tuning: Tuning = Tuning.DEFAULT, private val area
             engineTrack += pos
         }
 
-        fun apply(e: TripEvent) {
-            nowElapsed = e.elapsedMs
+        fun apply(e: TripEvent, arrivalMs: Long) {
+            nowElapsed = arrivalMs
             when (e) {
                 is TripEvent.Fix -> onFix(e.fix)
 
@@ -227,7 +226,7 @@ class TripReplayer(private val tuning: Tuning = Tuning.DEFAULT, private val area
             navStartMs = event.elapsedMs
         }
 
-        fun result(sorted: List<TripEvent>): ReplayResult {
+        fun result(sorted: List<ScheduledTripEvent>): ReplayResult {
             val first = sorted.firstOrNull()?.elapsedMs ?: 0L
             val last = sorted.lastOrNull()?.elapsedMs ?: 0L
             // Only compare while the car was on the planned route; off-route stretches are reroutes, not DR error.

@@ -11,6 +11,7 @@ import org.imunav.core.imu.eskf.InertialEstimate
 import org.imunav.core.imu.eskf.InertialShadow
 import org.imunav.core.record.ReplayStats
 import org.imunav.core.record.TripEvent
+import org.imunav.core.record.TripTimeline
 import org.imunav.core.route.TravelMode
 import java.util.TreeMap
 import java.util.TreeSet
@@ -75,7 +76,7 @@ class InertialComparison(private val tuning: Tuning = Tuning.DEFAULT, private va
         require(events.filterIsInstance<TripEvent.Mode>().none { it.mode == TravelMode.FOOT }) { "Inertial ESKF is currently a mounted-car experiment, not a walking estimator." }
         require(hideGpsAfterS == null || (hideGpsAfterS.isFinite() && hideGpsAfterS >= 0.0))
         val session = Session(hideGpsAfterS)
-        events.forEach(session::apply)
+        TripTimeline.schedule(events, legacyFileOrder = true).forEach { session.apply(it.event, it.elapsedMs) }
         val baselines = NativeComparison(tuning, area).replay(events, hideGpsAfterS)
         val paired = baselines.samples.mapNotNull { baseline ->
             val estimate = session.at(baseline.elapsedMs) ?: return@mapNotNull null
@@ -114,8 +115,8 @@ class InertialComparison(private val tuning: Tuning = Tuning.DEFAULT, private va
         private fun blind(timeMs: Long) = hideGpsAfterS?.let { after -> startMs?.let { timeMs - it >= after * 1000 } } == true
 
         /** Match live event order, including late GPS and per-sensor delivery skew. */
-        fun apply(event: TripEvent) {
-            nowMs = maxOf(nowMs, event.elapsedMs)
+        fun apply(event: TripEvent, arrivalMs: Long) {
+            nowMs = maxOf(nowMs, arrivalMs)
             when (event) {
                 is TripEvent.Start -> {
                     previousRejected += shadow.rejectedInputs
@@ -136,7 +137,7 @@ class InertialComparison(private val tuning: Tuning = Tuning.DEFAULT, private va
                 is TripEvent.Fix -> {
                     val fix = event.fix
                     if (clockOffset == null && fix.source == FixSource.GPS) clockOffset = fix.timeMs - fix.elapsedMs
-                    if (fix.source != FixSource.GPS || !blind(fix.elapsedMs)) hub.onFix(fix)
+                    if (fix.source != FixSource.GPS || !blind(nowMs)) hub.onFix(fix)
                 }
 
                 is TripEvent.Inertial -> if (startMs != null) shadow.onSensor(event.sample)

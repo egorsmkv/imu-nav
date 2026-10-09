@@ -13,6 +13,7 @@ class RecordingSession(
     private val worker: Executor,
     append: Boolean,
     private val onRecorded: (TripEvent) -> Unit = {},
+    private val arrivalClock: (() -> Long)? = null,
     private val onFailure: (Throwable) -> Unit,
 ) {
     private var recorder: TripRecorder? = null // Only accessed by the worker.
@@ -27,13 +28,17 @@ class RecordingSession(
     }
 
     /** Queue against this session, even when the main thread has already started another trip. */
-    fun record(event: TripEvent) = worker.execute {
-        runCatching {
-            recorder?.let {
-                it.record(event)
-                onRecorded(event)
-            }
-        }.onFailure(onFailure)
+    fun record(event: TripEvent) {
+        // Capture on the producer thread, before disk queue latency can change replay timing.
+        val arrivalMs = arrivalClock?.invoke() ?: event.arrivalElapsedMs
+        worker.execute {
+            runCatching {
+                recorder?.let {
+                    it.record(event, arrivalMs)
+                    onRecorded(event)
+                }
+            }.onFailure(onFailure)
+        }
     }
 
     /** Close after every queued event, then optionally discard this session's file. */
