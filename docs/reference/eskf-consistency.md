@@ -129,6 +129,10 @@ innovation whiteness and recorded sensor timing. Real-data NIS must use all elig
 innovations and inspect temporal dependence. Real-data NEES needs trustworthy independent ground
 truth; ordinary GPS is not automatically such a reference.
 
+[Observability experiments](eskf-observability.md) now compare fixed motion, turns and missing GPS
+using scaled sensitivity matrices and explicit ambiguity tests. They address identifiability,
+not statistical calibration of the full nonlinear filter.
+
 Reference: Zhaozhong Chen, Harel Biggie, Nisar Ahmed, Simon Julier and Christoffer Heckman,
 *Kalman Filter Auto-tuning through Enforcing Chi-Squared Normalized Error Distributions with
 Bayesian Optimization*, [arXiv:2306.07225v1, 12 June 2023](https://arxiv.org/html/2306.07225v1),
