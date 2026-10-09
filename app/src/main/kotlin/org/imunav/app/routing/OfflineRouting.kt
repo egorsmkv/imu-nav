@@ -413,20 +413,21 @@ class SmartRouter(
 ) : Router {
     override suspend fun route(from: GeoPoint, to: GeoPoint, via: List<GeoPoint>, mode: TravelMode): Route {
         val points = listOf(from) + via + to
-        // Walking routes come only from the offline pack (the public OSRM server offers driving only).
-        if (mode == TravelMode.FOOT && !(offline.covers(points) && offline.supports(mode))) throw IOException(noWalkingMessage())
-        val allowOnline = offline.status.value.allowOnline && mode == TravelMode.CAR
-        if (offline.covers(points)) {
+        val plan = routingPlan(mode, offline.covers(points), offline.supports(mode), offline.status.value.allowOnline)
+        when (plan) {
+            RoutingPlan.WALKING_UNAVAILABLE -> throw IOException(noWalkingMessage())
+            RoutingPlan.OFFLINE_UNAVAILABLE -> throw IOException(noOfflineMessage())
+            else -> Unit
+        }
+        if (plan == RoutingPlan.OFFLINE_ONLY || plan == RoutingPlan.OFFLINE_WITH_FALLBACK) {
             try {
                 return offline.route(points, mode).also { log("route_via offline len=${it.length.toInt()} mode=$mode") }
             } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
                 if (e is CancellationException) throw e
                 // GraphHopper throws plain RuntimeExceptions (no path, point not found, …).
                 log("offline_route_failed ${e.message}")
-                if (!allowOnline) throw e
+                if (plan != RoutingPlan.OFFLINE_WITH_FALLBACK) throw e
             }
-        } else if (!allowOnline) {
-            throw IOException(noOfflineMessage())
         }
         return online.route(from, to, via, mode).also { log("route_via osrm len=${it.length.toInt()}") }
     }

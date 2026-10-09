@@ -133,6 +133,14 @@ platform JSON parser. Use `assemblePlayBenchmark` on a device with an Android Au
 main-thread reports, visibility transitions, frame timing and JVM allocations. Native heap profiles
 measure Rust allocations separately; they do not measure ART object allocation.
 
+## Pure Kotlin policy checks
+
+`RoutingPlanTest` covers offline/online routing policy across travel mode, coverage, profile
+availability and online opt-in. `PreferenceChangesTest` covers synchronized-setting selection,
+stable application order (travel mode last), and detached values. These policies do not perform
+I/O; `SmartRouter` still owns requests, logging and cancellation, and `PortableSettings` owns
+JSON parsing and runtime setters. Run them with `./gradlew :app:testFdroidDebugUnitTest`.
+
 ## Bookmark storage tests
 
 Bookmark database instrumentation tests (requires an Android SDK/NDK and an emulator/device):
