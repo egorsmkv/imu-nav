@@ -96,3 +96,16 @@ Legacy recordings cannot recover delays that were never recorded. Replay still u
 500 ms tick convention; this change reproduces input delivery order, not exact Android callback
 or navigation-tick scheduling. Arrival metadata records an elapsed clock, not an independent
 wall-clock history.
+
+## Failure-safe repair
+
+Before appending, repair writes recovered events to a uniquely named sibling temporary file and
+closes its gzip stream successfully before attempting an atomic replacement. The original is
+never explicitly deleted to make a rename work. Write, close and replacement errors propagate;
+RecordingSession reports the failure and does not open that recording for append. If the
+filesystem cannot perform atomic replacement, repair fails rather than falling back to
+delete-and-rename. Temporary-file cleanup failures are attached to the original error.
+
+This protects the original from the repair operation's failed writes or replacement attempts.
+It does not promise durability through power loss (no file/directory fsync protocol is added),
+and it does not coordinate multiple independent writers to the same recording.
