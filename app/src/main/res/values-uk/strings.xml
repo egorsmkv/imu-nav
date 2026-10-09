@@ -735,4 +735,12 @@
         <item quantity="other">Термін зберігання — до %d дня.</item>
     </plurals>
     <string name="power_low_battery_hint" formatted="false">Енергозбереження вмикається автоматично за заряду 20% або менше без підключення до живлення. Обраний режим повертається після підключення до живлення або за заряду 25%.</string>
+    <string name="data_usage_title">Використання даних</string>
+    <string name="data_usage_summary">Отримано та надіслано IMU Nav</string>
+    <string name="data_usage_period">Від останнього перезавантаження пристрою через усі мережеві інтерфейси, зокрема Wi-Fi і мобільну мережу. Це загальні дані застосунку, а не місячний обсяг чи лише мобільний трафік.</string>
+    <string name="data_usage_received">Отримано</string>
+    <string name="data_usage_sent">Надіслано</string>
+    <string name="data_usage_refresh">Оновити</string>
+    <string name="data_usage_loading">Завантаження…</string>
+    <string name="data_usage_unavailable">Недоступно</string>
 </resources>

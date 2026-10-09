@@ -721,4 +721,12 @@
         <item quantity="other">Kept for up to %d days.</item>
     </plurals>
     <string name="power_low_battery_hint" formatted="false">Battery saver turns on automatically at 20% or less when unplugged. Your chosen mode returns when you plug in or the battery reaches 25%.</string>
+    <string name="data_usage_title">Data usage</string>
+    <string name="data_usage_summary">Received and sent by IMU Nav</string>
+    <string name="data_usage_period">Since the device last restarted, across all network interfaces including Wi-Fi and mobile data. These are app totals, not a monthly or mobile-only allowance.</string>
+    <string name="data_usage_received">Received</string>
+    <string name="data_usage_sent">Sent</string>
+    <string name="data_usage_refresh">Refresh</string>
+    <string name="data_usage_loading">Loading…</string>
+    <string name="data_usage_unavailable">Unavailable</string>
 </resources>

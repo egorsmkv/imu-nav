@@ -16,6 +16,21 @@ You can also change the language in **Settings → General → Language**. Tap t
 
 To return to the checklist, open **Settings → Set up IMU Nav**. Skipping a pack does not erase tower data already on the phone.
 
+## Check data usage
+
+Open **Settings → Data usage** to see bytes received and sent by IMU Nav across
+all network interfaces (including Wi-Fi and mobile data). These Android counters
+cover the period **since the device last restarted**, including traffic before
+the app was reopened; they are not monthly totals or a mobile-only allowance.
+Rebooting resets the counters. Values refresh when the section is expanded or
+the app returns to the foreground; tap **Refresh** for a new snapshot during a
+download. There is no background polling or additional permission request.
+
+The counters include network-layer traffic, not just downloaded file sizes, so
+they can differ from a carrier bill. **Unavailable** means Android could not
+provide that direction's counter; it does not mean zero usage. Statistics remain
+on the device and are not uploaded.
+
 ## Set a network proxy, if needed
 
 1. Open **Settings → Network proxy**.

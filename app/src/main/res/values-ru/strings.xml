@@ -735,4 +735,12 @@
         <item quantity="other">Срок хранения — до %d дня.</item>
     </plurals>
     <string name="power_low_battery_hint" formatted="false">Энергосбережение включается автоматически при заряде 20% или ниже без подключения к питанию. Выбранный режим возвращается после подключения к питанию или при заряде 25%.</string>
+    <string name="data_usage_title">Использование данных</string>
+    <string name="data_usage_summary">Получено и отправлено IMU Nav</string>
+    <string name="data_usage_period">С последней перезагрузки устройства через все сетевые интерфейсы, включая Wi-Fi и мобильную сеть. Это общие данные приложения, а не месячный объём или только мобильный трафик.</string>
+    <string name="data_usage_received">Получено</string>
+    <string name="data_usage_sent">Отправлено</string>
+    <string name="data_usage_refresh">Обновить</string>
+    <string name="data_usage_loading">Загрузка…</string>
+    <string name="data_usage_unavailable">Недоступно</string>
 </resources>
