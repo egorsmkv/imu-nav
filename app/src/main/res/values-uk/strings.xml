@@ -743,4 +743,8 @@
     <string name="data_usage_refresh">Оновити</string>
     <string name="data_usage_loading">Завантаження…</string>
     <string name="data_usage_unavailable">Недоступно</string>
+    <string name="data_usage_total">Усього використано</string>
+    <string name="data_usage_since_restart">Від перезавантаження · Wi-Fi і мобільна мережа</string>
+    <string name="data_usage_empty">Від перезавантаження пристрою трафіку ще не було.</string>
+    <string name="data_usage_split">Отримано %1$s · Надіслано %2$s</string>
 </resources>

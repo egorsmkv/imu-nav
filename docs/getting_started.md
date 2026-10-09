@@ -18,8 +18,13 @@ To return to the checklist, open **Settings → Set up IMU Nav**. Skipping a pac
 
 ## Check data usage
 
-Open **Settings → Data usage** to see bytes received and sent by IMU Nav across
-all network interfaces (including Wi-Fi and mobile data). These Android counters
+Open **Settings → Data usage** for a prominent total and separate download/upload
+cards with automatically selected B, KB, MB or GB units and localized number formatting.
+A two-colour bar and percentage labels show the received/sent split, with a
+separate message when there is no traffic. Cards wrap on narrow screens or at
+large font sizes. A total and split are shown only when both counters are available.
+
+The figures cover all network interfaces (including Wi-Fi and mobile data). These Android counters
 cover the period **since the device last restarted**, including traffic before
 the app was reopened; they are not monthly totals or a mobile-only allowance.
 Rebooting resets the counters. Values refresh when the section is expanded or

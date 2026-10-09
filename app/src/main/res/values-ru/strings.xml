@@ -743,4 +743,8 @@
     <string name="data_usage_refresh">Обновить</string>
     <string name="data_usage_loading">Загрузка…</string>
     <string name="data_usage_unavailable">Недоступно</string>
+    <string name="data_usage_total">Всего использовано</string>
+    <string name="data_usage_since_restart">С перезагрузки · Wi-Fi и мобильная сеть</string>
+    <string name="data_usage_empty">С перезагрузки устройства трафика ещё не было.</string>
+    <string name="data_usage_split">Получено %1$s · Отправлено %2$s</string>
 </resources>
