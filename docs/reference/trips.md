@@ -162,6 +162,10 @@
   (283c), (286) and (288). The implementation holds gravity fixed, so its error state has 15 dimensions
   rather than the reference's 18. These tests do not establish observability or real-drive accuracy.
 
+  [Synthetic consistency checks](eskf-consistency.md) add fixed-seed Monte Carlo checks of vertical
+  position/velocity NEES, pre-gate velocity NIS, coverage and deliberately mismatched noise models.
+  Their analytical truth model and statistical assumptions are documented separately.
+
   For a new raw-sensor recording, run:
 
   ```bash
