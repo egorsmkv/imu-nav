@@ -165,3 +165,17 @@ If the local offset exceeds the configured threshold, the existing global fallba
 a position outside the window, but only if its offset is strictly smaller. This also applies
 when a route has just one segment. Equal-distance candidates retain the existing scan-order
 tie behavior; this change does not resolve all ambiguity at loops or parallel roads.
+
+## Monotonic timing at the navigation boundary
+
+OBD speed and barometer updates accept only nonnegative elapsed times strictly newer than the
+last accepted sample of that stream. Duplicate or delayed samples are ignored; invalid values
+do not advance the timestamp. Resetting the elevation matcher also resets its sample clock.
+These clocks use elapsed milliseconds, not wall-clock timestamps.
+
+Navigation ticks before the trip start or at/before the previous accepted tick do nothing.
+They cannot rewind the integration clock and enlarge the following time step. The existing
+five-second integration cap after long pauses remains in place. OBD freshness also remains
+unchanged: sample age must be between zero and 2500 ms inclusive; future and expired readings
+are not used at that tick. This does not introduce a new age limit for barometric history or
+change GPS trust classification, IMU timing, or ESKF equations.

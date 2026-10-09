@@ -254,7 +254,7 @@ class NavigationEngine(
      * dead reckoning: it is exact to a few percent and does not care about jamming.
      */
     fun onVehicleSpeed(kmh: Double, elapsedMs: Long) {
-        if (kmh !in 0.0..MAX_VEHICLE_KMH) return
+        if (kmh !in 0.0..MAX_VEHICLE_KMH || elapsedMs < 0 || elapsedMs <= vehicleSpeedAtMs) return
         vehicleSpeedMps = kmh / 3.6
         vehicleSpeedAtMs = elapsedMs
     }
@@ -342,6 +342,8 @@ class NavigationEngine(
     /** One engine step (every [TICK_MS]): read positioning, move the marker, publish [state]. */
     fun tick(nowMs: Long, pos: PositioningSnapshot) {
         val car = cursor ?: return
+        // A repeated or delayed callback must not rewind the integration clock or publish twice.
+        if (nowMs < navStartMs || nowMs <= lastTickMs) return
         val dt = if (lastTickMs < 0) 0.0 else ((nowMs - lastTickMs) / 1000.0).coerceIn(0.0, 5.0)
         lastTickMs = nowMs
         recovery.update(pos.jammed, pos.gpsState == GpsState.LOST || simulateGpsLoss, nowMs)
