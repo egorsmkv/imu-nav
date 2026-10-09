@@ -117,9 +117,9 @@ class TerrainAndVehicleSpeedTest {
         for (i in 0..200) {
             matcher.onPressure(1000.0, i * 1000L)
             odo += 10.0
-            matcher.onTravel(odo)
+            matcher.onTravel(odo, i * 1000L)
         }
-        assertNull(matcher.match(flat, 1500.0, 500.0))
+        assertNull(matcher.match(flat, 1500.0, 500.0, nowMs = 200_000))
     }
 
     @Test
@@ -134,10 +134,10 @@ class TerrainAndVehicleSpeedTest {
                 val otherHeight = 140.0 + 12.0 * sin(2 * PI * odo / 450.0 + phase) + 5.0 * sin(2 * PI * odo / 170.0 + 2 * phase)
                 matcher.onPressure(1013.25 * (1.0 - otherHeight / 44_330.0).pow(5.255), i * 1000L)
                 matcher.onPressure(1013.25 * (1.0 - otherHeight / 44_330.0).pow(5.255), i * 1000L + 999)
-                matcher.onTravel(odo)
+                matcher.onTravel(odo, i * 1000L + 999)
                 odo += 10.0
             }
-            if (matcher.match(route, 3000.0, 1000.0) != null) falseMatches++
+            if (matcher.match(route, 3000.0, 1000.0, nowMs = 150_999) != null) falseMatches++
         }
         assertEquals(0, falseMatches, "confident matches on unrelated terrain")
     }

@@ -374,7 +374,7 @@ class NavigationEngine(
             }
         }
         odometerM += currentSpeed * dt
-        elevation.onTravel(odometerM)
+        elevation.onTravel(odometerM, nowMs)
         if (!source.isGps && source != PositionSource.CELL && source != PositionSource.NONE) terrainMatch(car, nowMs)
         deviationTick(nowMs)
         publish(car, pos, nowMs)
@@ -403,7 +403,7 @@ class NavigationEngine(
             }
         }
         odometerM += currentSpeed * dt
-        elevation.onTravel(odometerM)
+        elevation.onTravel(odometerM, nowMs)
         deviationTick(nowMs)
         publish(car, pos, nowMs, estimate.safetyRadiusM)
     }
@@ -795,7 +795,7 @@ class NavigationEngine(
         lastTerrainTryMs = nowMs
         val search = (state.uncertaintyM * 1.5).coerceIn(TERRAIN_MIN_SEARCH_M, TERRAIN_MAX_SEARCH_M)
         val scales = if (vehicleSpeedInUse) ElevationMatcher.VEHICLE_SPEED_SCALES else ElevationMatcher.DEFAULT_SCALES
-        val match = elevation.match(car.route, car.s, search, scales) ?: return
+        val match = elevation.match(car.route, car.s, search, nowMs, scales) ?: return
         var target = match.s
         lastConfirmedTurnS(car)?.let { target = max(target, it) }
         turnProgress.nextHoldableTurn(car, settings())?.let { (_, turnS, _) -> if (turnS > car.s) target = min(target, max(turnS - 5.0, car.s)) }

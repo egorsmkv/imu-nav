@@ -177,5 +177,22 @@ Navigation ticks before the trip start or at/before the previous accepted tick d
 They cannot rewind the integration clock and enlarge the following time step. The existing
 five-second integration cap after long pauses remains in place. OBD freshness also remains
 unchanged: sample age must be between zero and 2500 ms inclusive; future and expired readings
-are not used at that tick. This does not introduce a new age limit for barometric history or
-change GPS trust classification, IMU timing, or ESKF equations.
+are not used at that tick. GPS trust classification, IMU timing and ESKF equations are unaffected by these tick guards.
+
+## Barometer gaps and terrain history
+
+Terrain history and matching require a pressure reading whose age is in `0..2000` ms inclusive.
+The two-second limit is a conservative continuity policy (ten periods of the app's requested
+5 Hz barometer), not a threshold calibrated from real trips. Future-dated pressure cannot be
+used for the current travel tick or match. Both APIs require the caller's elapsed time.
+
+An expired reading clears the terrain trace and smoothed height. A gap exceeding two seconds
+between accepted pressure samples does the same, even if no navigation ticks ran during the
+pause. The next accepted reading initializes smoothing directly and starts a new trace; old
+and new distances cannot bridge the missing interval. The last pressure timestamp is retained
+on expiry so duplicate or older samples cannot revive it. Explicit reset clears that timestamp.
+
+After recovery, terrain matching must again accumulate its existing minimum sample count and
+400 m distance window and pass the unchanged relief, RMS and rival-match gates. This favors
+abstaining from terrain corrections during intermittent sensor delivery. Device testing is
+still needed to assess how often the continuity policy disables matching in practice.

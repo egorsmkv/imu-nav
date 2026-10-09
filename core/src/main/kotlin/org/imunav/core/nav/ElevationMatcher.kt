@@ -29,7 +29,7 @@ class ElevationMatcher {
     private var smoothedHeight: Double? = null
     private var lastPressureMs = -1L
 
-    /** Latest smoothed barometric height (m, standard atmosphere), null before the first reading. */
+    /** Latest smoothed height (m, standard atmosphere), null before a reading or after detected expiry. */
     val heightM: Double? get() = smoothedHeight
 
     /** Forget everything (new route or navigation stopped). */
@@ -42,6 +42,7 @@ class ElevationMatcher {
     /** A barometer reading. Heights are low-pass filtered (~2 s) to remove sensor noise and door slams. */
     fun onPressure(hPa: Double, elapsedMs: Long) {
         if (hPa !in MIN_HPA..MAX_HPA || elapsedMs < 0 || elapsedMs <= lastPressureMs) return
+        if (lastPressureMs >= 0 && elapsedMs - lastPressureMs > PRESSURE_MAX_AGE_MS) clearTrace()
         val height = heightFromPressure(hPa)
         val previous = smoothedHeight
         val dtS = if (lastPressureMs < 0) 0.0 else ((elapsedMs - lastPressureMs) / 1000.0).coerceIn(0.0, 5.0)
@@ -49,13 +50,30 @@ class ElevationMatcher {
         smoothedHeight = if (previous == null) height else previous + (height - previous) * (dtS / (dtS + SMOOTHING_S))
     }
 
-    /** Called every engine tick with the odometer; stores a history point every [SAMPLE_EVERY_M] of travel. */
-    fun onTravel(odometerM: Double) {
+    /** Store a point every [SAMPLE_EVERY_M] of travel only while pressure is fresh at elapsed [nowMs]. */
+    fun onTravel(odometerM: Double, nowMs: Long) {
+        if (!pressureFresh(nowMs)) return
         val height = smoothedHeight ?: return
         val last = history.lastOrNull()
         if (last != null && odometerM - last.odometerM < SAMPLE_EVERY_M) return
         history.addLast(Sample(odometerM, height))
         while (history.size > 2 && odometerM - history.first().odometerM > WINDOW_M) history.removeFirst()
+    }
+
+    /** Reject future readings; discard expired traces even when no travel ticks occurred. */
+    private fun pressureFresh(nowMs: Long): Boolean {
+        if (lastPressureMs < 0 || nowMs < lastPressureMs) return false
+        if (nowMs - lastPressureMs > PRESSURE_MAX_AGE_MS) {
+            clearTrace()
+            return false
+        }
+        return smoothedHeight != null
+    }
+
+    /** Keep the last timestamp so a delayed sample cannot revive an expired trace. */
+    private fun clearTrace() {
+        history.clear()
+        smoothedHeight = null
     }
 
     /** Distance covered by the history so far, metres. */
@@ -64,9 +82,10 @@ class ElevationMatcher {
     /**
      * Where does the height trace fit on [route]? Searches the car's current position within
      * [currentS] ± [searchM]. [scales] are odometer scale factors to try (1.0 = odometer is exact).
-     * Returns null when the answer is not trustworthy.
+     * Returns null when the answer is not trustworthy or pressure is stale at elapsed [nowMs].
      */
-    fun match(route: Route, currentS: Double, searchM: Double, scales: List<Double> = DEFAULT_SCALES): ElevationMatch? {
+    fun match(route: Route, currentS: Double, searchM: Double, nowMs: Long, scales: List<Double> = DEFAULT_SCALES): ElevationMatch? {
+        if (!pressureFresh(nowMs)) return null
         if (!route.hasElevation || history.size < MIN_SAMPLES || windowM < MIN_WINDOW_M) return null
         val newest = history.last().odometerM
         // Distance of every sample behind the newest one, and the measured heights around their mean.
@@ -128,6 +147,9 @@ class ElevationMatcher {
         private const val MIN_HPA = 300.0
         private const val MAX_HPA = 1_100.0
         private const val SMOOTHING_S = 2.0
+
+        /** Ten periods of the app's 5 Hz barometer; a conservative gap policy, not a calibrated noise limit. */
+        const val PRESSURE_MAX_AGE_MS = 2000L
 
         /** History resolution and length. */
         private const val SAMPLE_EVERY_M = 10.0
