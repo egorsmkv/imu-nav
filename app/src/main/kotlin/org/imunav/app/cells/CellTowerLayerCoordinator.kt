@@ -40,6 +40,9 @@ internal class CellTowerLayerCoordinator(
         if (on && viewport != null) {
             onViewport(viewport[0], viewport[1], viewport[2], viewport[3], viewport[4])
         } else if (!on) {
+            // Cancel before clearing: a suspended database query must not republish hidden towers.
+            job?.cancel()
+            job = null
             _layer.value = TowerLayer()
         }
     }

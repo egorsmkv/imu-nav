@@ -77,9 +77,11 @@ class ElevationMatcher {
         val low = (currentS - searchM).coerceAtLeast(0.0)
         val high = (currentS + searchM).coerceAtMost(route.length)
         val candidates = ArrayList<Candidate>()
+        // Each fit consumes the profile immediately; keep scratch storage local to this match.
+        val trace = Trace(behind, measured)
         var candidateS = low
         while (candidateS <= high) {
-            for (scale in scales) fit(route, candidateS, scale, behind, measured)?.let { candidates += it }
+            for (scale in scales) fit(route, candidateS, scale, trace)?.let { candidates += it }
             candidateS += STEP_M
         }
         val best = candidates.minByOrNull { it.rmsM } ?: return null
@@ -94,11 +96,18 @@ class ElevationMatcher {
 
     private class Candidate(val s: Double, val scale: Double, val rmsM: Double, val reliefM: Double)
 
+    /** Per-match inputs and reusable scratch space; never retained by a candidate. */
+    private class Trace(val behind: DoubleArray, val measured: DoubleArray) {
+        val profile = DoubleArray(behind.size)
+    }
+
     /** RMS misfit when the newest sample is at route position [newestS] and the odometer is scaled by [scale]. */
-    private fun fit(route: Route, newestS: Double, scale: Double, behind: DoubleArray, measured: DoubleArray): Candidate? {
+    private fun fit(route: Route, newestS: Double, scale: Double, trace: Trace): Candidate? {
+        val behind = trace.behind
+        val measured = trace.measured
+        val profile = trace.profile
         val oldestS = newestS - behind[0] * scale
         if (oldestS < 0.0) return null // the trace would start before the route does
-        val profile = DoubleArray(behind.size)
         for (i in behind.indices) profile[i] = route.elevationAt(newestS - behind[i] * scale) ?: return null
         val profileMean = profile.average()
         var squares = 0.0
