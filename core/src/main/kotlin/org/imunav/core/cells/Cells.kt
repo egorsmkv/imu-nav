@@ -66,24 +66,30 @@ class InMemoryCellTowerDb(towers: Collection<CellTower> = emptyList()) : CellTow
  *
  * Weights favour the serving cell, strong signals and small cells (small range ⇒ the phone must be
  * close). Towers farther than 25 km from the median are treated as database errors and dropped.
- * With LTE timing advance on the serving cell, its distance bounds the accuracy.
+ * Valid LTE timing advance can tighten the single-serving-cell accuracy heuristic.
  */
 object CellPositioner {
     private const val OUTLIER_M = 25_000.0
     private const val MIN_ACCURACY_M = 150.0
     private const val MAX_ACCURACY_M = 5_000.0
     private const val TA_METERS = 78.12
+    private const val MAX_LTE_TIMING_ADVANCE = 1282
 
     /** A seen cell whose tower position we know, with its flat x/y (metres) and its weight. */
     private class Located(val observation: CellObservation, val tower: CellTower, val x: Double, val y: Double, val weight: Double)
 
-    /** Position from the cells the modem sees now, or null if none of them is in [db]. */
+    /**
+     * Position from usable known cells, or null if none survive validation/outlier filtering.
+     * A cell identity counts once; callers with repeated identities must put the freshest copy first.
+     */
     fun locate(observations: List<CellObservation>, db: CellTowerDb): CellFix? {
         if (observations.isEmpty()) return null
-        val towersByKey = db.lookup(observations.map { it.key })
-        var known = observations.mapNotNull { obs -> towersByKey[obs.key]?.let { obs to it } }
+        val unique = observations.distinctBy { it.key }
+        val towersByKey = db.lookup(unique.map { it.key })
+        var known = unique.mapNotNull { obs -> towersByKey[obs.key]?.takeIf(::usableTower)?.let { obs to it } }
         if (known.isEmpty()) return null
         if (known.size >= 3) known = dropFarTowers(known)
+        if (known.isEmpty()) return null
 
         // Flat x/y metres around the first tower, so averaging positions is plain arithmetic.
         val flat = LocalProjection(GeoPoint(known[0].second.lat, known[0].second.lon))
@@ -108,21 +114,25 @@ object CellPositioner {
         )
     }
 
+    /** Malformed database geometry must not poison the median, centroid or reported accuracy. */
+    private fun usableTower(tower: CellTower): Boolean =
+        tower.lat in -90.0..90.0 && tower.lon in -180.0..180.0 &&
+            (tower.lat != 0.0 || tower.lon != 0.0) && tower.rangeM.isFinite()
+
     /**
      * Towers farther than [OUTLIER_M] from the median position are almost certainly wrong in the
-     * database (a moved or mis-entered cell); ignore them unless that would drop everything.
+     * database (a moved or mis-entered cell). If every tower fails, there is no supported fix.
      */
     private fun dropFarTowers(known: List<Pair<CellObservation, CellTower>>): List<Pair<CellObservation, CellTower>> {
         val medianLat = known.map { it.second.lat }.sorted()[known.size / 2]
         val medianLon = known.map { it.second.lon }.sorted()[known.size / 2]
         val kept = known.filter { (_, tower) -> Geo.distance(medianLat, medianLon, tower.lat, tower.lon) <= OUTLIER_M }
-        return kept.ifEmpty { known }
+        return kept
     }
 
     /**
-     * Rough accuracy radius: the typical coverage radius of the towers, improved by geometry (more
-     * towers spread around us ⇒ better). One LTE serving cell with timing advance cannot be
-     * farther than the distance the timing advance says.
+     * Heuristic accuracy radius, not a calibrated confidence bound. A valid LTE timing advance may
+     * tighten the single-serving-cell estimate; database centroids need not be physical mast locations.
      */
     private fun accuracy(located: List<Located>, centerX: Double, centerY: Double, weightSum: Double): Double {
         val meanRange = located.sumOf { it.weight * range(it.tower) } / weightSum
@@ -134,7 +144,9 @@ object CellPositioner {
             } / weightSum,
         )
         var accuracy = if (located.size == 1) meanRange else max(spread, meanRange / sqrt(located.size.toDouble()))
-        val timingAdvance = located.firstOrNull { it.observation.serving && it.observation.timingAdvance != null }?.observation?.timingAdvance
+        val single = located.singleOrNull()?.observation
+        val timingAdvance = single?.takeIf { it.serving && it.key.radio == Radio.LTE }
+            ?.timingAdvance?.takeIf { it in 0..MAX_LTE_TIMING_ADVANCE }
         if (timingAdvance != null && located.size == 1) accuracy = min(accuracy, (timingAdvance + 1) * TA_METERS)
         return accuracy.coerceIn(MIN_ACCURACY_M, MAX_ACCURACY_M)
     }
