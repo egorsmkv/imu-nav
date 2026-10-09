@@ -72,5 +72,27 @@ a checksum failure does not establish that recovered data is authentic.
 Unknown event types, malformed numeric fields, non-finite numbers (including Float overflow),
 partial IMU vectors and unpaired waypoint coordinates are skipped. Empty optional measurements
 remain supported. This is format validation, not a replacement for the positioning trust
-classifier. Replay sorts events by elapsed time and preserves file order for equal timestamps,
-so `Start`, `Mode` and `RouteSet` retain their recorded sequence.
+classifier. Legacy recordings without arrival metadata are sorted by measurement elapsed time, preserving
+file order for ties. New recordings follow arrival order as described below.
+
+## Arrival-aware replay
+
+New Android recordings place `# arrival_ms=<elapsedRealtime milliseconds>` immediately before
+each event. The clock is captured when the event enters the recording session, before the
+background I/O queue. Event payload timestamps remain measurement times; replay must not replace
+them, because freshness, duplicate rejection and sensor integration depend on those values.
+The metadata is a comment, so older readers can still parse the event lines, but cannot reproduce
+arrival timing. No format-version bump or new event type is required.
+
+Kotlin replay, native comparison and GPS track extraction use file order and arrival time when
+metadata is present. Inertial comparison also uses the arrival clock while preserving its legacy
+file-order behavior for old recordings. Equal arrival times retain file order. For mixed files
+(e.g. a legacy trip repaired and appended by a new app), missing arrival times fall back to
+measurement time; the schedule never moves backward. Repair preserves arrival metadata, and a
+malformed or unknown event consumes its preceding metadata rather than attaching it to the next
+event.
+
+Legacy recordings cannot recover delays that were never recorded. Replay still uses its existing
+500 ms tick convention; this change reproduces input delivery order, not exact Android callback
+or navigation-tick scheduling. Arrival metadata records an elapsed clock, not an independent
+wall-clock history.

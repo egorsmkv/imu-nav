@@ -36,6 +36,10 @@ private fun String.recordingFloat(): Float = toFloat().also { require(it.isFinit
 sealed class TripEvent {
     abstract val elapsedMs: Long
 
+    /** Recorder arrival clock, separate from sensor measurement time; absent in legacy files. */
+    var arrivalElapsedMs: Long? = null
+        internal set
+
     data class Fix(val fix: RawFix) : TripEvent() {
         override val elapsedMs get() = fix.elapsedMs
     }
@@ -101,6 +105,7 @@ sealed class TripEvent {
  */
 object TripFormat {
     const val VERSION = 1
+    internal const val ARRIVAL_PREFIX = "# arrival_ms="
 
     private fun n(v: Any?): String = when (v) {
         null -> ""
@@ -279,7 +284,19 @@ object TripFormat {
         // A cut number (e.g. X,123 -> X,12) can still parse: only newline-terminated events
         // are trustworthy after an I/O failure. Clean text input may omit its final newline.
         val complete = if (incomplete) text.substring(0, text.lastIndexOf('\n') + 1) else text
-        BufferedReader(complete.reader()).lineSequence().forEach { line -> decode(line)?.let { out += it } }
+        var arrivalMs: Long? = null
+        BufferedReader(complete.reader()).lineSequence().forEach { line ->
+            if (line.startsWith(ARRIVAL_PREFIX)) {
+                arrivalMs = line.removePrefix(ARRIVAL_PREFIX).toLongOrNull()?.takeIf { it >= 0 }
+            } else if (!line.startsWith("#") && line.isNotBlank()) {
+                decode(line)?.let { event ->
+                    event.arrivalElapsedMs = arrivalMs
+                    out += event
+                }
+                // A malformed/unknown event consumes its metadata, too.
+                arrivalMs = null
+            }
+        }
         return out
     }
 
@@ -312,9 +329,14 @@ class TripRecorder(out: OutputStream, private val flushEveryMs: Long = 2000) : C
         writer.write("# blind-driver trip v${TripFormat.VERSION}\n")
     }
 
+    fun record(e: TripEvent) = record(e, e.arrivalElapsedMs)
+
+    /** Writes arrival metadata and its event together, so concurrent producers cannot interleave them. */
     @Synchronized
-    fun record(e: TripEvent) {
+    fun record(e: TripEvent, arrivalMs: Long?) {
         if (closed) return
+        require(arrivalMs == null || arrivalMs >= 0)
+        arrivalMs?.let { writer.write("${TripFormat.ARRIVAL_PREFIX}$it\n") }
         writer.write(TripFormat.encode(e))
         writer.write("\n")
         val now = System.currentTimeMillis()

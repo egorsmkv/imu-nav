@@ -11,6 +11,7 @@ import org.imunav.core.nav.NavListener
 import org.imunav.core.nav.NavigationEngine
 import org.imunav.core.record.ReplayStats
 import org.imunav.core.record.TripEvent
+import org.imunav.core.record.TripTimeline
 import org.imunav.core.route.TravelMode
 import java.io.Closeable
 import java.util.Locale
@@ -94,14 +95,14 @@ class NativeComparison(
     fun replay(events: List<TripEvent>, hideGpsAfterS: Double? = null, onEvent: (Long) -> Unit = {}): ComparisonResult {
         require(hideGpsAfterS == null || (hideGpsAfterS.isFinite() && hideGpsAfterS >= 0.0))
         return Session(hideGpsAfterS).use { session ->
-            val sorted = events.sortedBy { it.elapsedMs }
+            val sorted = TripTimeline.schedule(events)
             var nextTick = sorted.firstOrNull()?.elapsedMs ?: 0L
             for ((index, event) in sorted.withIndex()) {
                 while (nextTick < event.elapsedMs) {
                     session.tick(nextTick)
                     nextTick += NavigationEngine.TICK_MS
                 }
-                session.apply(event)
+                session.apply(event.event, event.elapsedMs)
                 onEvent(event.elapsedMs)
                 if (sorted.getOrNull(index + 1)?.elapsedMs != event.elapsedMs) {
                     // Score after all inputs with this timestamp, so neither estimator sees future data.
@@ -131,8 +132,8 @@ class NativeComparison(
         fun hasReferenceAt(timeMs: Long): Boolean = reference.lastGood?.elapsedMs == timeMs
 
         /** Feeds both navigation paths the same available inputs while retaining a separate reference. */
-        fun apply(event: TripEvent) {
-            nowMs = event.elapsedMs
+        fun apply(event: TripEvent, arrivalMs: Long) {
+            nowMs = arrivalMs
             when (event) {
                 is TripEvent.Start -> {
                     close()
@@ -161,7 +162,7 @@ class NativeComparison(
                     val fix = event.fix
                     if (fix.source == FixSource.GPS && clockOffsetMs == null) clockOffsetMs = fix.timeMs - fix.elapsedMs
                     reference.onFix(fix)
-                    if (fix.source != FixSource.GPS || !blind(event.elapsedMs)) hub.onFix(fix)
+                    if (fix.source != FixSource.GPS || !blind(nowMs)) hub.onFix(fix)
                 }
 
                 is TripEvent.Imu -> {

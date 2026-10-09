@@ -5,6 +5,7 @@ import org.imunav.core.geo.LocalProjection
 import org.imunav.core.gnss.FixSource
 import org.imunav.core.gnss.RawFix
 import org.imunav.core.record.TripEvent
+import org.imunav.core.record.TripFormat
 import org.imunav.core.record.TripRecorder
 import org.imunav.core.route.Route
 import org.imunav.core.route.Step
@@ -17,6 +18,16 @@ import kotlin.test.assertTrue
 
 /** Synthetic inputs have known motion; they demonstrate regressions, not real-drive accuracy. */
 class NativeComparisonTest {
+    @Test
+    fun comparisonUsesArrivalClockForDelayedInputs() {
+        val events = TripFormat.read(
+            "# arrival_ms=2000\nP,2000\n# arrival_ms=2100\nP,1000\n# arrival_ms=2200\nX,2200\n".byteInputStream(),
+        )
+        val observed = mutableListOf<Long>()
+        NativeComparison().replay(events, onEvent = { observed += it })
+        assertEquals(listOf(2000L, 2100L, 2200L), observed)
+    }
+
     @Test
     fun straightDriveReportsPairedErrorsAtGpsTimestamps() {
         val result = NativeComparison().replay(drive(obdScale = 1.0), hideGpsAfterS = 120.0)

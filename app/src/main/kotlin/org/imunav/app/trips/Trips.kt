@@ -18,6 +18,7 @@ import org.imunav.core.record.RecordingSession
 import org.imunav.core.record.RouteCodec
 import org.imunav.core.record.TripEvent
 import org.imunav.core.record.TripFormat
+import org.imunav.core.record.TripTimeline
 import org.imunav.core.route.Route
 import org.imunav.core.route.TravelMode
 import org.json.JSONArray
@@ -357,6 +358,7 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
                 onDiagnosticEvent?.invoke(event)
                 onProfileEvent?.invoke(event)
             },
+            arrivalClock = SystemClock::elapsedRealtime,
             onFailure = { log("trip_record_failed ${it.message}") },
         )
         recorder = next
@@ -423,8 +425,9 @@ fun extractTracks(file: File, area: ServiceArea): TripTracks {
     val hub = PositioningHub(area = area, wallClock = { now + offset })
     val gps = ArrayList<GeoPoint>()
     val engine = ArrayList<GeoPoint>()
-    for (e in events.sortedBy { it.elapsedMs }) {
-        now = e.elapsedMs
+    for (entry in TripTimeline.schedule(events)) {
+        val e = entry.event
+        now = entry.elapsedMs
         when (e) {
             is TripEvent.Fix -> {
                 if (offset == 0L && e.fix.source == FixSource.GPS) offset = e.fix.timeMs - e.fix.elapsedMs
