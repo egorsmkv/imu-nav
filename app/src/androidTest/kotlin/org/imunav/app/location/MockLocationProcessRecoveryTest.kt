@@ -61,10 +61,12 @@ class MockLocationProcessRecoveryTest {
         assertTrue("Device opt-in survives process death", restored.getBoolean("enabled"))
         assertFalse("Startup must release durable provider ownership", restored.getBoolean("installed"))
         device.assertOriginalProvider()
-        MockGpsObserver(device).use { observer ->
-            worker.command(MockLocationTestService.PUBLISH)
-            worker.awaitStatus(MockLocationStatus.ACTIVE)
-            observer.next(GeoPoint(48.125, 28.25))
+        device.withForeground {
+            MockGpsObserver(device).use { observer ->
+                worker.command(MockLocationTestService.PUBLISH)
+                worker.awaitStatus(MockLocationStatus.ACTIVE)
+                observer.next(GeoPoint(48.125, 28.25))
+            }
         }
         worker.command(MockLocationTestService.STOP)
         worker.awaitStatus(MockLocationStatus.WAITING)

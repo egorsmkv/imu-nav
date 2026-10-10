@@ -21,7 +21,9 @@ provider and worker through the emulator's real `LocationManager`, AppOps and Bi
 
 - First publication with GPS explicitly disabled, then a second distinct fix. An actual GPS
   listener checks coordinates, uncertainty, speed, bearing, mock flag and monotonic sample time.
-  No republishing retries conceal a dropped first sample.
+  Single-fix consumers run in a resumed activity with verified while-in-use fine location access;
+  instrumentation alone does not grant that access on newer Android versions. No republishing
+  retries conceal a dropped first sample.
 - Denied mock AppOps, granted access, settings refresh, revocation during an active session,
   failed cleanup and successful cleanup after access is granted again.
 - Disable/re-enable, repeated removal, platform removal before startup cleanup, invalid/idle
@@ -40,9 +42,10 @@ provider and worker through the emulator's real `LocationManager`, AppOps and Bi
   The two stages are deliberately excluded from the ordinary package suite.
 
 All coordinates and routes are synthetic. Fixtures use separate preference files except the
-`NavService` test, which exercises AppGraph's worker on the disposable emulator. Fixture activity
-and service are unexported and exist only in Debug APKs. Each test restores the mock AppOp and
-global location switch, removes its listener/provider, and stops service/worker resources.
+`NavService` and whole-app tests, which exercise AppGraph's worker on the disposable emulator.
+Fixture activity and service are unexported and exist only in Debug APKs. Ordinary tests and the
+paired recovery verification restore the mock AppOp and global location switch, remove their
+listeners/providers, and stop service/worker resources. The host also cleans up failed runs.
 
 Android's platform service can return silently when mock AppOps is denied, including in Android
 9 and 12. The adapter checks authorization before platform mutations and again before

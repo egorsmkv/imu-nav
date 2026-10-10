@@ -43,7 +43,7 @@ class AndroidMockLocationProviderTest {
     }
 
     @Test
-    fun firstFixEnablesGpsAndPreservesCoordinatesMetadataAndSamplingTime() {
+    fun firstFixEnablesGpsAndPreservesCoordinatesMetadataAndSamplingTime() = device.withForeground {
         val sample = sample()
         provider.install()
         assertTrue(installed())

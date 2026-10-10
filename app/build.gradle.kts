@@ -321,6 +321,9 @@ androidComponents.onVariants(androidComponents.selector().withName("fdroidDebug"
         fun productionClasses(classes: FileTree): FileTree = classes.matching {
             include("org/imunav/**/*.class")
             exclude("**/BuildConfig.class", "**/R.class", "**/R$*.class")
+            // Emulator-only Debug fixtures share this variant, but are absent from production APKs.
+            // Keep main-source inventory validation intact; never count fixture lines as app coverage.
+            exclude("org/imunav/app/location/MockLocationTest*.class")
         }
         classDirectories.from(classFolders.map { folders -> folders.map { productionClasses(fileTree(it.asFile)) } })
         classDirectories.from(classJars.map { jars -> jars.map { productionClasses(zipTree(it.asFile)) } })

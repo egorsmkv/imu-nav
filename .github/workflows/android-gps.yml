@@ -44,7 +44,7 @@ jobs:
         if: steps.changes.outputs.run == 'true'
         with:
           toolchain: 1.99.0-beta
-          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+          targets: x86_64-linux-android
       - uses: actions/cache@v4
         if: steps.changes.outputs.run == 'true'
         with:
@@ -62,7 +62,13 @@ jobs:
         run: |
           ./gradlew --no-daemon spotlessApply
           git diff --exit-code
-          ./gradlew --no-daemon detekt :app:assembleFdroidDebug :app:assembleFdroidDebugAndroidTest :app:lintFdroidDebug
+          CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android26-clang" \
+            CARGO_TARGET_DIR="$PWD/native/target/android" \
+            cargo build --locked --manifest-path native/Cargo.toml --package imu-nav-jni --release --target x86_64-linux-android
+          mkdir -p app/build/generated/rustJniLibs/x86_64
+          install -m 0644 native/target/android/x86_64-linux-android/release/libimu_nav_jni.so app/build/generated/rustJniLibs/x86_64/
+          # Emulator APKs need only x86_64; the existing F-Droid workflow builds the ARM release ABIs.
+          ./gradlew --no-daemon -x :app:buildRustAndroid detekt :app:assembleFdroidDebug :app:assembleFdroidDebugAndroidTest :app:lintFdroidDebug
       - uses: actions/upload-artifact@v4
         if: steps.changes.outputs.run == 'true'
         with:

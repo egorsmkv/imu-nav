@@ -2,9 +2,11 @@
 import importlib.util
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 import unittest
 import xml.etree.ElementTree as ET
+from unittest.mock import patch
 
 
 SPEC = importlib.util.spec_from_file_location('mock_location_runner', Path(__file__).parents[1] / 'run_mock_location_tests.py')
@@ -61,6 +63,26 @@ class InstrumentationResultsTest(unittest.TestCase):
             suite = ET.parse(path).getroot()
             self.assertEqual(suite.get('failures'), '10')
             self.assertIn('process crashed', path.read_text())
+
+    def test_timeout_after_passing_normal_suite_never_passes_recovery(self):
+        classname = 'org.imunav.app.location.MockLocationAppRecoveryTest'
+        seed = f'INSTRUMENTATION_STATUS: class={classname}\nINSTRUMENTATION_STATUS: test=seed\nINSTRUMENTATION_STATUS_CODE: 0\nINSTRUMENTATION_CODE: -1\n'
+        for outputs in ([transcript(), subprocess.TimeoutExpired('adb', 300)],
+                        [transcript(), seed, subprocess.TimeoutExpired('adb', 300)]):
+            with self.subTest(stages=len(outputs)), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                app = root / 'apks/fdroid/debug/app.apk'
+                test = root / 'apks/androidTest/fdroid/debug/test.apk'
+                for apk in (app, test):
+                    apk.parent.mkdir(parents=True, exist_ok=True)
+                    apk.write_bytes(b'synthetic APK fixture')
+                argv = ['runner', '--apk-directory', str(root / 'apks'), '--output', str(root / 'reports')]
+                with patch.object(sys, 'argv', argv), patch.object(runner, 'adb', return_value='3'), \
+                        patch.object(runner, 'instrumentation', side_effect=outputs), patch('builtins.print'):
+                    with self.assertRaises(SystemExit) as raised:
+                        runner.main()
+                self.assertEqual(raised.exception.code, 1)
+                self.assertGreater(int(ET.parse(root / 'reports/results.xml').getroot().get('failures')), 0)
 
 
 if __name__ == '__main__':

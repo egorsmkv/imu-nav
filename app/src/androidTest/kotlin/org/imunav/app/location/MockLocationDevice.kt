@@ -11,6 +11,7 @@ import android.os.HandlerThread
 import android.os.ParcelFileDescriptor
 import android.os.Process
 import android.os.SystemClock
+import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
 import org.imunav.core.geo.GeoPoint
 import org.junit.Assert.assertEquals
@@ -73,6 +74,17 @@ internal class MockLocationDevice {
         .bufferedReader().use { it.readText().trim() }
 
     fun onMain(action: () -> Unit) = instrumentation.runOnMainSync(action)
+
+    /** Instrumentation alone does not make a while-in-use GPS subscriber eligible on Android 12+. */
+    @Suppress("DEPRECATION") // AppOps check is available on Android 9.
+    fun withForeground(action: () -> Unit) {
+        ActivityScenario.launch(MockLocationTestActivity::class.java).use {
+            await("visible subscriber's fine location access") {
+                appOps.noteOpNoThrow(AppOpsManager.OPSTR_FINE_LOCATION, Process.myUid(), context.packageName) == AppOpsManager.MODE_ALLOWED
+            }
+            action()
+        }
+    }
 
     fun await(description: String, predicate: () -> Boolean) {
         val deadline = SystemClock.elapsedRealtime() + TIMEOUT_MS

@@ -110,6 +110,7 @@ def main():
                 results += restored_results
                 valid = valid and restored_valid
     except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+        valid = False
         transcript += f'\nRunner error: {error}\n'
     finally:
         (args.output / 'instrumentation.txt').write_text(transcript)
