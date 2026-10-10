@@ -9,7 +9,7 @@ enum class NavigationEstimator {
     NATIVE_KALMAN,
 }
 
-/** A route-state estimate, including whether this tick accepted the supplied GPS position. */
+/** Published route state with nonnegative forward speed; backends retain signed velocity internally. */
 data class RouteEstimate(val positionM: Double, val speedMps: Double, val safetyRadiusM: Double, val gpsPositionAccepted: Boolean, val gpsSpeedAccepted: Boolean = false) {
     val valid: Boolean
         get() = positionM.isFinite() && speedMps.isFinite() && speedMps >= 0.0 && safetyRadiusM.isFinite() && safetyRadiusM >= 0.0

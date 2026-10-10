@@ -58,7 +58,14 @@ impl Covariance2 {
         // the verifier's general integer-power library model approximates powi instead.
         let cross_squared = self.position_speed * self.position_speed;
         if !diagonal_product.is_finite() || !cross_squared.is_finite() {
-            return false;
+            // Finite diagonal variances can have an unrepresentable product. Test the same
+            // determinant inequality after scaling, rather than rejecting a valid large PSD.
+            let scale = self.position.max(self.speed).max(self.position_speed.abs());
+            let product = (self.position / scale) * (self.speed / scale);
+            let cross = self.position_speed / scale;
+            let inverse_scale = 1.0 / scale;
+            return product - cross * cross
+                >= -SYMMETRY_TOLERANCE * (inverse_scale * inverse_scale + product);
         }
         let determinant = diagonal_product - cross_squared;
         determinant >= -SYMMETRY_TOLERANCE * (1.0 + diagonal_product)
@@ -170,9 +177,10 @@ impl RouteFilter {
         self.estimate
     }
 
-    /// Constant-velocity prediction with a piecewise-constant unknown acceleration.
+    /// Constant-velocity prediction driven by continuous white acceleration noise.
     ///
-    /// `acceleration_sigma_mps2` determines random process covariance. The separate
+    /// `acceleration_noise_mps_sqrt_s` is a noise density, in m/s/sqrt(s). Its square is
+    /// the velocity-variance growth per second, independent of callback partitioning. The separate
     /// `systematic_drift_per_m` grows a conservative allowance linearly with traveled distance,
     /// modeling lasting speed bias that ordinary white-noise covariance would underestimate.
     ///
@@ -183,13 +191,13 @@ impl RouteFilter {
     pub fn predict(
         &mut self,
         dt_s: f64,
-        acceleration_sigma_mps2: f64,
+        acceleration_noise_mps_sqrt_s: f64,
         systematic_drift_per_m: f64,
     ) -> Result<(), FilterError> {
         if !dt_s.is_finite() || !(0.0..=5.0).contains(&dt_s) {
             return Err(FilterError::InvalidTimeStep);
         }
-        validate_sigma(acceleration_sigma_mps2)?;
+        validate_sigma(acceleration_noise_mps_sqrt_s)?;
         if !systematic_drift_per_m.is_finite() || !(0.0..=1.0).contains(&systematic_drift_per_m) {
             return Err(FilterError::InvalidSigma);
         }
@@ -198,10 +206,10 @@ impl RouteFilter {
         let distance = old.speed_mps * dt_s;
         validate_finite(distance)?;
         let dt2 = dt_s * dt_s;
-        let acceleration_variance = finite_variance(acceleration_sigma_mps2)?;
-        let q00 = acceleration_variance * dt2 * dt2 / 4.0;
-        let q01 = acceleration_variance * dt2 * dt_s / 2.0;
-        let q11 = acceleration_variance * dt2;
+        let noise_intensity = finite_variance(acceleration_noise_mps_sqrt_s)?;
+        let q00 = noise_intensity * dt2 * dt_s / 3.0;
+        let q01 = noise_intensity * dt2 / 2.0;
+        let q11 = noise_intensity * dt_s;
         let p = old.covariance;
         let predicted_covariance = Covariance2 {
             position: p.position + dt_s * (2.0 * p.position_speed + dt_s * p.speed) + q00,
@@ -519,6 +527,9 @@ fn finite_variance(sigma: f64) -> Result<f64, FilterError> {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod numerical_regression_tests;
 
 #[cfg(kani)]
 mod kani_proofs;

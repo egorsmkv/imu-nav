@@ -36,13 +36,19 @@ object Geo {
 
     /** Bearing a -> b in degrees [0, 360), using a local flat-earth approximation (fine for road segments). */
     fun bearing(a: GeoPoint, b: GeoPoint): Double {
-        val dx = (b.lon - a.lon) * M_PER_DEG_LON_EQUATOR * cos(Math.toRadians((a.lat + b.lat) / 2))
+        val dx = longitudeDelta(a.lon, b.lon) * M_PER_DEG_LON_EQUATOR * cos(Math.toRadians((a.lat + b.lat) / 2))
         val dy = (b.lat - a.lat) * M_PER_DEG_LAT
         return normalize(Math.toDegrees(atan2(dx, dy)))
     }
 
     /** Any angle → the same direction in [0, 360). Example: -90 → 270, 370 → 10. */
     fun normalize(deg: Double): Double = ((deg % 360.0) + 360.0) % 360.0
+
+    /** Shortest signed longitude change; the fast path preserves ordinary-route rounding. */
+    fun longitudeDelta(from: Double, to: Double): Double = normalizeLongitude(to - from)
+
+    /** Canonical longitude, retaining either representation of the date line when already valid. */
+    fun normalizeLongitude(longitude: Double): Double = if (longitude in -180.0..180.0) longitude else ((longitude + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
 
     /**
      * The smallest rotation that turns heading [from] into heading [to], in (-180, 180].
@@ -68,10 +74,25 @@ object Geo {
 class LocalProjection(val origin: GeoPoint) {
     private val mPerDegLon = Geo.M_PER_DEG_LON_EQUATOR * cos(Math.toRadians(origin.lat))
 
-    fun x(p: GeoPoint): Double = (p.lon - origin.lon) * mPerDegLon
+    fun x(p: GeoPoint): Double = Geo.longitudeDelta(origin.lon, p.lon) * mPerDegLon
     fun y(p: GeoPoint): Double = (p.lat - origin.lat) * Geo.M_PER_DEG_LAT
 
-    fun toGeo(x: Double, y: Double): GeoPoint = GeoPoint(origin.lat + y / Geo.M_PER_DEG_LAT, origin.lon + x / mPerDegLon)
+    fun toGeo(x: Double, y: Double): GeoPoint = GeoPoint(origin.lat + y / Geo.M_PER_DEG_LAT, Geo.normalizeLongitude(origin.lon + x / mPerDegLon))
+
+    /** Keep both segment endpoints on one longitude branch, including queries far across the globe. */
+    fun segmentStartX(start: GeoPoint, end: GeoPoint): Double {
+        val delta = Geo.longitudeDelta(origin.lon, start.lon)
+        val center = delta + Geo.longitudeDelta(start.lon, end.lon) / 2.0
+        val shift = when {
+            center > 180.0 -> 360.0
+            center < -180.0 -> -360.0
+            else -> 0.0
+        }
+        return (delta - shift) * mPerDegLon
+    }
+
+    /** Short longitude displacement of a road segment, independent of the observation's branch. */
+    fun deltaX(start: GeoPoint, end: GeoPoint): Double = Geo.longitudeDelta(start.lon, end.lon) * mPerDegLon
 }
 
 /**

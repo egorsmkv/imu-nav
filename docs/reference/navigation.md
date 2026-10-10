@@ -155,6 +155,12 @@ filter, follow, copy or share the latest diagnostic events as a text file.
 
 ## Route projection window
 
+Short road segments crossing longitude ±180° use a wrapped longitude displacement in both Kotlin
+and Rust. Interpolation and projection stay on that short segment, including clipped windows;
+bearings use the same displacement. Native index envelopes remain conservative across the date
+line, so an index bound cannot discard a valid nearby crossing. Coordinates returned to Android
+remain in `[-180,180]`.
+
 Both the Kotlin replay projector and the Rust Android projector restrict a local match to
 `[around - behind, around + ahead]`, clipped to the route length. The boundary segments are
 clipped too: a long segment cannot silently move progress outside this interval. A zero-width
@@ -196,3 +202,40 @@ After recovery, terrain matching must again accumulate its existing minimum samp
 400 m distance window and pass the unchanged relief, RMS and rival-match gates. This favors
 abstaining from terrain corrections during intermittent sensor delivery. Device testing is
 still needed to assess how often the continuity policy disables matching in practice.
+
+## Numerical estimator contracts
+
+The native route filter retains a signed along-route velocity internally. Small negative posterior
+velocities can result from stationary GPS noise. The Android bridge publishes zero forward speed
+for those estimates while retaining the accepted position, covariance, safety radius and GPS
+acceptance flags. Non-finite velocity still invalidates the estimate. A negative model velocity is
+not independent evidence that the car is reversing.
+
+Native prediction uses continuous white acceleration noise. The `predict` noise argument is a
+density in m/s/sqrt(s), with squared density `q` giving velocity variance growth per second:
+
+```text
+Q(dt) = q * [[dt³/3, dt²/2], [dt²/2, dt]]
+```
+
+This covariance composes across split predictions, so extra callbacks or expiry boundaries cannot
+change process noise for the same elapsed interval. The car density is sqrt(2), and walking uses
+1/sqrt(2); these preserve the previous velocity-noise growth at the nominal 500 ms tick. Position
+noise and predictions at other callback rates intentionally change. These are synthetic regression
+settings, not calibrated phone or driving noise densities. The separate distance-proportional
+systematic drift allowance remains in place.
+
+Covariance validation uses a scaled determinant when finite variances would overflow their product.
+Large valid diagonal or correlated covariances remain usable; non-finite and indefinite candidates
+are rejected before publication.
+
+Terrain matching requires an actual competing candidate more than 60 m away before its rival-ratio
+gate can establish uniqueness. A clipped or zero-width search with no such comparison abstains.
+In particular, relief on a constant grade does not supply position information after mean-height
+removal. Existing RMS, relief and turn-crossing gates still apply.
+
+The experimental ESKF also limits each integration substep to 0.05 rad of bias-corrected rotation,
+alongside its 20 ms time limit. This bounds artificial covariance damping from its cubic transition
+during fast phone rotation. A continuous-time transverse attitude/bias oracle is tested at 5, 20 and
+35 rad/s over one second, with a 0.1% relative covariance tolerance across input rates. This test
+does not validate the full nonlinear filter or calibrate its uncertainty.

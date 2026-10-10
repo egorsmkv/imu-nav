@@ -91,22 +91,20 @@ class PositioningHub(
         when (fix.source) {
             FixSource.NET -> {
                 lastNet = fix
-                return null
             }
 
             FixSource.FUSED -> {
                 lastFused = fix
-                return null
             }
 
             FixSource.CELL -> {
                 lastCell = fix
                 if (cellReplacesNetwork(fix, lastNet)) lastNet = fix
-                return null
             }
 
             FixSource.GPS -> Unit
         }
+        if (fix.source != FixSource.GPS) return null
         // Keep the hub's latest GPS, bias input and observers monotonic as well as the classifier.
         if (lastJudged?.let { fix.elapsedMs <= it.fix.elapsedMs } == true) {
             return Verdict(TrustLevel.BAD, listOf("dup_time"))

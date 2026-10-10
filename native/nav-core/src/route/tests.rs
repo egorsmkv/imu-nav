@@ -53,6 +53,83 @@ fn route() -> RouteGeometry {
 }
 
 #[test]
+fn date_line_segments_use_short_interpolation_projection_and_heading() {
+    for direction in [1.0, -1.0] {
+        let route = RouteGeometry::new(vec![
+            GeoPoint {
+                latitude_deg: 10.0,
+                longitude_deg: direction * 179.999,
+            },
+            GeoPoint {
+                latitude_deg: 10.0,
+                longitude_deg: -direction * 179.999,
+            },
+        ])
+        .unwrap();
+        let query = GeoPoint {
+            latitude_deg: 10.0,
+            longitude_deg: 180.0,
+        };
+        let midpoint = route.point_at(route.length_m() / 2.0);
+        assert!(longitude_delta(180.0, midpoint.longitude_deg).abs() < 1e-9);
+        let projected = route
+            .project(
+                query,
+                route.length_m() / 2.0,
+                route.length_m(),
+                route.length_m(),
+                120.0,
+            )
+            .unwrap();
+        assert!((projected.position_m - route.length_m() / 2.0).abs() < 1e-5);
+        assert!(projected.offset_m < 1e-5);
+        let clipped = route
+            .project(query, route.length_m() / 4.0, 0.0, 0.0, f64::MAX)
+            .unwrap();
+        assert!((clipped.point.longitude_deg - direction * 179.9995).abs() < 1e-9);
+        let far = route
+            .project(
+                GeoPoint {
+                    latitude_deg: 10.0,
+                    longitude_deg: 0.0,
+                },
+                route.length_m() / 2.0,
+                route.length_m(),
+                route.length_m(),
+                120.0,
+            )
+            .unwrap();
+        assert!(far.offset_m > 10_000_000.0);
+    }
+}
+
+#[test]
+fn wrapped_block_bounds_match_exhaustive_global_search() {
+    let points = (0..=100)
+        .map(|index| GeoPoint {
+            latitude_deg: 10.0,
+            longitude_deg: normalize_longitude(179.98 + f64::from(index) * 0.0004),
+        })
+        .collect();
+    let route = RouteGeometry::new(points).unwrap();
+    for longitude in [179.979, 179.995, 180.0, -179.995, -179.979, 0.0] {
+        let query = GeoPoint {
+            latitude_deg: 10.0,
+            longitude_deg: longitude,
+        };
+        let expected = route.project_range(query, 0, route.points.len() - 2);
+        let actual = route
+            .project_indexed::<true>(query, longitude_scale(query))
+            .unwrap();
+        assert_eq!(actual, expected);
+        if longitude.abs() > 179.98 {
+            let unambiguous = route.project_unambiguous(query, 2.0).unwrap().unwrap();
+            assert_eq!(unambiguous, expected);
+        }
+    }
+}
+
+#[test]
 fn shared_scale_matches_independent_segment_projection_exactly() {
     for latitude in [0.0, 50.0, 89.5] {
         // Includes a crossing, repeated vertex, parallel return and a straight continuation.
@@ -439,7 +516,9 @@ fn long_segment_clamps_to_arc_window_including_backward_motion() {
                     .unwrap();
                 assert!((result.position_m - expected * route.length_m()).abs() < 1e-6);
                 assert!((result.point.latitude_deg - (50.0 + 0.02 * expected)).abs() < 1e-10);
-                assert!((result.offset_m - (query - expected).abs() * 0.02 * 110_540.0).abs() < 1e-6);
+                assert!(
+                    (result.offset_m - (query - expected).abs() * 0.02 * 110_540.0).abs() < 1e-6
+                );
             }
         }
     }

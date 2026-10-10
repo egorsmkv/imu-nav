@@ -58,7 +58,8 @@ class TripFileLog(
                 }
                 writer?.apply {
                     write(line)
-                    newLine()
+                    // Byte accounting and the portable trip-log format both use UTF-8 LF.
+                    write("\n")
                 }
                 bytes += encodedBytes
                 if (flush == null) {

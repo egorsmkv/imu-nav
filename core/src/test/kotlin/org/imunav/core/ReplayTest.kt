@@ -152,9 +152,13 @@ class ReplayTest {
     @Test
     fun truncatedRecordingIsSalvaged() {
         val f = File.createTempFile("trip", ".rec.gz")
-        val rec = TripRecorder(f.outputStream(), flushEveryMs = 0)
-        for (i in 0 until 500) rec.record(TripEvent.Agc(i * 10L, -5f))
-        // Simulate a kill: no close(), and cut the file mid-stream.
+        f.outputStream().use { output ->
+            val rec = TripRecorder(output, flushEveryMs = 0)
+            for (i in 0 until 500) rec.record(TripEvent.Agc(i * 10L, -5f))
+            // Close the OS handle without finalizing gzip, as a killed process would. Windows
+            // cannot atomically replace the file while the test itself still owns that handle.
+        }
+        // Cut the unfinished gzip stream mid-record.
         val bytes = f.readBytes()
         f.writeBytes(bytes.copyOf(bytes.size - 3))
         val events = TripFormat.read(f)

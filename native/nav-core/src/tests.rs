@@ -25,9 +25,9 @@ fn negative_rank_one_covariance_predicts_and_accepts_measurements() {
     assert_eq!(
         predicted.estimate().covariance,
         Covariance2 {
-            position: 1.003_906_25,
-            position_speed: -3.984_375,
-            speed: 16.0625,
+            position: 1.0 + 1.0 / 96.0,
+            position_speed: -3.968_75,
+            speed: 16.125,
         }
     );
     for mut filter in [initial.clone(), predicted] {
@@ -45,9 +45,9 @@ fn prediction_propagates_state_and_full_covariance() {
     filter.predict(0.5, 1.0, 0.08).unwrap();
     let estimate = filter.estimate();
     assert!((estimate.position_m - 12.0).abs() < 1.0e-12);
-    assert!((estimate.covariance.position - 10.015_625).abs() < 1.0e-12);
-    assert!((estimate.covariance.position_speed - 2.0625).abs() < 1.0e-12);
-    assert!((estimate.covariance.speed - 4.25).abs() < 1.0e-12);
+    assert!((estimate.covariance.position - (10.0 + 1.0 / 24.0)).abs() < 1.0e-12);
+    assert!((estimate.covariance.position_speed - 2.125).abs() < 1.0e-12);
+    assert!((estimate.covariance.speed - 4.5).abs() < 1.0e-12);
     assert!((estimate.systematic_drift_m - 5.16).abs() < 1.0e-12);
 }
 

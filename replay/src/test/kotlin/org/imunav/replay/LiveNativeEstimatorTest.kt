@@ -27,6 +27,35 @@ class LiveNativeEstimatorTest {
     private val empty = PositioningSnapshot(null, null, null, null, GpsState.LOST, false, null)
 
     @Test
+    fun stationaryGpsJitterKeepsAcceptedPositionThroughTheLiveBridge() {
+        for (gpsSpeed in listOf(null, 0f)) {
+            NativeRouteGeometry.create(route).use { geometry ->
+                val bridge = NativeEstimatorBridge {}
+                try {
+                    bridge.start(geometry, 100.0, 0.0, 3.0, TravelMode.CAR, 0)
+                    val point = route.pointAt(90.0).point
+                    val gps = JudgedFix(RawFix(FixSource.GPS, 5000, 5000, point.lat, point.lon, accuracyM = 3f, speedMps = gpsSpeed, speedAccuracyMps = 0.2f), Verdict.GOOD)
+                    NativeNavigationEstimator.create(geometry, 100.0, 0.0, 3.0, 6.0, 0.0, TravelMode.CAR, 0).use { reference ->
+                        val expected = reference.tick(5000, gps)
+                        assertTrue(expected.gpsPositionAccepted)
+                        assertTrue(expected.speedMps < 0.0, "fixture must exercise signed velocity")
+                        val engine = NavigationEngine(listener = object : NavListener {}, nativeEstimator = bridge)
+                        engine.start(route, route.geometry.last(), nowMs = 0, startAccuracyM = 3.0, estimator = NavigationEstimator.NATIVE_KALMAN)
+                        engine.resumeAt(100.0)
+                        engine.tick(5000, empty.copy(lastUsableGps = gps, lastGoodGps = gps.fix, gpsState = GpsState.OK))
+                        assertEquals(expected.positionM, engine.progressS, 1e-9)
+                        assertEquals(expected.safetyRadiusM, engine.state.uncertaintyM, 1e-9)
+                        assertEquals(0f, engine.state.speedKmh)
+                        assertTrue(engine.state.source.isGps)
+                    }
+                } finally {
+                    bridge.close()
+                }
+            }
+        }
+    }
+
+    @Test
     fun liveBridgePublishesTheSamePredictionAsTheNativeEstimator() {
         NativeRouteGeometry.create(route).use { geometry ->
             val bridge = NativeEstimatorBridge {}

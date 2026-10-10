@@ -191,12 +191,10 @@ class InertialShadow(private val onEstimate: (InertialEstimate) -> Unit = {}) {
     private fun validGps(fix: RawFix) = fix.elapsedMs in 0..Long.MAX_VALUE / NS_PER_MS && fix.lat.isFinite() && fix.lat in -85.0..85.0 &&
         fix.lon.isFinite() && fix.lon in -180.0..180.0 && fix.accuracyM?.let { it.isFinite() && it > 0f } == true
 
-    private fun valid(sample: InertialSample): Boolean {
-        return !(!sample.vector.isFinite() || !sample.scalar.isFinite()) && when (sample.kind) {
-            InertialKind.ACCELEROMETER -> sample.vector.norm() <= 200.0
-            InertialKind.GYROSCOPE -> sample.vector.norm() <= 35.0
-            InertialKind.ATTITUDE -> (sample.vector.norm().let { it * it } + sample.scalar * sample.scalar) in 0.9..1.1
-        }
+    private fun valid(sample: InertialSample): Boolean = !(!sample.vector.isFinite() || !sample.scalar.isFinite()) && when (sample.kind) {
+        InertialKind.ACCELEROMETER -> sample.vector.norm() <= 200.0
+        InertialKind.GYROSCOPE -> sample.vector.norm() <= 35.0
+        InertialKind.ATTITUDE -> (sample.vector.norm().let { it * it } + sample.scalar * sample.scalar) in 0.9..1.1
     }
 
     companion object {

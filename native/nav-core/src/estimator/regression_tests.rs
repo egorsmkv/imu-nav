@@ -31,6 +31,25 @@ pub(super) fn estimator(position_sigma_m: f64) -> NavigationEstimator {
     .unwrap()
 }
 
+#[test]
+fn callback_partition_does_not_change_unobserved_covariance() {
+    let mut reference = estimator(25.0);
+    reference.tick(60_000, None).unwrap();
+    for interval_ms in [100, 200, 500, 1000] {
+        let mut navigation = estimator(25.0);
+        for time_ms in (interval_ms..=60_000).step_by(usize::try_from(interval_ms).unwrap()) {
+            navigation.tick(time_ms, None).unwrap();
+        }
+        let actual = navigation.estimate();
+        let expected = reference.estimate();
+        assert!((actual.covariance.position - expected.covariance.position).abs() < 1e-6);
+        assert!(
+            (actual.covariance.position_speed - expected.covariance.position_speed).abs() < 1e-7
+        );
+        assert!((actual.covariance.speed - expected.covariance.speed).abs() < 1e-9);
+    }
+}
+
 pub(super) fn gps(elapsed_ms: i64, latitude_deg: f64) -> GpsObservation {
     GpsObservation {
         point: GeoPoint {

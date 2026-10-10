@@ -44,11 +44,11 @@ object RouteCorridor {
         var total = 0L
         for (z in minZoom..maxZoom) {
             val tiles = HashSet<Long>()
-            for ((minLat, minLon, maxLat, maxLon) in boxes) {
-                val x0 = tileX(minLon, z)
-                val x1 = tileX(maxLon, z)
-                val y0 = tileY(maxLat, z) // tile rows grow southward
-                val y1 = tileY(minLat, z)
+            for (box in boxes) {
+                val x0 = tileX(box.minLon, z)
+                val x1 = tileX(box.maxLon, z)
+                val y0 = tileY(box.maxLat, z) // tile rows grow southward
+                val y1 = tileY(box.minLat, z)
                 for (x in x0..x1) for (y in y0..y1) tiles += x.toLong() shl 32 or y.toLong()
             }
             total += tiles.size

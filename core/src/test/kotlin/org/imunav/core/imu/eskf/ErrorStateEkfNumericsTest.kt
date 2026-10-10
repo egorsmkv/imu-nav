@@ -1,5 +1,7 @@
 package org.imunav.core.imu.eskf
 
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -10,6 +12,24 @@ import kotlin.test.assertTrue
 /** Closed-form and metamorphic checks independent of the filter's matrix implementation. */
 class ErrorStateEkfNumericsTest {
     private val initial = InertialState(0, Vector3.ZERO, Vector3.ZERO, Attitude.IDENTITY)
+
+    @Test
+    fun rotatingAttitudeCovarianceMatchesContinuousTimeTruthAcrossInputRates() {
+        for (angularRate in listOf(5.0, 20.0, 35.0)) {
+            val squaredRate = angularRate * angularRate
+            // Exact decoupled transverse attitude/bias covariance, with the independently specified defaults.
+            val expected = 0.15 * 0.15 + 0.03 * 0.03 * 2 * (1 - cos(angularRate)) / squaredRate +
+                0.01 * 0.01 + 0.0005 * 0.0005 * (2 / squaredRate - 2 * sin(angularRate) / (squaredRate * angularRate))
+            for (stepNs in listOf(20_000_000L, 10_000_000L, 2_000_000L)) {
+                val filter = ErrorStateEkf(initial, 5.0)
+                for (timestampNs in stepNs..1_000_000_000L step stepNs) {
+                    assertTrue(filter.predict(timestampNs, Vector3(0.0, 0.0, ErrorStateEkf.GRAVITY_MPS2), Vector3(0.0, 0.0, angularRate)))
+                }
+                assertEquals(expected, filter.covariance()[6][6], expected * 0.001, "angular_rate=$angularRate step_ns=$stepNs")
+                assertEquals(expected, filter.covariance()[7][7], expected * 0.001)
+            }
+        }
+    }
 
     @Test
     fun horizontalSigmaRetainsAnisotropyAndCorrelationAcrossScales() {

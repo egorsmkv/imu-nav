@@ -100,7 +100,7 @@ class Route(
         val segmentLength = cumulative[segment + 1] - cumulative[segment]
         // How far along this segment we are: 0 = at its start, 1 = at its end.
         val fraction = if (segmentLength >= 1e-3) ((s - cumulative[segment]) / segmentLength).coerceIn(0.0, 1.0) else 0.0
-        val point = GeoPoint(start.lat + (end.lat - start.lat) * fraction, start.lon + (end.lon - start.lon) * fraction)
+        val point = GeoPoint(start.lat + (end.lat - start.lat) * fraction, Geo.normalizeLongitude(start.lon + Geo.longitudeDelta(start.lon, end.lon) * fraction))
         return RoutePoint(point, Geo.bearing(start, end), segment)
     }
 
@@ -149,9 +149,9 @@ class Route(
         val flat = LocalProjection(p)
         var best = Projection(0.0, Double.MAX_VALUE, from, geometry[from])
         for (i in from..minOf(to, geometry.size - 2)) {
-            val startX = flat.x(geometry[i])
+            val startX = flat.segmentStartX(geometry[i], geometry[i + 1])
             val startY = flat.y(geometry[i])
-            val dirX = flat.x(geometry[i + 1]) - startX
+            val dirX = flat.deltaX(geometry[i], geometry[i + 1])
             val dirY = flat.y(geometry[i + 1]) - startY
             val lengthSquared = dirX * dirX + dirY * dirY
             val segmentLength = cumulative[i + 1] - cumulative[i]

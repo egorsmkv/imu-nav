@@ -68,12 +68,12 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteFilter_nativePr
     _class: JClass,
     handle: jlong,
     dt_s: jdouble,
-    acceleration_sigma_mps2: jdouble,
+    acceleration_noise_mps_sqrt_s: jdouble,
     systematic_drift_per_m: jdouble,
 ) -> jint {
     guarded_code(|| {
         match with_filter(handle, |filter| {
-            filter.predict(dt_s, acceleration_sigma_mps2, systematic_drift_per_m)
+            filter.predict(dt_s, acceleration_noise_mps_sqrt_s, systematic_drift_per_m)
         }) {
             Ok(Ok(())) => OK,
             Ok(Err(error)) => error_code(error),

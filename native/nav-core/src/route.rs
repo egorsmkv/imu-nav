@@ -53,10 +53,16 @@ impl SegmentBlock {
         } else {
             (point.latitude_deg - self.max_latitude_deg).max(0.0)
         };
-        let longitude_gap = if point.longitude_deg < self.min_longitude_deg {
-            self.min_longitude_deg - point.longitude_deg
+        let longitude_gap = if self.max_longitude_deg - self.min_longitude_deg >= 180.0
+            || (self.min_longitude_deg..=self.max_longitude_deg).contains(&point.longitude_deg)
+        {
+            // A block spanning the date line has a wrapped envelope. A zero lower bound is
+            // conservative and cannot prune its short crossing segments as distant ones.
+            0.0
         } else {
-            (point.longitude_deg - self.max_longitude_deg).max(0.0)
+            longitude_delta(point.longitude_deg, self.min_longitude_deg)
+                .abs()
+                .min(longitude_delta(point.longitude_deg, self.max_longitude_deg).abs())
         };
         (
             latitude_gap * METRES_PER_DEGREE_LATITUDE,
@@ -190,7 +196,7 @@ impl RouteGeometry {
             {
                 self.project_indexed::<false>(point, longitude_scale(point))?
             } else {
-                // Keep the historic finite-but-outside-world behavior of project().
+                // Finite out-of-world queries cannot use geographic index bounds.
                 self.project_range(point, 0, self.points.len() - 2)
             };
             if global.offset_m < local.offset_m {
@@ -359,12 +365,16 @@ impl RouteGeometry {
                 candidate.point = GeoPoint {
                     latitude_deg: start.latitude_deg
                         + fraction * (end.latitude_deg - start.latitude_deg),
-                    longitude_deg: start.longitude_deg
-                        + fraction * (end.longitude_deg - start.longitude_deg),
+                    longitude_deg: normalize_longitude(
+                        start.longitude_deg
+                            + fraction * longitude_delta(start.longitude_deg, end.longitude_deg),
+                    ),
                 };
                 candidate.offset_m = ((candidate.point.latitude_deg - point.latitude_deg)
                     * METRES_PER_DEGREE_LATITUDE)
-                    .hypot((candidate.point.longitude_deg - point.longitude_deg) * scale);
+                    .hypot(
+                        longitude_delta(point.longitude_deg, candidate.point.longitude_deg) * scale,
+                    );
             }
             if candidate.offset_m < best.offset_m {
                 best = candidate;
@@ -408,21 +418,22 @@ impl RouteGeometry {
                     continue;
                 }
             }
-            let start_x = (self.points[index].longitude_deg - point.longitude_deg)
-                * metres_per_degree_longitude;
+            let start_x =
+                segment_start_longitude(point, self.points[index], self.points[index + 1])
+                    * metres_per_degree_longitude;
+            let direction_x = longitude_delta(
+                self.points[index].longitude_deg,
+                self.points[index + 1].longitude_deg,
+            ) * metres_per_degree_longitude;
             if ENDPOINT_BOUNDS && best.offset_m <= MAX_USEFUL_ENDPOINT_BOUND_OFFSET_M {
                 let limit_m = best.offset_m + RIVAL_PREFILTER_ROUNDING_MARGIN_M;
-                let end_x = (self.points[index + 1].longitude_deg - point.longitude_deg)
-                    * metres_per_degree_longitude;
+                let end_x = start_x + direction_x;
                 if (start_x > limit_m && end_x > limit_m)
                     || (start_x < -limit_m && end_x < -limit_m)
                 {
                     continue;
                 }
             }
-            let direction_x = (self.points[index + 1].longitude_deg
-                - self.points[index].longitude_deg)
-                * metres_per_degree_longitude;
             let direction_y = (self.points[index + 1].latitude_deg
                 - self.points[index].latitude_deg)
                 * METRES_PER_DEGREE_LATITUDE;
@@ -450,14 +461,42 @@ impl RouteGeometry {
                     segment: index,
                     point: GeoPoint {
                         latitude_deg: point.latitude_deg + closest_y / METRES_PER_DEGREE_LATITUDE,
-                        longitude_deg: point.longitude_deg
-                            + closest_x / metres_per_degree_longitude,
+                        longitude_deg: normalize_longitude(
+                            point.longitude_deg + closest_x / metres_per_degree_longitude,
+                        ),
                     },
                 };
             }
         }
         best
     }
+}
+
+/// Keep ordinary-coordinate arithmetic unchanged and wrap only a real date-line crossing.
+fn normalize_longitude(longitude: f64) -> f64 {
+    if (-180.0..=180.0).contains(&longitude) {
+        longitude
+    } else {
+        (longitude + 180.0).rem_euclid(360.0) - 180.0
+    }
+}
+
+fn longitude_delta(from: f64, to: f64) -> f64 {
+    normalize_longitude(to - from)
+}
+
+/// Align the short segment to its midpoint's nearest longitude branch around the query.
+fn segment_start_longitude(query: GeoPoint, start: GeoPoint, end: GeoPoint) -> f64 {
+    let delta = longitude_delta(query.longitude_deg, start.longitude_deg);
+    let center = delta + longitude_delta(start.longitude_deg, end.longitude_deg) / 2.0;
+    delta
+        - if center > 180.0 {
+            360.0
+        } else if center < -180.0 {
+            -360.0
+        } else {
+            0.0
+        }
 }
 
 /// Local tangent-plane scale at the observation latitude, identical for every candidate segment.

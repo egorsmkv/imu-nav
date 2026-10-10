@@ -28,8 +28,10 @@ const SUSPECT_SIGMA_MULTIPLIER: f64 = 2.0;
 const OBD_SPEED_SIGMA_MPS: f64 = 0.6;
 const POSITION_NIS_GATE: f64 = 25.0;
 const SPEED_NIS_GATE: f64 = 25.0;
-const CAR_ACCELERATION_SIGMA_MPS2: f64 = 2.0;
-const WALK_ACCELERATION_SIGMA_MPS2: f64 = 1.0;
+// Preserve the previous velocity-noise growth at the nominal 500-ms navigation tick.
+// These are continuous densities (m/s/sqrt(s)), not per-callback acceleration sigmas.
+const CAR_ACCELERATION_NOISE_MPS_SQRT_S: f64 = std::f64::consts::SQRT_2;
+const WALK_ACCELERATION_NOISE_MPS_SQRT_S: f64 = std::f64::consts::FRAC_1_SQRT_2;
 const ESTIMATED_SYSTEMATIC_DRIFT_PER_M: f64 = 0.08;
 const OBD_SYSTEMATIC_DRIFT_PER_M: f64 = 0.02;
 const MAX_PREDICTION_MS: i64 = 5_000;

@@ -1,4 +1,4 @@
-//! Focused geometry benchmark: cargo run --release -p imu-nav-core --example route_projection_bench -- winding 100000 7200
+//! Focused geometry benchmark: `cargo run --release -p imu-nav-core --example route_projection_bench -- winding 100000 7200`
 //! Scenarios: winding, parallel, crossing, reacquisition. Output: scenario, points, queries, ns, checksum.
 //! Setup is excluded; one warm-up precedes seven samples. Uses the platform default allocator.
 
@@ -45,7 +45,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .collect();
     let inputs: Vec<_> = (0..queries)
         .map(|index| {
-            let vertex = ((u64::from(index) * 7919 + 1) % u64::from(count)) as usize;
+            let vertex = usize::try_from((u64::from(index) * 7919 + 1) % u64::from(count))
+                .expect("vertex index is below the bounded point count");
             let mut point = points[vertex];
             if scenario == "crossing" && index % 3 == 0 {
                 point = GeoPoint {

@@ -29,7 +29,10 @@ class NativeEstimatorBridge(private val log: (String) -> Unit) : RouteEstimatePr
             }
             return null
         }
-        return RouteEstimate(state.positionM, state.speedMps, state.safetyRadiusM, state.gpsPositionAccepted, state.gpsSpeedAccepted)
+        // The Gaussian filter estimates signed route velocity. Negative jitter must not discard
+        // an accepted position; guidance shows no forward travel until velocity becomes positive.
+        val forwardSpeed = if (state.speedMps.isFinite()) state.speedMps.coerceAtLeast(0.0) else state.speedMps
+        return RouteEstimate(state.positionM, forwardSpeed, state.safetyRadiusM, state.gpsPositionAccepted, state.gpsSpeedAccepted)
     }
 
     fun start(route: NativeRouteGeometry, positionM: Double, speedMps: Double, positionSigmaM: Double, mode: TravelMode, nowMs: Long) {

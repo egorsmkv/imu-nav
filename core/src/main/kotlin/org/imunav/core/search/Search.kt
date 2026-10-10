@@ -78,25 +78,25 @@ object AddressSearch {
 
         // House numbers on the best-matching streets come first.
         if (number != null) {
-            for ((id, name, _, placeName) in rankStreets(streets, near).take(5)) {
-                val hits = runCatching { db.addresses(id, number) }.getOrDefault(emptyList())
+            for (street in rankStreets(streets, near).take(5)) {
+                val hits = runCatching { db.addresses(street.id, number) }.getOrDefault(emptyList())
                 for ((number1, lat, lon) in hits.take(2)) {
                     out += -1e9 + (dist(lat, lon) ?: 0.0) to SearchResult(
                         ResultKind.ADDRESS,
-                        "$name, $number1",
-                        placeName.orEmpty(),
+                        "${street.name}, $number1",
+                        street.placeName.orEmpty(),
                         GeoPoint(lat, lon),
                         dist(lat, lon),
                     )
                 }
             }
         }
-        for ((_, name, kind, lat, lon, population) in places) {
-            val d = dist(lat, lon)
-            val weight = (KIND_WEIGHT[kind] ?: 1.0) * (1 + ln(1.0 + population / 1000.0))
-            val exact = if (normalize(name) == words.joinToString(" ")) 4.0 else 1.0
+        for (place in places) {
+            val d = dist(place.lat, place.lon)
+            val weight = (KIND_WEIGHT[place.kind] ?: 1.0) * (1 + ln(1.0 + place.population / 1000.0))
+            val exact = if (normalize(place.name) == words.joinToString(" ")) 4.0 else 1.0
             out += -(weight * exact * 1e6) / (1 + (d ?: 50_000.0) / 20_000.0) to
-                SearchResult(ResultKind.PLACE, name, kind, GeoPoint(lat, lon), d)
+                SearchResult(ResultKind.PLACE, place.name, place.kind, GeoPoint(place.lat, place.lon), d)
         }
         for ((i, s) in rankStreets(streets, near).withIndex()) {
             val d = dist(s.lat, s.lon)

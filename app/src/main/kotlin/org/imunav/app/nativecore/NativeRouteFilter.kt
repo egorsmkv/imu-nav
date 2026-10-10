@@ -27,9 +27,9 @@ class NativeRouteFilter private constructor(private var handle: Long) : Closeabl
         val speedSigmaMps: Double get() = sqrt(speedVarianceMps2)
     }
 
-    /** Predict using constant velocity and piecewise-constant unknown acceleration. */
-    fun predict(dtS: Double, accelerationSigmaMps2: Double, systematicDriftPerM: Double) {
-        checkResult(nativePredict(requireHandle(), dtS, accelerationSigmaMps2, systematicDriftPerM))
+    /** Predict with a continuous acceleration noise density (m/s/sqrt(s)), independent of callback rate. */
+    fun predict(dtS: Double, accelerationNoiseMpsSqrtS: Double, systematicDriftPerM: Double) {
+        checkResult(nativePredict(requireHandle(), dtS, accelerationNoiseMpsSqrtS, systematicDriftPerM))
     }
 
     fun installRoute(route: NativeRouteGeometry) {
@@ -107,7 +107,7 @@ class NativeRouteFilter private constructor(private var handle: Long) : Closeabl
         private external fun nativeDestroy(handle: Long): Int
 
         @JvmStatic
-        private external fun nativePredict(handle: Long, dtS: Double, accelerationSigmaMps2: Double, systematicDriftPerM: Double): Int
+        private external fun nativePredict(handle: Long, dtS: Double, accelerationNoiseMpsSqrtS: Double, systematicDriftPerM: Double): Int
 
         @JvmStatic
         private external fun nativeInstallRoute(handle: Long, routeHandle: Long): Int

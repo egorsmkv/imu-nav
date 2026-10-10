@@ -64,7 +64,12 @@ class ErrorStateEkf(initial: InertialState, positionSigmaM: Double, private val 
         val dt = (timestampNs - state.timestampNs) / 1e9
         if (!specificForce.isFinite() || !angularRate.isFinite() || dt <= 0.0 || dt > MAX_GAP_S) return false
         if (specificForce.norm() > MAX_FORCE || angularRate.norm() > MAX_RATE) return false
-        val steps = ceil(dt / MAX_STEP_S).toInt()
+        val correctedRate = (angularRate - state.gyroscopeBias).norm()
+        if (!correctedRate.isFinite() || correctedRate > MAX_RATE) return false
+        // A fixed time step alone lets the cubic transition damp attitude covariance at high
+        // angular rates. Bound the rotation per step too, including the current bias estimate.
+        val stepS = minOf(MAX_STEP_S, MAX_ROTATION_STEP_RAD / correctedRate)
+        val steps = ceil(dt / stepS).toInt()
         val previousState = state
         val previousCovariance = covariance
         repeat(steps) { advance(dt / steps, specificForce, angularRate) }
@@ -166,6 +171,7 @@ class ErrorStateEkf(initial: InertialState, positionSigmaM: Double, private val 
         private const val STATE_SIZE = 15
         private const val MAX_GAP_S = 0.25
         private const val MAX_STEP_S = 0.02
+        private const val MAX_ROTATION_STEP_RAD = 0.05
         private const val MAX_FORCE = 200.0
         private const val MAX_RATE = 35.0
         private const val MAX_CORRECTION_RAD = 0.5

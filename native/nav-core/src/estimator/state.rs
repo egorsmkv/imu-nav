@@ -2,9 +2,9 @@
 use super::motion::RESUME_SPEED_SIGMA_MPS;
 use super::walking::WALK_SPEED_SIGMA_MPS;
 use super::{
-    CAR_ACCELERATION_SIGMA_MPS2, ESTIMATED_SYSTEMATIC_DRIFT_PER_M, FilterError, FilterState,
+    CAR_ACCELERATION_NOISE_MPS_SQRT_S, ESTIMATED_SYSTEMATIC_DRIFT_PER_M, FilterError, FilterState,
     OBD_SPEED_SIGMA_MPS, OBD_SYSTEMATIC_DRIFT_PER_M, SPEED_NIS_GATE, StableVehicleSpeed,
-    TravelMode, WALK_ACCELERATION_SIGMA_MPS2,
+    TravelMode, WALK_ACCELERATION_NOISE_MPS_SQRT_S,
 };
 use crate::milliseconds_to_seconds;
 
@@ -26,9 +26,9 @@ impl FilterState {
         elapsed_ms: i64,
         mode: TravelMode,
     ) -> Result<(), FilterError> {
-        let acceleration_sigma = match mode {
-            TravelMode::Car => CAR_ACCELERATION_SIGMA_MPS2,
-            TravelMode::Foot => WALK_ACCELERATION_SIGMA_MPS2,
+        let acceleration_noise = match mode {
+            TravelMode::Car => CAR_ACCELERATION_NOISE_MPS_SQRT_S,
+            TravelMode::Foot => WALK_ACCELERATION_NOISE_MPS_SQRT_S,
         };
         while self.elapsed_ms < elapsed_ms {
             self.expire_walking(mode)?;
@@ -47,7 +47,7 @@ impl FilterState {
             );
             self.filter.predict(
                 milliseconds_to_seconds(end_ms.saturating_sub(self.elapsed_ms)),
-                acceleration_sigma,
+                acceleration_noise,
                 if obd_fresh {
                     OBD_SYSTEMATIC_DRIFT_PER_M
                 } else {

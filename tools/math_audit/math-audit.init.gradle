@@ -1,0 +1,16 @@
+// Opt-in audit sources: ordinary builds and test suites do not include these diagnostics.
+gradle.projectsEvaluated {
+    def coreProject = gradle.rootProject.project(':core')
+    def auditSources = coreProject.extensions.getByName('sourceSets').create('mathAudit')
+    coreProject.extensions.getByName('kotlin').sourceSets.getByName('mathAudit').kotlin.srcDir(gradle.rootProject.file('tools/math_audit'))
+    auditSources.compileClasspath += coreProject.sourceSets.main.output
+    auditSources.runtimeClasspath += coreProject.sourceSets.main.output
+    coreProject.configurations.mathAuditImplementation.extendsFrom(coreProject.configurations.implementation)
+    coreProject.tasks.register('mathAudit', JavaExec) {
+        group = 'verification'
+        description = 'Prints synthetic mathematical audit witnesses; completion is not a correctness verdict'
+        dependsOn('mathAuditClasses')
+        classpath = auditSources.runtimeClasspath
+        mainClass.set('org.imunav.audit.MathAuditKt')
+    }
+}

@@ -71,10 +71,11 @@ class BarometerExpiryTest {
             val height = 150.0 + 15.0 * sin(index * 0.17) + 6.0 * sin(index * 0.43)
             matcher.onPressure(1013.25 * (1.0 - height / 44_330.0).pow(5.255), index * 1000L)
             heights[index] = assertNotNull(matcher.heightM)
-            matcher.onTravel(geometry.cumulative[index], index * 1000L)
+            // Retain a shorter trace so the match can compare distinct candidate positions.
+            if (index >= 20) matcher.onTravel(geometry.cumulative[index], index * 1000L)
         }
         val route = Route(points, emptyList(), 60.0, elevationM = heights)
-        val valid = assertNotNull(matcher.match(route, route.length, 0.0, 60_000, listOf(1.0)))
+        val valid = assertNotNull(matcher.match(route, route.length, 150.0, 60_000, listOf(1.0)))
         assertTrue(valid.rmsM < 1e-6)
         // No onTravel call: matching itself must expire the old trace.
         assertNull(matcher.match(route, route.length, 0.0, 63_000, listOf(1.0)))

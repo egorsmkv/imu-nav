@@ -65,9 +65,9 @@ class InertialComparisonTest {
         }
         val changed = InertialComparison().replay(modified, 10.0).samples.filter { it.blind }
         assertTrue(changed.size >= 25)
-        for ((elapsedMs, _, _, _, _, inertialSigmaM, inertialPoint) in changed) {
-            assertEquals(original.getValue(elapsedMs).inertialPoint, inertialPoint)
-            assertEquals(original.getValue(elapsedMs).inertialSigmaM, inertialSigmaM)
+        for (sample in changed) {
+            assertEquals(original.getValue(sample.elapsedMs).inertialPoint, sample.inertialPoint)
+            assertEquals(original.getValue(sample.elapsedMs).inertialSigmaM, sample.inertialSigmaM)
         }
     }
 

@@ -44,17 +44,17 @@ data class InertialComparisonResult(val samples: List<InertialComparisonSample>,
 
     fun csv(): String = buildString {
         appendLine("elapsed_ms,blind,kotlin_error_m,native_error_m,eskf_error_m,eskf_sigma_m,eskf_lat,eskf_lon")
-        for ((elapsedMs, blind, kotlinErrorM, nativeErrorM, inertialErrorM, inertialSigmaM, inertialPoint) in samples) {
+        for (sample in samples) {
             appendLine(
                 listOf(
-                    elapsedMs,
-                    blind,
-                    kotlinErrorM,
-                    nativeErrorM,
-                    inertialErrorM,
-                    inertialSigmaM,
-                    inertialPoint.lat,
-                    inertialPoint.lon,
+                    sample.elapsedMs,
+                    sample.blind,
+                    sample.kotlinErrorM,
+                    sample.nativeErrorM,
+                    sample.inertialErrorM,
+                    sample.inertialSigmaM,
+                    sample.inertialPoint.lat,
+                    sample.inertialPoint.lon,
                 ).joinToString(","),
             )
         }

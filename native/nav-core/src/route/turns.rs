@@ -1,5 +1,5 @@
 //! Sharp-turn landmarks with straight approaches; broad curves and complex clusters are excluded.
-use super::{GeoPoint, RouteGeometry};
+use super::{GeoPoint, RouteGeometry, longitude_delta, normalize_longitude};
 
 const APPROACH_M: f64 = 40.0;
 const INNER_M: f64 = 10.0;
@@ -94,7 +94,7 @@ impl RouteGeometry {
         output
     }
 
-    fn point_at(&self, position_m: f64) -> GeoPoint {
+    pub(super) fn point_at(&self, position_m: f64) -> GeoPoint {
         let index = self.segment_at(position_m);
         let span = self.cumulative_m[index + 1] - self.cumulative_m[index];
         let fraction = if span > 0.0 {
@@ -106,13 +106,17 @@ impl RouteGeometry {
         let to = self.points[index + 1];
         GeoPoint {
             latitude_deg: from.latitude_deg + fraction * (to.latitude_deg - from.latitude_deg),
-            longitude_deg: from.longitude_deg + fraction * (to.longitude_deg - from.longitude_deg),
+            longitude_deg: normalize_longitude(
+                from.longitude_deg
+                    + fraction * longitude_delta(from.longitude_deg, to.longitude_deg),
+            ),
         }
     }
 }
 
 fn bearing(from: GeoPoint, to: GeoPoint) -> f64 {
-    let east = (to.longitude_deg - from.longitude_deg) * from.latitude_deg.to_radians().cos();
+    let east = longitude_delta(from.longitude_deg, to.longitude_deg)
+        * from.latitude_deg.to_radians().cos();
     let north = to.latitude_deg - from.latitude_deg;
     east.atan2(north).to_degrees()
 }

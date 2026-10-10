@@ -174,10 +174,7 @@ impl TestServer {
 async fn assert_closed(socket: &mut ClientSocket) -> Result<()> {
     let next = tokio::time::timeout(Duration::from_secs(5), socket.next()).await?;
     assert!(
-        matches!(
-            next,
-            None | Some(Err(_)) | Some(Ok(ClientMessage::Close(_)))
-        ),
+        matches!(next, None | Some(Err(_) | Ok(ClientMessage::Close(_)))),
         "the server must close without sending another data message: {next:?}"
     );
     Ok(())

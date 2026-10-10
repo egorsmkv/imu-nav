@@ -22,6 +22,9 @@ The diagnostic log can also contain precise locations and cell tower data. When 
 Open **Settings → Advanced → Logs** to see the number of local text log files and their disk usage.
 Tap **Refresh** for an updated measurement. These settings apply only to this device.
 
+Text logs use UTF-8 with LF line endings on every platform. Rotation counts the same bytes
+that are written, including one byte per newline.
+
 Choose a total size limit of 25, 100 or 250 MB, and optionally keep files for 7, 30 or 90 days.
 Both defaults keep files until you clear them. Selecting a limit immediately removes older completed
 files as needed. Cleanup also runs while writing logs and when a trip ends. The current file stays

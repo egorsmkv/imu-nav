@@ -132,12 +132,12 @@ private fun applyOverrides(base: Tuning, spec: String?): Tuning {
 private fun errorsCsv(r: ReplayResult): String = buildString {
     appendLine("t_s,engine_lat,engine_lon,truth_lat,truth_lon,along_error_m,error_m,truth_off_route_m,uncertainty_m,source,blind")
     val t0 = r.samples.firstOrNull()?.elapsedMs ?: 0
-    for ((elapsedMs, engine, _, truth, _, alongErrorM, errorM, truthOffRouteM, uncertaintyM, source, blind) in r.samples) {
+    for (sample in r.samples) {
         appendLine(
             String.format(
                 Locale.US, "%.1f,%.6f,%.6f,%.6f,%.6f,%.1f,%.1f,%.1f,%.0f,%s,%d",
-                (elapsedMs - t0) / 1000.0, engine.lat, engine.lon, truth.lat, truth.lon, alongErrorM, errorM,
-                truthOffRouteM, uncertaintyM, source.label, if (blind) 1 else 0,
+                (sample.elapsedMs - t0) / 1000.0, sample.engine.lat, sample.engine.lon, sample.truth.lat, sample.truth.lon, sample.alongErrorM, sample.errorM,
+                sample.truthOffRouteM, sample.uncertaintyM, sample.source.label, if (sample.blind) 1 else 0,
             ),
         )
     }

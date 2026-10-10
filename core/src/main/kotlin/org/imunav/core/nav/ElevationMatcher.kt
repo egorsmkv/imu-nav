@@ -85,7 +85,7 @@ class ElevationMatcher {
      * Returns null when the answer is not trustworthy or pressure is stale at elapsed [nowMs].
      */
     fun match(route: Route, currentS: Double, searchM: Double, nowMs: Long, scales: List<Double> = DEFAULT_SCALES): ElevationMatch? {
-        if (!pressureFresh(nowMs)) return null
+        if (!validSearch(currentS, searchM, scales) || !pressureFresh(nowMs)) return null
         if (!route.hasElevation || history.size < MIN_SAMPLES || windowM < MIN_WINDOW_M) return null
         val newest = history.last().odometerM
         // Distance of every sample behind the newest one, and the measured heights around their mean.
@@ -103,14 +103,26 @@ class ElevationMatcher {
             for (scale in scales) fit(route, candidateS, scale, trace)?.let { candidates += it }
             candidateS += STEP_M
         }
+        return confidentMatch(candidates)
+    }
+
+    /** Invalid search coordinates or scales cannot turn NaN comparisons into a confident match. */
+    private fun validSearch(currentS: Double, searchM: Double, scales: List<Double>): Boolean =
+        currentS.isFinite() && searchM.isFinite() && searchM >= 0.0 && scales.all(::validScale)
+
+    private fun validScale(scale: Double): Boolean = scale.isFinite() && scale > 0.0
+
+    /** Require fit quality and actual comparison evidence before reducing navigation uncertainty. */
+    private fun confidentMatch(candidates: List<Candidate>): ElevationMatch? {
         val best = candidates.minByOrNull { it.rmsM } ?: return null
         // Relief of the road under the best fit: on a flat road every position fits equally well.
         if (best.reliefM < MIN_RELIEF_M || best.rmsM > MAX_RMS_M) return null
         // The best place must clearly beat every other place (not just its own neighbors).
-        val rival = candidates.filter { abs(it.s - best.s) > RIVAL_SEPARATION_M }.minByOrNull { it.rmsM }
-        val ratio = rival?.let { it.rmsM / best.rmsM.coerceAtLeast(MIN_RMS_FOR_RATIO) } ?: Double.MAX_VALUE
-        if (ratio < MIN_RIVAL_RATIO) return null
-        return ElevationMatch(best.s, best.scale, best.rmsM, best.reliefM, ratio)
+        // Clipping near the route start can leave too little profile to establish uniqueness.
+        // Missing comparison evidence is a reason to abstain, not an infinitely strong match.
+        val rival = candidates.filter { abs(it.s - best.s) > RIVAL_SEPARATION_M }.minByOrNull { it.rmsM } ?: return null
+        val ratio = rival.rmsM / best.rmsM.coerceAtLeast(MIN_RMS_FOR_RATIO)
+        return if (ratio >= MIN_RIVAL_RATIO) ElevationMatch(best.s, best.scale, best.rmsM, best.reliefM, ratio) else null
     }
 
     private class Candidate(val s: Double, val scale: Double, val rmsM: Double, val reliefM: Double)
@@ -137,7 +149,9 @@ class ElevationMatcher {
             squares += error * error
             reliefSquares += expected * expected
         }
-        return Candidate(newestS, scale, sqrt(squares / profile.size), sqrt(reliefSquares / profile.size))
+        val rms = sqrt(squares / profile.size)
+        val relief = sqrt(reliefSquares / profile.size)
+        return if (rms.isFinite() && relief.isFinite()) Candidate(newestS, scale, rms, relief) else null
     }
 
     companion object {

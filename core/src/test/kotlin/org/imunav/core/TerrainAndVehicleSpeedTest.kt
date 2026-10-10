@@ -123,6 +123,23 @@ class TerrainAndVehicleSpeedTest {
     }
 
     @Test
+    fun aConstantGradeCannotConfirmPositionInATruncatedSearchWindow() {
+        val points = (0..100).map { GeoPoint(50.0 + it * 0.0001, 30.0) }
+        val geometry = Route(points, emptyList(), 100.0)
+        val graded = Route(points, emptyList(), 100.0, elevationM = DoubleArray(points.size) { 100.0 + 0.06 * geometry.cumulative[it] })
+        val matcher = ElevationMatcher()
+        for (index in 0..40) {
+            val height = 100.0 + 0.06 * (200.0 + index * 10.0)
+            matcher.onPressure(1013.25 * (1 - height / 44_330.0).pow(5.255), index * 1000L)
+            matcher.onTravel(index * 10.0, index * 1000L)
+        }
+        for (center in listOf(240.0, 300.0, 600.0)) {
+            assertNull(matcher.match(graded, center, 150.0, 40_000, ElevationMatcher.VEHICLE_SPEED_SCALES))
+        }
+        assertNull(matcher.match(graded, 600.0, 0.0, 40_000, ElevationMatcher.VEHICLE_SPEED_SCALES))
+    }
+
+    @Test
     fun terrainFromAnotherRoadIsNotMistakenForThisOne() {
         // The car is not on this route at all: its barometer follows different hills.
         val route = route(withElevation = true)

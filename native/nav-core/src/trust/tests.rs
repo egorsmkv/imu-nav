@@ -529,5 +529,8 @@ fn rejected_time_does_not_rewind_sequence_or_detector_state() {
         assert_eq!(classifier.strong_jam_at_ms, Some(9000));
     }
     classifier.reset();
-    assert_eq!(classifier.evaluate(input(fix(1000))).level, TrustLevel::Good);
+    assert_eq!(
+        classifier.evaluate(input(fix(1000))).level,
+        TrustLevel::Good
+    );
 }
