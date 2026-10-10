@@ -46,6 +46,11 @@ measurements remain optional; `JamDetector` ignores non-finite AGC without advan
 Clock-skew and independent-network age comparisons reject overflowing timestamp differences rather
 than interpreting wrapped differences as current evidence.
 
+Clock-skew rejection leaves both the classifier's sequence watermark and the positioning hub's
+latest usable state unchanged, so a future wall clock cannot block subsequent valid fixes.
+AGC hysteresis ignores negative, duplicate and regressing sample times. Only GOOD GPS speed may
+establish standstill for gyroscope-bias learning; rejected or SUSPECT fixes interrupt that evidence.
+
 Independent network evidence must have valid geographic coordinates and a finite, non-negative
 horizontal accuracy. Malformed network fixes are ignored for both disagreement and hard-jamming
 confirmation; they cannot establish the exception that downgrades hard jamming to `Suspect`.
@@ -82,6 +87,20 @@ Both Rust and Kotlin ignore malformed speed sources and validate network metadat
 the uncertainty floor. Overflowed fusion is unavailable (Rust `None`, Kotlin/JNI speed `0`). Network
 regression rejects malformed observations, future/expired samples, too few surviving inliers and
 non-finite fits. Historical queries leave stored observations available for later queries.
+
+Fusion keeps the inverse-variance weighted mean, but Rust reports
+`sigma = sum(weight * source_sigma) / sum(weight)`. By the covariance Cauchy–Schwarz bound this
+covers arbitrary source correlation **if the supplied marginal standard deviations are valid**.
+A GPS-trained route prior must not be treated as independent information. This bound does not
+cover unknown bias or make the network regression's heuristic uncertainty calibrated.
+
+`speed::tests::independent_episode_ensembles_cover_unknown_source_correlation` checks 8,192
+independent synthetic Gaussian episodes at each correlation 0, 0.7 and 1, using fixed seed
+`0x517a91`. The independent variance oracle is `(1-rho)*36/53 + rho*(66/53)^2`.
+Empirical variances must agree within 8%; nominal 95% intervals must cover more than 94% of
+episodes (and less than 96.5% at rho=1). These are fixed regression thresholds, not simultaneous
+confidence claims. A shared 6 m/s bias is a negative control and must fail coverage (<5%).
+Run with `cargo test --manifest-path native/Cargo.toml independent_episode_ensembles -- --nocapture`.
 
 For parameter units, exact regression windows, return values and Kotlin correction boundaries, see
 the [navigation input contract reference](input-contracts.md). The reference also explains why a

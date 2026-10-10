@@ -170,6 +170,69 @@ class TerrainAndVehicleSpeedTest {
     }
 
     @Test
+    fun accelerationWithGpsLatencyCannotBeLearnedAsObdScaleError() {
+        val engine = NavigationEngine(listener = object : NavListener {})
+        val route = route(false)
+        engine.start(route, route.geometry.last(), nowMs = 0)
+        val epoch = 1_700_000_000_000L
+        var wall = epoch
+        val hub = PositioningHub(wallClock = { wall })
+        for (time in 100L..10_000L step 100) {
+            val seconds = time / 1000.0
+            engine.onVehicleSpeed((10.0 + seconds) * 3.6, time)
+            wall = epoch + time
+            if (time >= 1000 && time % 1000L == 0L) {
+                val fixTime = time - 500L
+                val fixSeconds = fixTime / 1000.0
+                val point = proj.toGeo(0.0, 10 * fixSeconds + fixSeconds * fixSeconds / 2)
+                hub.onFix(RawFix(FixSource.GPS, epoch + fixTime, fixTime, point.lat, point.lon, speedMps = (10 + fixSeconds).toFloat(), accuracyM = 4f))
+            }
+            engine.tick(time, hub.snapshot(time))
+        }
+        // Fresh wheel speed after GPS expiry exposes the learned multiplier through navigation.
+        for (time in 10_100L..16_000L step 100) {
+            engine.onVehicleSpeed(72.0, time)
+            engine.tick(time, hub.snapshot(time))
+        }
+        assertEquals(72.0, engine.state.speedKmh.toDouble(), 1e-6)
+    }
+
+    @Test
+    fun stableContemporaneousSpeedsStillIdentifyObdScale() {
+        val engine = NavigationEngine(listener = object : NavListener {})
+        val route = route(false)
+        engine.start(route, route.geometry.last(), nowMs = 0)
+        val epoch = 1_700_000_000_000L
+        var wall = epoch
+        val hub = PositioningHub(wallClock = { wall })
+        for (time in 500L..66_000L step 500) {
+            wall = epoch + time
+            engine.onVehicleSpeed(79.2, time) // Wheel speed reads 10% high.
+            if (time <= 60_000L && time % 1000L == 0L) {
+                val point = proj.toGeo(0.0, time * 0.02)
+                hub.onFix(RawFix(FixSource.GPS, wall, time, point.lat, point.lon, speedMps = 20f, accuracyM = 4f))
+            }
+            engine.tick(time, hub.snapshot(time))
+        }
+        assertEquals(72.0, engine.state.speedKmh.toDouble(), 0.5)
+    }
+
+    @Test
+    fun periodicTerrainCannotIdentifyWhichRepeatedHillTheCarOccupies() {
+        val points = (0..6000 step 20).map { proj.toGeo(0.0, it.toDouble()) }
+        fun height(distance: Double) = 100.0 + 15.0 * sin(2 * PI * distance / 400.0)
+        val route = Route(points, listOf(Step("depart", null, "", 6000.0, 400.0, 0)), 400.0, elevationM = DoubleArray(points.size) { height(it * 20.0) })
+        val matcher = ElevationMatcher()
+        for (distance in 0..2000 step 5) {
+            val now = distance * 100L
+            matcher.onPressure(1013.25 * (1.0 - height(distance.toDouble()) / 44_330.0).pow(5.255), now)
+            matcher.onTravel(distance.toDouble(), now)
+        }
+        assertTrue(matcher.windowM >= 400.0)
+        assertNull(matcher.match(route, 2000.0, 800.0, 200_000L, scales = listOf(1.0)))
+    }
+
+    @Test
     fun routeElevationSurvivesTheRouteCodec() {
         val original = route(withElevation = true)
         val decoded = RouteCodec.decode(RouteCodec.encode(original))

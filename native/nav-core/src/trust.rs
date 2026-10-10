@@ -18,6 +18,7 @@ pub struct JamDetector {
     exit_hold_ms: i64,
     jammed: bool,
     above_since_ms: Option<i64>,
+    last_sample_ms: Option<i64>,
 }
 
 impl Default for JamDetector {
@@ -28,6 +29,7 @@ impl Default for JamDetector {
             exit_hold_ms: 15_000,
             jammed: false,
             above_since_ms: None,
+            last_sample_ms: None,
         }
     }
 }
@@ -43,6 +45,14 @@ impl JamDetector {
         let Some(agc_db) = agc_db.filter(|value| value.is_finite()) else {
             return false;
         };
+        if now_ms < 0
+            || self
+                .last_sample_ms
+                .is_some_and(|previous| now_ms <= previous)
+        {
+            return false;
+        }
+        self.last_sample_ms = Some(now_ms);
         let before = self.jammed;
         if !self.jammed {
             self.above_since_ms = None;
@@ -68,6 +78,7 @@ impl JamDetector {
     pub fn reset(&mut self) {
         self.jammed = false;
         self.above_since_ms = None;
+        self.last_sample_ms = None;
     }
 }
 
@@ -257,10 +268,17 @@ impl TrustClassifier {
                 reasons: vec![Reason::DuplicateTime],
             };
         }
-        let previous = self.previous_raw.replace(fix);
         let mut hard = Vec::new();
         let mut soft = Vec::new();
         self.check_fix(&input, &mut hard);
+        // Reject impossible clocks without poisoning the sequence watermark or trusted anchor.
+        if hard.contains(&Reason::ClockSkew) {
+            return Verdict {
+                level: TrustLevel::Bad,
+                reasons: hard,
+            };
+        }
+        let previous = self.previous_raw.replace(fix);
         self.check_last_good(fix, &mut hard, &mut soft);
         self.check_sequence(fix, previous, &mut hard, &mut soft);
         self.check_network(fix, input.network_fix, &mut soft);

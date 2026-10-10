@@ -96,13 +96,7 @@ class ErrorStateEkf(initial: InertialState, positionSigmaM: Double, private val 
     }
 
     private fun propagateCovariance(dt: Double, rotation: Matrix, force: Vector3, rate: Vector3): Matrix {
-        val dynamics = Matrix(STATE_SIZE, STATE_SIZE).apply {
-            block(0, 3, Matrix.identity(3))
-            block(3, 6, (rotation * Matrix.skew(force)) * -1.0)
-            block(3, 9, rotation * -1.0)
-            block(6, 6, Matrix.skew(rate) * -1.0)
-            block(6, 12, Matrix.identity(3) * -1.0)
-        }
+        val dynamics = inertialErrorDynamics(rotation, force, rate)
         val squared = dynamics * dynamics
         val cubed = squared * dynamics
         val transition = Matrix.identity(STATE_SIZE) + dynamics * dt + squared * (dt * dt / 2) + cubed * (dt * dt * dt / 6)
@@ -150,7 +144,7 @@ class ErrorStateEkf(initial: InertialState, positionSigmaM: Double, private val 
         for (row in 0 until STATE_SIZE) for (column in coordinates.indices) residualTransform[row, coordinates[column]] -= gain[row, column]
         val measurementNoise = Matrix(coordinates.size, coordinates.size) { row, column -> if (row == column) variances[row] else 0.0 }
         val joseph = residualTransform * covariance * residualTransform.transpose() + gain * measurementNoise * gain.transpose()
-        val reset = Matrix.identity(STATE_SIZE).apply { block(6, 6, Matrix.identity(3) + Matrix.skew(angle) * -0.5) }
+        val reset = Matrix.identity(STATE_SIZE).apply { block(6, 6, attitudeResetJacobian(angle)) }
         val updated = (reset * joseph * reset.transpose()).symmetric()
         if (!updated.finite() || updated.cholesky() == null) return false
         state = state.copy(

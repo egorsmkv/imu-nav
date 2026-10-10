@@ -54,9 +54,10 @@ class TrustClassifier(private val config: TrustConfig = TrustConfig(), private v
         if (prevRaw != null && (fix.elapsedMs <= prevRaw.elapsedMs || fix.timeMs <= prevRaw.timeMs)) {
             return Verdict(TrustLevel.BAD, listOf("dup_time"))
         }
-        previousRaw = fix
-
         checkFix(fix, gnss, wallNowMs, r)
+        // An impossible wall clock must not advance the watermark and lock out valid fixes.
+        if (r.hard.any { it.startsWith("clock_skew") }) return Verdict(TrustLevel.BAD, r.hard)
+        previousRaw = fix
         checkAgainstLastGood(fix, lastGood, r)
         checkSequence(fix, prevRaw, r)
         checkNetwork(fix, lastNet, r)
@@ -251,10 +252,12 @@ class JamDetector(private val enterDb: Float = -12f, private val exitDb: Float =
     override var jammed = false
         private set
     private var aboveSinceMs = -1L
+    private var lastSampleMs = -1L
 
     /** @return true if the state changed. */
     override fun update(agcDb: Float?, nowMs: Long): Boolean {
-        if (agcDb == null || !agcDb.isFinite()) return false
+        if (agcDb == null || !agcDb.isFinite() || nowMs <= lastSampleMs) return false
+        lastSampleMs = nowMs
         val before = jammed
         if (!jammed) {
             aboveSinceMs = -1L

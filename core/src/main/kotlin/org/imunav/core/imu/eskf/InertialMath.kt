@@ -5,6 +5,26 @@ import kotlin.math.hypot
 import kotlin.math.sin
 import kotlin.math.sqrt
 
+/** Local right-multiplicative error dynamics for [position, velocity, attitude, accel bias, gyro bias]. */
+internal fun inertialErrorDynamics(rotation: Matrix, force: Vector3, rate: Vector3) = Matrix(15, 15).apply {
+    block(0, 3, Matrix.identity(3))
+    block(3, 6, (rotation * Matrix.skew(force)) * -1.0)
+    block(3, 9, rotation * -1.0)
+    block(6, 6, Matrix.skew(rate) * -1.0)
+    block(6, 12, Matrix.identity(3) * -1.0)
+}
+
+/** Derivative of Log(Exp(-angle) Exp(angle + error)) at zero error, used after injection. */
+internal fun attitudeResetJacobian(angle: Vector3): Matrix {
+    val magnitude = angle.norm()
+    val squared = magnitude * magnitude
+    // Stable limits avoid subtracting nearly equal floating-point numbers near zero.
+    val first = if (magnitude < 1e-3) 0.5 - squared / 24 + squared * squared / 720 else (1 - cos(magnitude)) / squared
+    val second = if (magnitude < 1e-3) 1.0 / 6 - squared / 120 + squared * squared / 5040 else (magnitude - sin(magnitude)) / (squared * magnitude)
+    val cross = Matrix.skew(angle)
+    return Matrix.identity(3) + cross * -first + (cross * cross) * second
+}
+
 /** Noise densities and standard deviations must remain positive and finite when stored as variances. */
 internal fun hasFinitePositiveSquare(value: Double): Boolean {
     val squared = value * value

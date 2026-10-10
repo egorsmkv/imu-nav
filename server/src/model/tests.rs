@@ -1,6 +1,16 @@
 use super::*;
 
 #[test]
+fn antipodal_distance_remains_finite() {
+    for latitude in -890..=890 {
+        let latitude = f64::from(latitude) / 10.0;
+        let distance = distance_m(latitude, 30.0, -latitude, -150.0);
+        assert!(distance.is_finite(), "latitude={latitude}");
+        assert!((distance - std::f64::consts::PI * 6_371_000.0).abs() < 1.0);
+    }
+}
+
+#[test]
 fn invalid_policy_is_rejected_before_serving_requests() {
     let invalid_samples = Policy {
         max_samples_per_device: 0,

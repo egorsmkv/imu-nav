@@ -134,6 +134,9 @@ class NavigationEngine(
     // Car speed from an OBD-II adapter (see [onVehicleSpeed])
     private var vehicleSpeedMps: Double? = null
     private var vehicleSpeedAtMs = -1L
+    private var vehiclePlateauSinceMs = -1L
+    private var vehiclePlateauMinMps = 0.0
+    private var vehiclePlateauMaxMps = 0.0
 
     /** GPS speed ÷ OBD speed, learned while GPS is trusted (car speedometers read a little high or low). */
     private var vehicleSpeedScale = 1.0
@@ -255,7 +258,19 @@ class NavigationEngine(
      */
     fun onVehicleSpeed(kmh: Double, elapsedMs: Long) {
         if (kmh !in 0.0..MAX_VEHICLE_KMH || elapsedMs < 0 || elapsedMs <= vehicleSpeedAtMs) return
-        vehicleSpeedMps = kmh / 3.6
+        val speed = kmh / 3.6
+        val minimum = minOf(vehiclePlateauMinMps, speed)
+        val maximum = maxOf(vehiclePlateauMaxMps, speed)
+        // Acceleration and sensor latency cannot be distinguished from scale by a speed ratio.
+        if (vehiclePlateauSinceMs < 0 || elapsedMs - vehicleSpeedAtMs > SCALE_MAX_OBD_GAP_MS || maximum - minimum > SCALE_STABLE_RANGE_MPS) {
+            vehiclePlateauSinceMs = elapsedMs
+            vehiclePlateauMinMps = speed
+            vehiclePlateauMaxMps = speed
+        } else {
+            vehiclePlateauMinMps = minimum
+            vehiclePlateauMaxMps = maximum
+        }
+        vehicleSpeedMps = speed
         vehicleSpeedAtMs = elapsedMs
     }
 
@@ -427,7 +442,7 @@ class NavigationEngine(
         if (!estimate.gpsPositionAccepted) return
         lastGpsUseMs = fix.elapsedMs
         lastGpsSpeed = fix.speedMps?.toDouble()?.takeIf { it in 0.0..MAX_SPEED_MPS }
-        if (mode == TravelMode.FOOT && good && estimate.gpsSpeedAccepted && nowMs - fix.elapsedMs <= TICK_MS) lastGpsSpeed?.let { pedometer.learnStride(it, nowMs) }
+        if (mode == TravelMode.FOOT && good && estimate.gpsSpeedAccepted && nowMs - fix.elapsedMs <= TICK_MS) lastGpsSpeed?.let { pedometer.learnStride(it, fix.elapsedMs) }
         if (deviation.pending) deviation.clear(nowMs, 90_000)
         source = if (good) PositionSource.GPS else PositionSource.GPS_SUSPECT
     }
@@ -485,7 +500,7 @@ class NavigationEngine(
                         learnVehicleSpeedScale(speed, fix.elapsedMs)
                     }
 
-                    TravelMode.FOOT -> pedometer.learnStride(speed, nowMs)
+                    TravelMode.FOOT -> pedometer.learnStride(speed, fix.elapsedMs)
                 }
             }
         }
@@ -647,7 +662,11 @@ class NavigationEngine(
     /** With trusted GPS: learn how the adapter's speed relates to the real one (tire wear, speedometer offset). */
     private fun learnVehicleSpeedScale(gpsSpeed: Double, fixMs: Long) {
         val vehicle = vehicleSpeedMps ?: return
-        if (gpsSpeed < SCALE_LEARN_MIN_MPS || vehicle < SCALE_LEARN_MIN_MPS || abs(fixMs - vehicleSpeedAtMs) > 1000) return
+        if (gpsSpeed < SCALE_LEARN_MIN_MPS || vehicle < SCALE_LEARN_MIN_MPS || fixMs - vehicleSpeedAtMs !in 0..SCALE_MAX_SAMPLE_AGE_MS ||
+            vehicleSpeedAtMs - vehiclePlateauSinceMs < SCALE_STABLE_MS
+        ) {
+            return
+        }
         val ratio = gpsSpeed / vehicle
         if (ratio !in 0.8..1.2) return // acceleration between the two readings, or a bad fix
         vehicleSpeedScale += (ratio - vehicleSpeedScale) * 0.05
@@ -954,6 +973,10 @@ class NavigationEngine(
         /** Below this OBD speed the car is standing. */
         private const val VEHICLE_STOPPED_MPS = 0.5
         private const val SCALE_LEARN_MIN_MPS = 5.0
+        private const val SCALE_MAX_SAMPLE_AGE_MS = 250L
+        private const val SCALE_MAX_OBD_GAP_MS = 1000L
+        private const val SCALE_STABLE_MS = 3000L
+        private const val SCALE_STABLE_RANGE_MPS = 0.5
 
         /** Dead-reckoning drift as a fraction of the distance driven. */
         private const val ESTIMATED_SPEED_DRIFT = 0.08

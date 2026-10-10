@@ -239,3 +239,31 @@ alongside its 20 ms time limit. This bounds artificial covariance damping from i
 during fast phone rotation. A continuous-time transverse attitude/bias oracle is tested at 5, 20 and
 35 rad/s over one second, with a 0.1% relative covariance tolerance across input rates. This test
 does not validate the full nonlinear filter or calibrate its uncertainty.
+
+After attitude injection the ESKF transports covariance with the exact right Jacobian
+`Jr(a) = I - (1-cos(|a|))/|a|² [a]x + (|a|-sin(|a|))/|a|³ [a]x²`.
+Small-angle series avoid cancellation near zero. `ErrorStateEkfJacobianTest` independently
+differentiates quaternion composition at zero and selected corrections up to 0.499 rad
+(the acceptance limit is 0.5 rad), and nominal propagation in all 15 error coordinates. These checks validate the local derivatives,
+not global convergence or real-device uncertainty calibration.
+
+Walking cadence uses only steps at or before the queried time; stride learning queries cadence
+at the GPS measurement time rather than its delivery time. The Kotlin OBD fallback learns scale
+only after a 3 s speed plateau (range ≤0.5 m/s, gaps ≤1 s), with GPS no more than 250 ms after the
+latest wheel-speed sample. This prevents delayed GPS during acceleration from masquerading as
+wheel-speed scale error, matching the native estimator's plateau/timing policy.
+
+The six mathematical checks are covered by the temporal-evidence, terrain/vehicle-speed, ESKF
+Jacobian/consistency/observability, native geometry/speed/trust and server consensus test suites.
+The geometry ensemble compares full segment enumeration with indexed projection/ambiguity on
+32 looped routes at latitudes -80°, 0°, 50° and 80°, including repeated and tiny segments; date-line
+crossings have separate tests. Periodic terrain must abstain because several locations fit equally
+well. Monte Carlo assumptions and reproducible commands are in the
+[speed/trust guide](../core/positioning-and-trust.md) and [ESKF consistency guide](eskf-consistency.md).
+
+Calibration still depends on model assumptions: `GPS speed = scale * OBD speed` treats GPS bias as
+negligible on the learning plateau. If an unknown additive GPS bias is introduced, equal-speed
+observations identify only one combination of scale and bias (the rows `[speed, 1]` have rank one).
+Distinct speeds are needed to separate those two parameters. Likewise, stride learning assumes
+GPS speed and step cadence describe the same walk, and standstill-based gyro learning assumes the
+phone itself is not slowly rotating. GOOD GPS is necessary evidence, not proof of those assumptions.

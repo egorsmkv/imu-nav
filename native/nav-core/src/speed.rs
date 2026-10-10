@@ -21,6 +21,8 @@ pub struct SpeedEstimate {
 }
 
 /// Inverse-variance fusion of fresh GNSS speed, a route prior and network regression.
+/// The reported sigma bounds arbitrary correlation, provided the marginal sigmas are valid.
+/// A GPS-trained route prior is not an independent observation; unknown bias remains unmodelled.
 #[must_use]
 pub fn fuse_speed(
     last_gps_speed_mps: Option<f64>,
@@ -30,12 +32,14 @@ pub fn fuse_speed(
 ) -> Option<SpeedEstimate> {
     let mut weighted_sum = 0.0;
     let mut weight_sum = 0.0;
+    let mut weighted_sigma_sum = 0.0;
     let mut count = 0;
     let mut add = |speed: f64, sigma: f64| {
         if speed.is_finite() && speed >= 0.0 && sigma.is_finite() && sigma > 0.0 {
             let weight = 1.0 / (sigma * sigma);
             weighted_sum += speed * weight;
             weight_sum += weight;
+            weighted_sigma_sum += weight * sigma;
             count += 1;
         }
     };
@@ -58,6 +62,7 @@ pub fn fuse_speed(
     finish_fusion(
         weighted_sum,
         weight_sum,
+        weighted_sigma_sum,
         count,
         network.map_or(0.0, |estimate| estimate.span_s),
     )
@@ -77,6 +82,7 @@ fn valid_network_estimate(estimate: &SpeedEstimate) -> bool {
 fn finish_fusion(
     weighted_sum: f64,
     weight_sum: f64,
+    weighted_sigma_sum: f64,
     count: usize,
     span_s: f64,
 ) -> Option<SpeedEstimate> {
@@ -84,13 +90,15 @@ fn finish_fusion(
         || weighted_sum < 0.0
         || !weight_sum.is_finite()
         || weight_sum <= 0.0
+        || !weighted_sigma_sum.is_finite()
+        || weighted_sigma_sum <= 0.0
         || !span_s.is_finite()
         || span_s < 0.0
     {
         return None;
     }
     let speed_mps = weighted_sum / weight_sum;
-    let sigma_mps = (1.0 / weight_sum).sqrt();
+    let sigma_mps = weighted_sigma_sum / weight_sum;
     if !speed_mps.is_finite() || !sigma_mps.is_finite() || sigma_mps <= 0.0 {
         return None;
     }

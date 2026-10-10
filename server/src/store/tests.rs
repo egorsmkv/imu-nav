@@ -168,6 +168,69 @@ fn consensus_is_robust_and_persistent() -> Result<()> {
 }
 
 #[test]
+fn seeded_consensus_rejects_two_coordinated_distant_contributions() -> Result<()> {
+    let file = NamedTempFile::new()?;
+    let store = CellStore::open(file.path())?;
+    let policy = Policy::default();
+    let reference = tower(910, 50.0, 30.0, 1);
+    store.seed(std::slice::from_ref(&reference), 1, &policy)?;
+    let misleading = tower(910, 50.03, 30.0, 1_000_000);
+    assert!(
+        distance_m(reference.lat, reference.lon, misleading.lat, misleading.lon)
+            < policy.max_jump_m
+    );
+    for (index, device) in ["wrong-aaaa", "wrong-bbbb"].into_iter().enumerate() {
+        store.contribute(
+            device,
+            std::slice::from_ref(&misleading),
+            i64::try_from(index)? + 2,
+            &policy,
+        )?;
+    }
+    let actual = store.consensus(&reference.key)?.unwrap();
+    assert!(
+        distance_m(
+            reference.lat,
+            reference.lon,
+            actual.tower.lat,
+            actual.tower.lon
+        ) < 1.0
+    );
+    assert_eq!(actual.devices, 0);
+    assert!(actual.seeded);
+    Ok(())
+}
+
+#[test]
+fn worldwide_consensus_stays_at_the_date_line_and_counts_devices_once() -> Result<()> {
+    let file = NamedTempFile::new()?;
+    let store = CellStore::open(file.path())?;
+    let policy = Policy {
+        ukraine_only: false,
+        ..Policy::default()
+    };
+    for (index, longitude) in [179.999, -179.999, 179.998, -179.998]
+        .into_iter()
+        .enumerate()
+    {
+        let device = format!("device-{index}");
+        for time in 1..=3 {
+            store.contribute(
+                &device,
+                &[tower(911, 10.0, longitude, 1_000_000)],
+                time,
+                &policy,
+            )?;
+        }
+    }
+    let actual = store.consensus(&tower(911, 0.0, 0.0, 1).key)?.unwrap();
+    assert!(distance_m(10.0, 180.0, actual.tower.lat, actual.tower.lon) < 300.0);
+    assert_eq!(actual.devices, 4);
+    assert_eq!(actual.tower.samples, 4 * policy.max_samples_per_device);
+    Ok(())
+}
+
+#[test]
 fn seed_is_published_immediately_and_delete_is_durable() -> Result<()> {
     let file = NamedTempFile::new()?;
     let store = CellStore::open(file.path())?;

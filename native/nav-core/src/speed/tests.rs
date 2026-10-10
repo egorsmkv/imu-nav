@@ -1,6 +1,72 @@
 use super::*;
 
 #[test]
+fn independent_episode_ensembles_cover_unknown_source_correlation() {
+    const EPISODES: u32 = 8_192;
+    // Each episode draws a new common error and three independent errors; no pooled time series.
+    for correlation in [0.0_f64, 0.7, 1.0] {
+        let mut seed = 0x51_7a_91_u32;
+        let mut squares = 0.0;
+        let mut covered = 0_u32;
+        let mut biased_covered = 0_u32;
+        for _ in 0..EPISODES {
+            let common = gaussian(&mut seed);
+            let mut error = |sigma: f64| {
+                sigma
+                    * (correlation.sqrt() * common
+                        + (1.0 - correlation).sqrt() * gaussian(&mut seed))
+            };
+            let gps = 30.0 + error(1.5);
+            let route = 30.0 + error(6.0);
+            let network = SpeedEstimate {
+                speed_mps: 30.0 + error(1.0),
+                sigma_mps: 1.0,
+                samples: 6,
+                span_s: 30.0,
+            };
+            let estimate = fuse_speed(Some(gps), 0, Some(route), Some(network)).unwrap();
+            let residual = estimate.speed_mps - 30.0;
+            squares += residual * residual;
+            covered += u32::from(residual.abs() <= 1.959_963_984_540_054 * estimate.sigma_mps);
+            // A shared unmodelled bias is deliberately outside the marginal-noise assumptions.
+            biased_covered +=
+                u32::from((residual + 6.0).abs() <= 1.959_963_984_540_054 * estimate.sigma_mps);
+        }
+        let empirical_variance = squares / f64::from(EPISODES);
+        let theoretical_variance =
+            (1.0 - correlation) * 36.0 / 53.0 + correlation * (66.0_f64 / 53.0).powi(2);
+        assert!((empirical_variance / theoretical_variance - 1.0).abs() < 0.08);
+        let coverage = f64::from(covered) / f64::from(EPISODES);
+        assert!(coverage > 0.94);
+        if correlation > 0.99 {
+            assert!(coverage < 0.965);
+        }
+        assert!(biased_covered < EPISODES / 20);
+        println!(
+            "speed_consistency episodes={EPISODES} rho={correlation} variance={empirical_variance:.5} expected={theoretical_variance:.5} coverage={coverage:.5} bias_coverage={:.5}",
+            f64::from(biased_covered) / f64::from(EPISODES)
+        );
+    }
+}
+
+/// Fixed full-period LCG and Box-Muller transform; the independent analytic variance is the oracle.
+fn gaussian(seed: &mut u32) -> f64 {
+    let mut uniform = || {
+        *seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        (f64::from(*seed) + 0.5) / 4_294_967_296.0
+    };
+    (-2.0 * uniform().ln()).sqrt() * (std::f64::consts::TAU * uniform()).cos()
+}
+
+#[test]
+fn fusion_does_not_claim_independent_information_from_correlated_sources() {
+    // The route prior can be learned from GPS: errors 1.5*z and 6*z share one z.
+    // For normalized weights 16/17 and 1/17, the exact sigma is 30/17, not sqrt(36/17).
+    let result = fuse_speed(Some(10.0), 0, Some(10.0), None).unwrap();
+    assert!((result.sigma_mps - 30.0 / 17.0).abs() < 1e-12);
+}
+
+#[test]
 fn fusion_uses_inverse_variance_and_caps_speed() {
     let fused = fuse_speed(
         Some(10.0),
@@ -15,7 +81,7 @@ fn fusion_uses_inverse_variance_and_caps_speed() {
     )
     .unwrap();
     assert!(fused.speed_mps > 10.0 && fused.speed_mps < 13.0);
-    assert!(fused.sigma_mps < 1.0);
+    assert!((fused.sigma_mps - 66.0 / 53.0).abs() < 1e-12);
     assert_eq!(fused.samples, 3);
     assert!((fused.span_s - 30.0).abs() < f64::EPSILON);
     assert!(

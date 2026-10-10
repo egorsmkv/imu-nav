@@ -93,8 +93,14 @@ in SQLite (WAL mode) or PostgreSQL. SQLite is the default. It is built to
 resist **poisoning** (a phone or a script uploading fake tower positions):
 
 - Every upload carries an `X-Device-Id`; contributions are stored per account and device (at most 50 samples each).
-- A tower's position is a **one-device-one-vote weighted median**, so one device cannot outvote others
-  by uploading many samples; positions far from the consensus (MAD-based) are dropped as outliers.
+- A **one-device-one-vote coordinate median** supplies the outlier-filter center (seed imports have
+  three votes). The radial median uses those same votes; two coordinated distant uploads cannot
+  inflate the rejection threshold around a seed. The published position is the sample-weighted
+  mean of retained contributions, with capped device weight and a stronger seed weight.
+  Repeated uploads replace a device's contribution rather than adding votes. Longitude calculations
+  unwrap across the largest empty circular gap, so a cluster around ±180° stays near the date line.
+  This protects against the tested minority-outlier cases; device IDs do not prove independent
+  ownership, and a coordinated majority is outside this statistical guarantee.
 - A new tower is published only after `--min-devices` (default 2) independent devices agree, or if it
   came from the seed import (which counts as a strong vote).
 - Rows outside an optional administrator-configured service area, jumps > 5 km from the consensus,

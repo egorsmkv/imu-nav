@@ -26,6 +26,7 @@ fn fusion_finalization_never_publishes_nonfinite_values() {
     let result = finish_fusion(
         f64::from_bits(kani::any()),
         f64::from_bits(kani::any()),
+        f64::from_bits(kani::any()),
         2,
         f64::from_bits(kani::any()),
     );

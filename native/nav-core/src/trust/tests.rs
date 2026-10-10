@@ -105,6 +105,32 @@ fn clean_fix_is_good_and_becomes_anchor() {
 }
 
 #[test]
+fn invalid_clock_does_not_prevent_subsequent_recovery() {
+    let mut classifier = TrustClassifier::new(TrustConfig::default());
+    assert_eq!(
+        classifier.evaluate(input(fix(1000))).level,
+        TrustLevel::Good
+    );
+    let mut future = input(fix(1_000_000));
+    future.wall_now_ms = fix(1000).wall_time_ms;
+    assert_eq!(classifier.evaluate(future).level, TrustLevel::Bad);
+    assert_eq!(
+        classifier.evaluate(input(fix(2000))).level,
+        TrustLevel::Good
+    );
+}
+
+#[test]
+fn delayed_agc_cannot_shorten_recovery_hold() {
+    let mut detector = JamDetector::default();
+    assert!(detector.update(Some(-20.0), 10_000));
+    assert!(!detector.update(Some(-5.0), 1000));
+    assert!(!detector.update(Some(-5.0), 20_000));
+    assert!(detector.jammed());
+    assert!(detector.update(Some(-5.0), 35_000));
+}
+
+#[test]
 fn high_altitude_worldwide_fix_is_allowed_but_invalid_coordinates_are_not() {
     let mut classifier = TrustClassifier::new(TrustConfig::default());
     let mut high_road = fix(1_000);

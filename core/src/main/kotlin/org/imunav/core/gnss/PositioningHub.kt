@@ -75,6 +75,7 @@ class PositioningHub(
     var inertialObserver: ((InertialSample) -> Unit)? = null
     var judgedFixObserver: ((JudgedFix) -> Unit)? = null
     private var jamEndedAtMs = -1L
+    private var lastAgcMs = -1L
 
     /** Record raw sensor timing before forwarding it to the experimental inertial estimator. */
     fun onInertial(sample: InertialSample, arrivalMs: Long) {
@@ -110,9 +111,11 @@ class PositioningHub(
             return Verdict(TrustLevel.BAD, listOf("dup_time"))
         }
         val verdict = classifier.evaluate(fix, lastGood, lastNet, gnss, jammed, compassDeg, wallClock())
+        // Keep clock-invalid evidence in the recording, but never let it replace current state.
+        if (verdict.reasons.any { it.startsWith("clock_skew") }) return verdict
         val judged = JudgedFix(fix, verdict)
         lastJudged = judged
-        gyroBias.onGpsSpeed(fix.elapsedMs, fix.speedMps)
+        gyroBias.onGpsSpeed(fix.elapsedMs, fix.speedMps.takeIf { verdict.level == TrustLevel.GOOD })
         if (verdict.level != TrustLevel.BAD) lastUsable = judged
         if (verdict.level == TrustLevel.GOOD) {
             if (jamEndedAtMs > 0) {
@@ -160,6 +163,9 @@ class PositioningHub(
     /** @return true when jamming just ended (caller may re-inject assisted-GPS data). */
     fun onAgc(agcDb: Float?, elapsedMs: Long): Boolean {
         recorder?.invoke(TripEvent.Agc(elapsedMs, agcDb))
+        // The detector and the receiver evidence consumed by trust must share chronological input.
+        if (elapsedMs <= lastAgcMs) return false
+        lastAgcMs = elapsedMs
         gnss = gnss.copy(agcDb = agcDb)
         val wasJammed = jammed
         if (jamDetector.update(agcDb, elapsedMs)) {

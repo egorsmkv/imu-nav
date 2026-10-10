@@ -39,11 +39,11 @@ class Pedometer {
     /** Steps per second over the recent window, 0 if the user stopped; null without a step sensor. */
     fun cadence(nowMs: Long): Double? {
         if (!available) return null
-        val last = steps.lastOrNull() ?: return 0.0
+        val last = steps.lastOrNull { it <= nowMs } ?: return 0.0
         if (nowMs - last > STOPPED_AFTER_MS) return 0.0 // no step for a while: standing
-        val recent = steps.count { nowMs - it <= WINDOW_MS }
+        val recent = steps.count { it <= nowMs && nowMs - it <= WINDOW_MS }
         if (recent < 2) return 0.0
-        val spanS = (last - steps.first { nowMs - it <= WINDOW_MS }) / 1000.0
+        val spanS = (last - steps.first { it <= nowMs && nowMs - it <= WINDOW_MS }) / 1000.0
         return if (spanS <= 0) 0.0 else (recent - 1) / spanS
     }
 

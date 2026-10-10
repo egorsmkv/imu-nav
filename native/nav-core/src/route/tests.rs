@@ -1,6 +1,60 @@
 use super::*;
 
 #[test]
+fn varied_degenerate_routes_match_exhaustive_projection_and_ambiguity() {
+    for latitude in [-80.0, 0.0, 50.0, 80.0] {
+        for shape in 1..=8 {
+            let points = (0..129)
+                .map(|index| {
+                    // Repeated vertices and sub-millimetre segments mixed with loops and returns.
+                    let index = if index % 13 == 0 {
+                        f64::from(index - 1)
+                    } else if index % 17 == 0 {
+                        f64::from(index - 1) + 1e-8
+                    } else {
+                        f64::from(index)
+                    };
+                    let phase = index / 128.0 * 2.0 * PI;
+                    GeoPoint {
+                        latitude_deg: latitude + 0.008 * phase.sin(),
+                        longitude_deg: 30.0 + 0.006 * (phase * f64::from(shape)).sin(),
+                    }
+                })
+                .collect();
+            let route = RouteGeometry::new(points).unwrap();
+            for query_index in 0..24 {
+                let phase = f64::from(query_index) * 0.7;
+                let query = GeoPoint {
+                    latitude_deg: latitude + 0.01 * phase.sin(),
+                    longitude_deg: 30.0 + 0.008 * (phase * 1.3).cos(),
+                };
+                let best = exhaustive_projection(&route, query, 0, route.points.len() - 2);
+                let indexed = route.project_range(query, 0, route.points.len() - 2);
+                assert!((indexed.offset_m - best.offset_m).abs() < 1e-7);
+                assert!((indexed.position_m - best.position_m).abs() < 1e-7);
+                for accuracy in [0.01_f64, 3.0, 80.0] {
+                    let distinct = (4.0 * accuracy).max(100.0);
+                    let ambiguous = (0..route.points.len() - 1).any(|segment| {
+                        let rival = exhaustive_projection(&route, query, segment, segment);
+                        (rival.position_m - best.position_m).abs() > distinct
+                            && rival.offset_m <= best.offset_m + 2.0 * accuracy
+                    });
+                    let result = route.project_unambiguous(query, accuracy).unwrap();
+                    assert_eq!(
+                        result.is_none(),
+                        ambiguous,
+                        "lat={latitude} shape={shape} query={query_index}"
+                    );
+                    if let Some(actual) = result {
+                        assert!((actual.position_m - best.position_m).abs() < 1e-7);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn proof_geometry_matches_the_constructed_route_and_its_index() {
     let proof = kani_proofs::straight_route();
     let actual = RouteGeometry::new(proof.points.clone()).unwrap();

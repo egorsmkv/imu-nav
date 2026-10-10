@@ -42,10 +42,11 @@ pub(super) fn calculate(
             .map(|item| (item.lat, vote(item)))
             .collect(),
     );
+    let longitude_origin = longitude_origin(contributions);
     let median_lon = weighted_median(
         contributions
             .iter()
-            .map(|item| (item.lon, vote(item)))
+            .map(|item| (unwrap_longitude(item.lon, longitude_origin), vote(item)))
             .collect(),
     );
     let inliers = select_inliers(contributions, median_lat, median_lon, policy);
@@ -57,9 +58,10 @@ pub(super) fn calculate(
         / weight_sum;
     let lon = inliers
         .iter()
-        .map(|item| item.lon * weight(item))
+        .map(|item| unwrap_longitude(item.lon, longitude_origin) * weight(item))
         .sum::<f64>()
         / weight_sum;
+    let lon = (lon + 180.0).rem_euclid(360.0) - 180.0;
     let spread = inliers
         .iter()
         .map(|item| distance_m(lat, lon, item.lat, item.lon))
@@ -102,9 +104,15 @@ fn select_inliers<'a>(
             .iter()
             .map(|item| distance_m(median_lat, median_lon, item.lat, item.lon))
             .collect::<Vec<_>>();
-        let mut sorted = distances.clone();
-        sorted.sort_by(f64::total_cmp);
-        let limit = (3.0 * sorted[sorted.len() / 2]).max(policy.outlier_min_m);
+        // The radial median must honour the same seed votes as the coordinate medians.
+        let median_distance = weighted_median(
+            distances
+                .iter()
+                .zip(items)
+                .map(|(distance, item)| (*distance, vote(item)))
+                .collect(),
+        );
+        let limit = (3.0 * median_distance).max(policy.outlier_min_m);
         let selected = items
             .iter()
             .zip(distances)
@@ -140,6 +148,36 @@ fn vote(item: &Contribution) -> f64 {
     } else {
         1.0
     }
+}
+
+/// Cut the longitude circle in its largest empty gap, keeping a local date-line cluster together.
+/// Sorting makes the branch independent of database/device ordering, including tied gaps.
+fn longitude_origin(items: &[Contribution]) -> f64 {
+    let mut longitudes = items
+        .iter()
+        .map(|item| item.lon.rem_euclid(360.0))
+        .collect::<Vec<_>>();
+    longitudes.sort_by(f64::total_cmp);
+    let mut origin = longitudes.first().copied().unwrap_or_default();
+    let mut largest_gap = 0.0;
+    for (index, longitude) in longitudes.iter().enumerate() {
+        let next = longitudes[(index + 1) % longitudes.len()];
+        let gap = if index + 1 == longitudes.len() {
+            next + 360.0 - longitude
+        } else {
+            next - longitude
+        };
+        if gap > largest_gap {
+            largest_gap = gap;
+            origin = next;
+        }
+    }
+    origin
+}
+
+/// Express longitudes on the branch chosen for the whole contribution set.
+fn unwrap_longitude(longitude: f64, origin: f64) -> f64 {
+    origin + (longitude - origin).rem_euclid(360.0)
 }
 
 fn weighted_median(mut values: Vec<(f64, f64)>) -> f64 {
