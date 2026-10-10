@@ -28,6 +28,9 @@ COVERAGE = ('tools/rust_coverage.py', 'tools/rust_coverage_rustc.py', 'tools/tes
 ANDROID_RUST_BUILD = ('scripts/build-rust-android.sh', 'scripts/build-rust-android.ps1')
 SUITES = {
     'tools': ('tools/', '.github/workflows/kotlin-coverage.yml'),
+    'android': ('.github/workflows/android-gps.yml', 'app/src/main/', 'app/src/fdroid/',
+                'app/src/debug/', 'app/src/androidTest/', 'app/lint.xml', 'app/proguard-rules.pro',
+                'tools/run_mock_location_tests.py', 'tools/tests/test_mock_location_runner.py') + ANDROID_RUST_BUILD + CORE + ROUTING + NATIVE + RUST,
     'fdroid': ('.github/workflows/fdroid.yml', 'app/src/main/', 'app/src/fdroid/',
                'app/lint.xml', 'app/proguard-rules.pro') + ANDROID_RUST_BUILD + CORE + ROUTING + NATIVE + RUST,
     'kotlin': ('.github/workflows/kotlin-coverage.yml', 'app/src/main/', 'app/src/fdroid/',
@@ -39,7 +42,7 @@ SUITES = {
             'tools/verify_map_pack.py', 'tools/tests/test_map_pack.py'),
     'routing': ('.github/workflows/routing-pack.yml', 'tools/verify_routing_pack.py') + CORE + ROUTING,
 }
-GRADLE_SUITES = {'fdroid', 'kotlin', 'native', 'routing'}
+GRADLE_SUITES = {'fdroid', 'kotlin', 'native', 'routing', 'android'}
 
 
 def matches(path, rules):

@@ -19,23 +19,30 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(self.selected('README.md', 'docs/build_and_test.md', 'native/README.md'), set())
 
     def test_component_changes_do_not_cross_rust_workspaces(self):
-        self.assertEqual(self.selected('native/nav-core/src/lib.rs'), {'native', 'kotlin', 'fdroid'})
+        self.assertEqual(self.selected('native/nav-core/src/lib.rs'), {'native', 'kotlin', 'fdroid', 'android'})
         self.assertEqual(self.selected('server/src/api.rs'), {'server', 'kotlin'})
         self.assertEqual(self.selected('server/tools/traffic_sim.py'), {'server'})
-        self.assertEqual(self.selected('app/src/main/kotlin/org/imunav/app/ui/NavMap.kt'), {'kotlin', 'fdroid'})
+        self.assertEqual(self.selected('app/src/main/kotlin/org/imunav/app/ui/NavMap.kt'), {'kotlin', 'fdroid', 'android'})
         self.assertEqual(self.selected('app/src/test/kotlin/SomeTest.kt'), {'kotlin'})
+
+    def test_android_instrumentation_inputs_and_runner_are_selected(self):
+        self.assertEqual(self.selected('app/src/androidTest/kotlin/GpsTest.kt'), {'android'})
+        self.assertEqual(self.selected('app/src/debug/AndroidManifest.xml'), {'android'})
+        self.assertEqual(self.selected('.github/workflows/android-gps.yml'), {'android'})
+        self.assertEqual(self.selected('tools/run_mock_location_tests.py'), {'android', 'tools'})
+        self.assertEqual(self.selected('routing/src/main/kotlin/OfflineGraph.kt'), {'android', 'kotlin', 'fdroid', 'routing'})
 
     def test_shared_build_inputs_and_included_assets_are_selected(self):
         for script in ci.ANDROID_RUST_BUILD:
-            self.assertEqual(self.selected(script), {'native', 'kotlin', 'fdroid'})
+            self.assertEqual(self.selected(script), {'native', 'kotlin', 'fdroid', 'android'})
         self.assertEqual(self.selected('gradle/libs.versions.toml'), ci.GRADLE_SUITES)
         self.assertEqual(self.selected('links.properties'), ci.GRADLE_SUITES)
         self.assertEqual(self.selected('core/src/test/resources/fixture.json'), ci.GRADLE_SUITES)
         self.assertEqual(self.selected('server/static/maplibre/license.txt'), {'server', 'kotlin'})
         self.assertEqual(self.selected('server/templates/trips.html'), {'server', 'kotlin'})
         self.assertEqual(self.selected('server/Cargo.lock'), {'server', 'kotlin'})
-        self.assertEqual(self.selected('native/Cargo.lock'), {'native', 'kotlin', 'fdroid'})
-        self.assertEqual(self.selected('.cargo/config.toml'), {'native', 'server', 'kotlin', 'fdroid'})
+        self.assertEqual(self.selected('native/Cargo.lock'), {'native', 'kotlin', 'fdroid', 'android'})
+        self.assertEqual(self.selected('.cargo/config.toml'), {'native', 'server', 'kotlin', 'fdroid', 'android'})
 
     def test_workflow_and_selector_changes(self):
         self.assertEqual(self.selected('.github/workflows/rust-coverage.yml'), {'native', 'server'})

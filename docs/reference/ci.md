@@ -13,7 +13,8 @@ Update it whenever a module starts consuming another module, fixture, generator 
 | Changed input | Expensive automatic work |
 | --- | --- |
 | Root README or `docs/` | None; lightweight check jobs still report |
-| App UI / main resources | F-Droid build and Kotlin coverage |
+| App UI / main resources | F-Droid build, Kotlin coverage and Android GPS emulator matrix |
+| App AndroidTest / Debug fixtures | Android GPS emulator matrix |
 | App unit tests | Kotlin coverage |
 | JNI wrappers | F-Droid, Kotlin coverage and native Rust coverage |
 | Native Rust implementation / lockfile | F-Droid, Kotlin coverage and native Rust coverage |
@@ -24,6 +25,10 @@ Update it whenever a module starts consuming another module, fixture, generator 
 | Map pack tools | Python tooling tests and map fixture |
 | Coverage script | Python tooling tests and its corresponding coverage suite(s) |
 | Selector or its tests | All selected suites, so changes to the dependency map are exercised |
+
+The [Android GPS instrumentation](../mock_location_testing.md) workflow builds APKs once and
+runs real platform tests on API 28, 31, 35 and 36, with per-API JUnit/logcat/location evidence.
+It selects app, core, routing, native, runner and Gradle changes and always reports its build gate.
 
 Server Docker smoke builds retain their `main` path filters and manual dispatch. Native
 formal verification and full regional pack generation remain manual. No release is published

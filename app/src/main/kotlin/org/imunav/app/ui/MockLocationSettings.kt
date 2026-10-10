@@ -44,8 +44,10 @@ internal fun MockLocationSettings(sharing: MockLocationSharing) {
     }
     SectionHeader(stringResource(R.string.mock_location_section))
     SwitchItem(
-        stringResource(R.string.mock_location_title), stringResource(R.string.mock_location_summary),
-        enabled, sharing::setEnabled,
+        stringResource(R.string.mock_location_title),
+        stringResource(R.string.mock_location_summary),
+        enabled,
+        sharing::setEnabled,
     )
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         Text(stringResource(R.string.mock_location_limitations), style = MaterialTheme.typography.bodySmall)

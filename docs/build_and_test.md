@@ -76,6 +76,8 @@ There is no separate Kotlin installation step: Gradle resolves the version pinne
    against its loopback endpoint and a temporary SQLite database. This integration test is included
    in `./gradlew check`.
 4. For device tests, start an emulator or connect a device and run `./gradlew :app:connectedFdroidDebugAndroidTest`.
+   The [system GPS tests](mock_location_testing.md) change mock AppOps and require a disposable emulator;
+   their CI matrix covers API 28, 31, 35 and 36 separately from host coverage.
 
 `./gradlew check` also runs formatting, tests and pedantic Clippy for both Rust workspaces
 (`native/` and `server/`). A passing `:core:test` or native test run covers only that suite;

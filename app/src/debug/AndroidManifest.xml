@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Emulator fixtures never enter release/benchmark APKs and accept no external intents. -->
+    <application>
+        <activity android:name=".location.MockLocationTestActivity" android:exported="false" />
+        <service
+            android:name=".location.MockLocationTestService"
+            android:exported="false"
+            android:process=":mock_location_test" />
+    </application>
+</manifest>
