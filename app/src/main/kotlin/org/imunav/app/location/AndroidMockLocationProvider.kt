@@ -1,11 +1,14 @@
 package org.imunav.app.location
 
+import android.annotation.SuppressLint
 import android.app.AppOpsManager
 import android.content.Context
 import android.content.SharedPreferences
 import android.location.Criteria
 import android.location.Location
 import android.location.LocationManager
+import android.location.provider.ProviderProperties
+import android.os.Build
 import android.os.Process
 import android.os.SystemClock
 import androidx.core.content.edit
@@ -21,11 +24,27 @@ internal class AndroidMockLocationProvider(context: Context, private val prefs: 
     @Suppress("DEPRECATION") // The check and provider overload also work on our Android 8 minimum.
     override fun isAllowed(): Boolean = appOps.checkOpNoThrow(AppOpsManager.OPSTR_MOCK_LOCATION, Process.myUid(), packageName) == AppOpsManager.MODE_ALLOWED
 
-    @Suppress("DEPRECATION") // Criteria constants and this overload support Android 8–11 as well.
     override fun install() {
-        manager.addTestProvider(LocationManager.GPS_PROVIDER, false, false, false, false, false, true, true, Criteria.POWER_LOW, Criteria.ACCURACY_FINE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val properties = ProviderProperties.Builder()
+                .setHasSpeedSupport(true)
+                .setHasBearingSupport(true)
+                .setPowerUsage(ProviderProperties.POWER_USAGE_LOW)
+                .setAccuracy(ProviderProperties.ACCURACY_FINE)
+                .build()
+            manager.addTestProvider(LocationManager.GPS_PROVIDER, properties)
+        } else {
+            installLegacyProvider()
+        }
         // Synchronous on the IO worker: retain ownership across process death for startup cleanup.
         prefs.edit(commit = true) { putBoolean(INSTALLED, true) }
+    }
+
+    /** Android 8–11 lack ProviderProperties; Criteria supplies the same platform constant values. */
+    @SuppressLint("WrongConstant") // New SDK IntDefs name ProviderProperties constants, unavailable on these versions.
+    @Suppress("DEPRECATION") // Keep the legacy overload for API 26–30 only.
+    private fun installLegacyProvider() {
+        manager.addTestProvider(LocationManager.GPS_PROVIDER, false, false, false, false, false, true, true, Criteria.POWER_LOW, Criteria.ACCURACY_FINE)
     }
 
     override fun publish(sample: MockLocationSample) {
