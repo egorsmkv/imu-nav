@@ -747,4 +747,19 @@
     <string name="data_usage_since_restart">С перезагрузки · Wi-Fi и мобильная сеть</string>
     <string name="data_usage_empty">С перезагрузки устройства трафика ещё не было.</string>
     <string name="data_usage_split">Получено %1$s · Отправлено %2$s</string>
+
+    <!-- Explicit, device-local Android mock GPS export. -->
+    <string name="mock_location_section">Передача системного GPS</string>
+    <string name="mock_location_title">Использовать IMU Nav как системный GPS</string>
+    <string name="mock_location_summary">Во время навигации передавать расчётную позицию другим приложениям через имитированный GPS Android. Работает в фоне до завершения навигации. По умолчанию выключено.</string>
+    <string name="mock_location_limitations">В параметрах разработчика выберите IMU Nav как приложение для фиктивных местоположений. Передача заменяет настоящий GPS, в том числе в IMU Nav: навигация опирается на датчики движения и сетевые/сотовые оценки. Заменяется только GPS; некоторые приложения могут игнорировать или отклонять имитированные координаты.</string>
+    <string name="mock_location_off">Передача выключена.</string>
+    <string name="mock_location_waiting">Готово — ожидание активной поездки с корректной позицией.</string>
+    <string name="mock_location_active">Позиция навигации передаётся как системный GPS.</string>
+    <string name="mock_location_permission">Требуется настройка: выберите эту версию IMU Nav для фиктивных местоположений в параметрах разработчика.</string>
+    <string name="mock_location_error">Не удалось передать GPS. Навигация продолжается. Проверьте настройки Android, выключите и снова включите передачу.</string>
+    <string name="mock_location_cleanup_failed">Android заблокировал восстановление GPS. Выберите эту версию IMU Nav для фиктивных местоположений, вернитесь сюда и выключите передачу. При необходимости выберите «Нет» в параметрах разработчика или перезапустите телефон.</string>
+    <string name="mock_location_open_settings">Открыть параметры разработчика</string>
+    <string name="mock_location_settings_unavailable">Не удалось открыть параметры разработчика. Откройте настройки Android вручную и сначала включите параметры разработчика.</string>
+    <string name="mock_location_notification">Передача GPS · %1$s</string>
 </resources>

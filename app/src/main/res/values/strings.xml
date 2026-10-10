@@ -733,4 +733,19 @@
     <string name="data_usage_since_restart">Since device restart · Wi-Fi and mobile data</string>
     <string name="data_usage_empty">No data used since the device restarted.</string>
     <string name="data_usage_split">Received %1$s · Sent %2$s</string>
+
+    <!-- Explicit, device-local Android mock GPS export. -->
+    <string name="mock_location_section">System GPS sharing</string>
+    <string name="mock_location_title">Use IMU Nav as system GPS</string>
+    <string name="mock_location_summary">During navigation, share the estimated position with other apps through Android’s mock GPS provider. Continues in the background; stops when navigation ends. Off by default.</string>
+    <string name="mock_location_limitations">Select IMU Nav under Developer options → Select mock location app. Sharing replaces real GPS input, including in IMU Nav, so navigation relies on motion sensors and network/cell estimates. Only the GPS provider is replaced; some apps may ignore or reject mock locations.</string>
+    <string name="mock_location_off">Sharing is off.</string>
+    <string name="mock_location_waiting">Ready — waiting for an active trip with a valid position.</string>
+    <string name="mock_location_active">Sharing the navigation position as system GPS.</string>
+    <string name="mock_location_permission">Setup required: select this IMU Nav installation as the mock location app in Developer options.</string>
+    <string name="mock_location_error">GPS sharing failed. Navigation continues. Check Android settings and try switching sharing off and on.</string>
+    <string name="mock_location_cleanup_failed">Android blocked GPS cleanup. Select this IMU Nav installation as the mock location app, return here and switch sharing off. If needed, select None in Developer options or restart the phone.</string>
+    <string name="mock_location_open_settings">Open Developer options</string>
+    <string name="mock_location_settings_unavailable">Cannot open Developer options. Open Android Settings manually and enable Developer options first.</string>
+    <string name="mock_location_notification">Sharing system GPS · %1$s</string>
 </resources>
