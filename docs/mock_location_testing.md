@@ -71,8 +71,10 @@ entire test package in an ordinary connected-test run: the seeding stage intenti
 a trip active for its paired restart check. The CI runner validates terminal instrumentation records and completion, failing on assertions,
 crashes, skipped tests, duplicate records or missing classes/tests even if `adb` returns zero.
 
-Per-API artifacts contain `results.xml`, raw instrumentation output, API number, logcat and
-`dumpsys location`. Consult the workflow run for results at the exact commit under review;
+Per-API artifacts contain `results.xml`, raw instrumentation output, API number, ADB version/device
+inventory, logcat and `dumpsys location`. The runner awaits ADB transport for at most 30 seconds
+before collecting evidence and cleaning up; it never retries test invocations or GPS samples.
+Missing evidence or failed cleanup also fails the suite. Consult the workflow run for results at the exact commit under review;
 the presence of these tests alone is not evidence that a given API passed.
 
 ## Physical-device and longer lifecycle checks

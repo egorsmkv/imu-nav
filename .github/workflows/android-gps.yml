@@ -83,6 +83,8 @@ jobs:
     name: GPS emulator API ${{ matrix.api-level }}
     needs: build
     runs-on: ubuntu-latest
+    env:
+      ANDROID_SERIAL: emulator-5554
     timeout-minutes: 20
     strategy:
       fail-fast: false

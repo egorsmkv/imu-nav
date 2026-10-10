@@ -70,6 +70,14 @@ def adb(*arguments, timeout=60):
     return subprocess.run(['adb', *arguments], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout, check=True).stdout
 
 
+def error_detail(error):
+    """CalledProcessError.__str__ omits adb's actual transport/shell diagnostic."""
+    output = getattr(error, 'output', '') or ''
+    if isinstance(output, bytes):
+        output = output.decode('utf-8', errors='replace')
+    return f'{error}\n{output}'.strip()
+
+
 def instrumentation(classes):
     return adb('shell', 'am', 'instrument', '-w', '-r', '-e', 'class', classes, '-e', 'timeout_msec', '60000',
                'org.imunav.app.debug.test/androidx.test.runner.AndroidJUnitRunner', timeout=300)
@@ -88,6 +96,7 @@ def main():
         tests = [path for path in apks if 'androidTest' in path.parts]
         if len(apps) != 1 or len(tests) != 1:
             raise RuntimeError(f'Expected one app and one test APK, found {len(apps)} and {len(tests)}')
+        (args.output / 'adb.txt').write_text(adb('version') + adb('devices', '-l'))
         (args.output / 'android-api.txt').write_text(adb('shell', 'getprop', 'ro.build.version.sdk'))
         original_location_mode = adb('shell', 'settings', 'get', 'secure', 'location_mode').strip()
         adb('install', '-r', '-g', str(apps[0]))
@@ -111,15 +120,25 @@ def main():
                 valid = valid and restored_valid
     except (OSError, RuntimeError, subprocess.SubprocessError) as error:
         valid = False
-        transcript += f'\nRunner error: {error}\n'
+        transcript += f'\nRunner error: {error_detail(error)}\n'
     finally:
         (args.output / 'instrumentation.txt').write_text(transcript)
         write_junit(args.output / 'results.xml', results, valid, transcript)
+        # A transient ADB disconnect after instrumentation must not lose cleanup/evidence.
+        # Only await the transport; never rerun instrumentation or inject another GPS sample.
+        try:
+            adb('wait-for-device', timeout=30)
+        except (OSError, subprocess.SubprocessError) as error:
+            valid = False
+            transcript += f'\nADB transport error: {error_detail(error)}\n'
         for filename, command in [('logcat.txt', ('logcat', '-d')), ('location.txt', ('shell', 'dumpsys', 'location'))]:
             try:
                 (args.output / filename).write_text(adb(*command))
             except (OSError, subprocess.SubprocessError) as error:
-                (args.output / filename).write_text(str(error))
+                valid = False
+                detail = error_detail(error)
+                (args.output / filename).write_text(detail)
+                transcript += f'\nEvidence error ({filename}): {detail}\n'
         # Fresh emulators only: remove runtime processes and shell-selected mock access after evidence.
         try:
             adb('shell', 'am', 'force-stop', 'org.imunav.app.debug')
@@ -128,9 +147,9 @@ def main():
                 adb('shell', 'settings', 'put', 'secure', 'location_mode', original_location_mode)
         except (OSError, subprocess.SubprocessError) as error:
             valid = False
-            transcript += f'\nEmulator cleanup error: {error}\n'
-            (args.output / 'instrumentation.txt').write_text(transcript)
-            write_junit(args.output / 'results.xml', results, valid, transcript)
+            transcript += f'\nEmulator cleanup error: {error_detail(error)}\n'
+        (args.output / 'instrumentation.txt').write_text(transcript)
+        write_junit(args.output / 'results.xml', results, valid, transcript)
     print(transcript)
     print(f'GPS instrumentation: {len(results)} terminal test records; {"PASS" if valid else "FAIL"}')
     raise SystemExit(0 if valid else 1)

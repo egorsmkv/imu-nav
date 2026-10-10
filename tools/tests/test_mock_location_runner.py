@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 import unittest
 import xml.etree.ElementTree as ET
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 
 SPEC = importlib.util.spec_from_file_location('mock_location_runner', Path(__file__).parents[1] / 'run_mock_location_tests.py')
@@ -67,8 +67,8 @@ class InstrumentationResultsTest(unittest.TestCase):
     def test_timeout_after_passing_normal_suite_never_passes_recovery(self):
         classname = 'org.imunav.app.location.MockLocationAppRecoveryTest'
         seed = f'INSTRUMENTATION_STATUS: class={classname}\nINSTRUMENTATION_STATUS: test=seed\nINSTRUMENTATION_STATUS_CODE: 0\nINSTRUMENTATION_CODE: -1\n'
-        for outputs in ([transcript(), subprocess.TimeoutExpired('adb', 300)],
-                        [transcript(), seed, subprocess.TimeoutExpired('adb', 300)]):
+        for outputs in ([transcript(), subprocess.TimeoutExpired('adb', 300, output=b'partial recovery output')],
+                        [transcript(), seed, subprocess.TimeoutExpired('adb', 300, output=b'partial recovery output')]):
             with self.subTest(stages=len(outputs)), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 app = root / 'apks/fdroid/debug/app.apk'
@@ -83,6 +83,46 @@ class InstrumentationResultsTest(unittest.TestCase):
                         runner.main()
                 self.assertEqual(raised.exception.code, 1)
                 self.assertGreater(int(ET.parse(root / 'reports/results.xml').getroot().get('failures')), 0)
+                self.assertIn('partial recovery output', (root / 'reports/instrumentation.txt').read_text())
+
+    def test_completed_stages_require_bounded_transport_evidence_and_cleanup(self):
+        classname = 'org.imunav.app.location.MockLocationAppRecoveryTest'
+        stages = [f'INSTRUMENTATION_STATUS: class={classname}\nINSTRUMENTATION_STATUS: test={name}\n'
+                  'INSTRUMENTATION_STATUS_CODE: 0\nINSTRUMENTATION_CODE: -1\n' for name in ('seed', 'restore')]
+        for failed_step in (None, 'transport', 'logcat', 'location', 'cleanup'):
+            with self.subTest(failed_step=failed_step), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                app = root / 'apks/fdroid/debug/app.apk'
+                test = root / 'apks/androidTest/fdroid/debug/test.apk'
+                for apk in (app, test):
+                    apk.parent.mkdir(parents=True, exist_ok=True)
+                    apk.write_bytes(b'synthetic APK fixture')
+                force_stops = 0
+
+                def fake_adb(*arguments, timeout=60):
+                    nonlocal force_stops
+                    if arguments == ('shell', 'am', 'force-stop', 'org.imunav.app.debug'):
+                        force_stops += 1
+                    failing = ((failed_step == 'transport' and arguments == ('wait-for-device',)) or
+                               (failed_step == 'logcat' and arguments == ('logcat', '-d')) or
+                               (failed_step == 'location' and arguments == ('shell', 'dumpsys', 'location')) or
+                               (failed_step == 'cleanup' and force_stops == 2))
+                    if failing:
+                        raise subprocess.CalledProcessError(1, ['adb', *arguments], output='adb: device offline')
+                    return '3'
+
+                argv = ['runner', '--apk-directory', str(root / 'apks'), '--output', str(root / 'reports')]
+                with patch.object(sys, 'argv', argv), patch.object(runner, 'adb', side_effect=fake_adb) as mock_adb, \
+                        patch.object(runner, 'instrumentation', side_effect=[transcript(), *stages]), patch('builtins.print'):
+                    with self.assertRaises(SystemExit) as raised:
+                        runner.main()
+                self.assertIn(call('wait-for-device', timeout=30), mock_adb.call_args_list)
+                self.assertEqual(force_stops, 2)
+                self.assertEqual(raised.exception.code, int(failed_step is not None))
+                suite = ET.parse(root / 'reports/results.xml').getroot()
+                self.assertEqual(suite.get('failures'), str(int(failed_step is not None)))
+                if failed_step is not None:
+                    self.assertIn('adb: device offline', (root / 'reports/instrumentation.txt').read_text())
 
 
 if __name__ == '__main__':
