@@ -91,22 +91,23 @@ class PositioningHub(
         recorder?.invoke(TripEvent.Fix(fix))
         // A mock GPS export may also be relayed by a vendor's network/fused provider. Record it,
         // but never feed it back as independent positioning evidence or a cell correction.
-        if (fix.isMock && fix.source != FixSource.GPS) return null
-        when (fix.source) {
-            FixSource.NET -> {
-                lastNet = fix
-            }
+        if (!fix.isMock) {
+            when (fix.source) {
+                FixSource.NET -> {
+                    lastNet = fix
+                }
 
-            FixSource.FUSED -> {
-                lastFused = fix
-            }
+                FixSource.FUSED -> {
+                    lastFused = fix
+                }
 
-            FixSource.CELL -> {
-                lastCell = fix
-                if (cellReplacesNetwork(fix, lastNet)) lastNet = fix
-            }
+                FixSource.CELL -> {
+                    lastCell = fix
+                    if (cellReplacesNetwork(fix, lastNet)) lastNet = fix
+                }
 
-            FixSource.GPS -> Unit
+                FixSource.GPS -> Unit
+            }
         }
         if (fix.source != FixSource.GPS) return null
         // Keep the hub's latest GPS, bias input and observers monotonic as well as the classifier.
