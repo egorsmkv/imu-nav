@@ -23,6 +23,7 @@ import org.imunav.app.ui.MainActivity
 import org.imunav.app.ui.formatDistance
 import org.imunav.app.ui.formatDuration
 import org.imunav.app.ui.instructionLine
+import org.imunav.core.location.MockLocationStatus
 import org.imunav.core.nav.NavigationEngine
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -76,6 +77,7 @@ class NavService : LifecycleService() {
                 var tickCount = 0
                 while (isActive) {
                     app.tick()
+                    app.mockLocationSharing.update(app.engine.state)
                     if (!app.engine.state.active) break
                     if (tickCount % NOTIFY_EVERY_TICKS == 0) updateNotification()
                     tickCount++
@@ -91,6 +93,7 @@ class NavService : LifecycleService() {
 
     override fun onDestroy() {
         loop?.cancel()
+        graph.mockLocationSharing.stop()
         wakeLock?.let { if (it.isHeld) it.release() }
         super.onDestroy()
     }
@@ -99,10 +102,15 @@ class NavService : LifecycleService() {
     private fun updateNotification() {
         val state = graph.engine.state
         val step = state.nextStep
-        val text = when {
+        val guidance = when {
             state.arrived -> getString(R.string.arrived)
             step != null -> formatDistance(resources, state.distToNextM) + " · " + instructionLine(resources, step)
             else -> formatDuration(resources, state.remainingS)
+        }
+        val text = if (graph.mockLocationSharing.status.value == MockLocationStatus.ACTIVE) {
+            getString(R.string.mock_location_notification, guidance)
+        } else {
+            guidance
         }
         if (text == lastText) return // posting an unchanged notification still costs IPC and wakes System UI
         lastText = text

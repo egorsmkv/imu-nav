@@ -68,6 +68,8 @@ internal fun EverydaySettings(app: AppGraph, ui: UiState, context: Context, save
         // ---------------- Map start
         MapStartSection(app, ui)
 
+        MockLocationSettings(app.mockLocationSharing)
+
         // ---------------- Navigation without GPS
         SectionHeader(stringResource(R.string.sec_navigation_method))
         val navigationEstimator by app.navigationEstimator.collectAsStateWithLifecycle()

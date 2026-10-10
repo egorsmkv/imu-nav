@@ -89,6 +89,9 @@ class PositioningHub(
      */
     fun onFix(fix: RawFix): Verdict? {
         recorder?.invoke(TripEvent.Fix(fix))
+        // A mock GPS export may also be relayed by a vendor's network/fused provider. Record it,
+        // but never feed it back as independent positioning evidence or a cell correction.
+        if (fix.isMock && fix.source != FixSource.GPS) return null
         when (fix.source) {
             FixSource.NET -> {
                 lastNet = fix

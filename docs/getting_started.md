@@ -16,6 +16,49 @@ You can also change the language in **Settings → General → Language**. Tap t
 
 To return to the checklist, open **Settings → Set up IMU Nav**. Skipping a pack does not erase tower data already on the phone.
 
+## Share the navigation position as system GPS
+
+1. Open **Settings → General → System GPS sharing** and read the limitations.
+2. Tap **Open Developer options**, enable Android Developer options if needed, and choose
+   this installation of **IMU Nav** under **Select mock location app**. Debug and benchmark
+   builds are separate installations. Android grants this access explicitly; it is not a normal
+   runtime permission dialog.
+3. Turn on **Use IMU Nav as system GPS**, then start a route. The status changes from waiting
+   to sharing when the foreground navigation service has a valid estimate. Sharing works with
+   the screen off and while another app is in front; the navigation notification identifies it.
+4. Turn the switch off or end navigation to remove the mock GPS provider. The switch is remembered
+   on this device for later trips and is never synchronized to another device.
+
+**This replaces the real GPS provider, including the GPS input seen by IMU Nav itself.**
+The navigator continues from motion sensors, route knowledge and available network/cell/OBD inputs;
+it cannot reacquire real GPS until sharing stops. Only Android's GPS provider is replaced.
+Network location and proprietary fused-location APIs are not overridden, and other apps may reject
+mock fixes. This is an experimental research feature, not a safety system or a guarantee that every
+app will display the same location.
+
+Export uses the navigation estimate's uncertainty, speed, bearing and sample time; it does not invent
+altitude or a precise accuracy. Mock inputs are not accepted as independent navigation evidence.
+Missing or invalid guidance removes the provider instead of continuing to publish an old position.
+The existing navigation tick drives updates; there is no separate polling service or Google dependency.
+
+If Android revokes mock-location access, sharing stops and settings shows the error. Android may
+also deny cleanup: reselect this installation, return to settings, and switch sharing off. If the
+provider remains stuck after a force-stop or device-specific system error, select **None** for the
+mock-location app or restart the phone. On process restart, IMU Nav attempts to remove a provider
+it previously installed before beginning another export session.
+
+### Device verification for GPS sharing
+
+On an Android 8 device/emulator and a current Android version, verify: disabled by default; denied
+mock access gives setup guidance without stopping navigation; enabling during a trip delivers
+`isMock` GPS fixes in a separate location-listener test app; accuracy matches navigation uncertainty;
+backgrounding keeps updates coming; disabling and ending navigation restore the original provider;
+revoking access does not crash; returning from Developer options refreshes status; process restart
+cleans up an owned provider. Check English/Ukrainian/Russian and narrow screens with large text.
+Use synthetic routes and locations. A device test must grant mock-location access explicitly.
+
+Android API reference: [LocationManager test providers](https://developer.android.com/reference/android/location/LocationManager#addTestProvider(java.lang.String,boolean,boolean,boolean,boolean,boolean,boolean,boolean,int,int)).
+
 ## Check data usage
 
 Open **Settings → Data usage** for a prominent total and separate download/upload

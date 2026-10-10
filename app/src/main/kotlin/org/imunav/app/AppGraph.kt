@@ -26,6 +26,7 @@ import org.imunav.app.cells.CellManager
 import org.imunav.app.diagnostics.DevDiagnostics
 import org.imunav.app.diagnostics.ProfileCapture
 import org.imunav.app.haptics.Haptics
+import org.imunav.app.location.MockLocationSharing
 import org.imunav.app.maps.OfflineMap
 import org.imunav.app.nativecore.NativeEstimatorBridge
 import org.imunav.app.nativecore.NativeNetworkTracker
@@ -166,6 +167,7 @@ class AppGraph(private val context: Context) {
     // ---------------------------------------------------------------- travel mode
 
     private val navigationPreferences = NavigationPreferences(context)
+    val mockLocationSharing = MockLocationSharing(context, scope)
 
     /** Car or on foot, chosen before starting (remembered between app starts). */
     val travelMode = navigationPreferences.travelMode
@@ -624,6 +626,7 @@ class AppGraph(private val context: Context) {
 
     /** End the trip: save it to the history and stop the engine. */
     fun stopNavigation() {
+        mockLocationSharing.stop()
         navigationWork.cancel()
         if (_ui.value.startingNavigation) _ui.value = _ui.value.copy(startingNavigation = false, planning = false)
         if (!engine.state.active) return
