@@ -27,6 +27,24 @@ def transcript(code=0, complete=True):
 
 
 class InstrumentationResultsTest(unittest.TestCase):
+    def test_old_images_use_kernel_mappings_when_getconf_is_missing(self):
+        missing = subprocess.CalledProcessError(127, ['adb', 'shell', 'getconf', 'PAGE_SIZE'], output='getconf: not found')
+        for kb in (4, 16):
+            with self.subTest(kb=kb), patch.object(runner, 'adb', side_effect=[missing, f'KernelPageSize:    {kb} kB\nKernelPageSize: 2048 kB\n']) as adb:
+                self.assertEqual(runner.device_page_size(), str(kb * 1024))
+                self.assertEqual(adb.call_args_list, [call('shell', 'getconf', 'PAGE_SIZE'), call('shell', 'cat', '/proc/self/smaps')])
+
+    def test_page_size_fallback_does_not_hide_transport_errors_or_missing_evidence(self):
+        offline = subprocess.CalledProcessError(1, ['adb'], output='device offline')
+        with patch.object(runner, 'adb', side_effect=offline) as adb:
+            with self.assertRaises(subprocess.CalledProcessError):
+                runner.device_page_size()
+            self.assertEqual(adb.call_count, 1)
+        missing = subprocess.CalledProcessError(127, ['adb'], output='getconf: not found')
+        with patch.object(runner, 'adb', side_effect=[missing, 'unreadable mappings']):
+            with self.assertRaisesRegex(RuntimeError, 'Cannot determine kernel page size'):
+                runner.device_page_size()
+
     def test_complete_suite_passes_and_start_records_are_not_counted(self):
         results, valid = runner.parse_results(transcript().replace('\n', '\r\n'))
         self.assertTrue(valid)

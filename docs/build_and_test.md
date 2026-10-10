@@ -22,6 +22,8 @@ project configuration. The host algorithms and host JNI still execute without An
 
 Install the SDK platform, build tools, NDK and CMake through Android Studio's SDK Manager or your SDK
 command-line tools. Gradle pins NDK 28.2.13676358, whose linker defaults to 16 KB alignment.
+The Rust JNI build script explicitly sets both maximum and common page sizes to 16 KB,
+including for direct Cargo builds, so Rust compiler defaults cannot misalign the RELRO end.
 CMake rebuilds the vendored AndroidX Graphics Path 1.0.1 JNI; its original AAR has a
 misaligned RELRO end. The Java dependency is pinned to match the unchanged native source.
 Set these variables to the actual
@@ -107,7 +109,9 @@ The gate checks ELF `LOAD` alignment/congruence and GNU RELRO end alignment, the
 `zipalign -v -c -P 16 4`. Missing libraries/tools and failed checks fail the command; the JSON
 report retains evidence. F-Droid CI applies this to release and benchmark APKs. Android
 instrumentation CI also runs on an API 35 `google_apis_ps16k` x86_64 emulator and requires
-`adb shell getconf PAGE_SIZE` to return `16384` before tests begin. Alignment alone does not
+`adb shell getconf PAGE_SIZE` to return `16384` before tests begin. Older images without
+`getconf` use the base `KernelPageSize` in `/proc/self/smaps` instead. The emulator gets 4 GB
+of RAM so the larger-page Google APIs image can keep instrumentation alive. Alignment alone does not
 establish runtime compatibility. See the official [Android page-size guide](https://developer.android.com/guide/practices/page-sizes)
 and the [emulator runner targets](https://github.com/ReactiveCircus/android-emulator-runner#configurations).
 

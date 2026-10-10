@@ -67,7 +67,8 @@ The source audit covered the map overlays/panels, search, bookmarks, onboarding,
 diagnostics, logs and trip screens. Changes address the narrow side-pane policy, bookmark
 keyboard/header sizing, short-window map actions, landscape control insets and speed-indicator wrapping.
 
-In the authoring environment, Gradle could not download its distribution (`Network is
-unreachable`), and no Android SDK/emulator was available. The Gradle checks and device matrix
-above were therefore **not run locally**; CI build/unit-test/lint results and device checks
-must be evaluated separately. Do not interpret this matrix as a list of passing screenshots.
+The original layout audit could not run Gradle or an emulator in its authoring environment.
+The subsequent sensor/recovery and saved-search changes passed local Gradle `check`, release
+lint and APK builds. CI exercises search recreation and orientation resize on its emulator
+matrix, including real 16 KB pages. The full manual layout matrix above still needs device
+review; do not interpret it as a list of passing screenshots.

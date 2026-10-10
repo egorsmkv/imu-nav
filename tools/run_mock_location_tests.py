@@ -7,6 +7,7 @@ not reliably signal instrumentation failures; validate test status records and c
 import argparse
 from dataclasses import dataclass
 from pathlib import Path
+import re
 import subprocess
 import xml.etree.ElementTree as ET
 
@@ -86,6 +87,21 @@ def instrumentation(classes):
                'org.imunav.app.debug.test/androidx.test.runner.AndroidJUnitRunner', timeout=300)
 
 
+def device_page_size():
+    """Old Android images lack getconf; their own process mappings expose the base page size."""
+    try:
+        return adb('shell', 'getconf', 'PAGE_SIZE').strip()
+    except subprocess.CalledProcessError as error:
+        if error.returncode != 127:
+            raise
+    mappings = adb('shell', 'cat', '/proc/self/smaps')
+    sizes = [int(size) for size in re.findall(r'^KernelPageSize:\s+(\d+)\s+kB$', mappings, re.M)]
+    if not sizes:
+        raise RuntimeError('Cannot determine kernel page size from /proc/self/smaps')
+    # Huge-page mappings can coexist with ordinary mappings; use the base page size.
+    return str(min(sizes) * 1024)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apk-directory', type=Path, required=True)
@@ -102,7 +118,7 @@ def main():
             raise RuntimeError(f'Expected one app and one test APK, found {len(apps)} and {len(tests)}')
         (args.output / 'adb.txt').write_text(adb('version') + adb('devices', '-l'))
         (args.output / 'android-api.txt').write_text(adb('shell', 'getprop', 'ro.build.version.sdk'))
-        page_size = adb('shell', 'getconf', 'PAGE_SIZE').strip()
+        page_size = device_page_size()
         (args.output / 'page-size.txt').write_text(page_size + '\n')
         if args.expected_page_size is not None and page_size != str(args.expected_page_size):
             raise RuntimeError(f'Expected PAGE_SIZE={args.expected_page_size}, got {page_size}')
