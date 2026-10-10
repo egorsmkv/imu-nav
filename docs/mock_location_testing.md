@@ -16,7 +16,7 @@ failures do not cancel other API results. This suite is separate from host Kotli
 
 ## What is exercised
 
-Nine tests under `app/src/androidTest/kotlin/org/imunav/app/location/` exercise the production
+Nine ordinary tests and two host-orchestrated recovery stages under `app/src/androidTest/kotlin/org/imunav/app/location/` exercise the production
 provider and worker through the emulator's real `LocationManager`, AppOps and Binder:
 
 - First publication with GPS explicitly disabled, then a second distinct fix. An actual GPS
@@ -34,6 +34,10 @@ provider and worker through the emulator's real `LocationManager`, AppOps and Bi
   a different PID, preserved opt-in, cleared ownership and restored GPS before supplying new
   guidance. A new real GPS fix must then arrive. This tests the production worker's process
   recovery contract; it does not simulate process death by merely reconstructing an object.
+- Whole-app saved-trip recovery: a separate invocation seeds a synthetic recorded trip and active
+  GPS, the host force-stops the target, and a fresh instrumentation invocation verifies a new PID,
+  TripManager restoration, remembered opt-in, fresh GPS after foreground relaunch and cleanup.
+  The two stages are deliberately excluded from the ordinary package suite.
 
 All coordinates and routes are synthetic. Fixtures use separate preference files except the
 `NavService` test, which exercises AppGraph's worker on the disposable emulator. Fixture activity
@@ -53,13 +57,15 @@ in [build and test](build_and_test.md), start the desired AVD and run:
 
 ```bash
 ./gradlew :app:connectedFdroidDebugAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.package=org.imunav.app.location
+  -Pandroid.testInstrumentationRunnerArguments.class=org.imunav.app.location.AndroidMockLocationProviderTest,org.imunav.app.location.MockLocationSharingTest,org.imunav.app.location.MockLocationProcessRecoveryTest
 ```
 
 Alternatively build both APKs with `:app:assembleFdroidDebug :app:assembleFdroidDebugAndroidTest`
 and run `python3 tools/run_mock_location_tests.py --apk-directory app/build/outputs/apk --output
 build/gps-instrumentation`. Use a directory containing only the app/test APK pair for this option.
-The CI runner validates terminal instrumentation records and completion, failing on assertions,
+The Python runner also orchestrates the whole-app force-stop/relaunch stages. Do not select the
+entire test package in an ordinary connected-test run: the seeding stage intentionally leaves
+a trip active for its paired restart check. The CI runner validates terminal instrumentation records and completion, failing on assertions,
 crashes, skipped tests, duplicate records or missing classes/tests even if `adb` returns zero.
 
 Per-API artifacts contain `results.xml`, raw instrumentation output, API number, logcat and
@@ -73,9 +79,9 @@ The emulator suite does not establish:
 - GNSS chipset/HAL behavior, sensor accuracy, road navigation accuracy, proprietary fused
   location providers, or acceptance by any particular third-party application.
 - OEM battery restrictions, long screen-off/Doze sessions or vendor-specific background kills.
-- Automatic `START_STICKY` restart timing of the entire app, saved-trip restoration after a
-  low-memory kill, reboot behavior, or force-stop behavior. The recovery test kills/rebinds the
-  GPS worker process; it does not promise Android will restart a force-stopped application.
+- Automatic `START_STICKY` restart timing, low-memory-kill scheduling, and reboot behavior.
+  Whole-app restoration is verified after a host force-stop and explicit foreground relaunch;
+  the test does not promise Android will automatically restart a force-stopped application.
 - UI selection of the mock app in Developer options. Tests configure the same AppOp through
   shell access; on a phone the user must select this installation themselves.
 

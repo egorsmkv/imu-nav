@@ -5,13 +5,7 @@ import org.imunav.core.nav.GuidanceState
 import org.imunav.core.nav.PositionSource
 
 /** A navigation estimate ready for export, with its original monotonic sampling time. */
-data class MockLocationSample(
-    val point: GeoPoint,
-    val accuracyM: Float,
-    val speedMps: Float,
-    val bearingDeg: Float,
-    val elapsedMs: Long,
-) {
+data class MockLocationSample(val point: GeoPoint, val accuracyM: Float, val speedMps: Float, val bearingDeg: Float, val elapsedMs: Long) {
     companion object {
         /** Never export idle, missing or numerically invalid guidance as a plausible GPS fix. */
         fun from(state: GuidanceState, elapsedMs: Long): MockLocationSample? {
@@ -21,8 +15,11 @@ data class MockLocationSample(
             if (!state.uncertaintyM.isFinite() || state.uncertaintyM < 0 || state.uncertaintyM > Float.MAX_VALUE) return null
             if (!state.speedKmh.isFinite() || state.speedKmh < 0 || !state.bearingDeg.isFinite()) return null
             return MockLocationSample(
-                point, state.uncertaintyM.toFloat().coerceAtLeast(1f), state.speedKmh / 3.6f,
-                ((state.bearingDeg % 360f) + 360f) % 360f, elapsedMs,
+                point,
+                state.uncertaintyM.toFloat().coerceAtLeast(1f),
+                state.speedKmh / 3.6f,
+                ((state.bearingDeg % 360f) + 360f) % 360f,
+                elapsedMs,
             )
         }
     }
@@ -52,7 +49,9 @@ class MockLocationSession(private val provider: MockLocationProvider, initiallyI
         return runCatching {
             when {
                 !provider.isAllowed() -> releaseOr(MockLocationStatus.PERMISSION_REQUIRED)
+
                 sample == null -> releaseOr(MockLocationStatus.WAITING)
+
                 else -> {
                     if (!installed) {
                         provider.install()

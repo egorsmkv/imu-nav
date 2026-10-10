@@ -28,9 +28,12 @@ internal class MockLocationDevice {
     private var originalLocationMode = "0"
     private var originalProvider: List<Any>? = null
 
+    init {
+        check(Build.HARDWARE == "ranchu" || Build.HARDWARE == "goldfish") { "GPS tests require a disposable Android Emulator" }
+    }
+
     @Suppress("DEPRECATION") // checkOpNoThrow and LocationProvider are available on API 28.
     fun prepare() {
-        check(Build.HARDWARE == "ranchu" || Build.HARDWARE == "goldfish") { "GPS tests require a disposable Android Emulator" }
         originalMockMode = appOps.checkOpNoThrow(AppOpsManager.OPSTR_MOCK_LOCATION, Process.myUid(), context.packageName)
         originalLocationMode = shell("settings get secure location_mode")
         shell("pm grant ${context.packageName} android.permission.ACCESS_COARSE_LOCATION")

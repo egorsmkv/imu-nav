@@ -46,26 +46,30 @@ fun mockLocationTestContext(context: Context, preferencesName: String): Context 
 class MockLocationTestService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var sharing: MockLocationSharing
-    private val messenger = Messenger(Handler(Looper.getMainLooper()) { message ->
-        when (message.what) {
-            ENABLE -> sharing.setEnabled(message.arg1 != 0)
-            PUBLISH -> sharing.update(GuidanceState(active = true, position = GeoPoint(48.125, 28.25), source = PositionSource.DR, uncertaintyM = 75.0))
-            STOP -> sharing.stop()
-            KILL -> Process.killProcess(Process.myPid())
-            SNAPSHOT -> Unit
-            else -> error("Unknown GPS test command")
-        }
-        val prefs = getSharedPreferences(PREFERENCES, MODE_PRIVATE)
-        message.replyTo?.send(Message.obtain(null, message.what).apply {
-            data = Bundle().apply {
-                putInt("pid", Process.myPid())
-                putBoolean("enabled", sharing.enabled.value)
-                putBoolean("installed", prefs.getBoolean(AndroidMockLocationProvider.INSTALLED, false))
-                putString("status", sharing.status.value.name)
+    private val messenger = Messenger(
+        Handler(Looper.getMainLooper()) { message ->
+            when (message.what) {
+                ENABLE -> sharing.setEnabled(message.arg1 != 0)
+                PUBLISH -> sharing.update(GuidanceState(active = true, position = GeoPoint(48.125, 28.25), source = PositionSource.DR, uncertaintyM = 75.0))
+                STOP -> sharing.stop()
+                KILL -> Process.killProcess(Process.myPid())
+                SNAPSHOT -> Unit
+                else -> error("Unknown GPS test command")
             }
-        })
-        true
-    })
+            val prefs = getSharedPreferences(PREFERENCES, MODE_PRIVATE)
+            message.replyTo?.send(
+                Message.obtain(null, message.what).apply {
+                    data = Bundle().apply {
+                        putInt("pid", Process.myPid())
+                        putBoolean("enabled", sharing.enabled.value)
+                        putBoolean("installed", prefs.getBoolean(AndroidMockLocationProvider.INSTALLED, false))
+                        putString("status", sharing.status.value.name)
+                    }
+                },
+            )
+            true
+        },
+    )
 
     override fun onCreate() {
         super.onCreate()

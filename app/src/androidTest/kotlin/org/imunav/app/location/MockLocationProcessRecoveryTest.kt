@@ -78,7 +78,12 @@ private class GpsWorkerClient(private val device: MockLocationDevice) : AutoClos
     private val replies = LinkedBlockingQueue<Bundle>()
     private val deaths = LinkedBlockingQueue<Boolean>()
     private lateinit var remote: Messenger
-    private val replyTo = Messenger(Handler(Looper.getMainLooper()) { message -> replies.offer(message.data); true })
+    private val replyTo = Messenger(
+        Handler(Looper.getMainLooper()) { message ->
+            replies.offer(message.data)
+            true
+        },
+    )
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, service: IBinder) {
             service.linkToDeath({ deaths.offer(true) }, 0)

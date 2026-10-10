@@ -26,8 +26,9 @@ class Result:
     stack: str = ''
 
 
-def parse_results(text):
+def parse_results(text, expected_classes=None):
     """Keep only terminal JUnit records, preserving multiline assertion stacks."""
+    expected_classes = EXPECTED_CLASSES if expected_classes is None else expected_classes
     results, fields, current_key = [], {}, None
     for line in text.splitlines():
         if line.startswith('INSTRUMENTATION_STATUS: '):
@@ -43,8 +44,8 @@ def parse_results(text):
         elif current_key == 'stack' and not line.startswith('INSTRUMENTATION_'):
             fields[current_key] += '\n' + line
     complete = any(line.strip() == 'INSTRUMENTATION_CODE: -1' for line in text.splitlines())
-    counts = {name: sum(r.classname == name and r.code == 0 for r in results) for name in EXPECTED_CLASSES}
-    valid = complete and all(r.code == 0 for r in results) and all(counts[name] >= minimum for name, minimum in EXPECTED_CLASSES.items())
+    counts = {name: sum(r.classname == name and r.code == 0 for r in results) for name in expected_classes}
+    valid = complete and all(r.code == 0 for r in results) and all(counts[name] >= minimum for name, minimum in expected_classes.items())
     # Repeated success records must not cover for a missing test.
     valid = valid and len({(r.classname, r.name) for r in results}) == len(results)
     return results, valid
@@ -69,13 +70,18 @@ def adb(*arguments, timeout=60):
     return subprocess.run(['adb', *arguments], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout, check=True).stdout
 
 
+def instrumentation(classes):
+    return adb('shell', 'am', 'instrument', '-w', '-r', '-e', 'class', classes, '-e', 'timeout_msec', '60000',
+               'org.imunav.app.debug.test/androidx.test.runner.AndroidJUnitRunner', timeout=300)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apk-directory', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
-    results, valid, transcript = [], False, ''
+    results, valid, transcript, original_location_mode = [], False, '', None
     try:
         apks = list(args.apk_directory.rglob('*.apk'))
         apps = [path for path in apks if 'androidTest' not in path.parts]
@@ -83,12 +89,26 @@ def main():
         if len(apps) != 1 or len(tests) != 1:
             raise RuntimeError(f'Expected one app and one test APK, found {len(apps)} and {len(tests)}')
         (args.output / 'android-api.txt').write_text(adb('shell', 'getprop', 'ro.build.version.sdk'))
+        original_location_mode = adb('shell', 'settings', 'get', 'secure', 'location_mode').strip()
         adb('install', '-r', '-g', str(apps[0]))
         adb('install', '-r', '-g', str(tests[0]))
         adb('logcat', '-c')
-        transcript = adb('shell', 'am', 'instrument', '-w', '-r', '-e', 'package', 'org.imunav.app.location',
-                         '-e', 'timeout_msec', '60000', 'org.imunav.app.debug.test/androidx.test.runner.AndroidJUnitRunner', timeout=300)
+        transcript = instrumentation(','.join(EXPECTED_CLASSES))
         results, valid = parse_results(transcript)
+        if valid:
+            recovery_class = 'org.imunav.app.location.MockLocationAppRecoveryTest'
+            seed = instrumentation(recovery_class + '#seedPersistedTripAndLeaveGpsActive')
+            transcript += '\nWhole-app recovery seed:\n' + seed
+            seed_results, seed_valid = parse_results(seed, {recovery_class: 1})
+            results += seed_results
+            valid = valid and seed_valid
+            if seed_valid:
+                adb('shell', 'am', 'force-stop', 'org.imunav.app.debug')
+                restored = instrumentation(recovery_class + '#relaunchRestoresSavedTripAndPublishesFreshGps')
+                transcript += '\nWhole-app recovery after force-stop:\n' + restored
+                restored_results, restored_valid = parse_results(restored, {recovery_class: 1})
+                results += restored_results
+                valid = valid and restored_valid
     except (OSError, RuntimeError, subprocess.SubprocessError) as error:
         transcript += f'\nRunner error: {error}\n'
     finally:
@@ -99,6 +119,17 @@ def main():
                 (args.output / filename).write_text(adb(*command))
             except (OSError, subprocess.SubprocessError) as error:
                 (args.output / filename).write_text(str(error))
+        # Fresh emulators only: remove runtime processes and shell-selected mock access after evidence.
+        try:
+            adb('shell', 'am', 'force-stop', 'org.imunav.app.debug')
+            adb('shell', 'appops', 'set', 'org.imunav.app.debug', 'android:mock_location', 'default')
+            if original_location_mode is not None:
+                adb('shell', 'settings', 'put', 'secure', 'location_mode', original_location_mode)
+        except (OSError, subprocess.SubprocessError) as error:
+            valid = False
+            transcript += f'\nEmulator cleanup error: {error}\n'
+            (args.output / 'instrumentation.txt').write_text(transcript)
+            write_junit(args.output / 'results.xml', results, valid, transcript)
     print(transcript)
     print(f'GPS instrumentation: {len(results)} terminal test records; {"PASS" if valid else "FAIL"}')
     raise SystemExit(0 if valid else 1)

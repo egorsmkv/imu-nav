@@ -1,6 +1,7 @@
 package org.imunav.app.location
 
 import android.content.Context
+import android.location.Location
 import android.location.LocationManager
 import android.os.Build
 import android.os.SystemClock
@@ -17,6 +18,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.math.abs
 
 /** Platform contracts, including Android 9's legacy overload and Android 12's properties builder. */
 @RunWith(AndroidJUnit4::class)
@@ -56,7 +58,7 @@ class AndroidMockLocationProviderTest {
             assertEquals(sample.speedMps, location.speed, 0f)
             assertEquals(sample.bearingDeg, location.bearing, 0f)
             assertEquals(sample.elapsedMs * 1_000_000L, location.elapsedRealtimeNanos)
-            assertTrue(kotlin.math.abs(System.currentTimeMillis() - location.time) < MockLocationDevice.TIMEOUT_MS)
+            assertTrue(abs(System.currentTimeMillis() - location.time) < MockLocationDevice.TIMEOUT_MS)
             assertTrue(isMock(location))
             val next = sample().copy(point = GeoPoint(48.126, 28.251), speedMps = 12f)
             provider.publish(next)
@@ -115,5 +117,5 @@ class AndroidMockLocationProviderTest {
     private fun sample() = MockLocationSample(GeoPoint(48.125, 28.25), 75f, 10f, 350f, SystemClock.elapsedRealtime())
 
     @Suppress("DEPRECATION") // isMock is only available from Android 12.
-    private fun isMock(location: android.location.Location) = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) location.isMock else location.isFromMockProvider
+    private fun isMock(location: Location) = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) location.isMock else location.isFromMockProvider
 }

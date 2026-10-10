@@ -23,6 +23,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.math.abs
 
 /** Exercises the asynchronous production worker and the actual foreground navigation service. */
 @RunWith(AndroidJUnit4::class)
@@ -110,7 +111,7 @@ class MockLocationSharingTest {
                 val backgroundSince = SystemClock.elapsedRealtime()
                 val fix = observer.fresh(afterMs = backgroundSince)
                 assertTrue(fix.latitude in 48.125..48.225)
-                assertTrue(kotlin.math.abs(fix.longitude - 28.25) < 0.00001)
+                assertTrue(abs(fix.longitude - 28.25) < 0.00001)
                 assertTrue("Service must publish a fresh background fix", fix.elapsedRealtimeNanos / 1_000_000L >= backgroundSince)
                 device.onMain { NavService.stop(device.context) }
                 device.await("service destruction GPS cleanup") { graph.mockLocationSharing.status.value == MockLocationStatus.WAITING }
