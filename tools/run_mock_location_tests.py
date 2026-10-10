@@ -15,6 +15,9 @@ EXPECTED_CLASSES = {
     'org.imunav.app.location.AndroidMockLocationProviderTest': 5,
     'org.imunav.app.location.MockLocationSharingTest': 3,
     'org.imunav.app.location.MockLocationProcessRecoveryTest': 1,
+    'org.imunav.app.ui.SearchRestorationTest': 1,
+    'org.imunav.app.trips.TripRestorationTest': 3,
+    'org.imunav.app.graphics.GraphicsPathNativeTest': 1,
 }
 
 
@@ -87,6 +90,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apk-directory', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--expected-page-size', type=int, choices=(4096, 16384))
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     results, valid, transcript, original_location_mode = [], False, '', None
@@ -98,6 +102,10 @@ def main():
             raise RuntimeError(f'Expected one app and one test APK, found {len(apps)} and {len(tests)}')
         (args.output / 'adb.txt').write_text(adb('version') + adb('devices', '-l'))
         (args.output / 'android-api.txt').write_text(adb('shell', 'getprop', 'ro.build.version.sdk'))
+        page_size = adb('shell', 'getconf', 'PAGE_SIZE').strip()
+        (args.output / 'page-size.txt').write_text(page_size + '\n')
+        if args.expected_page_size is not None and page_size != str(args.expected_page_size):
+            raise RuntimeError(f'Expected PAGE_SIZE={args.expected_page_size}, got {page_size}')
         original_location_mode = adb('shell', 'settings', 'get', 'secure', 'location_mode').strip()
         adb('install', '-r', '-g', str(apps[0]))
         adb('install', '-r', '-g', str(tests[0]))

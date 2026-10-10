@@ -34,6 +34,7 @@ android {
     namespace = "org.imunav.app"
     compileSdk = 36
     buildToolsVersion = "36.0.0"
+    ndkVersion = "28.2.13676358"
 
     defaultConfig {
         applicationId = "org.imunav.app"
@@ -47,6 +48,9 @@ android {
         buildConfigField("String", "PRIVATBANK_DONATION_URL", buildConfigString(configuredLink("privatbankDonationUrl")))
         // Main-thread diagnostics (StrictMode + MainThreadWatchdog); on in debug and benchmark builds only.
         buildConfigField("boolean", "DIAGNOSTICS", "false")
+        externalNativeBuild {
+            cmake { arguments += "-DANDROID_STL=c++_static" }
+        }
     }
 
     // Release signing: create keystore.properties (see README) — it and the keystore are gitignored.
@@ -132,6 +136,12 @@ android {
     }
 
     sourceSets.getByName("main").jniLibs.directories.add("build/generated/rustJniLibs")
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
 
     // The in-app language switcher needs every language in every install (App Bundles would split them).
     bundle {
@@ -171,6 +181,9 @@ val buildRustAndroid = tasks.register<Exec>("buildRustAndroid") {
         val sdkDirectory = androidSdkDirectory.get().asFile.absolutePath
         environment("ANDROID_HOME", sdkDirectory)
         environment("ANDROID_SDK_ROOT", sdkDirectory)
+        if (System.getenv("ANDROID_NDK_HOME") == null && System.getenv("ANDROID_NDK_ROOT") == null) {
+            environment("ANDROID_NDK_HOME", "$sdkDirectory/ndk/${android.ndkVersion}")
+        }
     }
     inputs.files(rootProject.fileTree("native") { exclude("target/**") })
     inputs.file(rootProject.file("scripts/build-rust-android.sh"))
@@ -206,6 +219,8 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.material.icons.extended)
+    // The vendored native implementation must match the Maven JNI callers exactly.
+    implementation("androidx.graphics:graphics-path") { version { strictly("1.0.1") } }
 
     implementation(libs.maplibre.android)
 
@@ -213,6 +228,8 @@ dependencies {
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.junit)
+    androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation(libs.compose.ui.test.junit4)
 }
 
 /**
@@ -247,12 +264,46 @@ abstract class StripPatchedGraphHopperClasses : TransformAction<TransformParamet
 }
 
 val graphHopperPatched: Attribute<Boolean> = Attribute.of("org.imunav.graphhopper-patched", Boolean::class.javaObjectType)
+val graphicsPathRebuilt: Attribute<Boolean> = Attribute.of("org.imunav.graphics-path-rebuilt", Boolean::class.javaObjectType)
+
+/** Retains Graphics Path's bytecode and metadata while replacing its incompatible prebuilt JNI. */
+abstract class StripPrebuiltGraphicsPath : TransformAction<TransformParameters.None> {
+    @get:InputArtifact
+    abstract val inputArtifact: Provider<FileSystemLocation>
+
+    override fun transform(outputs: TransformOutputs) {
+        val input = inputArtifact.get().asFile
+        if (!input.name.startsWith("graphics-path-")) {
+            outputs.file(input)
+            return
+        }
+        check(input.name == "graphics-path-1.0.1.aar") { "Update the vendored Graphics Path JNI source before changing its version" }
+        val output = outputs.file("rebuilt-${input.name}")
+        ZipFile(input).use { zip ->
+            ZipOutputStream(output.outputStream().buffered()).use { out ->
+                for (entry in zip.entries()) {
+                    if (entry.name.startsWith("jni/") && entry.name.endsWith("/libandroidx.graphics.path.so")) continue
+                    out.putNextEntry(ZipEntry(entry.name))
+                    zip.getInputStream(entry).use { it.copyTo(out) }
+                    out.closeEntry()
+                }
+            }
+        }
+    }
+}
+
 dependencies {
     attributesSchema { attribute(graphHopperPatched) }
+    attributesSchema { attribute(graphicsPathRebuilt) }
     artifactTypes.getByName("jar") { attributes.attribute(graphHopperPatched, false) }
+    artifactTypes.maybeCreate("aar").attributes.attribute(graphicsPathRebuilt, false)
     registerTransform(StripPatchedGraphHopperClasses::class) {
         from.attribute(graphHopperPatched, false).attribute(ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE, "jar")
         to.attribute(graphHopperPatched, true).attribute(ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE, "jar")
+    }
+    registerTransform(StripPrebuiltGraphicsPath::class) {
+        from.attribute(graphicsPathRebuilt, false).attribute(ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE, "aar")
+        to.attribute(graphicsPathRebuilt, true).attribute(ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE, "aar")
     }
 }
 
@@ -262,7 +313,10 @@ dependencies {
 configurations.configureEach {
     if (name.endsWith("RuntimeClasspath")) {
         // Local JVM tests need the app's original compiled classes, not APK artifact transforms.
-        if (!name.contains("UnitTest")) attributes.attribute(graphHopperPatched, true)
+        if (!name.contains("UnitTest")) {
+            attributes.attribute(graphHopperPatched, true)
+            attributes.attribute(graphicsPathRebuilt, true)
+        }
         exclude(group = "org.openstreetmap.osmosis", module = "osmosis-osm-binary")
         exclude(group = "com.google.protobuf", module = "protobuf-java")
     }

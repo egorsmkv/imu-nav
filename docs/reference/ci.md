@@ -27,7 +27,10 @@ Update it whenever a module starts consuming another module, fixture, generator 
 | Selector or its tests | All selected suites, so changes to the dependency map are exercised |
 
 The [Android GPS instrumentation](../mock_location_testing.md) workflow builds APKs once and
-runs real platform tests on API 28, 31, 35 and 36, with per-API JUnit/logcat/location evidence.
+runs real platform tests on API 28, 31, 35 and 36, plus API 35 with 16 KB pages, with per-API
+JUnit/logcat/location/page-size evidence. Saved-trip validation and actual search recreation/
+rotation and explicit rebuilt Graphics Path JNI loading run with the GPS suite. APK ELF/ZIP alignment gates inspect debug, release and benchmark
+outputs; changing the verifier selects both Android and F-Droid jobs.
 It selects app, core, routing, native, runner and Gradle changes and always reports its build gate.
 
 Server Docker smoke builds retain their `main` path filters and manual dispatch. Native

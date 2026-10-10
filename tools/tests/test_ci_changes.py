@@ -31,6 +31,8 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(self.selected('.github/workflows/android-gps.yml'), {'android'})
         self.assertEqual(self.selected('tools/run_mock_location_tests.py'), {'android', 'tools'})
         self.assertEqual(self.selected('routing/src/main/kotlin/OfflineGraph.kt'), {'android', 'kotlin', 'fdroid', 'routing'})
+        for path in ('tools/verify_android_pages.py', 'tools/tests/test_android_pages.py'):
+            self.assertEqual(self.selected(path), {'android', 'fdroid', 'tools'})
 
     def test_shared_build_inputs_and_included_assets_are_selected(self):
         for script in ci.ANDROID_RUST_BUILD:

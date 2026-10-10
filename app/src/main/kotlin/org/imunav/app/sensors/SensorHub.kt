@@ -25,7 +25,9 @@ import org.imunav.app.power.PowerProfile
 import org.imunav.core.gnss.FixSource
 import org.imunav.core.gnss.PositioningHub
 import org.imunav.core.gnss.RawFix
+import org.imunav.core.imu.GravityFilter
 import org.imunav.core.imu.ImuSample
+import org.imunav.core.imu.TimedSensorVector
 import java.util.concurrent.Executors
 import kotlin.math.atan2
 import kotlin.math.sqrt
@@ -57,15 +59,16 @@ class SensorHub(
      *  hundreds of ms; they run on this thread, one at a time. Callbacks still arrive on the main thread. */
     private val control = Executors.newSingleThreadExecutor { Thread(it, "sensor-control") }
 
-    // State below is only touched on [control].
+    // Lifecycle flag is control-worker confined; measurement caches below belong to the main looper.
     private var running = false
 
     private val rotation = FloatArray(9)
-    private var gyro: FloatArray? = null
-
-    @Volatile private var linearAcc: FloatArray? = null
-    private val gravity = FloatArray(3)
-    private var gravityInit = false
+    private val gyro = TimedSensorVector()
+    private val linearAcc = TimedSensorVector()
+    private val gravityFilter = GravityFilter()
+    private var lastRotationNs = -1L
+    private var lastStepNs = -1L
+    private var lastPressureNs = -1L
     private val inertialCapture = InertialCapture(hub)
 
     @Volatile private var rawAccelFallback = true
@@ -137,39 +140,29 @@ class SensorHub(
     private val stepListener = object : SensorEventListener {
         override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
 
-        override fun onSensorChanged(e: SensorEvent) = onStep(SystemClock.elapsedRealtime())
+        override fun onSensorChanged(e: SensorEvent) {
+            if (e.timestamp < 0 || e.timestamp <= lastStepNs) return
+            lastStepNs = e.timestamp
+            onStep(e.timestamp / NS_PER_MS)
+        }
     }
 
     /** The barometer: pressure changes give height changes to compare with the route's hills. */
     private val pressureListener = object : SensorEventListener {
         override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
 
-        override fun onSensorChanged(e: SensorEvent) = onPressure(e.values[0], SystemClock.elapsedRealtime())
+        override fun onSensorChanged(e: SensorEvent) {
+            if (e.timestamp < 0 || e.timestamp <= lastPressureNs || !e.values[0].isFinite()) return
+            lastPressureNs = e.timestamp
+            onPressure(e.values[0], e.timestamp / NS_PER_MS)
+        }
     }
 
     /** Does this phone have a barometer? (Mid-range and better phones usually do.) */
     val hasBarometer: Boolean get() = sensorManager.getDefaultSensor(Sensor.TYPE_PRESSURE) != null
 
-    private var pressureRegistered = false
-
-    private fun applyPressureConfig() {
-        val want = running && navigating && hasBarometer
-        if (want == pressureRegistered) return
-        if (want) {
-            sensorManager.getDefaultSensor(Sensor.TYPE_PRESSURE)?.let {
-                sensorManager.registerListener(pressureListener, it, PRESSURE_PERIOD_US, handler)
-            }
-        } else {
-            sensorManager.unregisterListener(pressureListener)
-        }
-        pressureRegistered = want
-        log("barometer ${if (want) "on" else "off"}")
-    }
-
     /** Does this phone have a step detector? (Most do; some budget phones do not.) */
     val hasStepDetector: Boolean get() = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR) != null
-
-    private var stepsRegistered = false
 
     private val sensorListener = object : SensorEventListener {
         override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
@@ -177,16 +170,18 @@ class SensorHub(
         override fun onSensorChanged(e: SensorEvent) {
             inertialCapture.onSensor(e)
             when (e.sensor.type) {
-                Sensor.TYPE_GYROSCOPE -> gyro = e.values.clone()
-                Sensor.TYPE_LINEAR_ACCELERATION -> linearAcc = e.values.clone()
-                Sensor.TYPE_ROTATION_VECTOR -> onRotation(e.values)
-                Sensor.TYPE_ACCELEROMETER -> if (rawAccelFallback) onRawAccel(e.values)
+                Sensor.TYPE_GYROSCOPE -> gyro.update(e.values, e.timestamp)
+                Sensor.TYPE_LINEAR_ACCELERATION -> linearAcc.update(e.values, e.timestamp)
+                Sensor.TYPE_ROTATION_VECTOR -> onRotation(e.values, e.timestamp)
+                Sensor.TYPE_ACCELEROMETER -> if (rawAccelFallback) onRawAccel(e.values, e.timestamp)
             }
         }
     }
 
     /** Rotation-vector sensor event: derive the compass heading and the vertical turn rate, then emit an [ImuSample]. */
-    private fun onRotation(values: FloatArray) {
+    private fun onRotation(values: FloatArray, timestampNs: Long) {
+        if (timestampNs < 0 || timestampNs <= lastRotationNs || values.size < 3 || values.any { !it.isFinite() }) return
+        lastRotationNs = timestampNs
         SensorManager.getRotationMatrixFromVector(rotation, values)
         // Heading of the device's "forward" axis, choosing the axis that is most horizontal so
         // it works both flat on a seat and upright in a windscreen mount.
@@ -201,29 +196,50 @@ class SensorHub(
         val heading = ((Math.toDegrees(atan2(x.toDouble(), y.toDouble())) + 360.0) % 360.0).toFloat()
         // Angular velocity about world-up (row 3 of R is world Z in device coordinates),
         // negated so clockwise = positive like compass bearings.
-        val g = gyro
+        val g = gyro.at(timestampNs)
         val yawRate = g?.let { -Math.toDegrees((it[0] * rotation[6] + it[1] * rotation[7] + it[2] * rotation[8]).toDouble()).toFloat() }
-        val now = SystemClock.elapsedRealtime()
+        val now = timestampNs / NS_PER_MS
         hub.onOrientation(heading, yawRate, now)
-        onImu(ImuSample(now, heading, yawRate, linearAcc, g))
+        onImu(ImuSample(now, heading, yawRate, linearAcc.at(timestampNs), g))
     }
 
     /**
      * Fallback for phones without gyro / rotation vector: estimate gravity with a ~1 s low-pass
      * filter and subtract it. Enough for the stop/resume detector; no heading or yaw rate.
      */
-    private fun onRawAccel(v: FloatArray) {
-        if (!gravityInit) {
-            v.copyInto(gravity)
-            gravityInit = true
-        }
-        val linear = FloatArray(3)
-        for (i in 0..2) {
-            gravity[i] = 0.98f * gravity[i] + 0.02f * v[i]
-            linear[i] = v[i] - gravity[i]
-        }
-        onImu(ImuSample(SystemClock.elapsedRealtime(), null, null, linear, null))
+    private fun onRawAccel(values: FloatArray, timestampNs: Long) {
+        val linear = gravityFilter.linearAcceleration(values, timestampNs) ?: return
+        onImu(ImuSample(timestampNs / NS_PER_MS, null, null, linear, null))
     }
+
+    /** Reset callback-owned state on its looper whenever registrations change. */
+    private fun resetSamples() = handler.post {
+        gyro.reset()
+        linearAcc.reset()
+        gravityFilter.reset()
+        lastRotationNs = -1L
+        lastStepNs = -1L
+        lastPressureNs = -1L
+    }
+
+    private fun listenerFor(type: Int): SensorEventListener = when (type) {
+        Sensor.TYPE_STEP_DETECTOR -> stepListener
+        Sensor.TYPE_PRESSURE -> pressureListener
+        else -> sensorListener
+    }
+
+    private val registrations = SensorRegistrations<Int>(
+        register = { type, period ->
+            runCatching {
+                sensorManager.getDefaultSensor(type)?.let { sensorManager.registerListener(listenerFor(type), it, period, handler) } == true
+            }.onFailure { Log.w(TAG, "sensor registration type=$type: $it") }.getOrDefault(false)
+        },
+        unregister = { type ->
+            runCatching { sensorManager.getDefaultSensor(type)?.let { sensorManager.unregisterListener(listenerFor(type), it) } }
+                .onFailure { Log.w(TAG, "sensor cleanup type=$type: $it") }
+        },
+        failed = { type -> log("sensor_registration_failed type=$type") },
+    )
 
     private val providerStatus = ProviderStatus(control) {
         if (Build.VERSION.SDK_INT >= 28) {
@@ -257,10 +273,11 @@ class SensorHub(
     /** What is currently registered; [configure] only touches what changed. */
     private var profile: PowerProfile = PowerProfile.BALANCED
     private var navigating = false
-    private var imuConfig: Triple<Int, Boolean, Boolean>? = null
     private var inertialEnabled = false
     private var netMinMs = -1L
     private var measurements = false
+    private var gpsRegistered = false
+    private var statusRegistered = false
     private var lastSummary = ""
 
     /**
@@ -269,7 +286,9 @@ class SensorHub(
      */
     fun configure(p: PowerProfile, navigating: Boolean, walking: Boolean = false, inertial: Boolean = false) {
         inertialCapture.enabled = inertial && navigating && !walking
+        val jammed = hub.jammed // snapshot core state on main; the control worker must not read it
         control.execute {
+            this.jammed = jammed
             profile = p
             this.navigating = navigating
             this.walking = walking
@@ -280,103 +299,118 @@ class SensorHub(
 
     /** Walking trip in progress: listen to the step detector. */
     private var walking = false
+    private var jammed = false
 
     /** Steps need the "physical activity" permission on Android 10 and newer. */
     private fun canCountSteps(): Boolean = Build.VERSION.SDK_INT < 29 ||
         ContextCompat.checkSelfPermission(context, Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
 
-    private fun applyStepConfig() {
-        val want = running && navigating && walking && hasStepDetector && canCountSteps()
-        if (want == stepsRegistered) return
-        if (want) {
-            sensorManager.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR)?.let {
-                sensorManager.registerListener(stepListener, it, SensorManager.SENSOR_DELAY_NORMAL, handler)
-            }
-        } else {
-            sensorManager.unregisterListener(stepListener)
-        }
-        stepsRegistered = want
-        log("step_detector ${if (want) "on" else "off"}")
-    }
-
     /** (Re-)register listeners so they match the current power profile; only what changed is touched. */
     @SuppressLint("MissingPermission")
     private fun applyConfig() {
+        registerPrimaryLocationListeners()
         val p = profile
         if (netMinMs != p.networkMinMs) {
-            locationManager.removeUpdates(netListener)
-            runCatching { locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, p.networkMinMs, 0f, netListener, Looper.getMainLooper()) }
-                .onFailure { Log.w(TAG, "network: $it") }
-            netMinMs = p.networkMinMs
+            runCatching { locationManager.removeUpdates(netListener) }.onFailure { Log.w(TAG, "network cleanup: $it") }
+            netMinMs = if (runCatching {
+                    locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, p.networkMinMs, 0f, netListener, Looper.getMainLooper())
+                }.onFailure { Log.w(TAG, "network: $it") }.isSuccess
+            ) {
+                p.networkMinMs
+            } else {
+                -1L
+            }
         }
         // Never drop the jamming indicator while it reports jamming: the state would freeze.
-        val wantMeasurements = p.gnssMeasurements || hub.jammed
+        val wantMeasurements = p.gnssMeasurements || jammed
         if (measurements != wantMeasurements) {
-            if (wantMeasurements) {
+            measurements = if (wantMeasurements) {
                 runCatching { locationManager.registerGnssMeasurementsCallback(gnssMeasurementsCallback, handler) }
-                    .onFailure { Log.w(TAG, "gnss measurements: $it") }
+                    .onFailure { Log.w(TAG, "gnss measurements: $it") }.getOrDefault(false)
             } else {
-                locationManager.unregisterGnssMeasurementsCallback(gnssMeasurementsCallback)
+                runCatching { locationManager.unregisterGnssMeasurementsCallback(gnssMeasurementsCallback) }
+                    .onFailure { Log.w(TAG, "gnss measurements cleanup: $it") }
+                false
             }
-            measurements = wantMeasurements
         }
-        val imu = Triple(if (navigating) p.imuPeriodUs else IDLE_IMU_PERIOD_US, navigating, inertialEnabled)
-        if (imuConfig != imu) {
-            sensorManager.unregisterListener(sensorListener)
-            val hasRotation = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR) != null
-            rawAccelFallback = !hasRotation
-            val types = when {
-                hasRotation && navigating -> listOf(Sensor.TYPE_ROTATION_VECTOR, Sensor.TYPE_GYROSCOPE, Sensor.TYPE_LINEAR_ACCELERATION)
-                hasRotation -> listOf(Sensor.TYPE_ROTATION_VECTOR, Sensor.TYPE_GYROSCOPE)
-                navigating -> listOf(Sensor.TYPE_ACCELEROMETER)
-                else -> emptyList() // accelerometer-only phones: nothing useful without a route
-            }
-            if (!navigating) linearAcc = null
-            val allTypes = if (inertialEnabled) (types + Sensor.TYPE_ACCELEROMETER + Sensor.TYPE_GYROSCOPE).distinct() else types
-            for (type in allTypes) {
-                sensorManager.getDefaultSensor(type)?.let { sensorManager.registerListener(sensorListener, it, imu.first, handler) }
-            }
-            imuConfig = imu
+        val period = if (navigating) p.imuPeriodUs else IDLE_IMU_PERIOD_US
+        val wanted = wantedSensors(period)
+        val hadPressure = registrations.contains(Sensor.TYPE_PRESSURE)
+        val hadSteps = registrations.contains(Sensor.TYPE_STEP_DETECTOR)
+        var changed = registrations.reconcile(wanted)
+        rawAccelFallback = !registrations.contains(Sensor.TYPE_ROTATION_VECTOR)
+        if (rawAccelFallback && navigating && sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER) != null) {
+            changed = registrations.ensure(Sensor.TYPE_ACCELEROMETER, period) || changed
         }
-        applyStepConfig()
-        applyPressureConfig()
-        val summary = "power ${p.name} nav=$navigating imu_hz=${1_000_000 / imu.first} net_ms=${p.networkMinMs} agc=$measurements"
+        if (changed) resetSamples()
+        if (hadPressure != registrations.contains(Sensor.TYPE_PRESSURE)) log("barometer ${if (hadPressure) "off" else "on"}")
+        if (hadSteps != registrations.contains(Sensor.TYPE_STEP_DETECTOR)) log("step_detector ${if (hadSteps) "off" else "on"}")
+        val summary = "power ${p.name} nav=$navigating imu_hz=${1_000_000 / period} net_ms=${p.networkMinMs} agc=$measurements"
         if (summary != lastSummary) log(summary)
         lastSummary = summary
     }
 
-    /** Start GPS, network location, satellite status and motion sensors. */
+    /** Only request sensors present on this device; a failed registration remains retryable. */
+    private fun wantedSensors(period: Int): Map<Int, Int> = buildMap {
+        val hasRotation = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR) != null
+        if (hasRotation) {
+            put(Sensor.TYPE_ROTATION_VECTOR, period)
+            put(Sensor.TYPE_GYROSCOPE, period)
+            if (navigating) put(Sensor.TYPE_LINEAR_ACCELERATION, period)
+        } else if (navigating) {
+            put(Sensor.TYPE_ACCELEROMETER, period)
+        }
+        if (navigating && rawAccelFallback) put(Sensor.TYPE_ACCELEROMETER, period)
+        if (inertialEnabled) {
+            put(Sensor.TYPE_ACCELEROMETER, period)
+            put(Sensor.TYPE_GYROSCOPE, period)
+        }
+        if (navigating && walking && canCountSteps()) put(Sensor.TYPE_STEP_DETECTOR, SensorManager.SENSOR_DELAY_NORMAL)
+        if (navigating) put(Sensor.TYPE_PRESSURE, PRESSURE_PERIOD_US)
+    }.filterKeys { sensorManager.getDefaultSensor(it) != null }
+
+    /** Start or retry only listeners whose previous registration failed. */
     @SuppressLint("MissingPermission")
     fun start() = control.execute {
         providerStatus.refresh()
-        if (running) return@execute
-        running = true
-        injectAssistance("start")
-        runCatching { locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0L, 0f, gpsListener, Looper.getMainLooper()) }
-            .onFailure { Log.w(TAG, "gps: $it") }
-        // The fused provider is not requested: it is built largely from GPS and inherits spoofed positions.
-        runCatching { locationManager.registerGnssStatusCallback(gnssStatusCallback, handler) }
-            .onFailure { Log.w(TAG, "gnss status: $it") }
-        sensorWarning?.let { log("sensors: $it") }
+        if (!running) {
+            running = true
+            injectAssistance("start")
+            sensorWarning?.let { log("sensors: $it") }
+        }
         applyConfig()
+    }
+
+    /** Retry primary location listeners on both start and profile/permission configuration changes. */
+    @SuppressLint("MissingPermission")
+    private fun registerPrimaryLocationListeners() {
+        if (!gpsRegistered) {
+            gpsRegistered = runCatching { locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0L, 0f, gpsListener, Looper.getMainLooper()) }
+                .onFailure { Log.w(TAG, "gps: $it") }.isSuccess
+        }
+        // Never request the fused provider: it inherits spoofed GPS positions.
+        if (!statusRegistered) {
+            statusRegistered = runCatching { locationManager.registerGnssStatusCallback(gnssStatusCallback, handler) }
+                .onFailure { Log.w(TAG, "gnss status: $it") }.getOrDefault(false)
+        }
     }
 
     /** Stop everything [start] registered. */
     fun stop() = control.execute {
         if (!running) return@execute
         running = false
-        locationManager.removeUpdates(gpsListener)
-        locationManager.removeUpdates(netListener)
-        locationManager.unregisterGnssStatusCallback(gnssStatusCallback)
-        if (measurements) locationManager.unregisterGnssMeasurementsCallback(gnssMeasurementsCallback)
-        sensorManager.unregisterListener(sensorListener)
-        sensorManager.unregisterListener(stepListener)
-        sensorManager.unregisterListener(pressureListener)
-        stepsRegistered = false
-        pressureRegistered = false
+        listOf<() -> Unit>(
+            { locationManager.removeUpdates(gpsListener) },
+            { locationManager.removeUpdates(netListener) },
+            { locationManager.unregisterGnssStatusCallback(gnssStatusCallback) },
+            { locationManager.unregisterGnssMeasurementsCallback(gnssMeasurementsCallback) },
+        ).forEach { cleanup -> runCatching(cleanup).onFailure { Log.w(TAG, "location cleanup: $it") } }
+        registrations.reconcile(emptyMap())
+        resetSamples()
+        gpsRegistered = false
+        statusRegistered = false
         netMinMs = -1L
         measurements = false
-        imuConfig = null
     }
 
     /** Ask the GNSS chip to refresh assistance data (ephemeris, time) — speeds up recovery after jamming. */
@@ -409,6 +443,7 @@ class SensorHub(
 
     private companion object {
         const val TAG = "SensorHub"
+        const val NS_PER_MS = 1_000_000L
 
         /** 5 Hz: enough for heading and gyro-bias learning when no route is being followed. */
         const val IDLE_IMU_PERIOD_US = 200_000

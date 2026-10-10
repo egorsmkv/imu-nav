@@ -64,12 +64,12 @@ class MockLocationAppRecoveryTest {
         val graph = device.context.graph
         try {
             assertNotEquals("Whole application must run in a new process", prefs.getInt("pid", -1), Process.myPid())
-            assertTrue("TripManager must restore the saved trip", graph.trips.active)
-            assertTrue(graph.engine.state.active)
+            assertFalse("Background process creation must not activate a trip", graph.engine.state.active)
             assertTrue("System GPS opt-in must survive", graph.mockLocationSharing.enabled.value)
             ActivityScenario.launch(MockLocationTestActivity::class.java).use { scenario ->
                 // Explicit foreground relaunch is tested; force-stop does not promise automatic restart.
                 scenario.onActivity { NavService.start(it) }
+                device.await("foreground saved-trip installation") { graph.trips.active && graph.engine.state.active }
                 MockGpsObserver(device).use { observer ->
                     val relaunchedAt = SystemClock.elapsedRealtime()
                     val fix = observer.fresh(relaunchedAt)

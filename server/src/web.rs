@@ -932,7 +932,7 @@ async fn account_page(
     let raw_for_sessions = raw.clone();
     let (contributions, (sharing_enabled, email_verified), air_alerts_enabled, sessions) = run_db(move || {
         let current = auth::account_for_token(&store, &raw_for_sessions, "web")?
-            .map(|(_, session_id)| session_id).unwrap_or_default();
+            .map_or_else(String::new, |(_, session_id)| session_id);
         let connection = store.connection()?;
         let mut statement = connection.prepare("SELECT session_id,MAX(expires_s),MAX(CASE WHEN kind IN ('web','web_impersonated') THEN 1 ELSE 0 END)
             FROM auth_tokens WHERE user_id=?1 AND expires_s>?2 GROUP BY session_id ORDER BY MAX(expires_s) DESC")?;
@@ -1343,8 +1343,7 @@ async fn revoke_session(
     let store = state.store.clone();
     run_db(move || {
         let current = auth::account_for_token(&store, &raw, "web")?
-            .map(|(_, session)| session)
-            .unwrap_or_default();
+            .map_or_else(String::new, |(_, session)| session);
         store.connection()?.execute(
             "DELETE FROM auth_tokens WHERE user_id=?1 AND session_id=?2 AND session_id<>?3",
             params![account.id, form.session_id, current],
@@ -1369,8 +1368,7 @@ async fn revoke_other_sessions(
     let store = state.store.clone();
     run_db(move || {
         let current = auth::account_for_token(&store, &raw, "web")?
-            .map(|(_, session)| session)
-            .unwrap_or_default();
+            .map_or_else(String::new, |(_, session)| session);
         store.connection()?.execute(
             "DELETE FROM auth_tokens WHERE user_id=?1 AND session_id<>?2",
             params![account.id, current],

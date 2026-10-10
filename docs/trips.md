@@ -13,7 +13,7 @@ The recording is closed and saved on the phone in the background.
 2. Open a trip to see its tracks, distance, time without GPS and uncertainty.
 3. Tap the share icon to send a `.zip` archive through Android's share menu. Open the ZIP to get a plain `.rec` recording. The original stays on the phone.
 
-If the app is killed during a trip, starting it again within three hours can restore the route and recording. The estimate becomes less certain for the missing time.
+If the app is killed during a trip, opening it again within three hours can restore the route and recording. The estimate becomes less certain for the missing time. Restoration waits until the foreground location service is running; if Android refuses permission or service startup, navigation stays inactive and the app shows an error.
 
 The diagnostic log can also contain precise locations and cell tower data. When you share visible log events from the log screen, the app warns you before opening Android's share menu.
 

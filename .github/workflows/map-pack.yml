@@ -180,7 +180,7 @@ jobs:
         with:
           packages: platform-tools
       - name: Install Android build tools
-        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.3.13750724'
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
       - name: Install Rust Android targets
         run: rustup toolchain install nightly-2026-09-25 --profile minimal --target aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
       - uses: gradle/actions/setup-gradle@v4
@@ -188,6 +188,12 @@ jobs:
         env:
           RUSTUP_TOOLCHAIN: nightly-2026-09-25
         run: ./gradlew --no-daemon :app:assemblePlayBenchmark
+      - name: Verify bundled APK page alignment
+        run: >-
+          python3 tools/verify_android_pages.py
+          --zipalign "$ANDROID_HOME/build-tools/36.0.0/zipalign"
+          --report build/android-pages.json
+          app/build/outputs/apk/play/benchmark/*.apk
       - name: Check APK size and bundled PMTiles storage
         run: |
           python3 - <<'PY'
@@ -208,5 +214,6 @@ jobs:
           path: |
             app/build/outputs/apk/play/benchmark/*.apk
             app/build/outputs/mapping/playBenchmark/mapping.txt
+            build/android-pages.json
           compression-level: 0
           retention-days: 14

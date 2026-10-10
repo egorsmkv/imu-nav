@@ -38,6 +38,20 @@ trips; it does not yet own the position shown to the user.
 The Kotlin/JVM implementations remain in `:core` for replay, parity tests and non-Android tools.
 Changes to native behavior should keep the corresponding Kotlin behavior and boundary tests aligned.
 
+## Android sensor boundary
+
+`SensorHub` preserves `SensorEvent.timestamp` for IMU, pressure and step events (ns converted
+to elapsed ms for the legacy engine). Callback arrival delays cannot make a measurement fresh.
+Rotation samples use gyro/linear acceleration only when their measurement time is no later
+than the rotation event and no more than 250 ms old. Invalid, duplicate and reordered samples
+are ignored. Raw-accelerometer fallback removes gravity with an exponential one-second time
+constant calculated from measured sample spacing; gaps over one second reset the estimate.
+
+Sensor/location registrations run on the serial control worker; callbacks and core access stay
+on main. Cached registrations include only successful Boolean-returning Android calls. Failed
+listeners remain retryable on the next start/configuration request without replacing successful
+ones. Registration changes clear sensor caches on their callback looper.
+
 ## Logs
 
 The native core emits structured tracing events but does not install a subscriber. The Android

@@ -748,4 +748,5 @@
     <string name="mock_location_open_settings">Open Developer options</string>
     <string name="mock_location_settings_unavailable">Cannot open Developer options. Open Android Settings manually and enable Developer options first.</string>
     <string name="mock_location_notification">Sharing system GPS · %1$s</string>
+    <string name="trip_restore_failed">The saved trip could not be resumed. Check location permission and start navigation again.</string>
 </resources>

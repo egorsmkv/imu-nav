@@ -1,6 +1,8 @@
 .gradle/
 .kotlin/
 build/
+.cxx/
+.externalNativeBuild/
 native/target/
 server/target/
 server/*.sqlite3*

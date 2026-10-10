@@ -67,7 +67,7 @@ jobs:
           packages: platform-tools
       - name: Install Android platform for Gradle project configuration
         if: (matrix.suite == 'native') && steps.changes.outputs.run == 'true'
-        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
       - uses: gradle/actions/setup-gradle@v4
         if: (matrix.suite == 'native') && steps.changes.outputs.run == 'true'
       - name: Test browser trip playback

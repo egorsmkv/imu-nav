@@ -21,6 +21,13 @@ These unit tests verify the layout decision, not rendered Compose bounds. Run th
 device checks before treating the UI as visually verified. Use the benchmark APK for route
 packs: debug builds cannot load GraphHopper's desugared records (see `AGENTS.md`).
 
+`SearchRestorationTest` opens the production route-origin search, types a synthetic one-letter
+query, recreates the Activity, then rotates the emulator (resizing the available window).
+It requires the same open search and query after both transitions. The GPS instrumentation
+workflow runs this test on its API/page-size matrix. Search target/query, follow mode, diagnostics
+and expanded panel state use `rememberSaveable`; search results are recalculated after restoration.
+Large-screen multi-window resizing and the visual/font matrix below still need device checks.
+
 ## Device matrix
 
 | App window | Font scale | Expected layout / main risk |

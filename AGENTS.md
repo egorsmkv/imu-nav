@@ -6,7 +6,7 @@ Read [SECURITY.txt](SECURITY.txt) for the security and privacy rules that apply 
 
 ## What this is
 
-**IMU Nav** — an Android car navigator for Ukraine that keeps working when GPS is jammed or
+**IMU Nav** — an Android car and walking navigator that keeps working when GPS is jammed or
 spoofed. It classifies every GPS fix (GOOD / SUSPECT / BAD) and, without trusted GPS, dead-reckons
 along the planned route using IMU, cell towers and map knowledge. Routing and address search work
 offline (GraphHopper packs). UI: Jetpack Compose + MapLibre, Ukrainian, English and Russian.
@@ -29,16 +29,18 @@ Package root: `org.imunav.<module>`. Put new logic in `:core` whenever it does n
 ./gradlew check                 # all tests + detekt + ktlint (Spotless) + Android Lint — must pass
 ./gradlew spotlessApply         # auto-format before committing
 ./gradlew :core:test            # fast: engine, classifier, cells, HTTP, replay tests
-./gradlew :app:assembleRelease  # signed, R8-shrunk, ARM-only APK (~350 MB with bundled map)
+./gradlew :app:assemblePlayRelease  # developer-signed when configured, R8-shrunk, ARM-only APK
+./gradlew :app:assembleFdroidRelease  # unsigned release for F-Droid
 ./gradlew :app:assemblePlayBenchmark  # release build + StrictMode/MainThreadWatchdog, appId suffix .bench
-./gradlew :app:lintRelease      # Android Lint only
+./gradlew :app:lintFdroidRelease # Android Lint for the F-Droid release
 ./gradlew detekt                # static analysis only
 GRAPH_DIR=/path/to/graph-ukraine ./gradlew :routing:test --tests '*PackSmokeTest*'   # needs a real pack
 ./gradlew :replay:run --args="trips/ --hide-gps-after 60 --out replay-out"
 ./gradlew :routing:run --args="--osm ukraine-latest.osm.pbf --out graph-ukraine --name Ukraine"  # ~10 GB RAM
 ```
 
-Requirements: JDK 17+, Android SDK platform 36. `adb` lives at `~/Library/Android/sdk/platform-tools/adb` (not on PATH).
+Requirements: JDK 17+, Android SDK platform 36, build-tools 36.0.0, NDK 28.2.13676358, CMake 3.22.1 and Rust 1.99+.
+Use the SDK's `platform-tools/adb`; its path depends on the development host.
 
 ## Definition of done
 
@@ -63,8 +65,9 @@ Requirements: JDK 17+, Android SDK platform 36. `adb` lives at `~/Library/Androi
   - imports instead of inline fully-qualified names, no `!!`.
 - Idiomatic Kotlin: `data class` for values, immutable state published via `StateFlow`
   (private `_x` + public `x`), `buildList`, `sumOf`, `?.let`, `when`, KTX (`prefs.edit { }`, `db.transaction { }`).
-- Domain conventions: **`s` = metres along the route** (the whole DR state); times are ms from
-  `SystemClock.elapsedRealtime()` (`elapsedMs`); speeds in m/s unless the name says `Kmh`; angles in degrees,
+- Domain conventions: **`s` = metres along the route** (the whole DR state); times use the monotonic
+  elapsed clock (`elapsedMs`). Android IMU, pressure and step callbacks use `SensorEvent.timestamp`
+  converted from ns, preserving measurement time rather than callback arrival time. Speeds in m/s unless the name says `Kmh`; angles in degrees,
   positive = clockwise/right.
 - Log lines are short `key=value` messages via `TripLog.write` / `NavListener.onLog`
   (e.g. `turn_snap step=4 from_s=… to_s=…`) — keep existing keys stable, tools and tests grep them.
@@ -100,7 +103,8 @@ Requirements: JDK 17+, Android SDK platform 36. `adb` lives at `~/Library/Androi
 - **Positioning inputs** go through `PositioningHub` (which also records them for replay). Anything the
   engine consumes must be recorded in `TripEvent`, or replays will diverge from real drives.
 - **Trust:** the fused provider and Android's cached GPS fix are never trusted for navigation
-  (they inherit spoofed positions). Mock fixes and fixes outside `ServiceArea.UKRAINE_COARSE` are BAD.
+  (they inherit spoofed positions). Mock fixes are BAD. The app uses `ServiceArea.EVERYWHERE` by default;
+  fixes outside `ServiceArea.UKRAINE_COARSE` are BAD only when that optional area policy is selected.
 - **Battery:** sensor rates, scan intervals and map FPS come from `PowerProfile` (`power/Power.kt`);
   don't hard-code new polling loops — tie them to the profile and to `AppGraph.uiVisible`.
 - **Long tasks** in `CellManager` / `OfflineRouting` use their `runTask` helpers (one task at a time,
@@ -122,7 +126,7 @@ Requirements: JDK 17+, Android SDK platform 36. `adb` lives at `~/Library/Androi
   copyleft dependencies to `:app`; update `docs/licences.md` and `docs/reference/licences.md` for any dependency change.
 - **R8:** GraphHopper/Jackson/HPPC/MapLibre are kept wholesale in `app/proguard-rules.pro`
   (reflection). Broad `-dontwarn com.graphhopper.**` hides missing-class errors — verify with the
-  mapping file (`app/build/outputs/mapping/release/mapping.txt`) when changing dependencies.
+  mapping file (`app/build/outputs/mapping/fdroidRelease/mapping.txt`) when changing dependencies.
 - **Bundled assets** (`assets/routing/pack.zip` ~300 MB, `assets/cells/bundled-cells.csv.gz`) are big;
   `pack.zip` is stored uncompressed (`noCompress += "zip"`) and gitignored.
 - **Trip recordings** are gzip streams that may be truncated by a kill; always read them with

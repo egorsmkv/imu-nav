@@ -16,9 +16,14 @@
   The original stays in app storage. Preparing the attachment runs in the background; missing files
   or insufficient storage produce an error without changing the trip.
 - **Surviving the app being killed:** the active trip is saved every 10 s. If Android or the user kills
-  the app mid-trip, the next start (within 3 h) restores the route and position — widening the
-  uncertainty for the time lost — restarts the foreground service and keeps recording into the same
-  file (a recording cut off by the kill is salvaged first).
+  the app mid-trip, the next foreground opening (within 3 h) can restore the route and position,
+  widening uncertainty for the time lost, and keep recording into the same file. A recording cut
+  off by the kill is salvaged first. File reading, JSON decoding and route construction run on
+  the recording worker. The engine is installed on main only after successful `startForeground`.
+  An explicit start waits for a visible phone/car host; a system sticky restart already has a
+  service host. Failed startup leaves navigation inactive and reports an error. Merely creating
+  the application in the background cannot start a restored trip. Snapshot age is checked again
+  after waiting; malformed data is rejected before changing live state.
 
   A `Q` event records the restored distance
   along the route after the new start and route events. Kotlin and native comparison replay reset
@@ -38,7 +43,8 @@
   `compare-*.geojson` (real vs. engine tracks) for any GeoJSON viewer.
 
 - **Native estimator comparison:** build the host JNI library and score the Rust estimator and
-  Kotlin engine at the same trusted GPS timestamps (no Android SDK needed):
+  Kotlin engine at the same trusted GPS timestamps. Execution is JVM-only; Gradle project
+  configuration needs the pinned Android tools listed in [build and test](../build_and_test.md):
 
   ```bash
   ./gradlew -PnativeReplay :replay:run --args="path/to/trips --compare-native --hide-gps-after 30,120,300 --out native-replay-out"

@@ -42,6 +42,13 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - uses: android-actions/setup-android@v3
+        if: steps.changes.outputs.run == 'true'
+        with:
+          packages: platform-tools
+      - name: Install pinned Android tools for project configuration
+        if: steps.changes.outputs.run == 'true'
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
       - uses: gradle/actions/setup-gradle@v4
         if: steps.changes.outputs.run == 'true'
       - name: Download small Monaco extract
@@ -76,6 +83,11 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Install pinned Android tools for project configuration
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
       - uses: gradle/actions/setup-gradle@v4
       - name: Validate inputs and report runner capacity
         run: |

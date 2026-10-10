@@ -2,9 +2,11 @@ package org.imunav.app.trips
 
 import android.content.Context
 import android.os.SystemClock
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withContext
 import org.imunav.core.geo.Geo
 import org.imunav.core.geo.GeoPoint
 import org.imunav.core.geo.ServiceArea
@@ -103,7 +105,7 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
     /** Session-only export sink, independent of developer diagnostics upload. */
     var onProfileEvent: ((TripEvent) -> Unit)? = null
     var onDiagnosticEnd: ((String) -> Unit)? = null
-    private val dir = File(context.filesDir, "trips").apply { mkdirs() }
+    private val dir = File(context.filesDir, "trips")
     private val index = File(dir, "index.jsonl")
     private val activeFile = File(dir, "active.json")
 
@@ -111,6 +113,7 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
 
     /** Recording and state files are written here, never on the main thread; one thread keeps event order. */
     private val io = Executors.newSingleThreadExecutor()
+    private val ioDispatcher = io.asCoroutineDispatcher()
 
     /**
      * [route] encoded once per route change (it can be large), reused by every [persist].
@@ -141,7 +144,10 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
     val active: Boolean get() = id != null
 
     init {
-        io.execute { _history.value = loadHistory() }
+        io.execute {
+            dir.mkdirs()
+            _history.value = loadHistory()
+        }
     }
 
     // ------------------------------------------------------------------ lifecycle
@@ -264,53 +270,47 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
 
     // ------------------------------------------------------------------ surviving process death
 
-    /**
-     * If the app was killed mid-trip, reopen the recording and put the engine back on the saved route
-     * near the saved position. Returns true when a trip was restored.
-     */
-    fun restore(): Boolean {
-        val o = runCatching { JSONObject(activeFile.readText()) }.getOrNull() ?: return false
-        val savedAt = o.optLong("savedAt")
-        val gapS = (System.currentTimeMillis() - savedAt) / 1000.0
-        if (gapS < 0 || gapS > MAX_RESTORE_GAP_S) {
-            activeFile.delete()
-            return false
-        }
-        val restoredRoute = runCatching { RouteCodec.decode(o.getString("route")) }.getOrNull() ?: return false
-        val restoredId = o.getString("id")
-        id = restoredId
-        recordingName = o.getString("recording")
-        startWall = o.getLong("start")
-        val restoredDestination = GeoPoint(o.getDouble("destLat"), o.getDouble("destLon"))
-        destination = restoredDestination
-        waypoints = o.optJSONArray("via")?.let { a -> (0 until a.length() step 2).map { GeoPoint(a.getDouble(it), a.getDouble(it + 1)) } }.orEmpty()
-        startAccuracy = o.optDouble("startAcc", 0.0)
-        mode = TripSummary.modeOf(o)
-        route = restoredRoute
-        val encoded = o.getString("route")
-        io.execute { routeEncoded = encoded }
-        drivenM = o.optDouble("driven")
-        movingS = o.optDouble("moving")
-        blindS = o.optDouble("blindS")
-        blindM = o.optDouble("blindM")
-        maxUnc = o.optDouble("maxUnc")
-        reroutes = o.optInt("reroutes")
-        lastTickMs = -1L
-        // Unknown how far the car moved while the app was dead: widen the uncertainty with the gap.
-        val uncertainty = (o.optDouble("unc", 100.0) + gapS * RESTORE_DRIFT_M_PER_S).coerceAtMost(3000.0)
+    /** Read and decode on the ordered recording worker, without touching live state. */
+    suspend fun prepareRestore(): RestoredTrip? = withContext(ioDispatcher) {
+        RestoredTrip.read(activeFile, System.currentTimeMillis())
+    }
+
+    /** Install a validated snapshot only after the foreground service is running. Main-thread only. */
+    fun restore(saved: RestoredTrip): Boolean {
+        if (active || engine.state.active) return false
+        val uncertainty = saved.uncertaintyAt(System.currentTimeMillis()) ?: return false
+        val summary = saved.summary
+        val restoredDestination = requireNotNull(summary.destination)
         val now = SystemClock.elapsedRealtime()
-        val estimator = NavigationEstimator.entries.firstOrNull { it.name == o.optString("estimator") } ?: NavigationEstimator.KOTLIN
-        engine.start(restoredRoute, restoredDestination, waypoints, now, startAccuracyM = uncertainty, mode = mode, estimator = estimator)
-        onArchiveStart?.invoke(restoredId)
-        onDiagnosticStart?.invoke(restoredId)
-        engine.resumeAt(o.optDouble("s"))
+        // Do not publish a trip ID if engine installation fails before recording can begin.
+        engine.start(saved.route, restoredDestination, saved.waypoints, now, startAccuracyM = uncertainty, mode = summary.mode, estimator = saved.estimator)
+        engine.resumeAt(saved.progressM)
+        id = summary.id
+        recordingName = summary.recording
+        startWall = summary.startWallMs
+        destination = restoredDestination
+        waypoints = saved.waypoints
+        startAccuracy = saved.startAccuracyM
+        mode = summary.mode
+        route = saved.route
+        io.execute { routeEncoded = saved.encodedRoute }
+        drivenM = summary.drivenM
+        movingS = summary.movingS
+        blindS = summary.blindS
+        blindM = summary.blindM
+        maxUnc = summary.maxUncertaintyM
+        reroutes = summary.reroutes
+        lastTickMs = -1L
+        onArchiveStart?.invoke(summary.id)
+        onDiagnosticStart?.invoke(summary.id)
         openRecorder(append = true)
         record(TripEvent.Start(now, restoredDestination, waypoints, uncertainty))
         record(TripEvent.Mode(now, mode))
         record(TripEvent.Estimator(now, engine.estimator))
-        record(TripEvent.RouteSet(now, restoredRoute))
+        record(TripEvent.RouteSet(now, saved.route))
         record(TripEvent.Resume(now, engine.progressS))
-        log("trip_restored $id gap=${gapS.toInt()}s s=${o.optDouble("s").toInt()} unc=${uncertainty.toInt()}")
+        val gapS = (System.currentTimeMillis() - saved.savedAt) / 1000.0
+        log("trip_restored $id gap=${gapS.toInt()}s s=${saved.progressM.toInt()} unc=${uncertainty.toInt()}")
         persist(force = true)
         return true
     }
@@ -405,12 +405,6 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
 
     companion object {
         private const val PERSIST_EVERY_MS = 10_000L
-
-        /** Restore only trips interrupted less than 3 hours ago. */
-        private const val MAX_RESTORE_GAP_S = 3 * 3600.0
-
-        /** Assumed drift while the app was dead (~city driving), m/s. */
-        private const val RESTORE_DRIFT_M_PER_S = 8.0
     }
 }
 

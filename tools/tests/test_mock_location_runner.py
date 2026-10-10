@@ -30,7 +30,7 @@ class InstrumentationResultsTest(unittest.TestCase):
     def test_complete_suite_passes_and_start_records_are_not_counted(self):
         results, valid = runner.parse_results(transcript().replace('\n', '\r\n'))
         self.assertTrue(valid)
-        self.assertEqual(len(results), 9)
+        self.assertEqual(len(results), sum(runner.EXPECTED_CLASSES.values()))
 
     def test_zero_tests_and_partial_process_crash_fail(self):
         self.assertFalse(runner.parse_results('INSTRUMENTATION_CODE: -1\n')[1])
@@ -61,7 +61,7 @@ class InstrumentationResultsTest(unittest.TestCase):
             path = Path(directory) / 'results.xml'
             runner.write_junit(path, results, valid, 'process crashed')
             suite = ET.parse(path).getroot()
-            self.assertEqual(suite.get('failures'), '10')
+            self.assertEqual(suite.get('failures'), str(sum(runner.EXPECTED_CLASSES.values()) + 1))
             self.assertIn('process crashed', path.read_text())
 
     def test_timeout_after_passing_normal_suite_never_passes_recovery(self):
@@ -123,6 +123,23 @@ class InstrumentationResultsTest(unittest.TestCase):
                 self.assertEqual(suite.get('failures'), str(int(failed_step is not None)))
                 if failed_step is not None:
                     self.assertIn('adb: device offline', (root / 'reports/instrumentation.txt').read_text())
+
+    def test_16kb_job_rejects_a_4kb_emulator_before_installation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for relative in ('apks/fdroid/debug/app.apk', 'apks/androidTest/fdroid/debug/test.apk'):
+                apk = root / relative
+                apk.parent.mkdir(parents=True, exist_ok=True)
+                apk.write_bytes(b'synthetic APK fixture')
+            argv = ['runner', '--apk-directory', str(root / 'apks'), '--output', str(root / 'reports'), '--expected-page-size', '16384']
+            with patch.object(sys, 'argv', argv), patch.object(runner, 'adb', return_value='4096') as adb, \
+                    patch.object(runner, 'instrumentation') as instrumentation, patch('builtins.print'):
+                with self.assertRaises(SystemExit) as raised:
+                    runner.main()
+            self.assertEqual(raised.exception.code, 1)
+            self.assertEqual((root / 'reports/page-size.txt').read_text(), '4096\n')
+            self.assertFalse(any(c.args[0] == 'install' for c in adb.call_args_list))
+            instrumentation.assert_not_called()
 
 
 if __name__ == '__main__':
