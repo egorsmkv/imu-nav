@@ -8,6 +8,7 @@ import android.location.Location
 import android.location.LocationManager
 import android.os.Process
 import android.os.SystemClock
+import androidx.core.content.edit
 import org.imunav.core.location.MockLocationProvider
 import org.imunav.core.location.MockLocationSample
 
@@ -24,7 +25,7 @@ internal class AndroidMockLocationProvider(context: Context, private val prefs: 
     override fun install() {
         manager.addTestProvider(LocationManager.GPS_PROVIDER, false, false, false, false, false, true, true, Criteria.POWER_LOW, Criteria.ACCURACY_FINE)
         // Synchronous on the IO worker: retain ownership across process death for startup cleanup.
-        prefs.edit().putBoolean(INSTALLED, true).commit()
+        prefs.edit(commit = true) { putBoolean(INSTALLED, true) }
     }
 
     override fun publish(sample: MockLocationSample) {
@@ -47,7 +48,7 @@ internal class AndroidMockLocationProvider(context: Context, private val prefs: 
         } catch (_: IllegalArgumentException) {
             // Android 8–11 throw when a previously owned test provider has already disappeared.
         }
-        prefs.edit().putBoolean(INSTALLED, false).commit()
+        prefs.edit(commit = true) { putBoolean(INSTALLED, false) }
     }
 
     companion object {
