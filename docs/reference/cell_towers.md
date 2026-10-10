@@ -68,7 +68,7 @@ times: share only with trusted recipients.
 
    ```bash
    adb pull /sdcard/Android/data/org.imunav.app/files/cells-export.csv.gz app/src/main/assets/cells/bundled-cells.csv.gz
-   ./gradlew :app:assembleRelease
+   ./gradlew :app:assemblePlayRelease
    ```
 
 3. Installed apps re-import it once after updating (detected by the file's SHA-256).

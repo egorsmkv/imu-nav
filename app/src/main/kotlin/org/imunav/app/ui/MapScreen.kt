@@ -62,6 +62,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -136,11 +137,12 @@ fun MapScreen(
     }
     val routing by app.offlineRouting.status.collectAsStateWithLifecycle()
     var mapCenter by remember { mutableStateOf<GeoPoint?>(null) }
-    var following by remember { mutableStateOf(true) }
-    var showDiagnostics by remember { mutableStateOf(false) }
-    var searchTarget by remember { mutableStateOf<RoutePoint?>(null) }
+    var following by rememberSaveable { mutableStateOf(true) }
+    var wasNavigating by rememberSaveable { mutableStateOf(nav.active) }
+    var showDiagnostics by rememberSaveable { mutableStateOf(false) }
+    var searchTarget by rememberSaveable { mutableStateOf<RoutePoint?>(null) }
     var searchWidth by remember { mutableIntStateOf(0) }
-    var expanded by remember { mutableStateOf(false) }
+    var expanded by rememberSaveable { mutableStateOf(false) }
     // Opening view: the last known GPS / trusted position, or the fixed place from Settings.
     val startView = remember { app.mapStart.initialView() }
     val startMode by app.mapStartMode.collectAsStateWithLifecycle()
@@ -161,7 +163,10 @@ fun MapScreen(
         else -> null
     }
 
-    LaunchedEffect(nav.active) { if (nav.active) following = true }
+    LaunchedEffect(nav.active) {
+        if (nav.active && !wasNavigating) following = true
+        wasNavigating = nav.active
+    }
     // A newly opened navigation panel or warning must start with its summary visible.
     LaunchedEffect(nav.active, nav.arrived) { panelScroll.scrollTo(0) }
     LaunchedEffect(nav.active, hasLocation, ui.locationEnabled) { headerScroll.scrollTo(0) }

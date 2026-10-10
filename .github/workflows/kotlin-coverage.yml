@@ -52,9 +52,9 @@ jobs:
         with:
           # Override the action's default, which includes the retired SDK 'tools' package.
           packages: platform-tools
-      - name: Install Android platform for app unit tests
+      - name: Install pinned Android tools for project configuration
         if: steps.changes.outputs.run == 'true'
-        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
       - name: Install host Rust for JNI tests
         if: steps.changes.outputs.run == 'true'
         run: rustup toolchain install nightly-2026-09-25 --profile minimal

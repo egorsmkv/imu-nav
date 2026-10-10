@@ -21,6 +21,13 @@ These unit tests verify the layout decision, not rendered Compose bounds. Run th
 device checks before treating the UI as visually verified. Use the benchmark APK for route
 packs: debug builds cannot load GraphHopper's desugared records (see `AGENTS.md`).
 
+`SearchRestorationTest` opens the production route-origin search, types a synthetic one-letter
+query, recreates the Activity, then rotates the emulator (resizing the available window).
+It requires the same open search and query after both transitions. The GPS instrumentation
+workflow runs this test on its API/page-size matrix. Search target/query, follow mode, diagnostics
+and expanded panel state use `rememberSaveable`; search results are recalculated after restoration.
+Large-screen multi-window resizing and the visual/font matrix below still need device checks.
+
 ## Device matrix
 
 | App window | Font scale | Expected layout / main risk |
@@ -60,7 +67,8 @@ The source audit covered the map overlays/panels, search, bookmarks, onboarding,
 diagnostics, logs and trip screens. Changes address the narrow side-pane policy, bookmark
 keyboard/header sizing, short-window map actions, landscape control insets and speed-indicator wrapping.
 
-In the authoring environment, Gradle could not download its distribution (`Network is
-unreachable`), and no Android SDK/emulator was available. The Gradle checks and device matrix
-above were therefore **not run locally**; CI build/unit-test/lint results and device checks
-must be evaluated separately. Do not interpret this matrix as a list of passing screenshots.
+The original layout audit could not run Gradle or an emulator in its authoring environment.
+The subsequent sensor/recovery and saved-search changes passed local Gradle `check`, release
+lint and APK builds. CI exercises search recreation and orientation resize on its emulator
+matrix, including real 16 KB pages. The full manual layout matrix above still needs device
+review; do not interpret it as a list of passing screenshots.

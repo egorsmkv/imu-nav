@@ -19,10 +19,18 @@ The navigation code was written from scratch after a behavioural analysis of Bli
 
 The sharing server vendors MapLibre GL JS 5.20.0 under BSD-3-Clause. Its distribution licence and bundled third-party notices are in `server/static/maplibre/license.txt` and the distributed JavaScript. OpenFreeMap supplies map data with on-map attribution. The pinned assets are reproduced by `tools/vendor_trip_map.py`.
 
+## Vendored Android JNI
+
+AndroidX Graphics Path 1.0.1 native sources retain their Apache-2.0 notices and licence in
+`app/src/main/cpp/graphics-path/`. Its unchanged source is rebuilt with 16 KB linker layout;
+the Maven Java/Kotlin API is pinned to the same version.
+
 ## Device tests
 
 AndroidX test libraries are confined to test APKs. Device tests exclude the Car App Testing
 library’s transitive Robolectric dependencies; production APK dependencies are unchanged.
 See the [full library list](reference/licences.md) for versions and licences.
+Compose UI Test JUnit4 uses the existing Compose BOM and Apache 2.0 licence; it is confined to
+the AndroidTest APK and does not change production dependencies.
 
 The sharing server uses `zip` 8.6 (MIT) to validate user-uploaded profiling archives. It enables only DEFLATE support; this dependency is not included in the Android app.

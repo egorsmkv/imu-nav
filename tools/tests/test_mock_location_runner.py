@@ -27,10 +27,28 @@ def transcript(code=0, complete=True):
 
 
 class InstrumentationResultsTest(unittest.TestCase):
+    def test_old_images_use_kernel_mappings_when_getconf_is_missing(self):
+        missing = subprocess.CalledProcessError(127, ['adb', 'shell', 'getconf', 'PAGE_SIZE'], output='getconf: not found')
+        for kb in (4, 16):
+            with self.subTest(kb=kb), patch.object(runner, 'adb', side_effect=[missing, f'KernelPageSize:    {kb} kB\nKernelPageSize: 2048 kB\n']) as adb:
+                self.assertEqual(runner.device_page_size(), str(kb * 1024))
+                self.assertEqual(adb.call_args_list, [call('shell', 'getconf', 'PAGE_SIZE'), call('shell', 'cat', '/proc/self/smaps')])
+
+    def test_page_size_fallback_does_not_hide_transport_errors_or_missing_evidence(self):
+        offline = subprocess.CalledProcessError(1, ['adb'], output='device offline')
+        with patch.object(runner, 'adb', side_effect=offline) as adb:
+            with self.assertRaises(subprocess.CalledProcessError):
+                runner.device_page_size()
+            self.assertEqual(adb.call_count, 1)
+        missing = subprocess.CalledProcessError(127, ['adb'], output='getconf: not found')
+        with patch.object(runner, 'adb', side_effect=[missing, 'unreadable mappings']):
+            with self.assertRaisesRegex(RuntimeError, 'Cannot determine kernel page size'):
+                runner.device_page_size()
+
     def test_complete_suite_passes_and_start_records_are_not_counted(self):
         results, valid = runner.parse_results(transcript().replace('\n', '\r\n'))
         self.assertTrue(valid)
-        self.assertEqual(len(results), 9)
+        self.assertEqual(len(results), sum(runner.EXPECTED_CLASSES.values()))
 
     def test_zero_tests_and_partial_process_crash_fail(self):
         self.assertFalse(runner.parse_results('INSTRUMENTATION_CODE: -1\n')[1])
@@ -61,7 +79,7 @@ class InstrumentationResultsTest(unittest.TestCase):
             path = Path(directory) / 'results.xml'
             runner.write_junit(path, results, valid, 'process crashed')
             suite = ET.parse(path).getroot()
-            self.assertEqual(suite.get('failures'), '10')
+            self.assertEqual(suite.get('failures'), str(sum(runner.EXPECTED_CLASSES.values()) + 1))
             self.assertIn('process crashed', path.read_text())
 
     def test_timeout_after_passing_normal_suite_never_passes_recovery(self):
@@ -123,6 +141,23 @@ class InstrumentationResultsTest(unittest.TestCase):
                 self.assertEqual(suite.get('failures'), str(int(failed_step is not None)))
                 if failed_step is not None:
                     self.assertIn('adb: device offline', (root / 'reports/instrumentation.txt').read_text())
+
+    def test_16kb_job_rejects_a_4kb_emulator_before_installation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for relative in ('apks/fdroid/debug/app.apk', 'apks/androidTest/fdroid/debug/test.apk'):
+                apk = root / relative
+                apk.parent.mkdir(parents=True, exist_ok=True)
+                apk.write_bytes(b'synthetic APK fixture')
+            argv = ['runner', '--apk-directory', str(root / 'apks'), '--output', str(root / 'reports'), '--expected-page-size', '16384']
+            with patch.object(sys, 'argv', argv), patch.object(runner, 'adb', return_value='4096') as adb, \
+                    patch.object(runner, 'instrumentation') as instrumentation, patch('builtins.print'):
+                with self.assertRaises(SystemExit) as raised:
+                    runner.main()
+            self.assertEqual(raised.exception.code, 1)
+            self.assertEqual((root / 'reports/page-size.txt').read_text(), '4096\n')
+            self.assertFalse(any(c.args[0] == 'install' for c in adb.call_args_list))
+            instrumentation.assert_not_called()
 
 
 if __name__ == '__main__':

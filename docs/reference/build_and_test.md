@@ -3,7 +3,7 @@
 > Detailed reference. For easy steps, see the [guide](../build_and_test.md) or the [glossary](../glossary.md).
 
 Runs on Android 8.0 (API 26) and newer; targets Android 16 (API 36). Build requirements: JDK 17+,
-Android SDK 36, the Android NDK and Rust 1.99+ (edition 2024) with the `aarch64-linux-android`,
+Android SDK 36, Android NDK 28.2.13676358, CMake 3.22.1 and Rust 1.99+ (edition 2024) with the `aarch64-linux-android`,
 `armv7-linux-androideabi` and `x86_64-linux-android` targets. Set `ANDROID_NDK_HOME` when the NDK
 is outside the Android SDK. Android builds compile and package the Rust estimator automatically.
 

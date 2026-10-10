@@ -8,25 +8,36 @@ For the three native Rust crates and host replay commands, start with the [Rust 
 
 ## Prepare the tools
 
+Gradle configures the Android app even for JVM-only `:core`, `:routing` and `:replay` tasks.
+Install SDK platform 36, build-tools 36.0.0, NDK 28.2.13676358 and CMake 3.22.1 before
+running Gradle; AndroidX Graphics Path's native build model needs the pinned NDK during
+project configuration. The host algorithms and host JNI still execute without Android.
+
 | Work | Required tools |
 | --- | --- |
 | Rust host tests and simulator | Rust 1.99+ and Cargo |
 | Kotlin core tests and JVM replay | JDK 17+ and the checked-in Gradle wrapper; Rust is also needed for JNI replay tests |
-| Android APK, lint and device tests | JDK 17+, Android SDK platform 36, build-tools 36.0.0, an installed NDK and Rust 1.99+ with the targets below |
+| Android APK, lint and device tests | JDK 17+, Android SDK platform 36, build-tools 36.0.0, NDK 28.2.13676358, CMake 3.22.1 and Rust 1.99+ with the targets below |
 | Full `./gradlew check` | The Android toolchain above; it also builds and tests the local Rust cell server |
 
-Install the SDK platform, build tools and NDK through Android Studio's SDK Manager or your SDK
-command-line tools. The repository does not pin an NDK version. Set these variables to the actual
+Install the SDK platform, build tools, NDK and CMake through Android Studio's SDK Manager or your SDK
+command-line tools. Gradle pins NDK 28.2.13676358, whose linker defaults to 16 KB alignment.
+The Rust JNI build script explicitly sets both maximum and common page sizes to 16 KB,
+including for direct Cargo builds, so Rust compiler defaults cannot misalign the RELRO end.
+CMake rebuilds the vendored AndroidX Graphics Path 1.0.1 JNI; its original AAR has a
+misaligned RELRO end. The Java dependency is pinned to match the unchanged native source.
+Set these variables to the actual
 installed directories; the paths below are examples for a Linux host:
 
 ```bash
 export ANDROID_HOME="$HOME/Android/Sdk"
-export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/<installed-version>"
+export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358"
 ```
 
-Replace `<installed-version>` with a directory present in your SDK. On macOS, the usual SDK
-directory is `$HOME/Library/Android/sdk`. An explicit `ANDROID_NDK_HOME` selects the NDK; otherwise
-the native build scripts also check `ANDROID_NDK_ROOT` and the SDK's `ndk/` directory.
+Install that NDK version in your SDK. On macOS, the usual SDK directory is
+`$HOME/Library/Android/sdk`. An explicit `ANDROID_NDK_HOME` or `ANDROID_NDK_ROOT` can override
+the Rust script's selection; every resulting APK still needs the page-alignment gate below.
+Direct script invocation also checks the SDK's `ndk/` directory.
 Gradle passes the SDK location selected by Android Studio (including `local.properties`) to the script.
 Linux and macOS use [Bash](../scripts/build-rust-android.sh); Windows uses
 [Windows PowerShell](../scripts/build-rust-android.ps1) and the NDK's Windows LLVM toolchain.
@@ -82,6 +93,27 @@ There is no separate Kotlin installation step: Gradle resolves the version pinne
 `./gradlew check` also runs formatting, tests and pedantic Clippy for both Rust workspaces
 (`native/` and `server/`). A passing `:core:test` or native test run covers only that suite;
 it does not establish that Android lint, device behavior or the full check passed.
+
+## Verify 16 KB compatibility
+
+Build an APK, then check **all** packaged 64-bit libraries, including MapLibre and other prebuilt
+dependencies, and the final ZIP alignment:
+
+```bash
+python3 tools/verify_android_pages.py \
+  --zipalign "$ANDROID_HOME/build-tools/36.0.0/zipalign" \
+  --report build/android-pages.json app/build/outputs/apk/fdroid/release/*.apk
+```
+
+The gate checks ELF `LOAD` alignment/congruence and GNU RELRO end alignment, then runs
+`zipalign -v -c -P 16 4`. Missing libraries/tools and failed checks fail the command; the JSON
+report retains evidence. F-Droid CI applies this to release and benchmark APKs. Android
+instrumentation CI also runs on an API 35 `google_apis_ps16k` x86_64 emulator and requires
+`adb shell getconf PAGE_SIZE` to return `16384` before tests begin. Older images without
+`getconf` use the base `KernelPageSize` in `/proc/self/smaps` instead. The emulator gets 4 GB
+of RAM so the larger-page Google APIs image can keep instrumentation alive. Alignment alone does not
+establish runtime compatibility. See the official [Android page-size guide](https://developer.android.com/guide/practices/page-sizes)
+and the [emulator runner targets](https://github.com/ReactiveCircus/android-emulator-runner#configurations).
 
 ## Troubleshoot setup
 

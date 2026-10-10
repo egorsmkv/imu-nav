@@ -9,6 +9,7 @@ once and runs the same APKs on disposable x86_64 Google APIs emulators:
 | 31 | 12 | `ProviderProperties.Builder` |
 | 35 | 15 | Modern provider and foreground-service restrictions |
 | 36 | 16 | Current target SDK runtime |
+| 35 / 16 KB | 15 | `google_apis_ps16k`; actual `PAGE_SIZE=16384` is required |
 
 The workflow selects affected app, core, routing, native and build inputs. Documentation-only
 changes avoid builds and emulators; manual dispatch and merge queues run the suite. Matrix
@@ -41,6 +42,12 @@ provider and worker through the emulator's real `LocationManager`, AppOps and Bi
   TripManager restoration, remembered opt-in, fresh GPS after foreground relaunch and cleanup.
   The two stages are deliberately excluded from the ordinary package suite.
 
+The same runner also requires a rebuilt Graphics Path JNI load/iteration test, three saved-snapshot validation tests and one production search
+restoration test across Activity recreation and rotation/window resize. The ordinary suite therefore
+contains fourteen tests, followed by the two whole-app recovery stages. Foreground relaunch must
+activate the saved trip only after the location service has been promoted; background application
+creation must leave the engine inactive.
+
 All coordinates and routes are synthetic. Fixtures use separate preference files except the
 `NavService` and whole-app tests, which exercise AppGraph's worker on the disposable emulator.
 Fixture activity and service are unexported and exist only in Debug APKs. Ordinary tests and the
@@ -71,7 +78,7 @@ entire test package in an ordinary connected-test run: the seeding stage intenti
 a trip active for its paired restart check. The CI runner validates terminal instrumentation records and completion, failing on assertions,
 crashes, skipped tests, duplicate records or missing classes/tests even if `adb` returns zero.
 
-Per-API artifacts contain `results.xml`, raw instrumentation output, API number, ADB version/device
+Per-API artifacts contain `results.xml`, raw instrumentation output, API number, actual page size, ADB version/device
 inventory, logcat and `dumpsys location`. The runner awaits ADB transport for at most 30 seconds
 before collecting evidence and cleaning up; it never retries test invocations or GPS samples.
 Missing evidence or failed cleanup also fails the suite. Consult the workflow run for results at the exact commit under review;

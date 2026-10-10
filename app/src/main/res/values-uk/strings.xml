@@ -762,4 +762,5 @@
     <string name="mock_location_open_settings">Відкрити параметри розробника</string>
     <string name="mock_location_settings_unavailable">Не вдалося відкрити параметри розробника. Відкрийте налаштування Android вручну та спершу ввімкніть параметри розробника.</string>
     <string name="mock_location_notification">Передавання GPS · %1$s</string>
+    <string name="trip_restore_failed">Не вдалося відновити поїздку. Перевірте дозвіл на геолокацію та запустіть навігацію знову.</string>
 </resources>

@@ -39,7 +39,7 @@ jobs:
           packages: platform-tools
       - name: Install compile SDK and NDK
         if: steps.changes.outputs.run == 'true'
-        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358'
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
       - uses: dtolnay/rust-toolchain@stable
         if: steps.changes.outputs.run == 'true'
         with:
@@ -69,6 +69,7 @@ jobs:
           install -m 0644 native/target/android/x86_64-linux-android/release/libimu_nav_jni.so app/build/generated/rustJniLibs/x86_64/
           # Emulator APKs need only x86_64; the existing F-Droid workflow builds the ARM release ABIs.
           ./gradlew --no-daemon -x :app:buildRustAndroid detekt :app:assembleFdroidDebug :app:assembleFdroidDebugAndroidTest :app:lintFdroidDebug
+          python3 tools/verify_android_pages.py --zipalign "$ANDROID_HOME/build-tools/36.0.0/zipalign" --report build/android-pages.json app/build/outputs/apk/fdroid/debug/*.apk
       - uses: actions/upload-artifact@v4
         if: steps.changes.outputs.run == 'true'
         with:
@@ -78,9 +79,16 @@ jobs:
             app/build/outputs/apk/androidTest/fdroid/debug/*.apk
           if-no-files-found: error
           retention-days: 7
+      - name: Upload page-alignment evidence
+        if: always() && steps.changes.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-page-alignment
+          path: build/android-pages.json
+          if-no-files-found: warn
 
   emulator:
-    name: GPS emulator API ${{ matrix.api-level }}
+    name: GPS emulator API ${{ matrix.api-level }}${{ matrix.page-size == 16384 && ' (16 KB)' || '' }}
     needs: build
     runs-on: ubuntu-latest
     env:
@@ -89,7 +97,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        api-level: [28, 31, 35, 36]
+        include:
+          - {api-level: 28, target: google_apis, page-size: 4096}
+          - {api-level: 31, target: google_apis, page-size: 4096}
+          - {api-level: 35, target: google_apis, page-size: 4096}
+          - {api-level: 36, target: google_apis, page-size: 4096}
+          - {api-level: 35, target: google_apis_ps16k, page-size: 16384}
     steps:
       - uses: actions/checkout@v4
         if: needs.build.outputs.run == 'true'
@@ -109,16 +122,18 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ matrix.api-level }}
-          target: google_apis
+          target: ${{ matrix.target }}
           arch: x86_64
+          # The Google APIs 16 KB image can kill instrumentation at the default 1536 MB.
+          ram-size: 4096M
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
-          script: python3 tools/run_mock_location_tests.py --apk-directory gps-test-apks --output build/gps-instrumentation
+          script: python3 tools/run_mock_location_tests.py --apk-directory gps-test-apks --output build/gps-instrumentation --expected-page-size ${{ matrix.page-size }}
       - name: Upload test evidence even on failure
         if: always() && needs.build.outputs.run == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: gps-emulator-api-${{ matrix.api-level }}
+          name: gps-emulator-api-${{ matrix.api-level }}-${{ matrix.page-size }}
           path: build/gps-instrumentation/
           if-no-files-found: warn
           retention-days: 14

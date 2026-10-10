@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -16,6 +17,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -34,6 +36,7 @@ import org.imunav.app.nativecore.NativeRouteGeometry
 import org.imunav.app.nativecore.NativeRouteProjector
 import org.imunav.app.nativecore.NativeSpeedFusion
 import org.imunav.app.nativecore.NativeTrustEvaluator
+import org.imunav.app.navigation.ForegroundServiceStartup
 import org.imunav.app.navigation.NavigationSessionLifecycle
 import org.imunav.app.navigation.NavigationWork
 import org.imunav.app.navigation.PreviewResult
@@ -368,6 +371,9 @@ class AppGraph(private val context: Context) {
     private val displays = DisplayOwnership()
     val uiVisible: Boolean get() = displays.hasConsumer
     private var idleRefresh: Job? = null
+    private val restorationHost = MutableStateFlow(false)
+    private val serviceStartup = ForegroundServiceStartup()
+    private var restorationJob: Job? = null
 
     /** Update display ownership without giving either display a second engine loop. */
     fun setPhoneVisible(visible: Boolean) {
@@ -391,6 +397,7 @@ class AppGraph(private val context: Context) {
     }
 
     private fun updateDisplays() {
+        restorationHost.value = displays.visible || serviceStartup.started
         if (displays.needsSensing(engine.state.active)) startSensing() else stopSensing()
         if (displays.visible && idleRefresh == null) {
             idleRefresh = scope.launch {
@@ -579,6 +586,7 @@ class AppGraph(private val context: Context) {
             planningFix?.source == FixSource.GPS -> planningFix.accuracyM?.toDouble() ?: 20.0
             else -> planningFix?.accuracyM?.toDouble() ?: 500.0
         }
+        restorationJob?.cancel()
         routePreview.cancel()
         val mode = travelMode.value
         _ui.value = _ui.value.copy(planning = true, startingNavigation = true, error = null)
@@ -618,14 +626,34 @@ class AppGraph(private val context: Context) {
         }
     }
 
+    /** Called only after Android accepted startForeground; releases saved-trip installation. */
+    fun onNavigationServiceStarted() {
+        serviceStartup.succeeded()
+        restorationHost.value = true
+    }
+
+    /** A service must not tick or export coordinates until restored geometry and recordings are ready. */
+    suspend fun awaitTripRestoration() {
+        restorationJob?.join()
+    }
+
+    /** Service destruction must not leave a live engine with no owner to tick it. */
+    fun onNavigationServiceStopped() {
+        serviceStartup.failed(IllegalStateException("Foreground location service stopped"))
+        restorationHost.value = displays.visible
+        if (engine.state.active) stopNavigation()
+    }
+
     /** Foreground location can be rejected after the asynchronous service launch on recent Android. */
     fun onNavigationServiceFailure() {
+        serviceStartup.failed(IllegalStateException("Foreground location service rejected"))
         stopNavigation()
         _ui.value = _ui.value.copy(error = context.getString(R.string.car_setup))
     }
 
     /** End the trip: save it to the history and stop the engine. */
     fun stopNavigation() {
+        restorationJob?.cancel()
         mockLocationSharing.stop()
         navigationWork.cancel()
         if (_ui.value.startingNavigation) _ui.value = _ui.value.copy(startingNavigation = false, planning = false)
@@ -707,6 +735,13 @@ class AppGraph(private val context: Context) {
     }
 
     init {
+        initializeTripRecovery()
+    }
+
+    /** Prepare saved state asynchronously; only a promoted service may own its live engine. */
+    // Recovery is a task boundary: report file/JNI/Android failures and keep the app usable.
+    @Suppress("TooGenericExceptionCaught")
+    private fun initializeTripRecovery() {
         trips.onArchiveStart = automaticTripUpload::started
         trips.onArchiveCompleted = automaticTripUpload::completed
         trips.onDiagnosticStart = { id ->
@@ -726,34 +761,42 @@ class AppGraph(private val context: Context) {
         trips.onDiagnosticEnd = diagnostics::endTrip
         tripLog.onDiagnosticLine = diagnostics::onLog
         tripLog.onProfileLine = profileCapture::onLog
-        // The process was killed mid-trip (or the system restarted the sticky service): resume navigation.
-        if (trips.restore()) {
-            tripLog.startTrip()
-            engine.route?.let { route ->
-                navigationWork.launch(onFailure = {
-                    nativeEstimator.close()
-                    tripLog.write("native_estimator_restore_failed ${it.message}")
-                    if (engine.estimator == NavigationEstimator.NATIVE_KALMAN) _ui.value = _ui.value.copy(error = it.message)
-                }) {
-                    withPreparedResource(create = { NativeRouteGeometry.create(route) }) { prepared ->
-                        ensureCurrent()
-                        if (engine.state.active && engine.route === route) {
-                            nativeEstimator.start(
-                                prepared.value,
-                                engine.progressS,
-                                engine.state.speedKmh.toDouble() / 3.6,
-                                engine.state.uncertaintyM,
-                                engine.mode,
-                                SystemClock.elapsedRealtime(),
-                            )
-                            nativeRouteProjector.install(route, prepared.value)
-                            prepared.transfer()
-                        }
-                    }
+        restorationJob = scope.launch {
+            try {
+                val saved = trips.prepareRestore() ?: return@launch
+                _ui.value = _ui.value.copy(startingNavigation = true, planning = true)
+                // An explicit foreground host may request a service; a system sticky restart is already one.
+                restorationHost.first { it }
+                serviceStartup.await { NavService.start(context) }
+                withPreparedResource(create = { NativeRouteGeometry.create(saved.route) }) { prepared ->
+                    check(serviceStartup.started) { "Foreground service stopped during route preparation" }
+                    if (!trips.restore(saved)) return@withPreparedResource
+                    tripLog.startTrip()
+                    nativeEstimator.start(
+                        prepared.value,
+                        engine.progressS,
+                        engine.state.speedKmh.toDouble() / 3.6,
+                        engine.state.uncertaintyM,
+                        engine.mode,
+                        SystemClock.elapsedRealtime(),
+                    )
+                    nativeRouteProjector.install(saved.route, prepared.value)
+                    prepared.transfer()
+                    if (engine.mode == TravelMode.CAR) obd.start()
+                    applyPower()
+                    refresh()
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                // A rejected start never leaves active guidance or an engine without a ticking service.
+                tripLog.write("nav_service_restart_failed ${failure.javaClass.simpleName}")
+                stopNavigation()
+                NavService.stop(context)
+                _ui.value = _ui.value.copy(error = context.getString(R.string.trip_restore_failed))
+            } finally {
+                _ui.value = _ui.value.copy(startingNavigation = false, planning = false)
             }
-            if (engine.mode == TravelMode.CAR) obd.start()
-            runCatching { NavService.start(context) }.onFailure { tripLog.write("nav_service_restart_failed ${it.message}") }
         }
     }
 }

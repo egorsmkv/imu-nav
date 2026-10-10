@@ -65,17 +65,19 @@ class NavService : LifecycleService() {
             stopSelf()
             return START_NOT_STICKY
         }
+        graph.onNavigationServiceStarted()
         if (wakeLock == null) {
             wakeLock = getSystemService(PowerManager::class.java)
                 .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "imunav:nav")
                 .apply { acquire(MAX_WAKE_LOCK_MS) } // with a timeout, in case we are never stopped
         }
         val app = graph
-        app.startSensing()
         if (loop == null) {
             loop = lifecycleScope.launch {
+                app.awaitTripRestoration()
+                if (app.engine.state.active) app.startSensing()
                 var tickCount = 0
-                while (isActive) {
+                while (isActive && app.engine.state.active) {
                     app.tick()
                     app.mockLocationSharing.update(app.engine.state)
                     if (!app.engine.state.active) break
@@ -94,6 +96,7 @@ class NavService : LifecycleService() {
     override fun onDestroy() {
         loop?.cancel()
         graph.mockLocationSharing.stop()
+        graph.onNavigationServiceStopped()
         wakeLock?.let { if (it.isHeld) it.release() }
         super.onDestroy()
     }
