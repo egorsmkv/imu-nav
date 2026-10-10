@@ -25,6 +25,7 @@ internal class AndroidMockLocationProvider(context: Context, private val prefs: 
     override fun isAllowed(): Boolean = appOps.checkOpNoThrow(AppOpsManager.OPSTR_MOCK_LOCATION, Process.myUid(), packageName) == AppOpsManager.MODE_ALLOWED
 
     override fun install() {
+        requireAllowed()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val properties = ProviderProperties.Builder()
                 .setHasSpeedSupport(true)
@@ -48,6 +49,7 @@ internal class AndroidMockLocationProvider(context: Context, private val prefs: 
     }
 
     override fun publish(sample: MockLocationSample) {
+        requireAllowed()
         val location = Location(LocationManager.GPS_PROVIDER).apply {
             latitude = sample.point.lat
             longitude = sample.point.lon
@@ -57,17 +59,25 @@ internal class AndroidMockLocationProvider(context: Context, private val prefs: 
             elapsedRealtimeNanos = sample.elapsedMs * 1_000_000L
             time = System.currentTimeMillis() - (SystemClock.elapsedRealtime() - sample.elapsedMs)
         }
-        manager.setTestProviderLocation(LocationManager.GPS_PROVIDER, location)
         manager.setTestProviderEnabled(LocationManager.GPS_PROVIDER, true)
+        manager.setTestProviderLocation(LocationManager.GPS_PROVIDER, location)
+        requireAllowed()
     }
 
     override fun remove() {
+        requireAllowed()
         try {
             manager.removeTestProvider(LocationManager.GPS_PROVIDER)
         } catch (_: IllegalArgumentException) {
             // Android 8–11 throw when a previously owned test provider has already disappeared.
         }
+        requireAllowed()
         prefs.edit(commit = true) { putBoolean(INSTALLED, false) }
+    }
+
+    /** Android may silently ignore mock IPC after AppOps revocation; do not acknowledge success. */
+    private fun requireAllowed() {
+        if (!isAllowed()) throw SecurityException("Mock location access is not allowed")
     }
 
     companion object {

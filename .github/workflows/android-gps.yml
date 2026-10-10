@@ -1,0 +1,116 @@
+name: Android GPS instrumentation
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build GPS instrumentation APKs
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    outputs:
+      run: ${{ steps.changes.outputs.run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Select affected work
+        id: changes
+        run: python3 tools/ci_changes.py --suite android
+      - uses: actions/setup-java@v5
+        if: steps.changes.outputs.run == 'true'
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        if: steps.changes.outputs.run == 'true'
+        with:
+          packages: platform-tools
+      - name: Install compile SDK and NDK
+        if: steps.changes.outputs.run == 'true'
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358'
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.changes.outputs.run == 'true'
+        with:
+          toolchain: 1.99.0-beta
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - uses: actions/cache@v4
+        if: steps.changes.outputs.run == 'true'
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('native/Cargo.lock', 'server/Cargo.lock') }}
+          restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
+      - uses: gradle/actions/setup-gradle@v4
+        if: steps.changes.outputs.run == 'true'
+      - name: Compile fixtures, check style and lint
+        if: steps.changes.outputs.run == 'true'
+        env:
+          ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/28.2.13676358
+        run: |
+          ./gradlew --no-daemon spotlessApply
+          git diff --exit-code
+          ./gradlew --no-daemon detekt :app:assembleFdroidDebug :app:assembleFdroidDebugAndroidTest :app:lintFdroidDebug
+      - uses: actions/upload-artifact@v4
+        if: steps.changes.outputs.run == 'true'
+        with:
+          name: gps-test-apks
+          path: |
+            app/build/outputs/apk/fdroid/debug/*.apk
+            app/build/outputs/apk/androidTest/fdroid/debug/*.apk
+          if-no-files-found: error
+          retention-days: 7
+
+  emulator:
+    name: GPS emulator API ${{ matrix.api-level }}
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        api-level: [28, 31, 35, 36]
+    steps:
+      - uses: actions/checkout@v4
+        if: needs.build.outputs.run == 'true'
+      - uses: actions/download-artifact@v4
+        if: needs.build.outputs.run == 'true'
+        with:
+          name: gps-test-apks
+          path: gps-test-apks
+      - name: Enable KVM
+        if: needs.build.outputs.run == 'true'
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run real LocationManager and service tests
+        if: needs.build.outputs.run == 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+          script: python3 tools/run_mock_location_tests.py --apk-directory gps-test-apks --output build/gps-instrumentation
+      - name: Upload test evidence even on failure
+        if: always() && needs.build.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: gps-emulator-api-${{ matrix.api-level }}
+          path: build/gps-instrumentation/
+          if-no-files-found: warn
+          retention-days: 14
