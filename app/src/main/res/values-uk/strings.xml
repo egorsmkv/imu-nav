@@ -289,6 +289,15 @@
     <string name="dev_status_removed">Сеанс видалено з сервера</string>
     <string name="trip_log">Журнал поїздки</string>
     <string name="trip_log_summary">Пошук, фільтрування, копіювання та надсилання останніх діагностичних подій</string>
+    <string name="trip_log_live">Наживо · призупинити</string>
+    <string name="trip_log_paused">Пауза · продовжити</string>
+    <string name="trip_log_latest">Останні події</string>
+    <string name="trip_log_reset_filters">Скинути фільтри</string>
+    <string name="trip_log_details">Подробиці</string>
+    <string name="trip_log_collapse">Згорнути</string>
+    <string name="trip_log_copy_event">Копіювати цю подію</string>
+    <string name="trip_log_attention">Потребує уваги</string>
+    <string name="trip_log_elapsed">Час роботи пристрою: %1$d мс</string>
     <string name="trip_log_empty">Записів поки немає</string>
     <string name="trip_log_search">Пошук подій</string>
     <string name="trip_log_filter_all">Усі</string>

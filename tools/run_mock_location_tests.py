@@ -17,6 +17,7 @@ EXPECTED_CLASSES = {
     'org.imunav.app.location.MockLocationSharingTest': 3,
     'org.imunav.app.location.MockLocationProcessRecoveryTest': 1,
     'org.imunav.app.ui.SearchRestorationTest': 1,
+    'org.imunav.app.ui.LogViewerTest': 4,
     'org.imunav.app.trips.TripRestorationTest': 3,
     'org.imunav.app.graphics.GraphicsPathNativeTest': 1,
 }

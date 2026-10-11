@@ -291,6 +291,15 @@
     <string name="dev_status_removed">Session was removed on the server</string>
     <string name="trip_log">Trip log</string>
     <string name="trip_log_summary">Search, filter, copy and share recent diagnostic events</string>
+    <string name="trip_log_live">Live · pause</string>
+    <string name="trip_log_paused">Paused · resume</string>
+    <string name="trip_log_latest">Latest events</string>
+    <string name="trip_log_reset_filters">Reset filters</string>
+    <string name="trip_log_details">Details</string>
+    <string name="trip_log_collapse">Collapse</string>
+    <string name="trip_log_copy_event">Copy this event</string>
+    <string name="trip_log_attention">Needs attention</string>
+    <string name="trip_log_elapsed">Device uptime: %1$d ms</string>
     <string name="trip_log_empty">No entries yet</string>
     <string name="trip_log_search">Search events</string>
     <string name="trip_log_filter_all">All</string>
