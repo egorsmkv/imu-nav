@@ -72,7 +72,10 @@ def write_junit(path, results, valid, diagnostic=''):
 
 
 def adb(*arguments, timeout=60):
-    return subprocess.run(['adb', *arguments], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout, check=True).stdout
+    """Decode device output independently of host locale, retaining malformed log bytes visibly."""
+    # logcat can contain non-UTF-8 bytes; they must not abort evidence collection or cleanup.
+    return subprocess.run(['adb', *arguments], text=True, encoding='utf-8', errors='replace',
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout, check=True).stdout
 
 
 def error_detail(error):
