@@ -13,7 +13,8 @@ emulator or device coverage.
 Use Linux, Python 3.10+, JDK 17, Android SDK platform 36/build-tools 36.0.0, and a
 Rust toolchain supported by `native/Cargo.toml`. CI uses `nightly-2026-09-25`, also
 used by Rust coverage. Set `JAVA_HOME`, `ANDROID_HOME` and `RUSTUP_TOOLCHAIN` as
-needed. No Android NDK, signing key, emulator or map pack is needed for this job.
+needed. Android NDK 28.2.13676358 and CMake 3.22.1 are required for Gradle project
+configuration; no signing key, emulator or map pack is needed for this job.
 
 ```bash
 python3 -m unittest discover -s tools/tests -v
@@ -26,6 +27,10 @@ combined source pages. Green means a line executed; red means it did not.
 production lines. Detailed JaCoCo HTML and XML reports, class inventories and
 Gradle diagnostics are retained under `runs/<run-id>/`. Use `--output PATH` to
 choose a different report directory.
+
+If the runner reports a Gradle failure, inspect that run's `gradle.log` first.
+CI also uploads the host test XML results, including assertion messages and
+stack traces, alongside coverage diagnostics when collection fails.
 
 JaCoCo 0.8.14 is pinned in the version catalog. Instrumentation is opt-in through
 `-PkotlinCoverage`; ordinary tests, release APKs and performance measurements do

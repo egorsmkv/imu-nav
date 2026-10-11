@@ -85,4 +85,8 @@ jobs:
             build/kotlin-coverage/runs/**/classes.txt
             build/kotlin-coverage/runs/**/html/**
             core/build/test-results/serverApiTest/**
+            core/build/test-results/test/**
+            routing/build/test-results/test/**
+            replay/build/test-results/test/**
+            app/build/test-results/testFdroidDebugUnitTest/**
           retention-days: 14

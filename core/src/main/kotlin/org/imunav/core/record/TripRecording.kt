@@ -16,6 +16,7 @@ import java.io.ByteArrayOutputStream
 import java.io.Closeable
 import java.io.File
 import java.io.FileOutputStream
+import java.io.FilterOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -316,7 +317,8 @@ object TripFormat {
  * loses at most the last moments. Thread-safe.
  */
 class TripRecorder(out: OutputStream, private val flushEveryMs: Long = 2000) : Closeable {
-    private val gzip = GZIPOutputStream(out, 1 shl 16, true)
+    private val output = CloseOnceOutputStream(out)
+    private val gzip = GZIPOutputStream(output, 1 shl 16, true)
     private val writer: Writer = gzip.bufferedWriter()
     private var lastFlush = System.currentTimeMillis()
     private var closed = false
@@ -346,11 +348,26 @@ class TripRecorder(out: OutputStream, private val flushEveryMs: Long = 2000) : C
     override fun close() {
         if (closed) return
         closed = true
-        writer.close()
+        // Some runtimes leave the sink open when gzip finalization throws. Keep the original
+        // failure (and suppress cleanup failures) while closing the sink once on every runtime.
+        output.use { writer.close() }
     }
 
     companion object {
         fun open(file: File, append: Boolean = false): TripRecorder = TripRecorder(FileOutputStream(file, append))
+    }
+}
+
+/** Owns sink cleanup independently of gzip, whose failure-path close behavior varies across runtimes. */
+private class CloseOnceOutputStream(out: OutputStream) : FilterOutputStream(out) {
+    private var closed = false
+
+    override fun write(bytes: ByteArray, offset: Int, length: Int) = out.write(bytes, offset, length)
+
+    override fun close() {
+        if (closed) return
+        closed = true
+        out.close()
     }
 }
 
