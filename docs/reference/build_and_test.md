@@ -115,6 +115,12 @@ Keep a backup of the keystore: Android only installs updates signed with the sam
 Without `keystore.properties`, `assemblePlayRelease` produces an unsigned APK. The
 `assembleFdroidRelease` task is always unsigned so F-Droid can apply its repository signing key.
 
+Benchmark builds default to the retained debug key of the local build machine. Distribution CI
+uses `-PunsignedBenchmark` and signs afterward with the dedicated private benchmark identity;
+the F-Droid release is unaffected. Forks and repositories without the key produce explicitly
+unsigned validation artifacts. See [benchmark signing and updates](../benchmark_signing.md)
+for the secrets, optional public fingerprint pin, artifact naming and certificate-mismatch recovery.
+
 ## Kotlin lifecycle and performance regression checks
 
 Navigation start, reroute and restoration share cancellable request ownership: a stopped or superseded

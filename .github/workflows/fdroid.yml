@@ -73,19 +73,23 @@ jobs:
           :app:assembleFdroidRelease
           :app:assembleFdroidBenchmark
           :app:lintFdroidRelease
+          -PunsignedBenchmark
 
-      - name: Upload APKs
+      - name: Sign benchmark with the persistent private identity
+        id: signing
         if: steps.changes.outputs.run == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: imu-nav-apks-${{ github.sha }}
-          path: |
-            app/build/outputs/apk/fdroid/release/*.apk
-            app/build/outputs/apk/fdroid/benchmark/*.apk
-            app/build/outputs/mapping/fdroidRelease/mapping.txt
-            app/build/outputs/mapping/fdroidBenchmark/mapping.txt
-          if-no-files-found: error
-          retention-days: 14
+        env:
+          IMUNAV_BENCHMARK_KEYSTORE_BASE64: ${{ secrets.BENCHMARK_KEYSTORE_BASE64 }}
+          IMUNAV_BENCHMARK_STORE_PASSWORD: ${{ secrets.BENCHMARK_STORE_PASSWORD }}
+          IMUNAV_BENCHMARK_KEY_ALIAS: ${{ secrets.BENCHMARK_KEY_ALIAS }}
+          IMUNAV_BENCHMARK_KEY_PASSWORD: ${{ secrets.BENCHMARK_KEY_PASSWORD }}
+          IMUNAV_BENCHMARK_CERT_SHA256: ${{ vars.BENCHMARK_CERT_SHA256 }}
+        run: >-
+          python3 tools/benchmark_signing.py
+          --apk app/build/outputs/apk/fdroid/benchmark/*-unsigned.apk
+          --output-dir build/benchmark-distribution
+          --apksigner "$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          --allow-unsigned
 
       - name: Verify 16 KB release ELF and APK alignment
         if: steps.changes.outputs.run == 'true'
@@ -94,7 +98,29 @@ jobs:
           --zipalign "$ANDROID_HOME/build-tools/36.0.0/zipalign"
           --report build/android-pages.json
           app/build/outputs/apk/fdroid/release/*.apk
-          app/build/outputs/apk/fdroid/benchmark/*.apk
+          build/benchmark-distribution/*.apk
+
+      - name: Upload unsigned F-Droid release
+        if: steps.changes.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: imu-nav-fdroid-release-unsigned-${{ github.sha }}
+          path: |
+            app/build/outputs/apk/fdroid/release/*.apk
+            app/build/outputs/mapping/fdroidRelease/mapping.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload explicitly labeled benchmark artifact
+        if: steps.changes.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: imu-nav-fdroid-benchmark-${{ steps.signing.outputs.mode }}-${{ github.sha }}
+          path: |
+            build/benchmark-distribution/
+            app/build/outputs/mapping/fdroidBenchmark/mapping.txt
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload page-alignment evidence
         if: always() && steps.changes.outputs.run == 'true'
@@ -103,3 +129,55 @@ jobs:
           name: android-page-alignment
           path: build/android-pages.json
           if-no-files-found: warn
+
+  updates:
+    name: Benchmark update compatibility API ${{ matrix.api-level }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        api-level: [28, 35]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Select affected work
+        id: changes
+        run: python3 tools/ci_changes.py --suite fdroid
+      - uses: actions/setup-java@v5
+        if: steps.changes.outputs.run == 'true'
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        if: steps.changes.outputs.run == 'true'
+        with:
+          packages: platform-tools
+      - name: Install fixture build tools
+        if: steps.changes.outputs.run == 'true'
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Enable KVM
+        if: steps.changes.outputs.run == 'true'
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Check independent signing, update rejection and data preservation
+        if: steps.changes.outputs.run == 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: python3 tools/test_benchmark_updates.py --sdk "$ANDROID_HOME" --output build/benchmark-update-evidence
+      - name: Upload public test evidence
+        if: always() && steps.changes.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-update-api-${{ matrix.api-level }}
+          path: build/benchmark-update-evidence/
+          if-no-files-found: warn
+          retention-days: 14
