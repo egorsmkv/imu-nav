@@ -81,6 +81,9 @@ crashes, skipped tests, duplicate records or missing classes/tests even if `adb`
 Per-API artifacts contain `results.xml`, raw instrumentation output, API number, actual page size, ADB version/device
 inventory, logcat and `dumpsys location`. The runner awaits ADB transport for at most 30 seconds
 before collecting evidence and cleaning up; it never retries test invocations or GPS samples.
+ADB output is decoded as UTF-8 with malformed bytes replaced by `�`, so non-UTF-8 logcat
+messages cannot interrupt evidence collection or emulator cleanup. Nonzero ADB exits,
+timeouts and instrumentation failures still fail the suite.
 Missing evidence or failed cleanup also fails the suite. Consult the workflow run for results at the exact commit under review;
 the presence of these tests alone is not evidence that a given API passed.
 

@@ -27,6 +27,31 @@ def transcript(code=0, complete=True):
 
 
 class InstrumentationResultsTest(unittest.TestCase):
+    def test_adb_decodes_valid_unicode_and_malformed_bytes_from_both_streams(self):
+        run_process = subprocess.run
+
+        def emit_bytes(command, **kwargs):
+            self.assertEqual(command, ['adb', 'logcat', '-d'])
+            return run_process([sys.executable, '-c',
+                                "import os; os.write(1, 'GPS Київ\\n'.encode('utf-8') + b'bad: \\xc0\\n'); "
+                                "os.write(2, b'stderr: \\xff\\n')"], **kwargs)
+
+        with patch.object(runner.subprocess, 'run', side_effect=emit_bytes):
+            self.assertEqual(runner.adb('logcat', '-d'), 'GPS Київ\nbad: \ufffd\nstderr: \ufffd\n')
+
+    def test_adb_malformed_error_output_still_fails_on_nonzero_exit(self):
+        run_process = subprocess.run
+
+        def emit_bytes(command, **kwargs):
+            return run_process([sys.executable, '-c',
+                                "import os, sys; os.write(2, b'adb: device offline \\xc0\\n'); sys.exit(1)"], **kwargs)
+
+        with patch.object(runner.subprocess, 'run', side_effect=emit_bytes):
+            with self.assertRaises(subprocess.CalledProcessError) as raised:
+                runner.adb('logcat', '-d')
+        self.assertEqual(raised.exception.returncode, 1)
+        self.assertIn('adb: device offline \ufffd', runner.error_detail(raised.exception))
+
     def test_old_images_use_kernel_mappings_when_getconf_is_missing(self):
         missing = subprocess.CalledProcessError(127, ['adb', 'shell', 'getconf', 'PAGE_SIZE'], output='getconf: not found')
         for kb in (4, 16):
@@ -107,7 +132,7 @@ class InstrumentationResultsTest(unittest.TestCase):
         classname = 'org.imunav.app.location.MockLocationAppRecoveryTest'
         stages = [f'INSTRUMENTATION_STATUS: class={classname}\nINSTRUMENTATION_STATUS: test={name}\n'
                   'INSTRUMENTATION_STATUS_CODE: 0\nINSTRUMENTATION_CODE: -1\n' for name in ('seed', 'restore')]
-        for failed_step in (None, 'transport', 'logcat', 'location', 'cleanup'):
+        for failed_step in (None, 'malformed-logcat', 'transport', 'logcat', 'location', 'cleanup'):
             with self.subTest(failed_step=failed_step), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 app = root / 'apks/fdroid/debug/app.apk'
@@ -116,9 +141,16 @@ class InstrumentationResultsTest(unittest.TestCase):
                     apk.parent.mkdir(parents=True, exist_ok=True)
                     apk.write_bytes(b'synthetic APK fixture')
                 force_stops = 0
+                run_adb, run_process = runner.adb, subprocess.run
+
+                def emit_log_bytes(command, **kwargs):
+                    return run_process([sys.executable, '-c', "import os; os.write(1, b'logcat: \\xc0\\n')"], **kwargs)
 
                 def fake_adb(*arguments, timeout=60):
                     nonlocal force_stops
+                    if failed_step == 'malformed-logcat' and arguments == ('logcat', '-d'):
+                        with patch.object(runner.subprocess, 'run', side_effect=emit_log_bytes):
+                            return run_adb(*arguments, timeout=timeout)
                     if arguments == ('shell', 'am', 'force-stop', 'org.imunav.app.debug'):
                         force_stops += 1
                     failing = ((failed_step == 'transport' and arguments == ('wait-for-device',)) or
@@ -136,10 +168,15 @@ class InstrumentationResultsTest(unittest.TestCase):
                         runner.main()
                 self.assertIn(call('wait-for-device', timeout=30), mock_adb.call_args_list)
                 self.assertEqual(force_stops, 2)
-                self.assertEqual(raised.exception.code, int(failed_step is not None))
+                expected_failure = failed_step not in (None, 'malformed-logcat')
+                self.assertEqual(raised.exception.code, int(expected_failure))
                 suite = ET.parse(root / 'reports/results.xml').getroot()
-                self.assertEqual(suite.get('failures'), str(int(failed_step is not None)))
-                if failed_step is not None:
+                self.assertEqual(suite.get('failures'), str(int(expected_failure)))
+                if failed_step == 'malformed-logcat':
+                    self.assertEqual((root / 'reports/logcat.txt').read_text(), 'logcat: \ufffd\n')
+                    self.assertIn(call('shell', 'appops', 'set', 'org.imunav.app.debug', 'android:mock_location', 'default'), mock_adb.call_args_list)
+                    self.assertIn(call('shell', 'settings', 'put', 'secure', 'location_mode', '3'), mock_adb.call_args_list)
+                if expected_failure:
                     self.assertIn('adb: device offline', (root / 'reports/instrumentation.txt').read_text())
 
     def test_16kb_job_rejects_a_4kb_emulator_before_installation(self):
