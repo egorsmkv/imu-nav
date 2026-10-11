@@ -15,7 +15,22 @@ The recording is closed and saved on the phone in the background.
 
 If the app is killed during a trip, opening it again within three hours can restore the route and recording. The estimate becomes less certain for the missing time. Restoration waits until the foreground location service is running; if Android refuses permission or service startup, navigation stays inactive and the app shows an error.
 
-The diagnostic log can also contain precise locations and cell tower data. When you share visible log events from the log screen, the app warns you before opening Android's share menu.
+The log viewer shows recent diagnostic events as cards with a clock timestamp and keyword-based
+category badges. “Needs attention” uses the same keyword hints as the Problems filter; it is not
+a severity reported by the navigation engine. Messages wrap and preview up to three lines. Tap
+**Details** to select the full message and see its monotonic elapsed time, or use the card’s copy
+button to copy one original log line. Search, category filters, and toolbar copy/share apply to
+the visible events and preserve the original diagnostic text.
+
+**Live · pause** freezes the displayed snapshot while recording continues. **Paused · resume**
+loads the current recent tail (up to 200 events), so older events may have fallen out of that tail.
+Live refresh stops while the screen is in the background. Dragging the list disables **Follow
+newest**, keeping new events from interrupting reading; **Latest events** jumps to the bottom and
+reenables following. Filters and follow/pause choices survive activity recreation; the frozen
+snapshot itself is only kept while the screen remains composed.
+
+The controls wrap on narrow displays and can scroll independently when the keyboard or a large
+font leaves less room. The diagnostic log can also contain precise locations and cell tower data. When you share visible log events from the log screen, the app warns you before opening Android's share menu.
 
 ## Manage diagnostic logs
 

@@ -289,6 +289,15 @@
     <string name="dev_status_removed">Сеанс удалён с сервера</string>
     <string name="trip_log">Журнал поездки</string>
     <string name="trip_log_summary">Поиск, фильтрация, копирование и отправка последних диагностических событий</string>
+    <string name="trip_log_live">В реальном времени · пауза</string>
+    <string name="trip_log_paused">Пауза · продолжить</string>
+    <string name="trip_log_latest">Последние события</string>
+    <string name="trip_log_reset_filters">Сбросить фильтры</string>
+    <string name="trip_log_details">Подробности</string>
+    <string name="trip_log_collapse">Свернуть</string>
+    <string name="trip_log_copy_event">Копировать это событие</string>
+    <string name="trip_log_attention">Требует внимания</string>
+    <string name="trip_log_elapsed">Время работы устройства: %1$d мс</string>
     <string name="trip_log_empty">Записей пока нет</string>
     <string name="trip_log_search">Поиск событий</string>
     <string name="trip_log_filter_all">Все</string>
