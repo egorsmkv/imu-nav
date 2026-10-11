@@ -49,6 +49,8 @@ data class PowerProfile(
     /** Publish UI state every N engine ticks (500 ms each) while the screen shows the app. */
     val uiEveryTicks: Int,
     val mapPrefetchZoomDelta: Int = MapRenderingBudget.DEFAULT_PREFETCH_ZOOM_DELTA,
+    /** Navigation-output sharing stays active with the screen off, at the selected battery cost. */
+    val positionSharingMs: Long = 1_000L,
 ) {
     /** Change only map costs; the selected profile remains authoritative for positioning inputs. */
     fun withRenderingBudget(constrained: Boolean, explicitPerformance: Boolean): PowerProfile {
@@ -60,9 +62,9 @@ data class PowerProfile(
     fun withFrameRateLimit(rate: MapFrameRate): PowerProfile = rate.maximumFps?.let { copy(mapMaxFps = minOf(mapMaxFps, it)) } ?: this
 
     companion object {
-        val PERFORMANCE = PowerProfile("performance", 20_000, 5_000, 5_000, 10_000, 1_000, true, 60, true, 1)
+        val PERFORMANCE = PowerProfile("performance", 20_000, 5_000, 5_000, 10_000, 1_000, true, 60, true, 1, positionSharingMs = 500)
         val BALANCED = PowerProfile("balanced", 40_000, 10_000, 5_000, 15_000, 3_000, true, 30, true, 1)
-        val SAVER = PowerProfile("saver", 100_000, 20_000, 8_000, 30_000, 10_000, false, 15, false, 2)
+        val SAVER = PowerProfile("saver", 100_000, 20_000, 8_000, 30_000, 10_000, false, 15, false, 2, positionSharingMs = 2_000)
     }
 }
 

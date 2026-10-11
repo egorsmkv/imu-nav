@@ -31,6 +31,9 @@ internal class CellAuth(context: Context) : PrivacyAccount {
     /** Cancel diagnostic requests immediately when authentication changes ownership. */
     @Volatile var onDiagnosticIdentityChanged: (() -> Unit)? = null
 
+    /** Live-position calls have an independent owner and cancellation boundary. */
+    @Volatile var onLiveIdentityChanged: (() -> Unit)? = null
+
     /** Privacy and diagnostics have separate cancellation owners. */
     @Volatile override var onPrivacyIdentityChanged: (() -> Unit)? = null
 
@@ -68,6 +71,7 @@ internal class CellAuth(context: Context) : PrivacyAccount {
     fun clear() = synchronized(sessionLock) {
         generation++
         onDiagnosticIdentityChanged?.invoke()
+        onLiveIdentityChanged?.invoke()
         onPrivacyIdentityChanged?.invoke()
         access = null
         expiresAtMs = 0
@@ -144,6 +148,7 @@ internal class CellAuth(context: Context) : PrivacyAccount {
             val owner = identity.takeIf(String::isNotBlank)?.let { DiagnosticOwner(url.trim().trimEnd('/'), account.getLong("id"), it) }
             if (diagnosticOwner() != owner) {
                 onDiagnosticIdentityChanged?.invoke()
+                onLiveIdentityChanged?.invoke()
                 onPrivacyIdentityChanged?.invoke()
             }
             prefs.edit {

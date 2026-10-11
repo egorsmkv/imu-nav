@@ -21,6 +21,17 @@ class ConsentLedgerTest {
     private val second = first.copy(accountId = 2, syncIdentity = "synthetic-B")
 
     @Test
+    fun livePositionConsentIsIndependentAndCannotMoveToAnotherAccount() {
+        assertTrue(ledger.grant(first, "diagnostics", "v1"))
+        assertFalse(ledger.granted(first, "live_position", "v1"))
+        assertTrue(ledger.grant(first, "live_position", "v1"))
+        assertFalse(ledger.granted(second, "live_position", "v1"))
+        ledger.withdraw(first, "live_position")
+        assertFalse(ledger.granted(first, "live_position", "v1"))
+        assertTrue(ledger.granted(first, "diagnostics", "v1"))
+    }
+
+    @Test
     fun accountSwitchAndRestartPreserveOriginalWithdrawalWithoutInheritingConsent() {
         assertTrue(ledger.grant(first, "diagnostics", "v1"))
         assertFalse(ledger.granted(second, "diagnostics", "v1"))

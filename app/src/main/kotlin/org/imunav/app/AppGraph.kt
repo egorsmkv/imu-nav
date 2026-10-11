@@ -29,6 +29,7 @@ import org.imunav.app.diagnostics.DevDiagnostics
 import org.imunav.app.diagnostics.ProfileCapture
 import org.imunav.app.haptics.Haptics
 import org.imunav.app.location.MockLocationSharing
+import org.imunav.app.location.PositionSharing
 import org.imunav.app.maps.MapDisplayPreferences
 import org.imunav.app.maps.OfflineMap
 import org.imunav.app.nativecore.NativeEstimatorBridge
@@ -66,6 +67,7 @@ import org.imunav.core.bookmarks.BookmarkOrigin
 import org.imunav.core.bookmarks.SavedPlace
 import org.imunav.core.bookmarks.SavedRoute
 import org.imunav.core.car.DisplayOwnership
+import org.imunav.core.diagnostics.DiagnosticOwner
 import org.imunav.core.geo.GeoPoint
 import org.imunav.core.geo.ServiceArea
 import org.imunav.core.gnss.FixSource
@@ -74,6 +76,7 @@ import org.imunav.core.gnss.PlanningPosition
 import org.imunav.core.gnss.PositioningHub
 import org.imunav.core.gnss.TrustLevel
 import org.imunav.core.imu.eskf.InertialShadow
+import org.imunav.core.location.PositionSharingAccount
 import org.imunav.core.nav.EnglishPhrases
 import org.imunav.core.nav.NavAlert
 import org.imunav.core.nav.NavListener
@@ -333,6 +336,16 @@ class AppGraph(private val context: Context) {
 
     /** Offline cell-tower positioning: tower database, scanning, downloads, sharing. */
     val cells = CellManager(context, scope, hub, tripLog::write)
+
+    /** Per-trip network output uses workers and never replaces the real GPS provider. */
+    val positionSharing = PositionSharing(
+        scope,
+        object : PositionSharingAccount {
+            override fun owner(): DiagnosticOwner? = cells.diagnosticOwner()
+            override fun token(expected: DiagnosticOwner): String? = cells.livePositionCredentials(expected)
+            override fun onIdentityChanged(callback: () -> Unit) = cells.onLiveIdentityChanged(callback)
+        },
+    )
 
     /** Opt-in air-raid notifications are streamed only while the phone app is visible. */
     val airAlerts = AirAlerts(context, scope, cells)
@@ -657,6 +670,7 @@ class AppGraph(private val context: Context) {
     fun stopNavigation() {
         restorationJob?.cancel()
         mockLocationSharing.stop()
+        positionSharing.stop()
         navigationWork.cancel()
         if (_ui.value.startingNavigation) _ui.value = _ui.value.copy(startingNavigation = false, planning = false)
         if (!engine.state.active) return

@@ -11,6 +11,7 @@ use imu_nav_cell_server::{AirAlertConfig, PrivacyNotice};
 #[derive(Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ConfigFile {
+    live_position: Option<imu_nav_cell_server::LivePositionConfig>,
     trip_archive: Option<imu_nav_cell_server::TripArchiveLimits>,
     server: Option<ServerFile>,
     database: Option<DatabaseFile>,
@@ -96,6 +97,7 @@ pub(crate) enum DatabaseSettings {
 }
 
 pub(crate) struct Settings {
+    pub(crate) live_position: Option<imu_nav_cell_server::LivePositionConfig>,
     pub(crate) trip_archive: imu_nav_cell_server::TripArchiveLimits,
     pub(crate) bind: IpAddr,
     pub(crate) port: u16,
@@ -158,6 +160,7 @@ impl Settings {
             "invalid trip_archive limits"
         );
         let settings = Self {
+            live_position: file.live_position,
             trip_archive,
             bind: options
                 .bind

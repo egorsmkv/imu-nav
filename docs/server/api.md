@@ -8,6 +8,10 @@ endpoints are the server-side contract for those clients.
 
 ## Endpoints
 
+Opt-in per-trip position relay endpoints and the separate `live_position` consent purpose are
+documented in [position sharing](../position_sharing.md#http-contract). The NMEA receiver connects
+through a separately configured private VPN, not the public HTTP/WebSocket endpoint.
+
 - `POST /v1/cells` accepts the app's plain or gzip OpenCellID CSV and requires `X-Device-Id`.
 - `GET /v1/cells.csv.gz?mcc=255&since=0` streams confirmed towers to existing apps.
 - `GET /v1/cells/removals.csv?mcc=255&since=0` returns exact keys withdrawn by quarantine,

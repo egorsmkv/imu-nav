@@ -177,6 +177,17 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
         return url to token
     }
 
+    /** Token refresh may block; callers must stay on I/O and retain the originating account identity. */
+    fun livePositionCredentials(expected: DiagnosticOwner): String? {
+        if (diagnosticOwner() != expected || !privacy.canCaptureLivePosition(expected.server)) return null
+        return auth.diagnosticAccessToken(expected)?.takeIf { diagnosticOwner() == expected }
+    }
+
+    /** The callback only cancels calls; it must not read account state under the authentication lock. */
+    fun onLiveIdentityChanged(callback: () -> Unit) {
+        auth.onLiveIdentityChanged = callback
+    }
+
     /** Current account server, captured when a diagnostic trip starts. */
     fun diagnosticServerUrl(): String = prefs.getString("sync_url", "").orEmpty().trim().trimEnd('/')
 
@@ -191,6 +202,9 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
 
     /** Do not capture precise location without a current local diagnostics receipt. */
     fun diagnosticConsentGranted(): Boolean = privacy.canCaptureDiagnostics(diagnosticServerUrl())
+
+    /** Cached consent lets Both mode start its local stream even when the account server is offline. */
+    fun livePositionConsentGranted(): Boolean = privacy.canCaptureLivePosition(diagnosticServerUrl())
 
     /** Read the selected server's current notice on an I/O thread. */
     suspend fun privacyNotice(url: String): CellPrivacyNotice? = withContext(Dispatchers.IO) { privacy.notice(url) }

@@ -628,7 +628,7 @@ impl CellStore {
                 [account_id],
             )?;
             transaction.execute("INSERT INTO account_sync_state(account_id,generation) VALUES (?1,1) ON CONFLICT(account_id) DO UPDATE SET generation=account_sync_state.generation+1", [account_id])?;
-        } else {
+        } else if purpose == "diagnostics" {
             transaction.execute(
                 "DELETE FROM debug_sessions WHERE account_id=?1",
                 [account_id],
@@ -648,7 +648,11 @@ impl CellStore {
             account_id > 0
                 && matches!(
                     purpose,
-                    "tower_upload" | "diagnostics" | "account_sync" | "trip_archive"
+                    "tower_upload"
+                        | "diagnostics"
+                        | "account_sync"
+                        | "trip_archive"
+                        | "live_position"
                 ),
             "invalid deletion replay entry"
         );

@@ -106,6 +106,13 @@ internal class CellPrivacy(private val prefs: SharedPreferences, private val aut
         return ledger.granted(owner, "diagnostics", version)
     }
 
+    /** Live sharing requires its own local receipt; a diagnostics grant cannot authorize it. */
+    fun canCaptureLivePosition(url: String): Boolean {
+        val owner = owner(url) ?: return false
+        val version = ledger.version(owner, "live_position") ?: return false
+        return ledger.granted(owner, "live_position", version)
+    }
+
     fun isGranted(url: String, purpose: String, version: String): Boolean = owner(url)?.let { ledger.granted(it, purpose, version) } == true
 
     /** Confirmation must still belong to the same server/account that displayed the notice. */
@@ -129,7 +136,7 @@ internal class CellPrivacy(private val prefs: SharedPreferences, private val aut
 
     fun flushWithdrawals(url: String) {
         val owner = owner(url) ?: return
-        for (purpose in listOf("tower_upload", "diagnostics")) {
+        for (purpose in listOf("tower_upload", "diagnostics", "live_position")) {
             val intent = ledger.pending(owner, purpose) ?: continue
             val token = auth.diagnosticAccessToken(owner) ?: return
             try {
@@ -145,7 +152,7 @@ internal class CellPrivacy(private val prefs: SharedPreferences, private val aut
 
     private fun reconcile(owner: DiagnosticOwner, state: JSONObject, receipts: Map<String, String?>) {
         val version = state.getJSONObject("notice").getString("version")
-        for (purpose in listOf("tower_upload", "diagnostics")) {
+        for (purpose in listOf("tower_upload", "diagnostics", "live_position")) {
             if (!state.optBoolean(purpose) || !ledger.granted(owner, purpose, version)) ledger.revokeIfUnchanged(owner, purpose, receipts[purpose])
         }
     }
@@ -154,7 +161,7 @@ internal class CellPrivacy(private val prefs: SharedPreferences, private val aut
         receipts.forEach { (purpose, stamp) -> ledger.revokeIfUnchanged(owner, purpose, stamp) }
     }
 
-    private fun receiptStamps(owner: DiagnosticOwner): Map<String, String?> = listOf("tower_upload", "diagnostics").associateWith { ledger.stamp(owner, it) }
+    private fun receiptStamps(owner: DiagnosticOwner): Map<String, String?> = listOf("tower_upload", "diagnostics", "live_position").associateWith { ledger.stamp(owner, it) }
 
     private fun parseNotice(value: JSONObject): CellPrivacyNotice = CellPrivacyNotice(
         version = value.getString("version"),

@@ -37,6 +37,7 @@ struct PrivacyState {
     diagnostics: bool,
     account_sync: bool,
     trip_archive: bool,
+    live_position: bool,
 }
 
 #[derive(Deserialize)]
@@ -74,28 +75,31 @@ async fn mine(
     let notice = configured(&state)?;
     let store = state.store.clone();
     let version = notice.version.clone();
-    let (tower_upload, diagnostics, account_sync, trip_archive) = run_db(move || {
-        Ok((
-            store.has_privacy_consent(account.id, "tower_upload", &version)?,
-            store.has_privacy_consent(account.id, "diagnostics", &version)?,
-            store.has_privacy_consent(account.id, "account_sync", &version)?,
-            store.has_privacy_consent(account.id, "trip_archive", &version)?,
-        ))
-    })
-    .await?;
+    let (tower_upload, diagnostics, account_sync, trip_archive, live_position) =
+        run_db(move || {
+            Ok((
+                store.has_privacy_consent(account.id, "tower_upload", &version)?,
+                store.has_privacy_consent(account.id, "diagnostics", &version)?,
+                store.has_privacy_consent(account.id, "account_sync", &version)?,
+                store.has_privacy_consent(account.id, "trip_archive", &version)?,
+                store.has_privacy_consent(account.id, "live_position", &version)?,
+            ))
+        })
+        .await?;
     Ok(Json(PrivacyState {
         notice,
         tower_upload,
         diagnostics,
         account_sync,
         trip_archive,
+        live_position,
     }))
 }
 
 fn valid_purpose(purpose: &str) -> Result<(), ApiError> {
     if matches!(
         purpose,
-        "tower_upload" | "diagnostics" | "account_sync" | "trip_archive"
+        "tower_upload" | "diagnostics" | "account_sync" | "trip_archive" | "live_position"
     ) {
         Ok(())
     } else {
@@ -146,6 +150,9 @@ async fn withdraw(
         store.withdraw_privacy_consent(account.id, &purpose, &policy)
     })
     .await?;
+    if purpose_for_log == "live_position" || purpose_for_log == "tower_upload" {
+        state.live_position.stop(account.id);
+    }
     for change in changes {
         match change {
             OwnContributionChange::Updated(tower) => {

@@ -18,6 +18,9 @@ To return to the checklist, open **Settings → Set up IMU Nav**. Skipping a pac
 
 ## Share the navigation position as system GPS
 
+To send the navigation estimate to a compatible app on another phone, use the separate
+[network position sharing](position_sharing.md) feature. It does not require Android mock GPS access.
+
 1. Open **Settings → General → System GPS sharing** and read the limitations.
 2. Tap **Open Developer options**, enable Android Developer options if needed, and choose
    this installation of **IMU Nav** under **Select mock location app**. Debug and benchmark

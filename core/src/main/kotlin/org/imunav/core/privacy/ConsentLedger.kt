@@ -49,7 +49,7 @@ class ConsentLedger(private val storage: ConsentStorage) {
     @Synchronized fun version(owner: DiagnosticOwner, purpose: String): String? = storage.read(key(owner, purpose, "grant"))
 
     private fun key(owner: DiagnosticOwner, purpose: String, field: String): String {
-        require(purpose in setOf("tower_upload", "diagnostics"))
+        require(purpose in setOf("tower_upload", "diagnostics", "live_position"))
         val identity = identities[owner] ?: run {
             val bytes = "${owner.server}\n${owner.accountId}\n${owner.syncIdentity}".toByteArray(Charsets.UTF_8)
             val encoded = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }

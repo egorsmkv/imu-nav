@@ -95,6 +95,7 @@ class NavService : LifecycleService() {
                     }
                     app.tick()
                     app.mockLocationSharing.update(app.engine.state)
+                    app.positionSharing.update(app.engine.state, SystemClock.elapsedRealtime(), System.currentTimeMillis(), app.powerProfile.value.positionSharingMs)
                     if (!app.engine.state.active) break
                     if (tickCount % NOTIFY_EVERY_TICKS == 0) updateNotification()
                     tickCount++
@@ -111,6 +112,7 @@ class NavService : LifecycleService() {
     override fun onDestroy() {
         loop?.cancel()
         graph.mockLocationSharing.stop()
+        graph.positionSharing.stop()
         graph.onNavigationServiceStopped()
         val lock = wakeLock
         wakeControl.execute { if (lock?.isHeld == true) lock.release() }
@@ -127,7 +129,9 @@ class NavService : LifecycleService() {
             step != null -> formatDistance(resources, state.distToNextM) + " · " + instructionLine(resources, step)
             else -> formatDuration(resources, state.remainingS)
         }
-        val text = if (graph.mockLocationSharing.status.value == MockLocationStatus.ACTIVE) {
+        val text = if (graph.positionSharing.status.value.enabled) {
+            getString(R.string.position_sharing_notification, guidance)
+        } else if (graph.mockLocationSharing.status.value == MockLocationStatus.ACTIVE) {
             getString(R.string.mock_location_notification, guidance)
         } else {
             guidance

@@ -35,3 +35,12 @@ area = "any" # Or "ukraine".
 account_bytes = 268435456
 account_trips = 1000
 upload_bytes = 16777216
+
+# Optional ephemeral live position relay; see docs/position_sharing.md.
+# Requires an operator privacy notice, HTTPS account API and separately provisioned private VPN.
+# [live_position]
+# bind = "10.77.0.1"
+# [[live_position.receivers]]
+# account_id = 1
+# port = 10111
+# peer = "10.77.0.2"

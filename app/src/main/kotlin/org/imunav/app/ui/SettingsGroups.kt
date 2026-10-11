@@ -70,6 +70,7 @@ internal fun EverydaySettings(app: AppGraph, ui: UiState, context: Context, save
         MapDisplaySettings(app.mapDisplay)
 
         MockLocationSettings(app.mockLocationSharing)
+        PositionSharingSettings(app, ui.guidance.active)
 
         // ---------------- Navigation without GPS
         SectionHeader(stringResource(R.string.sec_navigation_method))

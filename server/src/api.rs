@@ -58,6 +58,7 @@ pub struct AppState {
     pub(crate) config: ServerConfig,
     pub(crate) events: broadcast::Sender<ServerEvent>,
     pub(crate) air_alerts: Arc<crate::air_alerts::AirAlertHub>,
+    pub(crate) live_position: Arc<crate::live_position::LivePositionHub>,
     limits: Arc<Mutex<Limits>>,
     pub(crate) auth_limits: SharedAuthLimits,
     pub(crate) policy: Arc<RwLock<Policy>>,
@@ -95,6 +96,7 @@ impl AppState {
             config,
             events,
             air_alerts: Arc::new(crate::air_alerts::AirAlertHub::new()),
+            live_position: Arc::new(crate::live_position::LivePositionHub::default()),
             limits: Arc::new(Mutex::new(Limits::default())),
             auth_limits: Arc::new(Mutex::new(AuthRateLimits::default())),
             policy: Arc::new(RwLock::new(active_policy)),
@@ -148,6 +150,7 @@ pub fn router(state: AppState) -> Router {
         .merge(crate::account_sync::router())
         .merge(crate::trips::router(&state.config.trip_archive))
         .merge(crate::air_alerts::router())
+        .merge(crate::live_position::router())
         .route("/health", get(health))
         .route("/v1/cells", post(upload_cells))
         .route("/v1/cells.csv.gz", get(download_cells))

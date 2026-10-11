@@ -338,6 +338,23 @@ pub(crate) async fn bearer_account(
         .ok_or(ApiError(StatusCode::UNAUTHORIZED, "UNAUTHORIZED"))
 }
 
+/// Preserve the login session identity across access-token refreshes for account-owned live sharing.
+pub(crate) async fn bearer_account_session(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<(Account, String), ApiError> {
+    let raw = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .ok_or(ApiError(StatusCode::UNAUTHORIZED, "UNAUTHORIZED"))?
+        .to_owned();
+    let store = state.store.clone();
+    run_db(move || account_for_token(&store, &raw, "access"))
+        .await?
+        .ok_or(ApiError(StatusCode::UNAUTHORIZED, "UNAUTHORIZED"))
+}
+
 pub(crate) async fn admin_account(
     state: &AppState,
     headers: &HeaderMap,

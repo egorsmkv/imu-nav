@@ -157,6 +157,9 @@ fn main() -> Result<()> {
     if let Some(air_alerts) = settings.air_alerts.clone() {
         state.configure_air_alerts(air_alerts);
     }
+    if let Some(live_position) = settings.live_position.clone() {
+        state.configure_live_position(live_position)?;
+    }
     let address = SocketAddr::new(settings.bind, settings.port);
     let runtime = tokio::runtime::Runtime::new()?;
     let result = runtime.block_on(serve_http(
@@ -270,6 +273,7 @@ async fn serve_http(
         .context("cannot bind server socket")?;
     tracing::info!(address = %listener.local_addr()?, published = counts.0, contributions = counts.1, min_devices, "cell server ready");
     let cleanup = spawn_retention_cleanup(state.clone());
+    let _live_position = state.spawn_live_position().await?;
     let air_alerts = state.spawn_air_alert_job();
     axum::serve(
         listener,
