@@ -104,9 +104,10 @@ confined to the test APK.
 
 ## Provenance
 
-Written from scratch based on a behavioural analysis of BlindDriver 0.4.0 (algorithms,
-thresholds and log vocabulary). No original source code, UI or assets are included; the only
-data carried over is the coarse Ukraine border polygon (public geographic coordinates).
+IMU Nav was written from scratch based on a behavioural analysis of a separate navigation
+application's 0.4.0 release (algorithms, thresholds and log vocabulary). No original source code,
+UI or assets are included; the only data carried over is the coarse Ukraine border polygon
+(public geographic coordinates).
 
 ## Browser map
 

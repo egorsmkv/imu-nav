@@ -470,7 +470,7 @@ async fn check_debug_browser(server: &TestServer, id: &str) -> Result<()> {
         .await?;
     let mut decoded = String::new();
     flate2::read::GzDecoder::new(archive.as_ref()).read_to_string(&mut decoded)?;
-    assert_eq!(decoded, "# blind-driver trip v1\nX,123\n");
+    assert_eq!(decoded, "# IMU Nav trip v1\nX,123\n");
 
     let registration: serde_json::Value = browser
         .post(format!("{}/v1/auth/register", server.base_url))

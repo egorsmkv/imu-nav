@@ -8,7 +8,7 @@ import org.imunav.core.net.Http
 import org.maplibre.android.MapLibre
 import org.maplibre.android.module.http.HttpRequestUtil
 
-/** The Application object: created once per process, before any screen. It builds the [AppGraph]. */
+/** IMU Nav's Application object: created once per process, before any screen. It builds the [AppGraph]. */
 class ImuNavApp : Application() {
     lateinit var graph: AppGraph
         private set

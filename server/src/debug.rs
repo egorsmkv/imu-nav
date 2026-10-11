@@ -476,7 +476,7 @@ async fn download(
         let mut lines = query.query(params![id_for_db, wanted])?;
         if kind_for_db == "recording" {
             let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-            encoder.write_all(b"# blind-driver trip v1\n")?;
+            encoder.write_all(b"# IMU Nav trip v1\n")?;
             while let Some(row) = lines.next()? {
                 writeln!(encoder, "{}", row.get::<_, String>(0)?)?;
             }

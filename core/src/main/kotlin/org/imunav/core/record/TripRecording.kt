@@ -324,7 +324,7 @@ class TripRecorder(out: OutputStream, private val flushEveryMs: Long = 2000) : C
     private var closed = false
 
     init {
-        writer.write("# blind-driver trip v${TripFormat.VERSION}\n")
+        writer.write("# IMU Nav trip v${TripFormat.VERSION}\n")
     }
 
     fun record(e: TripEvent) = record(e, e.arrivalElapsedMs)

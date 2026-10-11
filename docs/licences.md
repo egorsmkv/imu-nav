@@ -13,7 +13,7 @@ The build uses Gradle 9.8.1 under Apache 2.0; it is not packaged in the APK.
 3. Check the licence for each data pack you include. OpenStreetMap-derived routing and search data use ODbL; the built-in cell database includes OpenCellID data under CC BY-SA 4.0.
 4. Use the [full library and data list](reference/licences.md) when reviewing dependencies or preparing a release.
 
-The navigation code was written from scratch after a behavioural analysis of BlindDriver 0.4.0. No original source code, UI or assets are included. See the [glossary](glossary.md) for terms such as APK and routing pack.
+IMU Nav's navigation code was written from scratch after a behavioural analysis of a separate navigation application's 0.4.0 release. No original source code, UI or assets are included. See the [glossary](glossary.md) for terms such as APK and routing pack.
 
 ## Browser map
 

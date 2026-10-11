@@ -6,6 +6,10 @@
 > Opening, repairing, writing, closing and discarding recordings share one worker. Rapid stop/start
 > actions use separate files; older timestamp-only filenames remain readable.
 
+New recordings and server recording downloads use the comment header
+`# IMU Nav trip v1`. Readers ignore comment lines, so existing recordings remain
+compatible and the event format version is unchanged.
+
 ## Storage overload
 
 Recording admission never waits for disk. All sessions share an 8,192-event / 16 MiB estimated
