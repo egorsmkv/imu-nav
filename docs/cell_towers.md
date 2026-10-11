@@ -4,6 +4,19 @@
 
 The phone can estimate a rough position from nearby cell towers when GPS is unavailable. It needs a tower database for the area. Tower observations can also be shared with a server if you choose.
 
+If the phone has no cellular hardware, no SIM, an unavailable SIM, or no fresh usable
+cell observations, the app explains that it cannot determine a position from cell towers.
+Failed scans and towers missing from the database also have separate explanations in
+positioning diagnostics and **Settings → Cell towers**. The status is rechecked at the
+normal scan interval, so the warning clears when positioning becomes available again.
+Mobile internet is not required for offline tower positioning.
+
+When there is no trusted GPS or network/cell position, the map displays the reason.
+Before navigation starts, it explicitly says **Cannot determine your position** and
+asks you to select your starting position with **Start here**. A manual start or an
+active dead-reckoned route remains usable; its warning concerns cell positioning.
+Trusted GPS or a fresh network/cell fix takes precedence on the map.
+
 ## Add tower data
 
 1. During setup, choose **Install built-in towers** if offered. This is optional.

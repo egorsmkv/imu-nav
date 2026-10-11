@@ -760,4 +760,12 @@
     <string name="trip_restore_failed">The saved trip could not be resumed. Check location permission and start navigation again.</string>
     <string name="recording_stopped_warning">Recording stopped because storage could not keep up. Navigation continues.</string>
     <string name="recording_partial">Partial recording: recording stopped before the trip ended.</string>
+    <string name="position_unavailable">Cannot determine your position</string>
+    <string name="cells_position_unavailable">Cell positioning unavailable</string>
+    <string name="cells_no_cellular">Cellular service is unavailable on this device. Your position cannot be determined from cell towers.</string>
+    <string name="cells_no_sim">No SIM card detected. Your position cannot be determined from cell towers.</string>
+    <string name="cells_sim_unavailable">The SIM is not ready or is locked. Your position cannot be determined from cell towers.</string>
+    <string name="cells_no_signal">No usable cellular signal. Your position cannot be determined from cell towers.</string>
+    <string name="cells_scan_failed">Cellular information is unavailable. Your position cannot be determined from cell towers.</string>
+    <string name="cells_no_known_towers">Nearby cell towers are missing from the database. Your position cannot be determined from them.</string>
 </resources>

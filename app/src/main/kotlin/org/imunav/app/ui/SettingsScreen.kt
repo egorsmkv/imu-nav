@@ -277,6 +277,7 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
 
                     // ---------------- Cell towers
                     SectionHeader(stringResource(R.string.sec_cells))
+                    cellAvailabilityMessage(c.availability)?.let { Text(stringResource(it), color = MaterialTheme.colorScheme.error) }
                     CellHistorySection(app.cells.usageHistory)
                     SwitchItem(stringResource(R.string.cells_show_map), null, c.showTowers) { mgr.setShowTowers(it) }
                     ListItem(

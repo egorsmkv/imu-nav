@@ -121,6 +121,7 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
         val fix = scanner.lastFix
         _status.update {
             it.copy(
+                availability = scanner.availability,
                 seen = scanner.lastUsable.size,
                 radios = enabledRadios(),
                 located = fix?.towersUsed ?: 0,

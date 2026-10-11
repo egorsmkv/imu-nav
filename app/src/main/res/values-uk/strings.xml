@@ -774,4 +774,12 @@
     <string name="trip_restore_failed">Не вдалося відновити поїздку. Перевірте дозвіл на геолокацію та запустіть навігацію знову.</string>
     <string name="recording_stopped_warning">Запис зупинено: сховище не встигало зберігати дані. Навігація триває.</string>
     <string name="recording_partial">Неповний запис: записування зупинилося до завершення поїздки.</string>
+    <string name="position_unavailable">Не вдається визначити ваше місцезнаходження</string>
+    <string name="cells_position_unavailable">Позиціонування за вежами недоступне</string>
+    <string name="cells_no_cellular">На цьому пристрої стільниковий зв’язок недоступний. Неможливо визначити ваше місцезнаходження за вежами.</string>
+    <string name="cells_no_sim">SIM-картку не виявлено. Неможливо визначити ваше місцезнаходження за вежами.</string>
+    <string name="cells_sim_unavailable">SIM-картка не готова або заблокована. Неможливо визначити ваше місцезнаходження за вежами.</string>
+    <string name="cells_no_signal">Немає придатного стільникового сигналу. Неможливо визначити ваше місцезнаходження за вежами.</string>
+    <string name="cells_scan_failed">Дані стільникової мережі недоступні. Неможливо визначити ваше місцезнаходження за вежами.</string>
+    <string name="cells_no_known_towers">Найближчі вежі відсутні в базі даних. Неможливо визначити ваше місцезнаходження за ними.</string>
 </resources>

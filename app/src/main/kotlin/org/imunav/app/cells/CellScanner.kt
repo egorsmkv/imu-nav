@@ -2,6 +2,7 @@ package org.imunav.app.cells
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -53,6 +54,9 @@ class CellScanner(
     private val telephony = context.getSystemService(TelephonyManager::class.java)
     private val subscriptions = context.getSystemService(SubscriptionManager::class.java)
 
+    // First read is on the scanner worker: capability queries can call Android's package service.
+    private val hasCellular by lazy { context.packageManager.hasSystemFeature(PackageManager.FEATURE_TELEPHONY) }
+
     private var measurements = CellMeasurementTracker()
     private var measurementOwner: Any? = null // Scanner worker only.
     private val callbacks = CallbackGeneration()
@@ -60,6 +64,10 @@ class CellScanner(
     private val worker = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
     private var running = false
+
+    /** Updated on the scanner worker; the UI reads this without making binder calls. */
+    @Volatile var availability: CellAvailability = CellAvailability.CHECKING
+        private set
 
     /** Cells of enabled types seen in the latest scan (the ones used for positioning). */
     @Volatile var lastUsable: List<CellObservation> = emptyList()
@@ -83,7 +91,8 @@ class CellScanner(
 
     /** Start scanning every [intervalMs]. */
     fun start() {
-        if (running || telephony == null) return
+        if (running) return
+        availability = CellAvailability.CHECKING
         running = true
         callbacks.start()
         main.post(poll)
@@ -94,6 +103,7 @@ class CellScanner(
         running = false
         callbacks.stop()
         main.removeCallbacks(poll)
+        availability = CellAvailability.CHECKING
     }
 
     /** One TelephonyManager per active SIM; falls back to the default one. */
@@ -117,24 +127,44 @@ class CellScanner(
             measurements = CellMeasurementTracker()
             measurementOwner = work.owner
         }
-        val managers = runCatching { managers() }.getOrElse {
-            logScanFailure(-1, it)
+        if (!hasCellular || telephony == null) {
+            unavailable(work, CellAvailability.NO_CELLULAR)
             work.finish()
             return
         }
-        if (managers.isEmpty()) {
+        val managers = runCatching { managers() }.getOrElse {
+            logScanFailure(-1, it)
+            unavailable(work, CellAvailability.SCAN_FAILED)
+            work.finish()
+            return
+        }
+        val simAvailability = runCatching { cellSimAvailability(managers.map { it.second.simState }) }.getOrDefault(CellAvailability.SCAN_FAILED)
+        if (simAvailability != CellAvailability.AVAILABLE) {
+            unavailable(work, simAvailability)
             work.finish()
             return
         }
         val remaining = AtomicInteger(managers.size)
+        var successfulScans = 0
         for ((subId, tm) in managers) {
             val completed = AtomicBoolean(false)
             fun complete(read: () -> List<CellInfo>) {
                 if (!completed.compareAndSet(false, true)) return
                 try {
-                    if (work.current) runCatching(read).onSuccess { onSimCells(work, subId, it) }.onFailure { logScanFailure(subId, it) }
+                    if (work.current) {
+                        runCatching(read).onSuccess {
+                            successfulScans++
+                            onSimCells(work, subId, it)
+                        }.onFailure {
+                            logScanFailure(subId, it)
+                            process(work, measurements.update(subId, emptyList(), SystemClock.elapsedRealtime()))
+                        }
+                    }
                 } finally {
-                    if (remaining.decrementAndGet() == 0) work.finish()
+                    if (remaining.decrementAndGet() == 0) {
+                        if (successfulScans == 0) unavailable(work, CellAvailability.SCAN_FAILED)
+                        work.finish()
+                    }
                 }
             }
             if (!work.current) {
@@ -148,6 +178,16 @@ class CellScanner(
                 complete { tm.allCellInfo.orEmpty() }
             }
         }
+    }
+
+    /** Clear previous modem results so a missing SIM or failed scan cannot look like a live fix. */
+    private fun unavailable(work: CallbackGeneration.Work, reason: CellAvailability) {
+        if (!work.current) return
+        measurements = CellMeasurementTracker()
+        lastMeasurements = emptyList()
+        lastUsable = emptyList()
+        lastFix = null
+        availability = reason
     }
 
     /** Keep the scanner's stable key=value failure message identical on every Android version. */
@@ -175,6 +215,12 @@ class CellScanner(
         val fix = runCatching { CellPositioner.locate(usable, db) }.getOrNull()
         if (!work.current) return
         lastFix = fix
+        availability = when {
+            radios.isEmpty() -> CellAvailability.DISABLED
+            usable.isEmpty() -> CellAvailability.NO_CELLS
+            fix == null -> CellAvailability.NO_KNOWN_TOWERS
+            else -> CellAvailability.AVAILABLE
+        }
         if (now - lastScanLogMs >= SCAN_LOG_EVERY_MS) {
             lastScanLogMs = now
             logScan(work, observations, radios)

@@ -774,4 +774,12 @@
     <string name="trip_restore_failed">Не удалось восстановить поездку. Проверьте разрешение на геолокацию и запустите навигацию снова.</string>
     <string name="recording_stopped_warning">Запись остановлена: хранилище не успевало сохранять данные. Навигация продолжается.</string>
     <string name="recording_partial">Неполная запись: запись остановилась до завершения поездки.</string>
+    <string name="position_unavailable">Не удаётся определить ваше местоположение</string>
+    <string name="cells_position_unavailable">Позиционирование по вышкам недоступно</string>
+    <string name="cells_no_cellular">На этом устройстве сотовая связь недоступна. Невозможно определить ваше местоположение по вышкам.</string>
+    <string name="cells_no_sim">SIM-карта не обнаружена. Невозможно определить ваше местоположение по вышкам.</string>
+    <string name="cells_sim_unavailable">SIM-карта не готова или заблокирована. Невозможно определить ваше местоположение по вышкам.</string>
+    <string name="cells_no_signal">Нет пригодного сотового сигнала. Невозможно определить ваше местоположение по вышкам.</string>
+    <string name="cells_scan_failed">Данные сотовой сети недоступны. Невозможно определить ваше местоположение по вышкам.</string>
+    <string name="cells_no_known_towers">Ближайшие вышки отсутствуют в базе данных. Невозможно определить ваше местоположение по ним.</string>
 </resources>

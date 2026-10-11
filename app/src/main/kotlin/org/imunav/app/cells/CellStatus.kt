@@ -17,6 +17,7 @@ data class TowerLayer(
 
 /** Offline cell positioning status for the UI. */
 data class CellStatus(
+    val availability: CellAvailability = CellAvailability.CHECKING,
     val preparation: Preparation = Preparation.CHECKING,
     /** Cells of enabled types the modem sees now. */
     val seen: Int = 0,

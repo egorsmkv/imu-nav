@@ -74,6 +74,7 @@ internal fun DiagnosticsContent(ui: UiState, app: AppGraph, onOpenLog: () -> Uni
             "${ui.cells.located} / ${ui.cells.seen}" + (ui.cells.accuracyM?.let { " · " + formatAccuracy(res, it) } ?: ""),
         )
         DiagRow(stringResource(R.string.diag_sensors), sensorStatusLabel(res, ui.missingSensors))
+        cellAvailabilityMessage(ui.cells.availability)?.let { Text(stringResource(it), color = MaterialTheme.colorScheme.error) }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(stringResource(R.string.simulate_gps_loss), style = MaterialTheme.typography.bodyLarge)
