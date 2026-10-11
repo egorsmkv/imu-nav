@@ -31,6 +31,41 @@ class BookmarksTest {
     fun cleanup() = scope.cancel()
 
     @Test
+    fun restoreCannotOverwriteCompletedRenameOrDelete() {
+        val bookmarks = loaded()
+        val revision = bookmarks.state.value.revision
+        bookmarks.edit(place)
+        bookmarks.nameChanged("New local name")
+        bookmarks.save()
+        io.drain()
+        var restored: Boolean? = null
+        scope.launch { restored = bookmarks.replaceAll(emptyList(), revision) }
+        assertEquals(false, restored)
+        assertEquals("New local name", disk.items.single().name)
+        val afterRename = bookmarks.state.value.revision
+        bookmarks.requestDelete(bookmarks.state.value.items.single())
+        bookmarks.delete()
+        io.drain()
+        scope.launch { restored = bookmarks.replaceAll(listOf(place), afterRename) }
+        assertEquals(false, restored)
+        assertTrue(disk.items.isEmpty())
+    }
+
+    @Test
+    fun restoreCommitBlocksEditsUntilPersistenceCompletes() {
+        val bookmarks = loaded()
+        val revision = bookmarks.state.value.revision
+        var restored: Boolean? = null
+        scope.launch { restored = bookmarks.replaceAll(listOf(place), revision) }
+        assertTrue(bookmarks.state.value.busy)
+        bookmarks.edit(place)
+        assertNull(bookmarks.editor.value)
+        io.drain()
+        assertEquals(true, restored)
+        assertEquals(revision + 1, bookmarks.state.value.revision)
+    }
+
+    @Test
     fun initialReadFailureCanRetryWithoutOverwritingDisk() {
         disk.items = listOf(place)
         disk.fail = true

@@ -56,6 +56,7 @@ import org.imunav.core.bookmarks.SavedPlace
 import org.imunav.core.bookmarks.matching
 import org.imunav.core.geo.GeoPoint
 import org.imunav.core.search.ResultKind
+import org.imunav.core.search.SearchBatch
 import org.imunav.core.search.SearchResult
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -72,7 +73,8 @@ fun SearchScreen(
 ) {
     val res = LocalResources.current
     var query by rememberSaveable { mutableStateOf("") }
-    var results by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
+    var batch by remember { mutableStateOf<SearchBatch?>(null) }
+    val results = batch?.takeIf { it.query == query && it.near == near }?.results.orEmpty()
     var loading by remember { mutableStateOf(false) }
     val bookmarkState by bookmarks.state.collectAsStateWithLifecycle()
     val recent by search.recent.collectAsStateWithLifecycle()
@@ -80,15 +82,17 @@ fun SearchScreen(
     val focus = remember { FocusRequester() }
     BackHandler(onBack = onClose)
     LaunchedEffect(Unit) { focus.requestFocus() }
-    LaunchedEffect(query) {
+    LaunchedEffect(query, near) {
+        batch = null
+        loading = query.trim().length >= 2
         if (query.trim().length < 2) {
-            results = emptyList()
+            batch = null
             loading = false
             return@LaunchedEffect
         }
         delay(250.milliseconds) // debounce typing
         loading = true
-        results = search.search(query, near)
+        batch = SearchBatch(query, near, search.search(query, near))
         loading = false
     }
 
@@ -105,8 +109,8 @@ fun SearchScreen(
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = {
-                    val saved = savedPlaces.firstOrNull()
-                    if (saved != null) onBookmarkPick(saved) else results.firstOrNull()?.let(onPick)
+                    val saved = bookmarks.state.value.items.matching(query).filterIsInstance<SavedPlace>().firstOrNull()
+                    if (saved != null) onBookmarkPick(saved) else batch?.takeIf { it.query == query && it.near == near }?.results?.firstOrNull()?.let(onPick)
                 }),
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = MaterialTheme.colorScheme.surface,
@@ -181,11 +185,15 @@ fun SearchScreen(
                             )
                         },
                         trailingContent = {
-                            IconButton(enabled = !bookmarkState.busy, onClick = { bookmarks.savePlace(r.point, r.routePointLabel()) }) {
+                            IconButton(enabled = !bookmarkState.busy, onClick = {
+                                if (if (showRecent) query.trim().length < 2 else batch?.query == query && batch?.near == near) bookmarks.savePlace(r.point, r.routePointLabel())
+                            }) {
                                 Icon(Icons.Filled.BookmarkAdd, stringResource(R.string.bookmark_save_place))
                             }
                         },
-                        modifier = Modifier.clickable { onPick(r) },
+                        modifier = Modifier.clickable {
+                            if (if (showRecent) query.trim().length < 2 else batch?.query == query && batch?.near == near) onPick(r)
+                        },
                     )
                 }
             }

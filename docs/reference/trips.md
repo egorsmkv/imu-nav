@@ -36,7 +36,19 @@ in explicitly enabled performance captures. They contain no routes or coordinate
 
 These budget values are engineering defaults, not device-calibrated measurements. Accounted bytes
 are estimates rather than exact JVM allocations; they do not bound total process memory.
-Diagnostics ingestion and bundled map-server queues have separate policies.
+Diagnostics ingestion shares a separate limit of 2,048 queued payloads and 8 MiB of estimated
+retained input across sessions. Open, overload and finish commands are reserved before capture;
+overload preserves the accepted prefix, writes an incomplete marker and counts omitted payloads.
+JSON batches remain limited to 100 entries / roughly 4 MiB before flush, with a 64 MiB disk quota.
+These input budgets exclude encoded batches and serialization temporaries. Trip IDs keep delayed
+recorder callbacks assigned to their originating diagnostic session.
+
+Each diagnostic directory persists its originating server, numeric account ID and opaque sync
+identity before context data. Credentials must match that owner; requests recheck ownership
+before transmission and after response processing. Authentication changes cancel in-flight
+calls. Sessions from another account and legacy directories without valid ownership metadata
+are quarantined locally; they are never inferred to belong to the current account. Disabling
+diagnostics retains the existing explicit unsent-data deletion behavior.
 
 - **History** (clock icon on the map) lists trips with totals; a trip shows its trusted-GPS track and
   the engine's estimate on a map, distance, duration, moving time, time/distance without GPS and the

@@ -29,6 +29,8 @@ Air-alert preferences continue using their separate account API.
 Edits are saved locally first. Sync runs after local changes and when the app returns to the foreground;
 **Sync now** retries manually. Network failures preserve local changes. Closing the app stops network
 work; the next foreground session retries. Restoration waits until navigation and route planning stop.
+A bookmark restore commits only if the local revision still matches the snapshot used for merging.
+A completed rename, deletion or profile switch rejects a stale restore and schedules a fresh merge.
 
 Edits to separate items merge. Concurrent edits to the same item use the version already accepted by
 the server, and the app reports the conflict. Phone clocks do not decide which edit wins. Deletions

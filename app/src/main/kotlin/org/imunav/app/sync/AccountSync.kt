@@ -255,7 +255,7 @@ class AccountSync(private val context: Context, private val app: AppGraph) {
             if (remote.getJSONArray("conflicts").length() > 0) _status.value = _status.value.copy(conflict = true)
         }
         if (currentIdentity() != expected || decision == false || !safeToRestore()) return
-        app.bookmarks.state.first { !it.busy && it.loaded }
+        val bookmarkRevision = app.bookmarks.state.first { !it.busy && it.loaded }.revision
         val entries = withContext(Dispatchers.Default) { SyncCodec.entries(remote.getJSONArray("entries")) }
         val values = SyncMerge.apply(entries, sent, localValues())
         settings.validate(values)
@@ -263,7 +263,11 @@ class AccountSync(private val context: Context, private val app: AppGraph) {
             withContext(Dispatchers.Default) { values.filterKeys { it.startsWith("bookmark:") }.map { (key, value) -> SyncCodec.bookmark(key.substringAfter(':'), value) } }
         applying = true
         try {
-            app.bookmarks.replaceAll(bookmarks)
+            if (currentIdentity() != expected || !safeToRestore()) return
+            if (!app.bookmarks.replaceAll(bookmarks, bookmarkRevision)) {
+                wake() // Recompute against the completed local edit; never acknowledge a stale replacement.
+                return
+            }
             settings.apply(SyncMerge.apply(entries, sent, localValues()))
             val acknowledged = withContext(Dispatchers.Default) { SyncCodec.entries(entries) }
             data.put("settings", JSONObject(settings.capture())).put("baseline", acknowledged).put("restored", true).put("last_success", System.currentTimeMillis())

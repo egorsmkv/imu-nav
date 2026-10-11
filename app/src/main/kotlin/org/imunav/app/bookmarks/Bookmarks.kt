@@ -14,7 +14,7 @@ import org.imunav.core.bookmarks.matching
 import org.imunav.core.bookmarks.renamed
 
 /** Published only after successful disk operations; old entries survive failed writes. */
-data class BookmarkState(val items: List<Bookmark> = emptyList(), val loaded: Boolean = false, val busy: Boolean = false, val failed: Boolean = false)
+data class BookmarkState(val items: List<Bookmark> = emptyList(), val loaded: Boolean = false, val busy: Boolean = false, val failed: Boolean = false, val revision: Long = 0)
 
 /** Kept in the app graph so an open name dialog survives activity recreation. */
 data class BookmarkEdit(val bookmark: Bookmark, val name: String = bookmark.name)
@@ -33,7 +33,7 @@ class Bookmarks(private var store: BookmarkStore, private val scope: CoroutineSc
     }
 
     /** Retry initial loading without replacing stored data with an empty collection on failure. */
-    fun reload() = execute { _state.value = _state.value.copy(items = withContext(io) { store.load() }.matching(""), loaded = true) }
+    fun reload() = execute { _state.value = _state.value.copy(items = withContext(io) { store.load() }.matching(""), loaded = true, revision = _state.value.revision + 1) }
 
     fun edit(bookmark: Bookmark) {
         if (_state.value.busy) return
@@ -56,7 +56,7 @@ class Bookmarks(private var store: BookmarkStore, private val scope: CoroutineSc
         execute {
             val bookmark = edit.bookmark.renamed(edit.name)
             withContext(io) { store.save(bookmark) }
-            _state.value = _state.value.copy(items = (_state.value.items.filterNot { it.id == bookmark.id } + bookmark).matching(""))
+            _state.value = _state.value.copy(items = (_state.value.items.filterNot { it.id == bookmark.id } + bookmark).matching(""), revision = _state.value.revision + 1)
             _editor.value = null
         }
     }
@@ -77,7 +77,7 @@ class Bookmarks(private var store: BookmarkStore, private val scope: CoroutineSc
         if (!_state.value.loaded) return
         execute {
             withContext(io) { store.delete(bookmark.id) }
-            _state.value = _state.value.copy(items = _state.value.items.filterNot { it.id == bookmark.id })
+            _state.value = _state.value.copy(items = _state.value.items.filterNot { it.id == bookmark.id }, revision = _state.value.revision + 1)
             _deleting.value = null
         }
     }
@@ -98,7 +98,7 @@ class Bookmarks(private var store: BookmarkStore, private val scope: CoroutineSc
             }
             withContext(io) { store.close() }
             store = next
-            _state.value = BookmarkState(items = items.matching(""), loaded = true)
+            _state.value = BookmarkState(items = items.matching(""), loaded = true, revision = previous.revision + 1)
         } catch (error: Exception) {
             _state.value = previous.copy(failed = true)
             withContext(io) { next.close() }
@@ -108,16 +108,17 @@ class Bookmarks(private var store: BookmarkStore, private val scope: CoroutineSc
         }
     }
 
-    /** Server updates and user edits share the same busy guard and transactional persistence. */
-    suspend fun replaceAll(items: List<Bookmark>) {
-        check(!_state.value.busy)
+    /** Commit only the revision used to merge remote values; a completed edit or profile switch rejects stale restoration. */
+    suspend fun replaceAll(items: List<Bookmark>, expectedRevision: Long? = null): Boolean {
+        if (_state.value.busy || (expectedRevision != null && _state.value.revision != expectedRevision)) return false
         _state.value = _state.value.copy(busy = true)
         try {
             withContext(io) { store.replaceAll(items) }
-            _state.value = _state.value.copy(items = items.matching(""))
+            _state.value = _state.value.copy(items = items.matching(""), revision = _state.value.revision + 1)
         } finally {
             _state.value = _state.value.copy(busy = false)
         }
+        return true
     }
 
     private fun execute(operation: suspend () -> Unit) {

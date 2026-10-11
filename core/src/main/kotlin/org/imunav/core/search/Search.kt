@@ -25,8 +25,8 @@ data class AddressRow(val number: String, val lat: Double, val lon: Double)
 /** Storage-agnostic access to a search index (SQLite FTS4 on Android and on the desktop). */
 interface SearchDb {
     /** Places whose names match all FTS [terms] (already normalized, with prefix '*'). */
-    fun places(match: String, limit: Int): List<PlaceRow>
-    fun streets(match: String, limit: Int, placeIds: Collection<Long>? = null): List<StreetRow>
+    fun places(match: String, limit: Int, near: GeoPoint? = null): List<PlaceRow>
+    fun streets(match: String, limit: Int, placeIds: Collection<Long>? = null, near: GeoPoint? = null): List<StreetRow>
     fun addresses(streetId: Long, number: String): List<AddressRow>
 }
 
@@ -59,16 +59,16 @@ object AddressSearch {
         val words = (if (number != null) tokens.dropLast(1) else tokens).filter { !HOUSE.matches(it) || it.length > 4 }
         if (words.isEmpty()) return emptyList()
 
-        val places = runCatching { db.places(fts(words), 30) }.getOrDefault(emptyList())
-        var streets = runCatching { db.streets(fts(words), 80) }.getOrDefault(emptyList())
+        val places = runCatching { db.places(fts(words), 30, near) }.getOrDefault(emptyList())
+        var streets = runCatching { db.streets(fts(words), 80, near = near) }.getOrDefault(emptyList())
         // "Київ Хрещатик": one token names the settlement, the rest the street.
         if (words.size >= 2) {
             for (w in words) {
-                val towns = runCatching { db.places(fts(listOf(w)), 10) }.getOrDefault(emptyList())
+                val towns = runCatching { db.places(fts(listOf(w)), 10, near) }.getOrDefault(emptyList())
                     .filter { it.kind in SETTLEMENTS }
                 if (towns.isEmpty()) continue
                 val rest = words - w
-                val inTown = runCatching { db.streets(fts(rest), 40, towns.map { it.id }) }.getOrDefault(emptyList())
+                val inTown = runCatching { db.streets(fts(rest), 40, towns.map { it.id }, near) }.getOrDefault(emptyList())
                 streets = (inTown + streets).distinctBy { it.id }
             }
         }
@@ -136,3 +136,6 @@ object PhotonServer {
         return if (url.endsWith("/api")) url else "$url/api"
     }
 }
+
+/** Results belong to both the query and its geographic reference; stale batches cannot be selected. */
+data class SearchBatch(val query: String, val near: GeoPoint?, val results: List<SearchResult>)

@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.PowerManager
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.lifecycle.LifecycleService
@@ -25,6 +26,9 @@ import org.imunav.app.ui.formatDuration
 import org.imunav.app.ui.instructionLine
 import org.imunav.core.location.MockLocationStatus
 import org.imunav.core.nav.NavigationEngine
+import org.imunav.core.util.PeriodicDeadline
+import org.imunav.core.util.RenewableLease
+import java.util.concurrent.Executors
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
@@ -42,6 +46,8 @@ class NavService : LifecycleService() {
     /** The engine loop; null until started. */
     private var loop: Job? = null
     private var wakeLock: PowerManager.WakeLock? = null
+    private val wakeLease = RenewableLease(MAX_WAKE_LOCK_MS, WAKE_LOCK_RENEW_MS)
+    private val wakeControl = Executors.newSingleThreadExecutor()
 
     /** The notification text last posted (to skip identical updates). */
     private var lastText: String? = null
@@ -69,7 +75,11 @@ class NavService : LifecycleService() {
         if (wakeLock == null) {
             wakeLock = getSystemService(PowerManager::class.java)
                 .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "imunav:nav")
-                .apply { acquire(MAX_WAKE_LOCK_MS) } // with a timeout, in case we are never stopped
+                .apply { setReferenceCounted(false) } // Renew timed leases on the control worker; release is ordered after acquisition.
+        }
+        wakeLease.renewIfDue(SystemClock.elapsedRealtime()) { timeout ->
+            val lock = wakeLock
+            wakeControl.execute { lock?.acquire(timeout) }
         }
         val app = graph
         if (loop == null) {
@@ -77,13 +87,18 @@ class NavService : LifecycleService() {
                 app.awaitTripRestoration()
                 if (app.engine.state.active) app.startSensing()
                 var tickCount = 0
+                val cadence = PeriodicDeadline(SystemClock.elapsedRealtime(), NavigationEngine.TICK_MS)
                 while (isActive && app.engine.state.active) {
+                    wakeLease.renewIfDue(SystemClock.elapsedRealtime()) { timeout ->
+                        val lock = wakeLock
+                        wakeControl.execute { lock?.acquire(timeout) }
+                    }
                     app.tick()
                     app.mockLocationSharing.update(app.engine.state)
                     if (!app.engine.state.active) break
                     if (tickCount % NOTIFY_EVERY_TICKS == 0) updateNotification()
                     tickCount++
-                    delay(NavigationEngine.TICK_MS.milliseconds)
+                    delay(cadence.delayAfterWork(SystemClock.elapsedRealtime()).milliseconds)
                 }
                 stopSelf()
             }
@@ -97,7 +112,9 @@ class NavService : LifecycleService() {
         loop?.cancel()
         graph.mockLocationSharing.stop()
         graph.onNavigationServiceStopped()
-        wakeLock?.let { if (it.isHeld) it.release() }
+        val lock = wakeLock
+        wakeControl.execute { if (lock?.isHeld == true) lock.release() }
+        wakeControl.shutdown()
         super.onDestroy()
     }
 
@@ -144,6 +161,7 @@ class NavService : LifecycleService() {
         private const val ACTION_STOP = "stop"
         private const val NOTIFY_EVERY_TICKS = 4 // = every 2 s
         private const val MAX_WAKE_LOCK_MS = 6 * 60 * 60 * 1000L
+        private const val WAKE_LOCK_RENEW_MS = MAX_WAKE_LOCK_MS / 2
 
         /** Start the service (must become a foreground service within seconds). */
         fun start(context: Context) = context.startForegroundService(Intent(context, NavService::class.java))

@@ -115,7 +115,15 @@ pack both add to the base package, and their combined size may exceed the limit 
 Routing packs also contain `search.db`, an SQLite FTS4 index of settlements, streets and house
 numbers built from the same OSM extract (~87 MB for Ukraine; skip with `--no-addresses` or
 `--no-search`). Queries like `Хрещатик 22`, `Київ Хрещатик`, `вул. Шевченка, Львів` or `Буча`
-work offline in a few milliseconds; street-type words are ignored and results near you rank first.
+work offline; street-type words are ignored and results near you rank first. Both Android and
+desktop SQLite readers order matching settlement/street candidates geographically before applying
+their limits. The shared candidate heuristic uses latitude and wrapped longitude with a latitude
+scale; final street ranking uses geodesic distance. It needs no pack schema migration. With no
+reference position, candidate order is deterministic by ID. Queries with many matches may cost
+more than selective queries because SQLite sorts matching candidates.
+
+Phone search batches are bound to their query and reference position. Editing either removes
+stale results from selection, including the keyboard Search action, during debounce and lookup.
 
 The route panel uses the same text search for both the starting address and the destination; the
 current trusted position remains the default start until the user chooses another one.
@@ -125,3 +133,8 @@ Allow online routing and search**), a [Photon](https://github.com/komoot/photon)
 The public server `photon.komoot.io` is the default; **Settings → Maps and routes → Address search** accepts your own
 server instead (a host such as `http://192.168.1.10:2322` or the full `…/api` URL), with a _Test_
 button that runs a sample query. Self-hosting keeps search text off third-party servers.
+
+The bundled PMTiles loopback range server uses four workers and at most four queued connections.
+Additional connections close immediately. Request headers are limited to 8 KiB and 64 lines,
+with a five-second deadline from acceptance that also closes blocked response writes. Responses
+stream through a fixed 64 KiB asset buffer. Closing the server releases sockets and workers.

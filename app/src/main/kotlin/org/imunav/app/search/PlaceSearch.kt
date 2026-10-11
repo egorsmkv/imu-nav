@@ -21,6 +21,7 @@ import org.imunav.core.search.PhotonServer
 import org.imunav.core.search.PlaceRow
 import org.imunav.core.search.ResultKind
 import org.imunav.core.search.SearchDb
+import org.imunav.core.search.SearchOrder
 import org.imunav.core.search.SearchResult
 import org.imunav.core.search.StreetRow
 import org.json.JSONException
@@ -38,20 +39,22 @@ class AndroidSearchDb(file: File) :
     AutoCloseable {
     private val db = SQLiteDatabase.openDatabase(file.absolutePath, null, SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.NO_LOCALIZED_COLLATORS)
 
-    override fun places(match: String, limit: Int): List<PlaceRow> = query(
-        "SELECT p.id, p.name, p.kind, p.lat, p.lon, p.population FROM place_fts f JOIN place p ON p.id = f.rowid WHERE place_fts MATCH ? LIMIT ?",
-        match,
-        limit.toString(),
-    ) { PlaceRow(id = getLong(0), name = getString(1), kind = getString(2), lat = getDouble(3), lon = getDouble(4), population = getInt(5)) }
+    override fun places(match: String, limit: Int, near: GeoPoint?): List<PlaceRow> {
+        val order = SearchOrder.near("p", near)
+        return query(
+            "SELECT p.id, p.name, p.kind, p.lat, p.lon, p.population FROM place_fts f JOIN place p ON p.id = f.rowid WHERE place_fts MATCH ?${order.sql} LIMIT ?",
+            *(listOf(match) + order.arguments + limit.toString()).toTypedArray(),
+        ) { PlaceRow(id = getLong(0), name = getString(1), kind = getString(2), lat = getDouble(3), lon = getDouble(4), population = getInt(5)) }
+    }
 
-    override fun streets(match: String, limit: Int, placeIds: Collection<Long>?): List<StreetRow> {
+    override fun streets(match: String, limit: Int, placeIds: Collection<Long>?, near: GeoPoint?): List<StreetRow> {
+        val order = SearchOrder.near("s", near)
         // The ids are numbers we produced ourselves, so putting them into the SQL is safe.
         val inPlaces = if (placeIds.isNullOrEmpty()) "" else " AND s.place_id IN (${placeIds.joinToString(",")})"
         return query(
             "SELECT s.id, s.name, s.place_id, p.name, s.lat, s.lon FROM street_fts f JOIN street s ON s.id = f.rowid " +
-                "LEFT JOIN place p ON p.id = s.place_id WHERE street_fts MATCH ?$inPlaces LIMIT ?",
-            match,
-            limit.toString(),
+                "LEFT JOIN place p ON p.id = s.place_id WHERE street_fts MATCH ?$inPlaces${order.sql} LIMIT ?",
+            *(listOf(match) + order.arguments + limit.toString()).toTypedArray(),
         ) {
             StreetRow(
                 id = getLong(0),

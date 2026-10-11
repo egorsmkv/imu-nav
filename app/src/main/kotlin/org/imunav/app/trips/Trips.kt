@@ -136,7 +136,7 @@ class TripManager(
     var onArchiveStart: ((String) -> Unit)? = null
     var onArchiveCompleted: ((String) -> Unit)? = null
     var onDiagnosticStart: ((String) -> Unit)? = null
-    var onDiagnosticEvent: ((TripEvent) -> Unit)? = null
+    var onDiagnosticEvent: ((String, TripEvent) -> Unit)? = null
 
     /** Session-only export sink, independent of developer diagnostics upload. */
     var onProfileEvent: ((TripEvent) -> Unit)? = null
@@ -413,7 +413,7 @@ class TripManager(
             io,
             append,
             onRecorded = { event ->
-                onDiagnosticEvent?.invoke(event)
+                tripId?.let { onDiagnosticEvent?.invoke(it, event) }
                 onProfileEvent?.invoke(event)
             },
             arrivalClock = SystemClock::elapsedRealtime,

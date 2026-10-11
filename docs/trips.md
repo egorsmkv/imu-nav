@@ -64,6 +64,8 @@ server diagnostics have separate storage and are kept.
 
 The recording contains precise location and sensor data. Turn the switch off to stop capture and discard unsent batches. The app requests deletion of sessions already received; if offline, it retries after sign-in and connectivity return. Passwords and account tokens are not part of the upload.
 
+Queued diagnostics stay bound to the original server and account. Changing accounts pauses those uploads; they resume only for the original account. Older queued sessions without ownership metadata are kept locally and cannot be uploaded. Turning diagnostics off discards unsent diagnostic data, including these older sessions. If capture fills its memory or storage budget, navigation continues and the diagnostic session is marked incomplete.
+
 For a local performance capture that you share yourself, see [Capture app performance on Android](profiling_android.md).
 
 ## Replay a recording on a computer

@@ -23,6 +23,7 @@ import org.imunav.app.setup.Preparation
 import org.imunav.app.setup.bundledCellPreparation
 import org.imunav.core.cells.Radio
 import org.imunav.core.cells.cellLearningKeys
+import org.imunav.core.diagnostics.DiagnosticOwner
 import org.imunav.core.gnss.PositioningHub
 import org.imunav.core.net.HttpException
 import java.io.IOException
@@ -151,13 +152,20 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
     }
 
     /** Reuse the signed-in cell-server session for opt-in diagnostics, on an I/O thread. */
-    fun diagnosticCredentials(expectedUrl: String? = null): Pair<String, String>? {
-        val url = prefs.getString("sync_url", "").orEmpty().trim().trimEnd('/')
-        if (expectedUrl != null && expectedUrl != url) return null
-        if (url.isBlank() || auth.email == null || !privacy.canCaptureDiagnostics(url)) return null
-        val token = auth.accessToken(url) ?: return null
-        if (!privacy.canSendDiagnostics(url, token)) return null
+    fun diagnosticCredentials(expected: DiagnosticOwner): Pair<String, String>? {
+        val url = diagnosticServerUrl()
+        if (expected != diagnosticOwner() || expected.server != url || !privacy.canCaptureDiagnostics(url)) return null
+        val token = auth.diagnosticAccessToken(expected) ?: return null
+        if (expected != diagnosticOwner() || !privacy.canSendDiagnostics(url, token) || expected != diagnosticOwner()) return null
         return url to token
+    }
+
+    /** Only a complete authenticated owner matching the selected server can capture or upload. */
+    fun diagnosticOwner(): DiagnosticOwner? = auth.diagnosticOwner()?.takeIf { it.server == diagnosticServerUrl() }
+
+    /** Called under the authentication lock; the callback must only cancel calls, without reading account state. */
+    fun onDiagnosticIdentityChanged(callback: () -> Unit) {
+        auth.onDiagnosticIdentityChanged = callback
     }
 
     /** Reuse the account session for the separately opted-in air-alert stream, on an I/O thread. */

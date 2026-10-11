@@ -106,7 +106,7 @@ class RecordingSession(
 }
 
 /** Conservative retained-payload accounting; route weights are cached during route construction, never encoded at admission. */
-private fun TripEvent.recordingWeight(): Long = 256L + when (this) {
+fun TripEvent.recordingWeight(): Long = 256L + when (this) {
     is TripEvent.RouteSet -> route.recordingWeight
     is TripEvent.Imu -> 4L * ((sample.linearAcc?.size ?: 0) + (sample.gyro?.size ?: 0))
     is TripEvent.Start -> 32L * waypoints.size

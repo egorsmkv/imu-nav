@@ -268,3 +268,12 @@ observations identify only one combination of scale and bias (the rows `[speed, 
 Distinct speeds are needed to separate those two parameters. Likewise, stride learning assumes
 GPS speed and step cadence describe the same walk, and standstill-based gyro learning assumes the
 phone itself is not slowly rotating. GOOD GPS is necessary evidence, not proof of those assumptions.
+
+## Navigation service timing
+
+The foreground service schedules the engine every 500 ms against a monotonic deadline. Work
+consumes part of that interval; overruns skip missed deadlines rather than generating catch-up
+ticks. Android scheduling can still delay execution, so this is not a hard real-time guarantee.
+A non-reference-counted six-hour partial wake lock is renewed every three hours while the service
+runs. Acquisition and release are ordered on a control worker, and teardown releases the lease.
+The app remains a research prototype, not a safety system.

@@ -8,6 +8,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.imunav.core.diagnostics.DiagnosticOwner
 import org.imunav.core.net.Http
 import org.imunav.core.net.HttpException
 import org.json.JSONObject
@@ -26,6 +27,17 @@ internal class CellAuth(context: Context) {
 
     @Volatile private var access: String? = null
     private var expiresAtMs = 0L
+
+    /** Cancel diagnostic requests immediately when authentication changes ownership. */
+    @Volatile var onDiagnosticIdentityChanged: (() -> Unit)? = null
+
+    /** Capture all owner fields under the same lock as session replacement. */
+    fun diagnosticOwner(): DiagnosticOwner? = synchronized(sessionLock) {
+        val server = prefs.getString("url", null) ?: return null
+        val id = prefs.getLong("account_id", 0)
+        val identity = prefs.getString("sync_identity", "").orEmpty()
+        if (id <= 0 || identity.isBlank()) null else DiagnosticOwner(server, id, identity)
+    }
 
     val syncIdentity: String get() = prefs.getString("sync_identity", "").orEmpty()
 
@@ -50,6 +62,7 @@ internal class CellAuth(context: Context) {
     /** A changed server cannot receive a token issued by the previous server. */
     fun clear() = synchronized(sessionLock) {
         generation++
+        onDiagnosticIdentityChanged?.invoke()
         access = null
         expiresAtMs = 0
         prefs.edit { clear() }
@@ -85,6 +98,12 @@ internal class CellAuth(context: Context) {
         }
     }
 
+    /** Bind the returned token and owner atomically, including account switches during a refresh. */
+    fun diagnosticAccessToken(expected: DiagnosticOwner): String? {
+        accessToken(expected.server) ?: return null
+        return synchronized(sessionLock) { if (diagnosticOwner() == expected) access else null }
+    }
+
     /** Revoke the server session before discarding local credentials. Called on an I/O thread. */
     fun signOut(url: String) {
         val snapshot = synchronized(sessionLock) {
@@ -109,6 +128,10 @@ internal class CellAuth(context: Context) {
         val encrypted = encrypt(refresh)
         synchronized(sessionLock) {
             check(generation == expected) { "Account session changed" }
+            val account = body.getJSONObject("account")
+            val identity = body.optString("sync_identity")
+            val owner = identity.takeIf(String::isNotBlank)?.let { DiagnosticOwner(url.trim().trimEnd('/'), account.getLong("id"), it) }
+            if (diagnosticOwner() != owner) onDiagnosticIdentityChanged?.invoke()
             prefs.edit {
                 putString("url", url.trim().trimEnd('/'))
                 putString("email", body.getJSONObject("account").getString("email"))
