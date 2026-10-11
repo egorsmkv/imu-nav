@@ -98,8 +98,11 @@ PR and approve its workflow runs if GitHub requests approval. If checks are not
 scheduled by your GitHub configuration, close and reopen the PR as a maintainer to
 trigger the normal `pull_request` checks. See GitHub's
 [workflow triggering rules](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
-An existing version branch is never overwritten; after a partial run, open the PR
-from that branch manually rather than rerunning the same version. Runs are serialized, and
+An existing version branch is never overwritten. Rerunning a partially completed update
+verifies that the branch's parent is an ancestor of `main` and its latest commit contains exactly the requested version patch,
+including no unrelated file changes, then reuses it and any open PR. A differing patch
+fails for manual review. Changes to the version files on `main` can also cause this
+comparison to fail; open the PR manually in that case. Runs are serialized, and
 branch protection still controls merging.
 
 After checks pass, merge the PR and separately create `v<version>` on the merged
