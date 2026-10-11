@@ -75,6 +75,32 @@ jobs:
           :app:lintFdroidRelease
           -PunsignedBenchmark
 
+      # Release credentials are never passed to code built for a PR or merge queue.
+      - name: Sign direct-download release with the persistent release identity
+        id: release_signing
+        if: steps.changes.outputs.run == 'true' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')))
+        env:
+          IMUNAV_RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          IMUNAV_RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          IMUNAV_RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          IMUNAV_RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          IMUNAV_RELEASE_CERT_SHA256: ${{ vars.RELEASE_CERT_SHA256 }}
+        run: >-
+          python3 tools/release_signing.py
+          --apk app/build/outputs/apk/fdroid/release/*-unsigned.apk
+          --output-dir build/release-distribution
+          --apksigner "$ANDROID_HOME/build-tools/36.0.0/apksigner"
+
+      - name: Stage unsigned release for pull-request validation
+        id: release_validation
+        if: steps.changes.outputs.run == 'true' && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
+        run: >-
+          python3 tools/release_signing.py
+          --apk app/build/outputs/apk/fdroid/release/*-unsigned.apk
+          --output-dir build/release-distribution
+          --apksigner "$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          --allow-unsigned
+
       - name: Sign benchmark with the persistent private identity
         id: signing
         if: steps.changes.outputs.run == 'true'
@@ -97,16 +123,16 @@ jobs:
           python3 tools/verify_android_pages.py
           --zipalign "$ANDROID_HOME/build-tools/36.0.0/zipalign"
           --report build/android-pages.json
-          app/build/outputs/apk/fdroid/release/*.apk
+          build/release-distribution/*.apk
           build/benchmark-distribution/*.apk
 
-      - name: Upload unsigned F-Droid release
+      - name: Upload explicitly labeled direct-download release
         if: steps.changes.outputs.run == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: imu-nav-fdroid-release-unsigned-${{ github.sha }}
+          name: imu-nav-fdroid-release-${{ steps.release_signing.outputs.mode || steps.release_validation.outputs.mode }}-${{ github.sha }}
           path: |
-            app/build/outputs/apk/fdroid/release/*.apk
+            build/release-distribution/
             app/build/outputs/mapping/fdroidRelease/mapping.txt
           if-no-files-found: error
           retention-days: 14

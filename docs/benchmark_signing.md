@@ -4,6 +4,10 @@ Benchmark builds install as `org.imunav.app.bench`, independently of the release
 Both distribution flavors use this benchmark package. An update must have the same signing
 certificate as the installed copy and must not reduce its version code.
 
+For direct-download releases, use the generator's separate `--profile release` mode and
+`RELEASE_*` settings; see [CI release signing](release_signing.md). The default profile and
+the settings in this guide continue to apply to benchmark APKs.
+
 ## Why older CI APKs could not replace an existing installation
 
 Previously, `benchmark` always used Android's default debug signing configuration. A local

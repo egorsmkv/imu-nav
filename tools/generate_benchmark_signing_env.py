@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare durable benchmark signing credentials without printing or uploading secrets.
+"""Prepare durable benchmark or release signing credentials without printing or uploading secrets.
 
 Creates a private bundle containing a JKS keystore, Bash/PowerShell environment exports and
 the GitHub Actions secret/variable values. Existing identities can be reused explicitly.
@@ -21,7 +21,7 @@ import subprocess
 import sys
 import tempfile
 
-from benchmark_signing import FINGERPRINT_VARIABLE, KEY_VARIABLES, fingerprint
+from benchmark_signing import FINGERPRINT_VARIABLE, KEY_VARIABLES, certificate_variable, credential_variables, fingerprint
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -95,7 +95,7 @@ def password(env, variable, prompt, default=None):
     return value
 
 
-def write_exports(directory, values):
+def write_exports(directory, values, profile='benchmark'):
     """Quote Bash literals and encode PowerShell values so Unicode smart quotes cannot become code."""
     shell = '# Contains private signing credentials. Do not share or commit.\n'
     shell += ''.join(f'export {name}={shlex.quote(value)}\n' for name, value in values.items())
@@ -106,15 +106,19 @@ def write_exports(directory, values):
     private_file(directory / 'env.sh', shell.encode('utf-8'))
     private_file(directory / 'env.ps1', powershell.encode('utf-8-sig'))
     github = {
-        'secrets': {name.removeprefix('IMUNAV_'): values[name] for name in KEY_VARIABLES},
-        'variables': {'BENCHMARK_CERT_SHA256': values[FINGERPRINT_VARIABLE]},
+        'secrets': {name.removeprefix('IMUNAV_'): values[name] for name in credential_variables(profile)},
+        'variables': {certificate_variable(profile).removeprefix('IMUNAV_'): values[certificate_variable(profile)]},
     }
     private_file(directory / 'github-settings.json', (json.dumps(github, indent=2) + '\n').encode('utf-8'))
 
 
-def generate(output_dir=DEFAULT_OUTPUT, alias=DEFAULT_ALIAS, keystore=None, keytool=None, env=None):
+def generate(output_dir=None, alias=None, keystore=None, keytool=None, env=None, profile='benchmark'):
     """Reserve a fresh private bundle; validate a reused private key without modifying its source."""
     env = dict(os.environ if env is None else env)
+    key_variables = credential_variables(profile)
+    fingerprint_variable = certificate_variable(profile)
+    output_dir = output_dir if output_dir is not None else ROOT / 'keystore' / f'{profile}-signing'
+    alias = alias if alias is not None else f'imunav-{profile}'
     output = Path(output_dir).absolute()
     if output.exists() or output.is_symlink():
         raise ValueError('Output already exists; reuse its key explicitly instead of replacing it')
@@ -126,56 +130,57 @@ def generate(output_dir=DEFAULT_OUTPUT, alias=DEFAULT_ALIAS, keystore=None, keyt
     source = Path(keystore).resolve() if keystore is not None else None
     if source is not None and not source.is_file():
         raise ValueError('Existing keystore must be a readable file')
-    if source is None and any(env.get(name) for name in (*KEY_VARIABLES, FINGERPRINT_VARIABLE)):
+    if source is None and any(env.get(name) for name in (*key_variables, fingerprint_variable)):
         raise ValueError('Signing credentials are already loaded; use --keystore to retain the identity')
     keytool = keytool or locate_keytool(env)
     if source:
-        store_password = password(env, KEY_VARIABLES[1], 'Existing keystore password: ')
-        key_password = password(env, KEY_VARIABLES[3], 'Existing private-key password (Enter = keystore password): ', store_password)
+        store_password = password(env, key_variables[1], 'Existing keystore password: ')
+        key_password = password(env, key_variables[3], 'Existing private-key password (Enter = keystore password): ', store_password)
     else:
         store_password, key_password = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
-    env.update({KEY_VARIABLES[1]: store_password, KEY_VARIABLES[2]: alias, KEY_VARIABLES[3]: key_password})
+    env.update({key_variables[1]: store_password, key_variables[2]: alias, key_variables[3]: key_password})
     output.parent.mkdir(parents=True, exist_ok=True)
     with private_bundle(output, env), tempfile.TemporaryDirectory(prefix='.prepare-', dir=output) as temporary:
         staged = Path(temporary)
-        key = staged / 'benchmark.jks'
+        key = staged / f'{profile}.jks'
         if source:
             private_file(key, source.read_bytes())
         else:
             run_private([keytool, '-genkeypair', '-storetype', 'JKS', '-keystore', key,
                          '-alias', alias, '-keyalg', 'RSA', '-keysize', '3072', '-validity', '10000',
-                         '-dname', 'CN=IMU Nav Benchmark', '-storepass:env', KEY_VARIABLES[1],
-                         '-keypass:env', KEY_VARIABLES[3]], env)
+                         '-dname', f'CN=IMU Nav {profile.capitalize()}', '-storepass:env', key_variables[1],
+                         '-keypass:env', key_variables[3]], env)
             key.chmod(0o600)
         certificate = staged / 'certificate.der'
         run_private([keytool, '-exportcert', '-keystore', key, '-alias', alias,
-                     '-storepass:env', KEY_VARIABLES[1], '-file', certificate], env)
+                     '-storepass:env', key_variables[1], '-file', certificate], env)
         # Certificate export alone also accepts trusted-certificate entries or a wrong private-key password.
         run_private([keytool, '-certreq', '-keystore', key, '-alias', alias,
-                     '-storepass:env', KEY_VARIABLES[1], '-keypass:env', KEY_VARIABLES[3],
+                     '-storepass:env', key_variables[1], '-keypass:env', key_variables[3],
                      '-file', staged / 'request.csr'], env)
         digest = hashlib.sha256(certificate.read_bytes()).hexdigest()
-        if env.get(FINGERPRINT_VARIABLE) and digest != fingerprint(env[FINGERPRINT_VARIABLE]):
+        if env.get(fingerprint_variable) and digest != fingerprint(env[fingerprint_variable]):
             raise ValueError('Existing keystore differs from the loaded certificate fingerprint')
-        values = {KEY_VARIABLES[0]: base64.b64encode(key.read_bytes()).decode('ascii'),
-                  KEY_VARIABLES[1]: store_password, KEY_VARIABLES[2]: alias,
-                  KEY_VARIABLES[3]: key_password, FINGERPRINT_VARIABLE: digest}
-        write_exports(staged, values)
+        values = {key_variables[0]: base64.b64encode(key.read_bytes()).decode('ascii'),
+                  key_variables[1]: store_password, key_variables[2]: alias,
+                  key_variables[3]: key_password, fingerprint_variable: digest}
+        write_exports(staged, values, profile)
         # JSON contains the complete recoverable identity if a later file publication fails.
-        for name in ('github-settings.json', 'benchmark.jks', 'env.sh', 'env.ps1'):
+        for name in ('github-settings.json', f'{profile}.jks', 'env.sh', 'env.ps1'):
             (staged / name).rename(output / name)
     return output
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--output-dir', type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument('--profile', choices=('benchmark', 'release'), default='benchmark')
+    parser.add_argument('--output-dir', type=Path)
     parser.add_argument('--keystore', type=Path, help='Reuse an existing private key; passwords are masked or supplied via environment')
-    parser.add_argument('--alias', default=DEFAULT_ALIAS)
+    parser.add_argument('--alias')
     parser.add_argument('--keytool', type=Path)
     args = parser.parse_args()
     try:
-        generate(args.output_dir, args.alias, args.keystore, args.keytool)
+        generate(args.output_dir, args.alias, args.keystore, args.keytool, profile=args.profile)
     except (ValueError, OSError, subprocess.TimeoutExpired) as error:
         message = str(error) if isinstance(error, ValueError) else 'Signing environment generation could not complete'
         raise SystemExit(message) from None

@@ -78,6 +78,10 @@ There is no separate Kotlin installation step: Gradle resolves the version pinne
    unsigned. The F-Droid release is always unsigned so F-Droid can sign it. See the
    [signing reference](reference/build_and_test.md#code-checks).
 
+Manual and version-tag CI runs sign direct-download releases with separate `RELEASE_*` secrets.
+Generate their private bundle with `python3 tools/generate_benchmark_signing_env.py --profile release`;
+see [CI release signing](release_signing.md). Pull-request releases remain unsigned for validation.
+
 CI benchmark APKs use a separately configured private signing identity so successive artifacts
 can replace an existing installation. Artifact names distinguish **signed** APKs from
 **unsigned, non-installable** validation builds. Generate the private setup bundle with

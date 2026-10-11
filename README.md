@@ -39,6 +39,7 @@ Start with [getting started](docs/getting_started.md). Look up unfamiliar terms 
 - [Native Rust crates: core, JNI bridge and simulator](docs/core/readme.md)
 - [Cell-sharing server: setup, data and API](docs/server/readme.md)
 - [F-Droid releases](docs/fdroid.md)
+- [CI release signing](docs/release_signing.md)
 - [Kotlin coverage](docs/kotlin_coverage.md)
 - [Rust coverage](docs/rust_coverage.md)
 - [Native verification](docs/native_verification.md)

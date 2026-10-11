@@ -117,9 +117,14 @@ Without `keystore.properties`, `assemblePlayRelease` produces an unsigned APK. T
 
 Benchmark builds default to the retained debug key of the local build machine. Distribution CI
 uses `-PunsignedBenchmark` and signs afterward with the dedicated private benchmark identity;
-the F-Droid release is unaffected. Forks and repositories without the key produce explicitly
+the Gradle F-Droid release remains unsigned. Forks and repositories without the benchmark key produce explicitly
 unsigned validation artifacts. See [benchmark signing and updates](../benchmark_signing.md)
 for the secrets, optional public fingerprint pin, artifact naming and certificate-mismatch recovery.
+
+Manual and version-tag F-Droid CI runs sign a separate direct-download release with the dedicated
+`RELEASE_*` identity. Pull-request and merge-queue release artifacts remain unsigned without
+access to the release key. Trusted distribution runs require valid release credentials;
+see [CI release signing](../release_signing.md) for setup and F-Droid signature compatibility.
 
 ## Kotlin lifecycle and performance regression checks
 

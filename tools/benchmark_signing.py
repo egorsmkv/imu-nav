@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sign benchmark artifacts with a durable private key, or clearly label unsigned validation builds.
+"""Sign distribution artifacts with durable profile-specific keys, or label unsigned validation builds.
 
 Keystore bytes and passwords come only from the environment. Temporary key files are never
 placed in an artifact directory, and subprocess failures never echo secret-bearing commands.
@@ -20,6 +20,19 @@ import tempfile
 KEY_VARIABLES = ('IMUNAV_BENCHMARK_KEYSTORE_BASE64', 'IMUNAV_BENCHMARK_STORE_PASSWORD',
                  'IMUNAV_BENCHMARK_KEY_ALIAS', 'IMUNAV_BENCHMARK_KEY_PASSWORD')
 FINGERPRINT_VARIABLE = 'IMUNAV_BENCHMARK_CERT_SHA256'
+
+
+def credential_variables(profile):
+    """Keep production and diagnostic signing identities independent, without fallback."""
+    if profile not in ('benchmark', 'release'):
+        raise ValueError('Unknown signing profile')
+    prefix = 'IMUNAV_' + profile.upper() + '_'
+    return tuple(prefix + suffix for suffix in ('KEYSTORE_BASE64', 'STORE_PASSWORD', 'KEY_ALIAS', 'KEY_PASSWORD'))
+
+
+def certificate_variable(profile):
+    """Select the public certificate pin for the same validated profile as the credentials."""
+    return credential_variables(profile)[0].removesuffix('KEYSTORE_BASE64') + 'CERT_SHA256'
 
 
 def fingerprint(value):
@@ -44,55 +57,58 @@ def verify(apksigner, apk, env, expected=None):
     output = run_signer([str(apksigner), 'verify', '--verbose', '--print-certs', str(apk)], env)
     digests = re.findall(r'^Signer #\d+ certificate SHA-256 digest: ([0-9a-fA-F]+)\s*$', output, re.M)
     if len(digests) != 1:
-        raise ValueError('Benchmark APK must have exactly one verified signing certificate')
+        raise ValueError('APK must have exactly one verified signing certificate')
     actual = fingerprint(digests[0])
     if expected is not None and actual != fingerprint(expected):
-        raise ValueError('Benchmark certificate differs from the configured SHA-256 fingerprint')
+        raise ValueError('APK certificate differs from the configured SHA-256 fingerprint')
     return actual
 
 
-def sign(apk, output_dir, apksigner, allow_unsigned=False, env=None, temporary_root=None):
+def sign(apk, output_dir, apksigner, allow_unsigned=False, env=None, temporary_root=None, profile='benchmark'):
     """Restore the same key independently on each runner; never silently choose a fresh debug key."""
     env = dict(os.environ if env is None else env)
+    key_variables = credential_variables(profile)
+    fingerprint_variable = certificate_variable(profile)
+    label = profile.capitalize()
     apk, output_dir = Path(apk), Path(output_dir)
     if not apk.is_file() or not apk.name.endswith('-unsigned.apk'):
-        raise ValueError('Expected an existing *-unsigned.apk built with -PunsignedBenchmark')
+        raise ValueError('Expected an existing *-unsigned.apk from an unsigned Gradle build')
     if output_dir.resolve() == apk.parent.resolve():
         raise ValueError('Distribution output must be separate from the unsigned build directory')
     if output_dir.exists() and any(output_dir.iterdir()):
         raise ValueError('Distribution output must be empty to avoid mixing signing identities')
-    supplied = [bool(env.get(name)) for name in KEY_VARIABLES]
-    expected = env.get(FINGERPRINT_VARIABLE) or None
+    supplied = [bool(env.get(name)) for name in key_variables]
+    expected = env.get(fingerprint_variable) or None
     if any(supplied) and not all(supplied):
-        raise ValueError('Benchmark signing requires all four IMUNAV_BENCHMARK key settings')
+        raise ValueError(f'{label} signing requires all four IMUNAV_{profile.upper()} key settings')
     if expected:
         fingerprint(expected)
     if not all(supplied):
         if not allow_unsigned:
-            raise ValueError('No durable benchmark signing key configured')
+            raise ValueError(f'No durable {profile} signing key configured')
         output_dir.mkdir(parents=True, exist_ok=True)
         output = output_dir / apk.name
         shutil.copyfile(apk, output)
         report = {'mode': 'unsigned', 'apk': output.name, 'certificate_sha256': None,
-                  'notice': 'Not installable. Configure a durable benchmark key or sign locally before installing.'}
+                  'notice': f'Not installable. Configure a durable {profile} key or sign locally before installing.'}
     else:
         try:
-            key = base64.b64decode(env[KEY_VARIABLES[0]], validate=True)
+            key = base64.b64decode(env[key_variables[0]], validate=True)
         except (ValueError, binascii.Error) as error:
-            raise ValueError('Benchmark keystore is not valid base64') from error
+            raise ValueError(f'{label} keystore is not valid base64') from error
         if not key:
-            raise ValueError('Benchmark keystore is empty')
-        with tempfile.TemporaryDirectory(prefix='imunav-benchmark-signing-', dir=temporary_root) as directory:
+            raise ValueError(f'{label} keystore is empty')
+        with tempfile.TemporaryDirectory(prefix=f'imunav-{profile}-signing-', dir=temporary_root) as directory:
             private = Path(directory)
-            keystore = private / 'benchmark.keystore'
+            keystore = private / f'{profile}.keystore'
             # TemporaryDirectory is owner-only; explicitly protect the file as well.
             with keystore.open('xb') as stream:
                 os.chmod(keystore, 0o600)
                 stream.write(key)
             staged = private / apk.name.replace('-unsigned.apk', '.apk')
             run_signer([str(apksigner), 'sign', '--ks', str(keystore),
-                        '--ks-key-alias', env[KEY_VARIABLES[2]],
-                        '--ks-pass', 'env:' + KEY_VARIABLES[1], '--key-pass', 'env:' + KEY_VARIABLES[3],
+                        '--ks-key-alias', env[key_variables[2]],
+                        '--ks-pass', 'env:' + key_variables[1], '--key-pass', 'env:' + key_variables[3],
                         '--v4-signing-enabled', 'false', '--out', str(staged), str(apk)], env)
             actual = verify(apksigner, staged, env, expected)
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -104,11 +120,11 @@ def sign(apk, output_dir, apksigner, allow_unsigned=False, env=None, temporary_r
         for chunk in iter(lambda: stream.read(1024 * 1024), b''):
             digest.update(chunk)
     report['apk_sha256'] = digest.hexdigest()
-    (output_dir / 'benchmark-signing.json').write_text(json.dumps(report, indent=2) + '\n')
+    (output_dir / f'{profile}-signing.json').write_text(json.dumps(report, indent=2) + '\n')
     return report
 
 
-def main():
+def main(profile='benchmark'):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apk', type=Path, required=True)
     parser.add_argument('--output-dir', type=Path, required=True)
@@ -117,10 +133,10 @@ def main():
     args = parser.parse_args()
     try:
         report = sign(args.apk, args.output_dir, args.apksigner, args.allow_unsigned,
-                      temporary_root=os.environ.get('RUNNER_TEMP'))
+                      temporary_root=os.environ.get('RUNNER_TEMP'), profile=profile)
     except (ValueError, OSError, subprocess.TimeoutExpired) as error:
         # Do not print subprocess exceptions: they can contain key aliases or signing diagnostics.
-        message = str(error) if isinstance(error, ValueError) else 'Benchmark signing tools could not complete'
+        message = str(error) if isinstance(error, ValueError) else f'{profile.capitalize()} signing tools could not complete'
         raise SystemExit(message) from None
     print(json.dumps(report))
     if os.environ.get('GITHUB_OUTPUT'):
@@ -128,8 +144,8 @@ def main():
             stream.write(f"mode={report['mode']}\n")
     if report['mode'] == 'unsigned' and os.environ.get('GITHUB_STEP_SUMMARY'):
         with Path(os.environ['GITHUB_STEP_SUMMARY']).open('a') as stream:
-            stream.write('Benchmark APK is **unsigned and not installable**: no private benchmark signing key is configured. '
-                         'See docs/benchmark_signing.md for the one-time setup.\n')
+            stream.write(f'{profile.capitalize()} APK is **unsigned and not installable**. '
+                         f'See docs/{profile}_signing.md for signing setup and validation-build policy.\n')
 
 
 if __name__ == '__main__':
