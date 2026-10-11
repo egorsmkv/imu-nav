@@ -102,7 +102,9 @@ android {
         create("benchmark") {
             initWith(getByName("release"))
             applicationIdSuffix = ".bench"
-            signingConfig = signingConfigs.getByName("debug")
+            // Local installs reuse this machine's debug key. CI distributes an unsigned build
+            // to the dedicated signing step, which restores one durable private benchmark key.
+            signingConfig = if (providers.gradleProperty("unsignedBenchmark").isPresent) null else signingConfigs.getByName("debug")
             matchingFallbacks += "release"
             buildConfigField("boolean", "DIAGNOSTICS", "true")
         }

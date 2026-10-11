@@ -187,13 +187,27 @@ jobs:
       - name: Build Play benchmark APK with the bundled map
         env:
           RUSTUP_TOOLCHAIN: nightly-2026-09-25
-        run: ./gradlew --no-daemon :app:assemblePlayBenchmark
+        run: ./gradlew --no-daemon :app:assemblePlayBenchmark -PunsignedBenchmark
+      - name: Sign benchmark with the persistent private identity
+        id: signing
+        env:
+          IMUNAV_BENCHMARK_KEYSTORE_BASE64: ${{ secrets.BENCHMARK_KEYSTORE_BASE64 }}
+          IMUNAV_BENCHMARK_STORE_PASSWORD: ${{ secrets.BENCHMARK_STORE_PASSWORD }}
+          IMUNAV_BENCHMARK_KEY_ALIAS: ${{ secrets.BENCHMARK_KEY_ALIAS }}
+          IMUNAV_BENCHMARK_KEY_PASSWORD: ${{ secrets.BENCHMARK_KEY_PASSWORD }}
+          IMUNAV_BENCHMARK_CERT_SHA256: ${{ vars.BENCHMARK_CERT_SHA256 }}
+        run: >-
+          python3 tools/benchmark_signing.py
+          --apk app/build/outputs/apk/play/benchmark/*-unsigned.apk
+          --output-dir build/benchmark-distribution
+          --apksigner "$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          --allow-unsigned
       - name: Verify bundled APK page alignment
         run: >-
           python3 tools/verify_android_pages.py
           --zipalign "$ANDROID_HOME/build-tools/36.0.0/zipalign"
           --report build/android-pages.json
-          app/build/outputs/apk/play/benchmark/*.apk
+          build/benchmark-distribution/*.apk
       - name: Check APK size and bundled PMTiles storage
         run: |
           python3 - <<'PY'
@@ -210,9 +224,9 @@ jobs:
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: imu-nav-play-benchmark-map-${{ github.run_id }}
+          name: imu-nav-play-benchmark-map-${{ steps.signing.outputs.mode }}-${{ github.run_id }}
           path: |
-            app/build/outputs/apk/play/benchmark/*.apk
+            build/benchmark-distribution/
             app/build/outputs/mapping/playBenchmark/mapping.txt
             build/android-pages.json
           compression-level: 0

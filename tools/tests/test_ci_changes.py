@@ -59,6 +59,10 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(self.selected('tools/rust_coverage_rustc.py'), {'native', 'server', 'tools'})
         self.assertEqual(self.selected('tools/verify_native.py'), {'tools'})
 
+    def test_benchmark_signing_changes_run_distribution_and_tooling_checks(self):
+        for path in ('tools/benchmark_signing.py', 'tools/test_benchmark_updates.py', 'tools/tests/test_benchmark_signing.py'):
+            self.assertEqual(self.selected(path), {'fdroid', 'tools'})
+
     def test_unknown_history_manual_tags_and_merge_queues_run_all(self):
         for name, event in [('workflow_dispatch', {}), ('merge_group', {}),
                             ('push', {'ref': 'refs/tags/v1.0'}), ('push', {}),

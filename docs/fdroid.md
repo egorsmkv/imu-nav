@@ -4,6 +4,10 @@
 
 This guide is for maintainers preparing an F-Droid release. The F-Droid APK is built from freely licensed source and is unsigned locally; F-Droid signs the copy it distributes.
 
+The CI **benchmark** APK is a separate diagnostics build. Its private signing identity and update
+compatibility are described in [benchmark signing](benchmark_signing.md). Download its **signed**
+artifact for installation; an **unsigned** validation artifact cannot be installed directly.
+
 ## Prepare a release
 
 1. Make sure the source repository and issue tracker are publicly reachable. Use a real release tag that matches the app version; do not submit metadata with a placeholder tag.
