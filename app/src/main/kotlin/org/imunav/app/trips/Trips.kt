@@ -1,6 +1,8 @@
 package org.imunav.app.trips
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,6 +18,8 @@ import org.imunav.core.gnss.TrustLevel
 import org.imunav.core.imu.ImuSample
 import org.imunav.core.nav.NavigationEngine
 import org.imunav.core.nav.NavigationEstimator
+import org.imunav.core.record.RecordingFailure
+import org.imunav.core.record.RecordingOverload
 import org.imunav.core.record.RecordingSession
 import org.imunav.core.record.RouteCodec
 import org.imunav.core.record.TripEvent
@@ -23,11 +27,32 @@ import org.imunav.core.record.TripFormat
 import org.imunav.core.record.TripTimeline
 import org.imunav.core.route.Route
 import org.imunav.core.route.TravelMode
+import org.imunav.core.util.LatestWork
+import org.imunav.core.util.OrderedBuffer
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import kotlin.math.max
+
+/** Recording health is independent of navigation and remains visible after a storage failure. */
+enum class RecordingStatus {
+    IDLE,
+    RECORDING,
+    COMPLETE,
+    OVERLOAD,
+    WRITE_FAILED,
+    ;
+
+    val partial: Boolean get() = this == OVERLOAD || this == WRITE_FAILED
+}
+
+/** Translate terminal core failures without exposing exception messages or file paths. */
+private fun RecordingFailure.status(): RecordingStatus = when (this) {
+    RecordingFailure.OVERLOAD -> RecordingStatus.OVERLOAD
+    RecordingFailure.WRITE_FAILED -> RecordingStatus.WRITE_FAILED
+}
 
 /** One finished trip, as listed in the history. */
 data class TripSummary(
@@ -51,6 +76,7 @@ data class TripSummary(
     val matchedLengthM: Double? = null,
     /** Driven or walked. Trips saved before walking support are car trips. */
     val mode: TravelMode = TravelMode.CAR,
+    val recordingStatus: RecordingStatus = RecordingStatus.COMPLETE,
 ) {
     val avgMovingKmh: Double get() = if (movingS > 0) drivenM / movingS * 3.6 else 0.0
 
@@ -61,6 +87,7 @@ data class TripSummary(
         .put("arrived", arrived).put("driven", drivenM).put("duration", durationS).put("moving", movingS)
         .put("blindS", blindS).put("blindM", blindM).put("maxUnc", maxUncertaintyM).put("routeLen", routeLengthM)
         .put("reroutes", reroutes).put("recording", recording).put("matched", matchedLengthM).put("mode", mode.name)
+        .put("recordingStatus", recordingStatus.name)
 
     companion object {
         /** Parse a line of the history index. */
@@ -81,6 +108,7 @@ data class TripSummary(
             recording = o.optString("recording"),
             matchedLengthM = if (o.has("matched") && !o.isNull("matched")) o.getDouble("matched") else null,
             mode = modeOf(o),
+            recordingStatus = RecordingStatus.entries.firstOrNull { it.name == o.optString("recordingStatus") } ?: RecordingStatus.COMPLETE,
         )
 
         /** The "mode" field, defaulting to car for data written before walking support. */
@@ -94,8 +122,16 @@ data class HistoryTotals(val trips: Int, val drivenM: Double, val durationS: Dou
 /**
  * Trip lifecycle: records raw inputs to `files/trips/<id>.rec.gz` while navigating, accumulates
  * stats, persists the active trip so it survives the app being killed, and keeps the history.
+ * An injected recording buffer must use the same serial I/O worker as the manager.
  */
-class TripManager(private val context: Context, private val hub: PositioningHub, private val engine: NavigationEngine, private val log: (String) -> Unit) {
+class TripManager(
+    private val context: Context,
+    private val hub: PositioningHub,
+    private val engine: NavigationEngine,
+    private val log: (String) -> Unit,
+    private val io: ExecutorService = Executors.newSingleThreadExecutor(),
+    private val recordingBuffer: OrderedBuffer = RecordingSession.newBuffer(io),
+) {
     /** Optional diagnostics sink; recording remains independent of upload availability. */
     var onArchiveStart: ((String) -> Unit)? = null
     var onArchiveCompleted: ((String) -> Unit)? = null
@@ -110,16 +146,23 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
     private val activeFile = File(dir, "active.json")
 
     private var recorder: RecordingSession? = null
+    private var session: RecordingSession? = null
+    private var recordingGeneration = 0L
+    private val main = Handler(Looper.getMainLooper())
+    private val _recordingStatus = MutableStateFlow(RecordingStatus.IDLE)
+    val recordingStatus: StateFlow<RecordingStatus> = _recordingStatus.asStateFlow()
+    val recordingStats get() = recordingBuffer.stats
 
-    /** Recording and state files are written here, never on the main thread; one thread keeps event order. */
-    private val io = Executors.newSingleThreadExecutor()
+    /** Recording and state files share this dispatcher; the injected serial worker preserves order. */
     private val ioDispatcher = io.asCoroutineDispatcher()
+    private val snapshots = LatestWork(io)
 
     /**
      * [route] encoded once per route change (it can be large), reused by every [persist].
      * Only touched on the [io] thread: encoding a long route takes long enough to freeze the UI.
      */
     private var routeEncoded = ""
+    private var encodedRoute: Route? = null
 
     @Volatile private var id: String? = null
     private var recordingName = ""
@@ -155,6 +198,8 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
     /** Navigation started: open a new recording and reset the statistics. */
     fun begin(route: Route, destination: GeoPoint, waypoints: List<GeoPoint>, startAccuracyM: Double, mode: TravelMode = TravelMode.CAR) {
         end(arrived = false) // close anything left open
+        recordingGeneration++
+        _recordingStatus.value = RecordingStatus.RECORDING
         this.mode = mode
         val stamp = RecordingSession.newId()
         id = stamp
@@ -166,7 +211,6 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
         this.waypoints = waypoints
         this.startAccuracy = startAccuracyM
         this.route = route
-        encodeRoute(route)
         drivenM = 0.0
         movingS = 0.0
         blindS = 0.0
@@ -188,7 +232,6 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
     fun onRoute(route: Route) {
         if (!active) return
         this.route = route
-        encodeRoute(route)
         reroutes++
         record(TripEvent.RouteSet(SystemClock.elapsedRealtime(), route))
         persist(force = true)
@@ -238,18 +281,23 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
     fun end(arrived: Boolean, keepShortTrip: Boolean = false) {
         val tripId = id ?: return
         record(TripEvent.Stop(SystemClock.elapsedRealtime()))
-        val finished = recorder
+        val finished = session
+        session = null
         recorder = null
         hub.recorder = null
-        io.execute { activeFile.delete() }
+        io.execute {
+            if (activeFile.isFile && JSONObject(activeFile.readText()).optString("id") == tripId) activeFile.delete()
+        }
         val end = System.currentTimeMillis()
         val summary = TripSummary(
             tripId, startWall, end, destination, arrived, drivenM, (end - startWall) / 1000.0, movingS, blindS, blindM,
             maxUnc, route?.length ?: 0.0, reroutes, recordingName, mode = mode,
+            recordingStatus = if (_recordingStatus.value.partial) _recordingStatus.value else RecordingStatus.COMPLETE,
         )
         id = null
+        _recordingStatus.value = RecordingStatus.IDLE
         // Skip accidental starts (no movement at all) to keep the history meaningful.
-        if (!keepShortTrip && summary.drivenM < 50 && summary.durationS < 120) {
+        if (!keepShortTrip && !summary.recordingStatus.partial && finished?.failure == null && summary.drivenM < 50 && summary.durationS < 120) {
             finished?.finish(discard = true)
             log("trip_discarded $tripId")
             io.execute {
@@ -262,7 +310,7 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
         log("trip_end $tripId driven=${drivenM.toInt()}m blind=${blindS.toInt()}s")
         io.execute {
             onDiagnosticEnd?.invoke(tripId)
-            index.appendText(summary.toJson().toString() + "\n")
+            index.appendText(summary.copy(recordingStatus = finished?.failure?.status() ?: summary.recordingStatus).toJson().toString() + "\n")
             _history.value = loadHistory()
             onArchiveCompleted?.invoke(tripId)
         }
@@ -285,6 +333,8 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
         // Do not publish a trip ID if engine installation fails before recording can begin.
         engine.start(saved.route, restoredDestination, saved.waypoints, now, startAccuracyM = uncertainty, mode = summary.mode, estimator = saved.estimator)
         engine.resumeAt(saved.progressM)
+        recordingGeneration++
+        _recordingStatus.value = if (summary.recordingStatus.partial) summary.recordingStatus else RecordingStatus.RECORDING
         id = summary.id
         recordingName = summary.recording
         startWall = summary.startWallMs
@@ -293,7 +343,10 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
         startAccuracy = saved.startAccuracyM
         mode = summary.mode
         route = saved.route
-        io.execute { routeEncoded = saved.encodedRoute }
+        io.execute {
+            routeEncoded = saved.encodedRoute
+            encodedRoute = saved.route
+        }
         drivenM = summary.drivenM
         movingS = summary.movingS
         blindS = summary.blindS
@@ -303,7 +356,7 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
         lastTickMs = -1L
         onArchiveStart?.invoke(summary.id)
         onDiagnosticStart?.invoke(summary.id)
-        openRecorder(append = true)
+        if (!_recordingStatus.value.partial) openRecorder(append = true)
         record(TripEvent.Start(now, restoredDestination, waypoints, uncertainty))
         record(TripEvent.Mode(now, mode))
         record(TripEvent.Estimator(now, engine.estimator))
@@ -314,9 +367,6 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
         persist(force = true)
         return true
     }
-
-    /** Encode [route] for [persist] on the I/O thread (queued before any persist that needs it). */
-    private fun encodeRoute(route: Route) = io.execute { routeEncoded = RouteCodec.encode(route) }
 
     /** Save the active trip to `active.json` (at most every 10 s unless [force]) so it can be restored after a kill. */
     private fun persist(force: Boolean) {
@@ -331,17 +381,23 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
         // added on the I/O thread, because building JSON with it takes long enough to be noticed.
         val o = JSONObject()
             .put("id", tripId).put("recording", recordingName).put("start", startWall).put("savedAt", System.currentTimeMillis())
+            .put("recordingStatus", _recordingStatus.value.name)
             .put("destLat", d.lat).put("destLon", d.lon).put("via", JSONArray(waypoints.flatMap { listOf(it.lat, it.lon) }))
             .put("startAcc", startAccuracy).put("s", engine.progressS).put("unc", st.uncertaintyM).put("mode", mode.name)
             .put("estimator", engine.estimator.name)
             .put("driven", drivenM).put("moving", movingS).put("blindS", blindS).put("blindM", blindM)
             .put("maxUnc", maxUnc).put("reroutes", reroutes)
-        io.execute {
-            if (id == null) return@execute // the trip ended meanwhile
-            val text = o.put("route", routeEncoded.ifEmpty { RouteCodec.encode(r) }).toString()
-            val tmp = File(dir, "active.json.tmp")
-            tmp.writeText(text)
-            tmp.renameTo(activeFile)
+        snapshots.submit {
+            if (id == tripId) {
+                if (encodedRoute !== r) {
+                    routeEncoded = RouteCodec.encode(r)
+                    encodedRoute = r
+                }
+                val text = o.put("route", routeEncoded).toString()
+                val tmp = File(dir, "active.json.tmp")
+                tmp.writeText(text)
+                check(tmp.renameTo(activeFile)) { "Cannot save trip snapshot" }
+            }
         }
     }
 
@@ -350,6 +406,8 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
     /** Open the recording file and route the positioning hub's raw inputs into it. */
     private fun openRecorder(append: Boolean) {
         recorder?.finish()
+        val tripId = id
+        val generation = recordingGeneration
         val next = RecordingSession(
             File(dir, recordingName),
             io,
@@ -359,15 +417,34 @@ class TripManager(private val context: Context, private val hub: PositioningHub,
                 onProfileEvent?.invoke(event)
             },
             arrivalClock = SystemClock::elapsedRealtime,
-            onFailure = { log("trip_record_failed ${it.message}") },
+            buffer = recordingBuffer,
+            onFailure = { cause ->
+                val status = if (cause is RecordingOverload) RecordingStatus.OVERLOAD else RecordingStatus.WRITE_FAILED
+                main.post {
+                    if (id == tripId && recordingGeneration == generation) {
+                        recorder = null
+                        hub.recorder = null
+                        _recordingStatus.value = status
+                        log("trip_record_failed reason=${status.name.lowercase()}")
+                        persist(force = true)
+                    }
+                }
+            },
         )
+        session = next
         recorder = next
-        hub.recorder = next::record
+        hub.recorder = { event -> record(event) }
     }
 
     /** Write one event, on the background I/O thread. */
     private fun record(e: TripEvent) {
-        recorder?.record(e)
+        val current = recorder ?: return
+        current.record(e)
+        current.failure?.let { failure ->
+            recorder = null
+            hub.recorder = null
+            _recordingStatus.value = failure.status()
+        }
     }
 
     /** The recording (.rec.gz) of trip [t]. */

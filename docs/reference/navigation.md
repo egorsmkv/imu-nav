@@ -149,6 +149,7 @@ For the device verification matrix, see [Responsive UI checks](../responsive_ui.
 Text trip logs are written to
 `files/logs/`, trip recordings to `files/trips/` in app storage. Log writes and trip boundaries share one worker, so queued messages stay with their original trip.
 Log files have unique suffixes and buffered writes flush within five seconds (or at rotation/trip end); an abrupt process kill can lose the last buffered lines.
+Pending disk-log lines have item and estimated-byte limits; overload omits incoming lines and writes a per-trip `log_omitted` summary. Recording overload instead stops recording while navigation continues; see [storage overload](trips.md#storage-overload).
 
 The in-app trip-log viewer shows timestamps, highlights problems, and can search,
 filter, follow, copy or share the latest diagnostic events as a text file.

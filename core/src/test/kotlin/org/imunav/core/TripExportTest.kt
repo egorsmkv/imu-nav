@@ -77,6 +77,20 @@ class TripExportTest {
         assertTrue(directory.listFiles().orEmpty().isEmpty())
     }
 
+    @Test
+    fun partialAttachmentIncludesNoticeWithoutChangingReplayEvents() {
+        val recording = temporary.newFile("trip-partial.rec.gz")
+        val events = listOf(TripEvent.Agc(100, -5f))
+        TripRecorder(recording.outputStream()).use { recorder -> events.forEach(recorder::record) }
+        val notice = "Partial recording: recording stopped before the trip ended."
+        val archive = TripExport.snapshot(recording, temporary.newFolder(), notice)
+        ZipFile(archive).use { zip ->
+            assertEquals(2, zip.size())
+            assertEquals(notice + "\n", zip.getInputStream(zip.getEntry("recording-status.txt")).bufferedReader().use { it.readText() })
+            assertEquals(events, zip.getInputStream(zip.getEntry("trip-partial.rec")).use(TripFormat::read))
+        }
+    }
+
     /** Read all bytes to force the standard ZIP decoder to validate the entry CRC. */
     private fun unpackAndReplay(archive: File, entryName: String): List<TripEvent> {
         ZipFile(archive).use { zip ->

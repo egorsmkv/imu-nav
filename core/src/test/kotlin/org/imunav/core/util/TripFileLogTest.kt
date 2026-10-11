@@ -69,4 +69,53 @@ class TripFileLogTest {
         assertEquals(30, files.size)
         assertEquals((0 until 30).map { "рядок $it" }.toSet(), files.flatMap { it.readLines() }.toSet())
     }
+
+    @Test
+    fun overloadCountsOmissionsPerTripAndCloseStillFlushesAcceptedLines() {
+        val worker = Executors.newSingleThreadScheduledExecutor()
+        val release = CountDownLatch(1)
+        worker.execute { release.await() }
+        val buffer = OrderedBuffer(worker, 1, 128)
+        val directory = temp.newFolder()
+        val failures = mutableListOf<Exception>()
+        val log = TripFileLog(directory, 1024, failures::add, worker, buffer)
+        try {
+            log.start()
+            log.write("trip A")
+            repeat(10) { log.write("omitted A") }
+            log.end()
+            log.start()
+            log.write("omitted B")
+            log.end()
+            log.close()
+            assertEquals(1, buffer.stats.items)
+            assertEquals(11, buffer.stats.rejected)
+        } finally {
+            release.countDown()
+            assertTrue(worker.awaitTermination(10, TimeUnit.SECONDS))
+        }
+        assertTrue(failures.isEmpty())
+        val files = directory.listFiles().orEmpty().map { it.readText() }
+        assertTrue(files.any { "trip A\n" in it && "log_omitted count=10\n" in it })
+        assertTrue(files.any { it == "log_omitted count=1\n" })
+        assertEquals(0, buffer.stats.items)
+        assertEquals(0, buffer.stats.bytes)
+    }
+
+    @Test
+    fun oversizedLineIsOmittedAndLoggingRecoversWithoutRestart() {
+        val worker = Executors.newSingleThreadScheduledExecutor()
+        val directory = temp.newFolder()
+        val log = TripFileLog(directory, 1024, { throw AssertionError(it) }, worker, OrderedBuffer(worker, 2, 80))
+        try {
+            log.start()
+            log.write("x".repeat(100))
+            log.write("ok")
+            log.end()
+        } finally {
+            log.close()
+            assertTrue(worker.awaitTermination(10, TimeUnit.SECONDS))
+        }
+        assertEquals("log_omitted count=1\nok\n", directory.listFiles()?.single()?.readText())
+    }
 }

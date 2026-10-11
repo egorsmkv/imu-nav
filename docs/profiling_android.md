@@ -63,7 +63,10 @@ Use the same device, pack, actions and power conditions. Compare five paired run
 cold route planning from warm runs. Both builds must use the same capture instrumentation;
 otherwise reduced profiling overhead can look like an application improvement.
 
-Compare process CPU, peak and settled PSS, and frame timing. Repeat map/settings/history transitions
+Compare process CPU, peak and settled PSS, and frame timing. During navigation, `storage_queue`
+lines expose recording/log queue depth, estimated bytes, high-water marks and rejection counts.
+Correlate these with storage stalls; estimated bytes are not heap measurements. Recording overload
+stops recording while guidance continues, and `log_omitted` reports omitted disk-log lines. Repeat map/settings/history transitions
 and background/resume to investigate retained memory. A short rise while loading tiles or touching
 memory-mapped routing data does not establish a leak. Managed traces omit native internal stacks;
 use a system/native profile when allocation ownership remains unclear.

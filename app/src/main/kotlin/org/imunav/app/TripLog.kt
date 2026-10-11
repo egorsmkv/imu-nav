@@ -28,6 +28,8 @@ class TripLog(context: Context, maxFileBytes: Long = 15L * 1024 * 1024) {
     @Volatile var onProfileLine: ((String, Long) -> Unit)? = null
     private val files = TripFileLog(File(context.filesDir, "logs"), maxFileBytes, { Log.w(TAG, "log_write_failed", it) })
 
+    val queueStats get() = files.stats
+
     /** The last [MAX_RECENT] lines, for the UI. Guarded by `synchronized(tail)`. */
     private val tail = ArrayDeque<String>()
 

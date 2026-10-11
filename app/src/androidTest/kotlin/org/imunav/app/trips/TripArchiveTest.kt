@@ -55,6 +55,19 @@ class TripArchiveTest {
         }
     }
 
+    @Test fun partialHistoryMarksEvenAClosedRecordingIncompleteForUpload() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val file = File.createTempFile("partial-playback", ".rec", context.cacheDir)
+        try {
+            file.writeText("E,100,50.45,30.52,0,5,GPS\nX,1100\n")
+            val trip = TripSummary("synthetic", 1000, 2000, null, false, 0.0, 1.0, 0.0, 0.0, 0.0, 5.0, 100.0, 0, file.name)
+            assertFalse(playbackDocument(file, trip).getBoolean("incomplete"))
+            assertTrue(playbackDocument(file, trip.copy(recordingStatus = RecordingStatus.OVERLOAD)).getBoolean("incomplete"))
+        } finally {
+            file.delete()
+        }
+    }
+
     @Test fun exportAndManualUploadCanRetryThenBeErased() = runBlocking {
         val server = InstrumentationRegistry.getArguments().getString("tripServer").orEmpty()
         assumeTrue("Supply a disposable local tripServer", server.isNotEmpty())

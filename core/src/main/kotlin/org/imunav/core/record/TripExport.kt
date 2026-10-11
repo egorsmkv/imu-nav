@@ -13,7 +13,7 @@ object TripExport {
      * A missing gzip footer is expected after an interrupted trip; keep the lines decoded before it.
      * Each export has its own file so deleting the original cannot change an attachment.
      */
-    fun snapshot(recording: File, directory: File): File {
+    fun snapshot(recording: File, directory: File, notice: String? = null): File {
         require(recording.isFile && recording.length() > 0 && recording.name.endsWith(".rec.gz")) { "Trip recording is missing or invalid" }
         check(directory.isDirectory || directory.mkdirs()) { "Cannot create trip export directory" }
         val exported = File.createTempFile(recording.name.removeSuffix(".rec.gz") + "-", ".zip", directory)
@@ -31,6 +31,11 @@ object TripExport {
                     }
                 }
                 zip.closeEntry()
+                if (notice != null) {
+                    zip.putNextEntry(ZipEntry("recording-status.txt"))
+                    zip.write((notice + "\n").toByteArray(Charsets.UTF_8))
+                    zip.closeEntry()
+                }
             }
             complete = true
             return exported

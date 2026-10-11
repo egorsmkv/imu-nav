@@ -772,4 +772,6 @@
     <string name="mock_location_settings_unavailable">Не удалось открыть параметры разработчика. Откройте настройки Android вручную и сначала включите параметры разработчика.</string>
     <string name="mock_location_notification">Передача GPS · %1$s</string>
     <string name="trip_restore_failed">Не удалось восстановить поездку. Проверьте разрешение на геолокацию и запустите навигацию снова.</string>
+    <string name="recording_stopped_warning">Запись остановлена: хранилище не успевало сохранять данные. Навигация продолжается.</string>
+    <string name="recording_partial">Неполная запись: запись остановилась до завершения поездки.</string>
 </resources>

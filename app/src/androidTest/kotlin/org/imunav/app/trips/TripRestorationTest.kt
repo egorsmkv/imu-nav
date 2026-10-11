@@ -47,6 +47,16 @@ class TripRestorationTest {
         assertTrue(runCatching { RestoredTrip.decode(snapshot().put("s", route.length + 100.0), NOW) }.isFailure)
     }
 
+    @Test
+    fun partialRecordingHealthSurvivesHistoryAndSnapshotRoundTrips() {
+        for (status in listOf(RecordingStatus.OVERLOAD, RecordingStatus.WRITE_FAILED)) {
+            val saved = RestoredTrip.decode(snapshot().put("recordingStatus", status.name), NOW)
+            assertTrue(saved.summary.recordingStatus.partial)
+            assertEquals(status, TripSummary.fromJson(saved.summary.toJson()).recordingStatus)
+        }
+        assertEquals(RecordingStatus.COMPLETE, RestoredTrip.decode(snapshot(), NOW).summary.recordingStatus)
+    }
+
     private fun snapshot(): JSONObject {
         val route = Route(listOf(GeoPoint(50.45, 30.52), GeoPoint(50.451, 30.521)), emptyList(), 30.0)
         return JSONObject().put("id", "synthetic-trip").put("recording", "synthetic-trip.rec.gz")

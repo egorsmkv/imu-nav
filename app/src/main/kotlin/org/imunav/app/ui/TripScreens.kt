@@ -160,7 +160,12 @@ private fun TripRow(t: TripSummary, onClick: () -> Unit) {
     val blindPct = if (t.durationS > 0) (t.blindS / t.durationS * 100).toInt().coerceIn(0, 100) else 0
     ListItem(
         headlineContent = { Text(date) },
-        supportingContent = { Text(stringResource(R.string.trip_line, formatDistance(res, t.drivenM), formatDuration(res, t.durationS), blindPct)) },
+        supportingContent = {
+            Column {
+                Text(stringResource(R.string.trip_line, formatDistance(res, t.drivenM), formatDuration(res, t.durationS), blindPct))
+                if (t.recordingStatus.partial) Text(stringResource(R.string.recording_partial), color = MaterialTheme.colorScheme.error)
+            }
+        },
         leadingContent = {
             Icon(
                 when {
@@ -216,7 +221,7 @@ fun TripDetailScreen(app: AppGraph, trip: TripSummary, onBack: () -> Unit) {
                         scope.launch {
                             try {
                                 runCatching {
-                                    val intent = tripShareIntent(context, app.trips.recordingFile(trip))
+                                    val intent = tripShareIntent(context, app.trips.recordingFile(trip), trip.recordingStatus.partial)
                                     context.startActivity(Intent.createChooser(intent, res.getString(R.string.trip_share)))
                                 }.onFailure { error ->
                                     if (error is CancellationException) throw error
@@ -266,6 +271,7 @@ fun TripDetailScreen(app: AppGraph, trip: TripSummary, onBack: () -> Unit) {
                 LegendDot(EngineRed, stringResource(R.string.trip_legend_engine))
                 if (matched != null) LegendDot(MatchedBlue, stringResource(R.string.trip_legend_matched))
             }
+            if (trip.recordingStatus.partial) Text(stringResource(R.string.recording_partial), Modifier.padding(16.dp), color = MaterialTheme.colorScheme.error)
             TripArchiveControls(app, trip)
             Stat(stringResource(R.string.trip_stat_distance), formatDistance(res, trip.drivenM))
             matchedLength?.let { Stat(stringResource(R.string.trip_stat_matched), formatDistance(res, it)) }

@@ -58,6 +58,11 @@ class Route(
         require(elevationM == null || elevationM.size == geometry.size) { "elevationM needs one value per geometry point" }
     }
 
+    /** Cached retained-payload estimate for non-blocking recording admission; not a JVM heap measurement. */
+    val recordingWeight: Long = 256L + 2L * summary.length + 64L * geometry.size + 64L * signals.size +
+        32L * (maxspeedKmh.size + segmentSpeedMps.size) + 8L * (elevationM?.size ?: 0) +
+        steps.sumOf { 128L + 2L * (it.type.length + (it.modifier?.length ?: 0) + it.name.length) }
+
     /** Does this route know its height profile? */
     val hasElevation: Boolean get() = elevationM != null && geometry.size >= 2
 

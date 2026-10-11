@@ -680,13 +680,27 @@ class AppGraph(private val context: Context) {
         }
         trips.onTick(now)
         tickCount++
-        if (tickCount % 10 == 0L) logInertialShadow(now)
+        if (tickCount % 10 == 0L) {
+            logInertialShadow(now)
+            logStorageQueues()
+        }
         val p = _powerProfile.value
         if (uiVisible && tickCount % p.uiEveryTicks == 0L) {
             refresh()
         } else if (tickCount % 10 == 0L) {
             refresh() // keep learning and the notification data fresh
         }
+    }
+
+    /** Local counters help distinguish a storage backlog from native or graphics memory growth. */
+    private fun logStorageQueues() {
+        val recording = trips.recordingStats
+        val logs = tripLog.queueStats
+        tripLog.write(
+            "storage_queue recording_items=${recording.items} recording_bytes=${recording.bytes} recording_peak_items=${recording.peakItems} " +
+                "recording_peak_bytes=${recording.peakBytes} recording_rejected=${recording.rejected} log_items=${logs.items} log_bytes=${logs.bytes} " +
+                "log_peak_items=${logs.peakItems} log_peak_bytes=${logs.peakBytes} log_rejected=${logs.rejected}",
+        )
     }
 
     /** Low-rate diagnostics only: the experiment never changes the map marker, route or prompts. */

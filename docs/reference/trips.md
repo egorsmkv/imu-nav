@@ -1,10 +1,42 @@
 # Trips: history, recording, restore and replay
 
 > Detailed reference. For easy steps, see the [guide](../trips.md) or the [glossary](../glossary.md).
-> Every navigation is recorded to `files/trips/trip-<time>-<uuid>.rec.gz` in app storage — all fixes, IMU
+> Navigation normally records to `files/trips/trip-<time>-<uuid>.rec.gz` in app storage — all fixes, IMU
 > samples, satellite/AGC status, routes and the engine's own estimates (gzip text, flushed every 2 s).
 > Opening, repairing, writing, closing and discarding recordings share one worker. Rapid stop/start
 > actions use separate files; older timestamp-only filenames remain readable.
+
+## Storage overload
+
+Recording admission never waits for disk. All sessions share an 8,192-event / 16 MiB estimated
+payload budget, including an event currently being written. Route payload weights are cached when
+the route is constructed; recording admission never encodes routes. Up to 64 reserved lifecycle
+commands keep opening and closing ordered without an unbounded control queue. A new recording is
+rejected explicitly when lifecycle capacity is exhausted.
+
+On overload, the triggering event is rejected, recording stops, and the worker drains the accepted
+prefix before closing. On write failure, waiting events are released and closure is attempted.
+Navigation and trip statistics continue. The recording warning remains on the map, History marks
+the recording partial, and saved `recordingStatus` prevents restarting recording during restoration.
+Legacy history/snapshots without that field retain the previous behavior. Process death before a
+failure snapshot reaches disk can still lose the status, just as it can lose recent recording data.
+
+Restoration snapshots coalesce while the worker is busy; only the latest pending snapshot is kept.
+File writing, JSON encoding and route encoding remain on the worker. Trip IDs guard queued snapshots
+and failure callbacks so an older trip cannot overwrite or detach a newer recording.
+
+Text logs share a 2,048-line / 1 MiB estimated payload budget. Incoming lines beyond either limit
+are omitted; `log_omitted count=…` records each trip's omissions when storage recovers or the trip
+ends. Trip boundaries and close commands use reserved capacity. The in-memory recent log still keeps
+its existing 200-line tail. Disk retention and file rotation are separate limits.
+
+Every five seconds during navigation, `storage_queue` logs current/peak item and accounted-byte
+counts and rejected payload counts for recording and text logs. These local counters also appear
+in explicitly enabled performance captures. They contain no routes or coordinates.
+
+These budget values are engineering defaults, not device-calibrated measurements. Accounted bytes
+are estimates rather than exact JVM allocations; they do not bound total process memory.
+Diagnostics ingestion and bundled map-server queues have separate policies.
 
 - **History** (clock icon on the map) lists trips with totals; a trip shows its trusted-GPS track and
   the engine's estimate on a map, distance, duration, moving time, time/distance without GPS and the

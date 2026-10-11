@@ -7,6 +7,11 @@ The app records a trip automatically while you navigate. Recordings contain your
 Tap **Stop** to save the ride in **History**, including short rides or rides without movement.
 The recording is closed and saved on the phone in the background.
 
+If storage cannot keep up or a write fails, recording stops and a warning stays visible while
+navigation continues. History labels that trip as a partial recording. Its saved events remain
+available, but do not represent the whole trip. Recording remains stopped if that trip is restored;
+a new trip starts a new recording. A shared ZIP includes a notice, and archive uploads are marked incomplete.
+
 ## Review or share a trip
 
 1. Tap the clock icon on the map to open **History**.

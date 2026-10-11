@@ -28,7 +28,7 @@ internal suspend fun playbackDocument(file: File, trip: TripSummary): JSONObject
         route.points.forEach { points.put(JSONArray().put(it.lon).put(it.lat)) }
         routes.put(JSONObject().put("time_ms", route.timeMs).put("segment", route.segment).put("points", points))
     }
-    JSONObject().put("version", 1).put("incomplete", playback.incomplete)
+    JSONObject().put("version", 1).put("incomplete", playback.incomplete || trip.recordingStatus.partial)
         .put("positions", positions).put("routes", routes)
         .put(
             "summary",

@@ -758,4 +758,6 @@
     <string name="mock_location_settings_unavailable">Cannot open Developer options. Open Android Settings manually and enable Developer options first.</string>
     <string name="mock_location_notification">Sharing system GPS · %1$s</string>
     <string name="trip_restore_failed">The saved trip could not be resumed. Check location permission and start navigation again.</string>
+    <string name="recording_stopped_warning">Recording stopped because storage could not keep up. Navigation continues.</string>
+    <string name="recording_partial">Partial recording: recording stopped before the trip ended.</string>
 </resources>

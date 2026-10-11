@@ -130,6 +130,7 @@ fun MapScreen(
     val controller = remember { MapController() }
     val towerLayer by app.cells.towerLayer.collectAsStateWithLifecycle()
     val power by app.powerProfile.collectAsStateWithLifecycle()
+    val recordingStatus by app.trips.recordingStatus.collectAsStateWithLifecycle()
     val travelMode by app.travelMode.collectAsStateWithLifecycle()
     val offlineMapStatus by app.offlineMap.status.collectAsStateWithLifecycle()
     val activityPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -168,8 +169,8 @@ fun MapScreen(
         wasNavigating = nav.active
     }
     // A newly opened navigation panel or warning must start with its summary visible.
-    LaunchedEffect(nav.active, nav.arrived) { panelScroll.scrollTo(0) }
-    LaunchedEffect(nav.active, hasLocation, ui.locationEnabled) { headerScroll.scrollTo(0) }
+    LaunchedEffect(nav.active, nav.arrived, recordingStatus) { panelScroll.scrollTo(0) }
+    LaunchedEffect(nav.active, hasLocation, ui.locationEnabled, recordingStatus) { headerScroll.scrollTo(0) }
     // GPS mode: jump to the first live trusted position once, so the map shows where the user is.
     // Fixed mode keeps the chosen place; the re-center button still goes to the position.
     LaunchedEffect(ui.currentPosition != null, controller.map) {
@@ -298,6 +299,7 @@ fun MapScreen(
                         }
                     }
                     Column(Modifier.weight(1f, fill = false).verticalScroll(headerScroll), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (nav.active && recordingStatus.partial) RecordingWarning()
                         if (nav.active && !nav.arrived) {
                             if (shortWindow) {
                                 nav.nextStep?.let { step ->
@@ -406,6 +408,7 @@ fun MapScreen(
                 Column(Modifier.weight(1f, fill = false).verticalScroll(panelScroll), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (landscape) {
                         StatusPill(ui) { showDiagnostics = true }
+                        if (nav.active && recordingStatus.partial) RecordingWarning()
                         if (nav.active && !nav.arrived) ManeuverBanner(nav)
                         if (!nav.active) {
                             FlowRow {
@@ -537,3 +540,9 @@ private fun requestBatteryExemptionOnce(context: Context) {
 
 /** Is the app exempt from battery optimization? */
 fun isBatteryUnrestricted(context: Context): Boolean = context.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(context.packageName)
+
+/** Storage failure remains visible while guidance continues, including in a short landscape panel. */
+@Composable
+private fun RecordingWarning() {
+    Text(stringResource(R.string.recording_stopped_warning), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+}

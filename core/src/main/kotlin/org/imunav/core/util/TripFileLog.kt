@@ -2,6 +2,7 @@ package org.imunav.core.util
 
 import java.io.BufferedWriter
 import java.io.File
+import java.io.IOException
 import java.nio.file.Files
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -10,6 +11,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
 /** Orders trip boundaries and buffered writes on one worker, including messages queued before stop. */
 class TripFileLog(
@@ -17,7 +19,15 @@ class TripFileLog(
     private val maxBytes: Long,
     private val onFailure: (Exception) -> Unit,
     private val worker: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor(),
+    private val buffer: OrderedBuffer = OrderedBuffer(worker, MAX_PENDING_LINES, MAX_PENDING_BYTES),
 ) : AutoCloseable {
+    private class TripBoundary(val lifecycle: OrderedBuffer.Reservation) {
+        val omitted = AtomicLong()
+    }
+
+    private val closing = checkNotNull(buffer.reserve(1))
+    private var boundary: TripBoundary? = null
+    val stats get() = buffer.stats
     private var accepting = false
     private var closed = false
     private var writer: BufferedWriter? = null
@@ -28,50 +38,80 @@ class TripFileLog(
 
     @Synchronized fun start() {
         check(!closed)
+        end()
+        val lifecycle = buffer.reserve(2)
+        if (lifecycle == null) {
+            onFailure(IOException("Log lifecycle buffer is full"))
+            return
+        }
+        boundary = TripBoundary(lifecycle)
         accepting = true
-        submit {
-            endFile()
-            openFile()
-            prune()
+        lifecycle.submit {
+            safely {
+                endFile()
+                openFile()
+                prune()
+            }
         }
     }
 
     @Synchronized fun end() {
         if (closed) return
         accepting = false
-        submit {
-            endFile()
-            prune()
+        val previous = boundary ?: return
+        boundary = null
+        previous.lifecycle.submit {
+            safely {
+                writeOmissions(previous)
+                endFile()
+                prune()
+            }
         }
     }
 
-    /** Submission order, rather than a mutable current-file reference, determines each line's trip. */
+    /** Incoming lines are omitted on overload; counters belong to their original trip, even after restart. */
     @Synchronized fun write(line: String) {
         if (!accepting) return
-        submit {
-            if (writer != null) {
-                val encodedBytes = (line + "\n").toByteArray(Charsets.UTF_8).size
-                if (bytes > 0 && bytes + encodedBytes > maxBytes) {
-                    endFile()
-                    openFile()
-                    prune()
-                }
-                writer?.apply {
-                    write(line)
-                    // Byte accounting and the portable trip-log format both use UTF-8 LF.
-                    write("\n")
-                }
-                bytes += encodedBytes
-                if (flush == null) {
-                    flush = worker.schedule({
-                        safely {
-                            writer?.flush()
-                            prune()
-                        }
-                        flush = null
-                    }, FLUSH_DELAY_SECONDS, TimeUnit.SECONDS)
+        val trip = boundary ?: return
+        val weight = 64L + 2L * line.length
+        if (!buffer.offer(trip, weight) {
+                safely {
+                    writeOmissions(trip)
+                    writeLine(line)
                 }
             }
+        ) {
+            trip.omitted.incrementAndGet()
+        }
+    }
+
+    private fun writeOmissions(trip: TripBoundary) {
+        val count = trip.omitted.getAndSet(0)
+        if (count > 0) writeLine("log_omitted count=$count")
+    }
+
+    /** Worker-only UTF-8 rotation and delayed flush, shared by normal lines and overload summaries. */
+    private fun writeLine(line: String) {
+        if (writer == null) return
+        val encodedBytes = (line + "\n").toByteArray(Charsets.UTF_8).size
+        if (bytes > 0 && bytes + encodedBytes > maxBytes) {
+            endFile()
+            openFile()
+            prune()
+        }
+        writer?.apply {
+            write(line)
+            write("\n")
+        }
+        bytes += encodedBytes
+        if (flush == null) {
+            flush = worker.schedule({
+                safely {
+                    writer?.flush()
+                    prune()
+                }
+                flush = null
+            }, FLUSH_DELAY_SECONDS, TimeUnit.SECONDS)
         }
     }
 
@@ -99,7 +139,12 @@ class TripFileLog(
     private fun manage(action: () -> Unit): CompletableFuture<LogStorage> {
         check(!closed)
         val result = CompletableFuture<LogStorage>()
-        worker.execute {
+        val reservation = buffer.reserve(1)
+        if (reservation == null) {
+            result.completeExceptionally(IOException("Log management buffer is full"))
+            return result
+        }
+        reservation.submit {
             runCatching {
                 writer?.flush()
                 action()
@@ -133,9 +178,10 @@ class TripFileLog(
 
     @Synchronized override fun close() {
         if (closed) return
+        end()
         closed = true
         accepting = false
-        worker.execute {
+        closing.submit {
             try {
                 safely {
                     endFile()
@@ -146,8 +192,6 @@ class TripFileLog(
             }
         }
     }
-
-    private fun submit(action: () -> Unit) = worker.execute { safely(action) }
 
     // A background logging failure must be reported without terminating subsequent queued commands.
     @Suppress("TooGenericExceptionCaught")
@@ -178,6 +222,8 @@ class TripFileLog(
     }
 
     private companion object {
+        const val MAX_PENDING_LINES = 2_048
+        const val MAX_PENDING_BYTES = 1024L * 1024
         const val FLUSH_DELAY_SECONDS = 5L
         val STAMP: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
     }
