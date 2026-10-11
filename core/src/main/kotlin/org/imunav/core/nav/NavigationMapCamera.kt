@@ -22,6 +22,5 @@ object NavigationMapCamera {
     }
 
     /** Walking and route browsing always return to a flat map. */
-    fun tilt(mode: TravelMode, navigating: Boolean, perspective: Boolean): Double =
-        if (navigating && mode == TravelMode.CAR && perspective) CAR_TILT_DEG else 0.0
+    fun tilt(mode: TravelMode, navigating: Boolean, perspective: Boolean): Double = if (navigating && mode == TravelMode.CAR && perspective) CAR_TILT_DEG else 0.0
 }
