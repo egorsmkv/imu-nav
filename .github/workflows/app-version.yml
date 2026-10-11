@@ -1,0 +1,66 @@
+name: Update app version
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: 'New stable version (major.minor.patch, for example 0.7.0)'
+        required: true
+        type: string
+      version_code:
+        description: 'Optional versionCode; leave empty to increment the current value'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: app-version-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    # Version PRs always target main, using the workflow definition on main.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      VERSION_NAME: ${{ inputs.version_name }}
+      VERSION_CODE: ${{ inputs.version_code }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Test version updater
+        run: python3 -m unittest discover -s tools/tests -p test_update_app_version.py -v
+      - name: Update Android and F-Droid versions
+        run: |
+          args=(--version-name "$VERSION_NAME")
+          if [[ -n "$VERSION_CODE" ]]; then args+=(--version-code "$VERSION_CODE"); fi
+          python3 tools/update_app_version.py "${args[@]}"
+          git diff --check
+      - name: Open version update pull request
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          branch="release/version-$VERSION_NAME"
+          git switch -c "$branch"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/build.gradle.kts fdroid/metadata.yml
+          git commit -m "chore: prepare app version $VERSION_NAME"
+          # No force push: an existing branch fails safely instead of overwriting work.
+          git push origin "HEAD:refs/heads/$branch"
+          cat > "$RUNNER_TEMP/version-pr.md" <<'EOF'
+          Updates the Android version and matching F-Droid metadata while retaining old build recipes.
+
+          Validation: version updater unit tests and git diff --check.
+          Review and run/approve the normal PR checks before merging. Create the release tag
+          on the merged commit separately; this workflow does not publish a release.
+          EOF
+          url=$(gh pr create --repo "$REPOSITORY" --base main --head "$branch" \
+            --title "chore: prepare app version $VERSION_NAME" --body-file "$RUNNER_TEMP/version-pr.md")
+          printf 'Version update PR: %s\n' "$url" >> "$GITHUB_STEP_SUMMARY"

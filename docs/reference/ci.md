@@ -76,3 +76,30 @@ are not a substitute for a hosted Actions run.
 
 See GitHub's [workflow syntax](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax)
 and [concurrency documentation](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
+
+## Prepare an app version
+
+Run **Actions → Update app version → Run workflow** on `main`. Enter a stable
+`major.minor.patch` version (for example `0.7.0`). Leave `version_code` empty to
+increment Android's current code, or enter a larger integer (maximum 2100000000).
+The updater rejects equal/older versions, malformed inputs and inconsistent metadata
+before changing files. It updates `app/build.gradle.kts`, appends a new F-Droid build
+recipe copied from the current recipe, and updates F-Droid's current-version fields.
+Existing recipes remain available for older tags.
+
+The workflow opens `release/version-<version>` as a PR against `main`. It uses the
+repository's `GITHUB_TOKEN`; enable **Settings → Actions → General → Workflow
+permissions → Allow GitHub Actions to create and approve pull requests**. Review the
+PR and approve its workflow runs if GitHub requests approval. If checks are not
+scheduled by your GitHub configuration, close and reopen the PR as a maintainer to
+trigger the normal `pull_request` checks. See GitHub's
+[workflow triggering rules](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
+An existing version branch is never overwritten; after a partial run, open the PR
+from that branch manually or choose a fresh version. Runs are serialized, and
+branch protection still controls merging.
+
+After checks pass, merge the PR and separately create `v<version>` on the merged
+release commit. This triggers the existing F-Droid tag build. The version workflow
+creates neither tags nor releases and does not automatically merge the PR.
+Local equivalent: `python3 tools/update_app_version.py --version-name 0.7.0`
+(with optional `--version-code 8`), then review both files before committing.
