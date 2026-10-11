@@ -80,7 +80,8 @@ There is no separate Kotlin installation step: Gradle resolves the version pinne
 
 CI benchmark APKs use a separately configured private signing identity so successive artifacts
 can replace an existing installation. Artifact names distinguish **signed** APKs from
-**unsigned, non-installable** validation builds. See [benchmark signing and updates](benchmark_signing.md)
+**unsigned, non-installable** validation builds. Generate the private setup bundle with
+`python3 tools/generate_benchmark_signing_env.py`; see [benchmark signing and updates](benchmark_signing.md)
 for the one-time CI setup, migration from older random-key artifacts, and installer diagnostics.
 
 ## Run checks

@@ -18,53 +18,87 @@ diagnosed separately rather than assuming every failure is a certificate mismatc
 
 ## One-time setup for installable CI artifacts
 
-Use a dedicated private benchmark keystore and retain a backup. Reuse an existing benchmark
-signing identity if its private key is available. Otherwise, create one locally with JDK keytool:
+Run the setup generator from the repository root with Python 3.10+ and JDK keytool (set `JAVA_HOME`
+if keytool is not on PATH). It creates a dedicated RSA-3072 benchmark identity and random passwords:
 
 ```bash
-mkdir -p keystore
-keytool -genkeypair -storetype JKS -keystore keystore/benchmark.jks \
-  -alias imunav-benchmark -keyalg RSA -keysize 3072 -validity 10000 \
-  -dname "CN=IMU Nav Benchmark"
+python3 tools/generate_benchmark_signing_env.py
 ```
 
-Keytool prompts for the passwords. Keep the keystore and its base64 copy inside the ignored
-`keystore/` directory; never commit or attach either file. Encode the file without printing it:
+On Windows use `python` instead of `python3`, or `uv run python` if Python is managed by uv.
+The generator does not print credentials or upload them. It writes this bundle to the ignored
+`keystore/benchmark-signing/` directory:
+
+| File | Purpose |
+| --- | --- |
+| `benchmark.jks` | Durable private signing key; retain a secure backup |
+| `env.sh` | Bash/POSIX exports for the existing APK signer |
+| `env.ps1` | PowerShell exports, also readable by Windows PowerShell 5.1 |
+| `github-settings.json` | Four Actions secret values and the public certificate variable |
+
+The directory is owner-only: POSIX permissions are `0700`/`0600`, and Windows uses a current-user
+ACL before writing secrets. Treat **all** bundle files as private, including the environment
+exports and JSON. Back up the bundle securely; never commit, attach or upload it as a build artifact.
+
+If a signing identity already exists, reuse it rather than generating a replacement:
 
 ```bash
-python3 -c 'import base64, pathlib; pathlib.Path("keystore/benchmark.base64").write_bytes(base64.b64encode(pathlib.Path("keystore/benchmark.jks").read_bytes()))'
+python3 tools/generate_benchmark_signing_env.py \
+  --keystore keystore/benchmark.jks --alias imunav-benchmark
 ```
 
-Set these **repository Actions secrets** in `egorsmkv/imu-nav`:
+Reuse prompts for masked passwords. Press Enter at the private-key prompt if it uses the same
+password as the store. Noninteractive reuse requires `IMUNAV_BENCHMARK_STORE_PASSWORD` and
+`IMUNAV_BENCHMARK_KEY_PASSWORD` in the environment. The source keystore is unchanged, and the
+generator verifies access to the private key, not just its public certificate.
+
+An existing output directory is never overwritten. Load its environment files directly when it
+is already configured; `--output-dir keystore/another-bundle` can export a reused identity elsewhere.
+Outputs inside this checkout must remain under `keystore/`. A loaded certificate pin is checked
+when reusing a key, and loaded signing credentials block accidental new-key generation.
+
+Set these **repository Actions secrets** in `egorsmkv/imu-nav` from the JSON `secrets` object:
 
 | Secret | Value |
 | --- | --- |
-| `BENCHMARK_KEYSTORE_BASE64` | Contents of the base64 file |
+| `BENCHMARK_KEYSTORE_BASE64` | Base64-encoded keystore |
 | `BENCHMARK_STORE_PASSWORD` | Keystore password |
-| `BENCHMARK_KEY_ALIAS` | `imunav-benchmark`, or the alias of the reused key |
+| `BENCHMARK_KEY_ALIAS` | Signing alias |
 | `BENCHMARK_KEY_PASSWORD` | Private-key password |
 
-GitHub CLI can read the file directly and prompt for the other values:
+Set the public **Actions variable** `BENCHMARK_CERT_SHA256` from the JSON `variables` object to
+detect an accidental identity change. It is optional in CI, but the generator supplies it and the
+local exports always pin it. Configure secrets yourself in repository settings or with GitHub CLI;
+the generator makes no GitHub API calls.
+
+For local signing, load the generated environment into the current shell:
 
 ```bash
-gh secret set BENCHMARK_KEYSTORE_BASE64 --repo egorsmkv/imu-nav < keystore/benchmark.base64
-gh secret set BENCHMARK_STORE_PASSWORD --repo egorsmkv/imu-nav
-gh secret set BENCHMARK_KEY_ALIAS --repo egorsmkv/imu-nav
-gh secret set BENCHMARK_KEY_PASSWORD --repo egorsmkv/imu-nav
+. keystore/benchmark-signing/env.sh
 ```
 
-To detect an accidental identity change, also pin the public certificate in the repository
-**Actions variable** `BENCHMARK_CERT_SHA256`. Export only the public certificate:
+PowerShell:
+
+```powershell
+. .\keystore\benchmark-signing\env.ps1
+```
+
+If PowerShell blocks the generated local script, use your permitted execution policy for the
+current process. The generator does not change system execution policies.
+
+These exports set all four `IMUNAV_BENCHMARK_*` credentials and `IMUNAV_BENCHMARK_CERT_SHA256` for
+`tools/benchmark_signing.py`. Build with `-PunsignedBenchmark`, then sign the resulting APK:
 
 ```bash
-keytool -exportcert -keystore keystore/benchmark.jks -alias imunav-benchmark \
-  -file keystore/benchmark-cert.der
-python3 -c 'import hashlib, pathlib; print(hashlib.sha256(pathlib.Path("keystore/benchmark-cert.der").read_bytes()).hexdigest())'
-gh variable set BENCHMARK_CERT_SHA256 --repo egorsmkv/imu-nav
+./gradlew :app:assembleFdroidBenchmark -PunsignedBenchmark
+python3 tools/benchmark_signing.py \
+  --apk app/build/outputs/apk/fdroid/benchmark/app-fdroid-benchmark-unsigned.apk \
+  --output-dir dist/benchmark \
+  --apksigner "$ANDROID_HOME/build-tools/36.0.0/apksigner"
 ```
 
-Use the printed fingerprint as the variable's value. The variable is optional, but if present it
-must match the signer. It contains no private key.
+Use an empty output directory for each signing operation. Shell exports apply only to the current
+shell and its children; close the shell that loaded the exports when finished.
 
 F-Droid CI and the manual bundled-map workflow both build with `-PunsignedBenchmark` and then run
 `tools/benchmark_signing.py`. The signer restores the private key only in an owner-only temporary
