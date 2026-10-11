@@ -29,6 +29,7 @@ import org.imunav.app.diagnostics.DevDiagnostics
 import org.imunav.app.diagnostics.ProfileCapture
 import org.imunav.app.haptics.Haptics
 import org.imunav.app.location.MockLocationSharing
+import org.imunav.app.maps.MapDisplayPreferences
 import org.imunav.app.maps.OfflineMap
 import org.imunav.app.nativecore.NativeEstimatorBridge
 import org.imunav.app.nativecore.NativeNetworkTracker
@@ -225,6 +226,7 @@ class AppGraph(private val context: Context) {
     private val nativeRouteProjector = NativeRouteProjector()
 
     /** Where the map opens (Settings → Map start). */
+    val mapDisplay = MapDisplayPreferences(context)
     val mapStart = MapStartPrefs(context, serviceArea)
     val mapStartMode = MutableStateFlow(mapStart.mode)
     val mapStartFixed = MutableStateFlow(mapStart.fixed)

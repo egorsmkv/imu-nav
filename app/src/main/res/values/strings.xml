@@ -768,4 +768,17 @@
     <string name="cells_no_signal">No usable cellular signal. Your position cannot be determined from cell towers.</string>
     <string name="cells_scan_failed">Cellular information is unavailable. Your position cannot be determined from cell towers.</string>
     <string name="cells_no_known_towers">Nearby cell towers are missing from the database. Your position cannot be determined from them.</string>
+
+    <!-- Map presentation -->
+    <string name="map_display_title">Map display</string>
+    <string name="map_buildings_3d">3D buildings</string>
+    <string name="map_buildings_3d_hint">Show 3D buildings where the map style provides them.</string>
+    <string name="map_car_perspective">Perspective while driving</string>
+    <string name="map_car_perspective_hint">Tilt the map in the direction of travel during car navigation.</string>
+    <string name="map_automatic_zoom">Automatic navigation zoom</string>
+    <string name="map_automatic_zoom_hint">Show more road at higher speeds. Manual zoom pauses this until you tap Recenter.</string>
+    <string name="map_hide_tower_button">Hide tower button during navigation</string>
+    <string name="map_hide_tower_button_hint">Keep the tower button available when browsing the map. Tower positioning is unaffected.</string>
+    <string name="map_hide_zoom_buttons">Hide zoom buttons during navigation</string>
+    <string name="map_hide_zoom_buttons_hint">Hide + and − during a trip. Pinch to zoom remains available.</string>
 </resources>

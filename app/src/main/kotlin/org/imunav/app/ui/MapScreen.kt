@@ -86,6 +86,7 @@ import org.imunav.app.MapStartMode
 import org.imunav.app.R
 import org.imunav.app.UiState
 import org.imunav.core.geo.GeoPoint
+import org.imunav.core.nav.NavigationMapCamera
 import org.imunav.core.route.TravelMode
 
 internal val GoodGreen = Color(0xFF1E8E3E)
@@ -132,6 +133,7 @@ fun MapScreen(
     val power by app.powerProfile.collectAsStateWithLifecycle()
     val recordingStatus by app.trips.recordingStatus.collectAsStateWithLifecycle()
     val travelMode by app.travelMode.collectAsStateWithLifecycle()
+    val mapOptions by app.mapDisplay.options.collectAsStateWithLifecycle()
     val offlineMapStatus by app.offlineMap.status.collectAsStateWithLifecycle()
     val activityPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         app.tripLog.write("activity_permission granted=$granted")
@@ -166,8 +168,10 @@ fun MapScreen(
 
     LaunchedEffect(nav.active) {
         if (nav.active && !wasNavigating) following = true
+        controller.followZoom = null
         wasNavigating = nav.active
     }
+    LaunchedEffect(nav.travelMode, mapOptions.automaticZoom) { controller.followZoom = null }
     // A newly opened navigation panel or warning must start with its summary visible.
     LaunchedEffect(nav.active, nav.arrived, recordingStatus) { panelScroll.scrollTo(0) }
     LaunchedEffect(nav.active, hasLocation, ui.locationEnabled, recordingStatus) { headerScroll.scrollTo(0) }
@@ -215,8 +219,10 @@ fun MapScreen(
         val cameraTop = if (showControls && !landscape) topInsetPx else 0
         val cameraBottom = if (showControls && !landscape) bottomInsetPx else 0
         val cameraStart = if (showControls && landscape) bottomInsetWidthPx else overlayWidth
-        val showRecenter = ui.currentPosition != null && !(nav.active && following)
-        val mapButtonCount = if (showRecenter) 5 else 4
+        val showRecenter = ui.currentPosition != null && !(nav.active && following && controller.followZoom == null)
+        val showTowerButton = mapOptions.showTowerButton(nav.active)
+        val showZoomButtons = mapOptions.showZoomButtons(nav.active)
+        val mapButtonCount = 1 + (if (showTowerButton) 1 else 0) + (if (showZoomButtons) 2 else 0) + (if (showRecenter) 1 else 0)
         val controlsHeight = MapButtonSize * mapButtonCount + MapButtonSpacing * (mapButtonCount - 1)
         val topInset = with(LocalDensity.current) { cameraTop.toDp() }
         val bottomInset = with(LocalDensity.current) { bottomInsetPx.toDp() }
@@ -230,6 +236,7 @@ fun MapScreen(
         NavMap(
             controller = controller,
             dark = dark,
+            buildings3d = mapOptions.buildings3d,
             route = nav.route ?: ui.previewRoute,
             position = ui.currentPosition,
             accuracyM = accuracy,
@@ -259,7 +266,8 @@ fun MapScreen(
             animateCamera = power.animateCamera,
             initialCenter = startView.point,
             initialZoom = startView.zoom,
-            followZoomDefault = if (nav.travelMode == TravelMode.FOOT) 17.5 else 16.0,
+            followZoomDefault = NavigationMapCamera.zoom(nav.travelMode, nav.speedKmh, mapOptions.automaticZoom),
+            cameraTilt = NavigationMapCamera.tilt(nav.travelMode, nav.active, mapOptions.carPerspective),
             offlineStyleJson = if (offlineMapStatus.offlineInUse) app.offlineMap.styleJson(dark, mapCenter ?: startView.point) else null,
             active = mapActive && (searchTarget == null || landscape),
         )
@@ -354,14 +362,19 @@ fun MapScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 MapButton(Icons.Filled.Bookmark, stringResource(R.string.bookmarks), onClick = onOpenBookmarks)
-                MapButton(Icons.Filled.CellTower, stringResource(R.string.cd_towers), selected = ui.cells.showTowers) {
-                    app.cells.setShowTowers(!ui.cells.showTowers)
+                if (showTowerButton) {
+                    MapButton(Icons.Filled.CellTower, stringResource(R.string.cd_towers), selected = ui.cells.showTowers) {
+                        app.cells.setShowTowers(!ui.cells.showTowers)
+                    }
                 }
-                MapButton(Icons.Filled.Add, stringResource(R.string.cd_zoom_in)) { controller.zoomBy(1.0) }
-                MapButton(Icons.Filled.Remove, stringResource(R.string.cd_zoom_out)) { controller.zoomBy(-1.0) }
+                if (showZoomButtons) {
+                    MapButton(Icons.Filled.Add, stringResource(R.string.cd_zoom_in)) { controller.zoomBy(1.0) }
+                    MapButton(Icons.Filled.Remove, stringResource(R.string.cd_zoom_out)) { controller.zoomBy(-1.0) }
+                }
                 val pos = ui.currentPosition
                 if (pos != null && showRecenter) {
                     MapButton(Icons.Filled.MyLocation, stringResource(R.string.cd_recenter)) {
+                        controller.followZoom = null
                         if (nav.active) following = true else controller.moveTo(pos)
                     }
                 }

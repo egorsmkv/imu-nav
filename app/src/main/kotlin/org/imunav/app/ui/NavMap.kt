@@ -22,6 +22,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.imunav.app.MapStartPrefs
 import org.imunav.app.cells.TowerLayer
+import org.imunav.app.maps.BuildingVisibility
 import org.imunav.app.maps.MapMemoryCallbacks
 import org.imunav.app.maps.addNavigationLayers
 import org.imunav.app.maps.mapStyle
@@ -113,6 +114,9 @@ fun NavMap(
     offlineStyleJson: String? = null,
     /** False while another screen covers the map: rendering pauses (no GPU/battery use) but nothing is rebuilt. */
     active: Boolean = true,
+    buildings3d: Boolean = true,
+    /** Desired pitch, including zero when navigation stops or changes to walking. */
+    cameraTilt: Double = 0.0,
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current.density
@@ -244,6 +248,11 @@ fun NavMap(
         readyStyle = loaded
     }
 
+    val buildingVisibility = remember(readyStyle) { readyStyle?.let(::BuildingVisibility) }
+    LaunchedEffect(renderable, buildingVisibility, buildings3d) {
+        if (renderable) buildingVisibility?.apply(buildings3d)
+    }
+
     // Keep the followed position, compass and attribution inside the visible (uncovered) map area.
     LaunchedEffect(renderable, readyStyle, insetTopPx, insetBottomPx, cameraInsetStartPx, cameraInsetBottomPx) {
         if (!renderable) return@LaunchedEffect
@@ -296,7 +305,14 @@ fun NavMap(
         }
     }
 
-    LaunchedEffect(renderable, readyStyle, position, bearingDeg, following, controller.followZoom, animateCamera, followZoomDefault) {
+    // Apply pitch even without a position or while panned away, so stopping a trip restores 2D.
+    LaunchedEffect(renderable, readyStyle, cameraTilt) {
+        if (!renderable || readyStyle == null) return@LaunchedEffect
+        val m = controller.map ?: return@LaunchedEffect
+        m.moveCamera(CameraUpdateFactory.newCameraPosition(CameraPosition.Builder(m.cameraPosition).tilt(cameraTilt).build()))
+    }
+
+    LaunchedEffect(renderable, readyStyle, position, bearingDeg, following, controller.followZoom, animateCamera, followZoomDefault, cameraTilt) {
         if (!renderable) return@LaunchedEffect
         val m = controller.map ?: return@LaunchedEffect
         if (!following || position == null || readyStyle == null) return@LaunchedEffect
@@ -306,8 +322,10 @@ fun NavMap(
         // Standing still: don't redraw the map for sub-meter / sub-degree changes.
         val moved = cam.target?.distanceTo(target) ?: Double.MAX_VALUE
         val turned = abs(((bearingDeg - cam.bearing + 540.0) % 360.0) - 180.0)
-        if (moved < 1.0 && turned < 2.0 && abs(cam.zoom - zoom) < 0.01) return@LaunchedEffect
-        val update = CameraUpdateFactory.newCameraPosition(CameraPosition.Builder().target(target).zoom(zoom).bearing(bearingDeg.toDouble()).build())
+        if (moved < 1.0 && turned < 2.0 && abs(cam.zoom - zoom) < 0.1 && abs(cam.tilt - cameraTilt) < 0.1) return@LaunchedEffect
+        val update = CameraUpdateFactory.newCameraPosition(
+            CameraPosition.Builder(cam).target(target).zoom(zoom).bearing(bearingDeg.toDouble()).tilt(cameraTilt).build(),
+        )
         if (animateCamera) m.animateCamera(update, 450) else m.moveCamera(update)
     }
 

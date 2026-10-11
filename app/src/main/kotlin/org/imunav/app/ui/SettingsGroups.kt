@@ -67,6 +67,7 @@ internal fun EverydaySettings(app: AppGraph, ui: UiState, context: Context, save
 
         // ---------------- Map start
         MapStartSection(app, ui)
+        MapDisplaySettings(app.mapDisplay)
 
         MockLocationSettings(app.mockLocationSharing)
 

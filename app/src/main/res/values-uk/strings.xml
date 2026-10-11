@@ -782,4 +782,17 @@
     <string name="cells_no_signal">Немає придатного стільникового сигналу. Неможливо визначити ваше місцезнаходження за вежами.</string>
     <string name="cells_scan_failed">Дані стільникової мережі недоступні. Неможливо визначити ваше місцезнаходження за вежами.</string>
     <string name="cells_no_known_towers">Найближчі вежі відсутні в базі даних. Неможливо визначити ваше місцезнаходження за ними.</string>
+
+    <!-- Map presentation -->
+    <string name="map_display_title">Вигляд карти</string>
+    <string name="map_buildings_3d">3D-будівлі</string>
+    <string name="map_buildings_3d_hint">Показувати об’ємні будівлі, якщо вони є у стилі карти.</string>
+    <string name="map_car_perspective">Перспектива за кермом</string>
+    <string name="map_car_perspective_hint">Нахиляти карту в напрямку руху під час автомобільної навігації.</string>
+    <string name="map_automatic_zoom">Автоматичний масштаб навігації</string>
+    <string name="map_automatic_zoom_hint">На більшій швидкості видно більше дороги. Ручний масштаб призупиняє автомасштаб до натискання кнопки центрування.</string>
+    <string name="map_hide_tower_button">Приховати кнопку вишок під час навігації</string>
+    <string name="map_hide_tower_button_hint">Кнопка залишається доступною під час перегляду карти. Визначення позиції за вишками працює без змін.</string>
+    <string name="map_hide_zoom_buttons">Приховати кнопки масштабу під час навігації</string>
+    <string name="map_hide_zoom_buttons_hint">Приховати + та − під час поїздки. Масштабування двома пальцями залишається доступним.</string>
 </resources>
