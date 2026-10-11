@@ -87,15 +87,19 @@ before changing files. It updates `app/build.gradle.kts`, appends a new F-Droid 
 recipe copied from the current recipe, and updates F-Droid's current-version fields.
 Existing recipes remain available for older tags.
 
-The workflow opens `release/version-<version>` as a PR against `main`. It uses the
-repository's `GITHUB_TOKEN`; enable **Settings → Actions → General → Workflow
-permissions → Allow GitHub Actions to create and approve pull requests**. Review the
+The workflow pushes `release/version-<version>` and attempts to open a PR against `main`.
+It uses the repository's `GITHUB_TOKEN`; for automatic PR creation, enable
+**Settings → Actions → General → Workflow permissions → Allow GitHub Actions to
+create and approve pull requests**. If GitHub rejects PR creation because this setting
+is disabled, the run succeeds with a warning and a manual PR link in the workflow
+summary. Other PR creation errors still fail the run; the summary retains the manual
+link so the pushed branch can be recovered. Review the
 PR and approve its workflow runs if GitHub requests approval. If checks are not
 scheduled by your GitHub configuration, close and reopen the PR as a maintainer to
 trigger the normal `pull_request` checks. See GitHub's
 [workflow triggering rules](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
 An existing version branch is never overwritten; after a partial run, open the PR
-from that branch manually or choose a fresh version. Runs are serialized, and
+from that branch manually rather than rerunning the same version. Runs are serialized, and
 branch protection still controls merging.
 
 After checks pass, merge the PR and separately create `v<version>` on the merged

@@ -45,6 +45,7 @@ jobs:
       - name: Open version update pull request
         env:
           REPOSITORY: ${{ github.repository }}
+          SERVER_URL: ${{ github.server_url }}
         run: |
           branch="release/version-$VERSION_NAME"
           git switch -c "$branch"
@@ -61,6 +62,16 @@ jobs:
           Review and run/approve the normal PR checks before merging. Create the release tag
           on the merged commit separately; this workflow does not publish a release.
           EOF
-          url=$(gh pr create --repo "$REPOSITORY" --base main --head "$branch" \
-            --title "chore: prepare app version $VERSION_NAME" --body-file "$RUNNER_TEMP/version-pr.md")
-          printf 'Version update PR: %s\n' "$url" >> "$GITHUB_STEP_SUMMARY"
+          manual_url="$SERVER_URL/$REPOSITORY/compare/main...$branch?expand=1"
+          printf 'Version branch prepared. [Open a pull request manually](%s).\n' "$manual_url" >> "$GITHUB_STEP_SUMMARY"
+          if url=$(gh pr create --repo "$REPOSITORY" --base main --head "$branch" \
+            --title "chore: prepare app version $VERSION_NAME" --body-file "$RUNNER_TEMP/version-pr.md" \
+            2> "$RUNNER_TEMP/version-pr-error.txt"); then
+            printf 'Version update PR: %s\n' "$url" >> "$GITHUB_STEP_SUMMARY"
+          elif grep -Fq 'GitHub Actions is not permitted to create or approve pull requests' "$RUNNER_TEMP/version-pr-error.txt"; then
+            echo '::warning::Version branch pushed, but repository policy blocks automatic PR creation. Open the PR using the workflow summary link.'
+            printf '\nAutomatic PR creation is disabled. To enable it, select **Settings → Actions → General → Workflow permissions → Allow GitHub Actions to create and approve pull requests**.\n' >> "$GITHUB_STEP_SUMMARY"
+          else
+            cat "$RUNNER_TEMP/version-pr-error.txt" >&2
+            exit 1
+          fi
