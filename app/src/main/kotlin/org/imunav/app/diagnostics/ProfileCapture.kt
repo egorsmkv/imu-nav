@@ -13,16 +13,16 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.imunav.app.BuildConfig
 import org.imunav.app.nativecore.NativeProfiler
+import org.imunav.core.diagnostics.CaptureQueue
 import org.imunav.core.diagnostics.ProfileSampling
 import org.imunav.core.record.TripEvent
 import org.imunav.core.record.TripFormat
+import org.imunav.core.record.recordingWeight
 import org.json.JSONObject
 import java.io.BufferedWriter
 import java.io.File
 import java.nio.charset.StandardCharsets
-import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.zip.ZipEntry
@@ -63,7 +63,7 @@ class ProfileCapture(private val context: Context, private val renderingMetadata
                 check(root.isDirectory || root.mkdirs())
                 val directory = File(root, "session-${System.currentTimeMillis()}")
                 check(directory.mkdir())
-                val session = CaptureSession(directory)
+                val session = CaptureSession(directory) { failed -> control.execute { writerFailed(failed) } }
                 started = session
                 File(directory, "started.json").writeText(
                     JSONObject().put("schema", 2).put("start_wall_ms", System.currentTimeMillis())
@@ -81,7 +81,6 @@ class ProfileCapture(private val context: Context, private val renderingMetadata
             }.onFailure { failure ->
                 active = null
                 started?.close()
-                started?.directory?.deleteRecursively()
                 runCatching { NativeProfiler.stop() }
                 _status.value = ProfileStatus(ProfilePhase.ERROR, detail = failure.javaClass.simpleName)
             }
@@ -95,18 +94,30 @@ class ProfileCapture(private val context: Context, private val renderingMetadata
         control.execute {
             val session = active ?: return@execute
             active = null
-            val traceError = session.traceError
-            if (traceError == null) {
-                runCatching { Debug.stopMethodTracing() }.onFailure { session.traceError = it.javaClass.simpleName }
-            }
-            runCatching { File(session.directory, "native-timings.json").writeText(NativeProfiler.stop()) }
-                .onFailure { session.nativeError = it.javaClass.simpleName }
-            session.close()
-            runCatching {
-                val archive = packageSession(session.directory, interrupted = false, session)
-                _status.value = ProfileStatus(ProfilePhase.READY, archive)
-            }.onFailure { _status.value = ProfileStatus(ProfilePhase.ERROR, detail = it.javaClass.simpleName) }
+            finishSession(session, interrupted = session.streamError != null)
         }
+    }
+
+    /** Failure cleanup belongs to the serial control owner, never to the dead writer or navigation producers. */
+    private fun writerFailed(session: CaptureSession) {
+        if (active !== session) return
+        active = null
+        _status.value = ProfileStatus(ProfilePhase.FINISHING)
+        finishSession(session, interrupted = true)
+    }
+
+    private fun finishSession(session: CaptureSession, interrupted: Boolean) {
+        if (session.traceError == null) {
+            runCatching { Debug.stopMethodTracing() }.onFailure { session.traceError = it.javaClass.simpleName }
+        }
+        runCatching { File(session.directory, "native-timings.json").writeText(NativeProfiler.stop()) }
+            .onFailure { session.nativeError = it.javaClass.simpleName }
+        session.close()
+        val partial = interrupted || session.streamError != null
+        runCatching {
+            val archive = packageSession(session.directory, partial, session)
+            _status.value = ProfileStatus(if (partial) ProfilePhase.INTERRUPTED else ProfilePhase.READY, archive)
+        }.onFailure { _status.value = ProfileStatus(ProfilePhase.ERROR, detail = it.javaClass.simpleName) }
     }
 
     /** Event callback from the trip recorder; a mid-trip session deliberately excludes earlier data. */
@@ -220,13 +231,15 @@ class ProfileCapture(private val context: Context, private val renderingMetadata
         }
     }
 
-    private sealed interface Entry {
+    /** Unencoded inputs let admission account for retained payloads without work on producer threads. */
+    internal sealed interface Entry {
         data class Event(val value: TripEvent) : Entry
         data class Log(val value: String) : Entry
     }
 
-    private class CaptureSession(val directory: File) {
-        private val queue = ArrayBlockingQueue<Entry>(QUEUE_SIZE)
+    /** Owns one writer and notifies its control owner exactly once after terminal stream failure. */
+    internal class CaptureSession(val directory: File, private val failed: (CaptureSession) -> Unit) {
+        private val queue = CaptureQueue<Entry>(QUEUE_SIZE, QUEUE_BYTES)
         private val running = AtomicBoolean(true)
         val dropped = AtomicLong()
 
@@ -241,16 +254,30 @@ class ProfileCapture(private val context: Context, private val renderingMetadata
         @Volatile var droppedEvents = 0L
 
         @Volatile var droppedMemory = 0L
-        private val worker = Thread({ runCatching { writeLoop() }.onFailure { streamError = it.javaClass.simpleName } }, "ProfileCapture")
+        private val worker = Thread({
+            runCatching { writeLoop() }.onFailure {
+                streamError = it.javaClass.simpleName
+                running.set(false)
+                dropped.addAndGet(queue.close(discard = true).toLong())
+                failed(this)
+            }
+        }, "ProfileCapture")
 
         fun start() = worker.start()
 
-        fun offer(entry: Entry) {
-            if (running.get() && !queue.offer(entry)) dropped.incrementAndGet()
+        fun offer(entry: Entry): Boolean {
+            val weight = when (entry) {
+                is Entry.Event -> entry.value.recordingWeight()
+                is Entry.Log -> 256L + 2L * entry.value.length
+            }
+            val accepted = queue.offer(entry, weight)
+            if (!accepted) dropped.incrementAndGet()
+            return accepted
         }
 
         fun close() {
             running.set(false)
+            queue.close()
             worker.join()
         }
 
@@ -274,18 +301,18 @@ class ProfileCapture(private val context: Context, private val renderingMetadata
                 "summary_java_heap_kb,summary_native_heap_kb,summary_graphics_kb,summary_code_kb,summary_private_other_kb,summary_stack_kb,summary_system_kb,memory_sample_duration_ms\n"
             memory.write(header)
             memoryBytes = header.toByteArray(StandardCharsets.UTF_8).size.toLong()
-            while (running.get() || queue.isNotEmpty()) {
+            while (running.get() || queue.stats.items > 0) {
                 val now = SystemClock.elapsedRealtime()
                 sampling.next(now)?.let { sampleMemory(now, memory, it == ProfileSampling.Kind.DETAILED) }
-                when (val entry = queue.poll(500, TimeUnit.MILLISECONDS)) {
-                    is Entry.Log -> writeLog(entry.value, logs)
-
-                    is Entry.Event -> writeEvent(entry.value, events)
-
-                    null -> {
-                        logs.flush()
-                        events.flush()
+                val consumed = queue.consume(500) { entry ->
+                    when (entry) {
+                        is Entry.Log -> writeLog(entry.value, logs)
+                        is Entry.Event -> writeEvent(entry.value, events)
                     }
+                }
+                if (!consumed) {
+                    logs.flush()
+                    events.flush()
                 }
             }
             val finished = SystemClock.elapsedRealtime()
@@ -359,6 +386,7 @@ class ProfileCapture(private val context: Context, private val renderingMetadata
         const val EVENT_LIMIT_BYTES = 16L * 1024 * 1024
         const val MEMORY_LIMIT_BYTES = 1L * 1024 * 1024
         const val QUEUE_SIZE = 4_096
+        const val QUEUE_BYTES = 8L * 1024 * 1024
         const val MAX_ARCHIVES = 3
         const val SHARE_RETENTION_MS = 7L * 24 * 60 * 60 * 1000
     }

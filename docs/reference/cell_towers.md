@@ -164,3 +164,12 @@ public downloads. Password-reset email needs SMTP configuration; see the
 
 Main navigation thresholds live in `core/.../Tuning.kt` (defaults = factory preset) and `TrustConfig`.
 The separate inertial experiment keeps its provisional noise densities in `InertialTuning`.
+
+## Scanner callback ownership
+
+Cell scanning admits one outstanding modem batch across all SIMs. Polls coalesce until every
+callback in that batch has returned. Stopping sensing invalidates its generation immediately;
+queued scans and late callbacks cannot publish fixes or admit usage writes into a new sensing
+session. Main-thread delivery rechecks the generation, and a fresh generation resets the modem
+measurement cache. Storage work already admitted before stop may finish; callbacks that arrive
+after stop are discarded. Scan intervals continue to come from the active power profile.

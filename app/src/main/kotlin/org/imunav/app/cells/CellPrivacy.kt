@@ -1,13 +1,20 @@
 package org.imunav.app.cells
 
 import android.content.Context
+import android.content.SharedPreferences
 import androidx.core.content.edit
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
+import org.imunav.core.diagnostics.DiagnosticOwner
+import org.imunav.core.diagnostics.DiagnosticOwnerChanged
+import org.imunav.core.diagnostics.DiagnosticRequestGate
 import org.imunav.core.net.Http
 import org.imunav.core.net.HttpException
+import org.imunav.core.privacy.ConsentLedger
+import org.imunav.core.privacy.ConsentStorage
 import org.json.JSONObject
 import java.io.IOException
 
@@ -35,113 +42,119 @@ data class CellPrivacyNotice(
 }
 
 /** Keeps per-purpose choices local as well as on the server so a withdrawal stops capture immediately. */
-internal class CellPrivacy(context: Context, private val auth: CellAuth) {
-    private val prefs = context.getSharedPreferences("cell_privacy", Context.MODE_PRIVATE)
+internal class CellPrivacy(private val prefs: SharedPreferences, private val auth: PrivacyAccount) {
+    constructor(context: Context, auth: CellAuth) : this(context.getSharedPreferences("cell_privacy", Context.MODE_PRIVATE), auth)
 
-    /** Fetch public notice before registration or an upload decision. Local test servers may omit it. */
+    private val ledger = ConsentLedger(object : ConsentStorage {
+        override fun read(key: String): String? = prefs.getString(key, null)
+        override fun write(values: Map<String, String?>) = prefs.edit {
+            values.forEach { (key, value) -> if (value == null) remove(key) else putString(key, value) }
+        }
+    })
+    private val requests = DiagnosticRequestGate(auth::diagnosticOwner) { true }
+
+    init {
+        auth.onPrivacyIdentityChanged = requests::cancelAll
+    }
+
+    /** Notice capability belongs to a server; personal receipts always belong to an authenticated owner. */
     fun notice(url: String): CellPrivacyNotice? {
-        val response = request(url, "/v1/privacy", "GET", null, null) ?: run {
-            prefs.edit { putBoolean("local:$url", true) }
+        val base = url.trim().trimEnd('/')
+        val response = request(base, "/v1/privacy", "GET", null, null) ?: run {
+            prefs.edit { putBoolean("local:$base", true) }
             return null
         }
-        prefs.edit { putBoolean("local:$url", false) }
-        refreshRemote(url)
+        prefs.edit { putBoolean("local:$base", false) }
+        refreshRemote(base)
         return parseNotice(response)
     }
 
-    /** Reconcile browser withdrawals and notice changes before the app uses cached consent. */
+    /** Reconcile browser withdrawals only into the account whose token fetched the response. */
     fun refreshRemote(url: String) {
-        if (auth.email == null || auth.serverUrl != url.trim().trimEnd('/')) return
-        val token = auth.accessToken(url) ?: run {
-            clearLocalGrants(url)
+        val owner = owner(url) ?: return
+        val token = auth.diagnosticAccessToken(owner) ?: return
+        val receipts = receiptStamps(owner)
+        val state = request(owner.server, "/v1/privacy/me", "GET", token, null, owner) ?: run {
+            if (request(owner.server, "/v1/privacy", "GET", null, null) != null) clearLocalGrants(owner, receipts)
             return
         }
-        val state = request(url, "/v1/privacy/me", "GET", token, null) ?: run {
-            if (request(url, "/v1/privacy", "GET", null, null) != null) clearLocalGrants(url)
-            return
+        reconcile(owner, state, receipts)
+    }
+
+    fun canUpload(url: String, token: String): Boolean = canSend(url, token, "tower_upload")
+
+    fun canSendDiagnostics(url: String, token: String): Boolean = canSend(url, token, "diagnostics")
+
+    private fun canSend(url: String, token: String, purpose: String): Boolean {
+        val owner = auth.ownerForToken(url, token) ?: return false
+        if (ledger.pending(owner, purpose) != null) return false
+        val receipts = receiptStamps(owner)
+        val response = request(owner.server, "/v1/privacy/me", "GET", token, null, owner)
+        if (response == null) {
+            return notice(owner.server) == null && auth.diagnosticOwner() == owner &&
+                (purpose == "tower_upload" || ledger.granted(owner, purpose, LOCAL_VERSION))
         }
-        reconcile(url, state)
-    }
-
-    /** Check the current server version and receipt before every tower upload. */
-    fun canUpload(url: String, token: String): Boolean {
-        val response = request(url, "/v1/privacy/me", "GET", token, null) ?: return notice(url) == null
-        reconcile(url, response)
+        reconcile(owner, response, receipts)
         val notice = parseNotice(response.getJSONObject("notice"))
-        return response.optBoolean("tower_upload") && locallyGranted(url, "tower_upload", notice.version)
+        return response.optBoolean(purpose) && ledger.granted(owner, purpose, notice.version) && auth.diagnosticOwner() == owner
     }
 
-    /** A browser withdrawal must also stop future diagnostic sends from this installation. */
-    fun canSendDiagnostics(url: String, token: String): Boolean {
-        val response = request(url, "/v1/privacy/me", "GET", token, null) ?: return notice(url) == null
-        reconcile(url, response)
-        val notice = parseNotice(response.getJSONObject("notice"))
-        return response.optBoolean("diagnostics") && locallyGranted(url, "diagnostics", notice.version)
-    }
-
-    /** Capture stays disabled until a successful grant for this selected server and notice version. */
+    /** Legacy URL-only receipts cannot establish consent for any current account. */
     fun canCaptureDiagnostics(url: String): Boolean {
-        if (prefs.getBoolean("local:$url", false)) return true
-        val version = prefs.getString("version:$url", null) ?: return false
-        return locallyGranted(url, "diagnostics", version)
+        val owner = owner(url) ?: return false
+        val version = ledger.version(owner, "diagnostics") ?: return false
+        return ledger.granted(owner, "diagnostics", version)
     }
 
-    /** Whether this device has a current local receipt for the purpose. */
-    fun isGranted(url: String, purpose: String, version: String): Boolean = locallyGranted(url, purpose, version)
+    fun isGranted(url: String, purpose: String, version: String): Boolean = owner(url)?.let { ledger.granted(it, purpose, version) } == true
 
-    /** Submit a fresh receipt; a changed notice must be shown again before retrying. */
-    fun grant(url: String, purpose: String, version: String) {
-        val token = auth.accessToken(url) ?: throw IOException("Sign in to grant consent")
-        val body = JSONObject().put("notice_version", version).toString()
-        request(url, "/v1/privacy/consents/$purpose", "PUT", token, body)
-        if (purpose == "tower_upload" && auth.emailVerified) auth.markSharingEnabled()
-        prefs.edit {
-            putString("version:$url", version)
-            putBoolean("grant:$url:$purpose", true)
+    /** Confirmation must still belong to the same server/account that displayed the notice. */
+    fun grant(expected: DiagnosticOwner, purpose: String, version: String) {
+        if (auth.diagnosticOwner() != expected) throw DiagnosticOwnerChanged()
+        flushWithdrawals(expected.server)
+        val token = auth.diagnosticAccessToken(expected) ?: throw DiagnosticOwnerChanged()
+        if (!prefs.getBoolean("local:${expected.server}", false)) {
+            val body = JSONObject().put("notice_version", version).toString()
+            request(expected.server, "/v1/privacy/consents/$purpose", "PUT", token, body, expected)
         }
+        if (auth.diagnosticOwner() != expected || !ledger.grant(expected, purpose, version)) throw DiagnosticOwnerChanged()
+        if (purpose == "tower_upload") auth.markSharingEnabled(expected)
     }
 
-    /** Stop locally first, then queue server erasure until the authenticated request succeeds. */
+    /** Keep the originating owner and intent until that same account's deletion succeeds. */
     fun withdrawLocally(url: String, purpose: String) {
-        prefs.edit {
-            putBoolean("grant:$url:$purpose", false)
-            putBoolean("pending:$url:$purpose", !prefs.getBoolean("local:$url", false))
-        }
+        val owner = owner(url) ?: return
+        ledger.withdraw(owner, purpose)
     }
 
-    /** Retry a pending erasure when a valid account session and network become available. */
     fun flushWithdrawals(url: String) {
-        if (url.isBlank()) return
-        val token = auth.accessToken(url) ?: return
+        val owner = owner(url) ?: return
         for (purpose in listOf("tower_upload", "diagnostics")) {
-            if (!prefs.getBoolean("pending:$url:$purpose", false)) continue
+            val intent = ledger.pending(owner, purpose) ?: continue
+            val token = auth.diagnosticAccessToken(owner) ?: return
             try {
-                request(url, "/v1/privacy/consents/$purpose", "DELETE", token, null)
+                request(owner.server, "/v1/privacy/consents/$purpose", "DELETE", token, null, owner)
             } catch (error: HttpException) {
-                if (error.code != 404 || notice(url) != null) throw error
+                if (error.code != 404 || notice(owner.server) != null) throw error
             }
-            prefs.edit { putBoolean("pending:$url:$purpose", false) }
+            if (auth.diagnosticOwner() == owner) ledger.acknowledge(owner, purpose, intent)
         }
     }
 
-    private fun locallyGranted(url: String, purpose: String, version: String): Boolean =
-        prefs.getString("version:$url", null) == version && prefs.getBoolean("grant:$url:$purpose", false) && !prefs.getBoolean("pending:$url:$purpose", false)
+    private fun owner(url: String): DiagnosticOwner? = auth.diagnosticOwner()?.takeIf { it.server == url.trim().trimEnd('/') }
 
-    private fun reconcile(url: String, state: JSONObject) {
+    private fun reconcile(owner: DiagnosticOwner, state: JSONObject, receipts: Map<String, String?>) {
         val version = state.getJSONObject("notice").getString("version")
-        prefs.edit {
-            for (purpose in listOf("tower_upload", "diagnostics")) {
-                if (!state.optBoolean(purpose) || prefs.getString("version:$url", null) != version) {
-                    putBoolean("grant:$url:$purpose", false)
-                }
-            }
+        for (purpose in listOf("tower_upload", "diagnostics")) {
+            if (!state.optBoolean(purpose) || !ledger.granted(owner, purpose, version)) ledger.revokeIfUnchanged(owner, purpose, receipts[purpose])
         }
     }
 
-    private fun clearLocalGrants(url: String) = prefs.edit {
-        putBoolean("grant:$url:tower_upload", false)
-        putBoolean("grant:$url:diagnostics", false)
+    private fun clearLocalGrants(owner: DiagnosticOwner, receipts: Map<String, String?>) {
+        receipts.forEach { (purpose, stamp) -> ledger.revokeIfUnchanged(owner, purpose, stamp) }
     }
+
+    private fun receiptStamps(owner: DiagnosticOwner): Map<String, String?> = listOf("tower_upload", "diagnostics").associateWith { ledger.stamp(owner, it) }
 
     private fun parseNotice(value: JSONObject): CellPrivacyNotice = CellPrivacyNotice(
         version = value.getString("version"),
@@ -158,7 +171,7 @@ internal class CellPrivacy(context: Context, private val auth: CellAuth) {
         textRu = value.getString("notice_ru"),
     )
 
-    private fun request(url: String, path: String, method: String, token: String?, body: String?): JSONObject? {
+    private fun request(url: String, path: String, method: String, token: String?, body: String?, owner: DiagnosticOwner? = null): JSONObject? {
         val base = url.trim().trimEnd('/')
         val parsed = base.toHttpUrlOrNull() ?: throw IOException("Invalid sharing server URL")
         require(parsed.scheme == "https" || (parsed.scheme == "http" && parsed.host in setOf("localhost", "127.0.0.1", "10.0.2.2"))) {
@@ -167,19 +180,24 @@ internal class CellPrivacy(context: Context, private val auth: CellAuth) {
         val builder = Request.Builder().url(base + path)
         if (token != null) builder.header("Authorization", "Bearer $token")
         val requestBody = body?.toRequestBody("application/json".toMediaType())
-        val response = Http.client.newCall(builder.method(method, requestBody).build()).execute()
-        return response.use {
+        val call = Http.client.newCall(builder.method(method, requestBody).build())
+        val read: (Response) -> JSONObject? = {
             val source = it.body.source()
             if (source.request(MAX_RESPONSE_BYTES + 1L)) throw IOException("Sharing server notice is too large")
             val bytes = source.readByteArray()
             val text = bytes.toString(Charsets.UTF_8)
-            if (it.code == 404 && path in setOf("/v1/privacy", "/v1/privacy/me")) return@use null
-            if (!it.isSuccessful) throw HttpException(it.code, text.take(Http.ERROR_BODY_CHARS))
-            if (text.isBlank()) null else JSONObject(text)
+            if (it.code == 404 && path in setOf("/v1/privacy", "/v1/privacy/me")) {
+                null
+            } else {
+                if (!it.isSuccessful) throw HttpException(it.code, text.take(Http.ERROR_BODY_CHARS))
+                if (text.isBlank()) null else JSONObject(text)
+            }
         }
+        return if (owner == null) call.execute().use(read) else requests.execute(owner, call, read)
     }
 
-    private companion object {
-        const val MAX_RESPONSE_BYTES = 64 * 1024
+    companion object {
+        const val LOCAL_VERSION = "local"
+        private const val MAX_RESPONSE_BYTES = 64 * 1024
     }
 }

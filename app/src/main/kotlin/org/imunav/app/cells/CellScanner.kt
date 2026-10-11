@@ -23,8 +23,11 @@ import org.imunav.core.cells.Radio
 import org.imunav.core.cells.isFreshCellMeasurement
 import org.imunav.core.gnss.FixSource
 import org.imunav.core.gnss.RawFix
+import org.imunav.core.util.CallbackGeneration
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /** Signal power is normally negative in dBm; only Android's unavailable sentinel means missing. */
 internal fun cellSignalDbm(value: Int): Int? = value.takeUnless { it == Int.MAX_VALUE }
@@ -50,7 +53,9 @@ class CellScanner(
     private val telephony = context.getSystemService(TelephonyManager::class.java)
     private val subscriptions = context.getSystemService(SubscriptionManager::class.java)
 
-    private val measurements = CellMeasurementTracker()
+    private var measurements = CellMeasurementTracker()
+    private var measurementOwner: Any? = null // Scanner worker only.
+    private val callbacks = CallbackGeneration()
     private var lastScanLogMs = 0L
     private val worker = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
@@ -71,7 +76,7 @@ class CellScanner(
         override fun run() {
             if (!running) return
             // Asking the modem is a call into the phone service (100–300 ms); keep it off the main thread.
-            worker.execute { scan() }
+            callbacks.begin()?.let { work -> worker.execute { scan(work) } }
             main.postDelayed(this, intervalMs())
         }
     }
@@ -80,12 +85,14 @@ class CellScanner(
     fun start() {
         if (running || telephony == null) return
         running = true
+        callbacks.start()
         main.post(poll)
     }
 
     /** Stop scanning. */
     fun stop() {
         running = false
+        callbacks.stop()
         main.removeCallbacks(poll)
     }
 
@@ -101,22 +108,44 @@ class CellScanner(
 
     /** Ask the modem of every SIM for fresh cell info (answers arrive on [worker]). */
     @SuppressLint("MissingPermission")
-    private fun scan() {
-        for ((subId, tm) in managers()) {
-            if (Build.VERSION.SDK_INT >= 29) {
-                runCatching {
-                    Android10CellApi.requestUpdate(tm, worker, { onSimCells(subId, it) }) {
-                        runCatching { tm.allCellInfo }.getOrNull()?.let { onSimCells(subId, it) }
-                    }
-                }.onFailure { logScanFailure(subId, it) }
-            } else {
-                // Before Android 10 there is no asynchronous refresh API. Read the cached modem
-                // list on our worker so a slow radio service can never block the main thread.
-                worker.execute {
-                    runCatching { tm.allCellInfo.orEmpty() }
-                        .onSuccess { onSimCells(subId, it) }
-                        .onFailure { logScanFailure(subId, it) }
+    private fun scan(work: CallbackGeneration.Work) {
+        if (!work.current) {
+            work.finish()
+            return
+        }
+        if (measurementOwner !== work.owner) {
+            measurements = CellMeasurementTracker()
+            measurementOwner = work.owner
+        }
+        val managers = runCatching { managers() }.getOrElse {
+            logScanFailure(-1, it)
+            work.finish()
+            return
+        }
+        if (managers.isEmpty()) {
+            work.finish()
+            return
+        }
+        val remaining = AtomicInteger(managers.size)
+        for ((subId, tm) in managers) {
+            val completed = AtomicBoolean(false)
+            fun complete(read: () -> List<CellInfo>) {
+                if (!completed.compareAndSet(false, true)) return
+                try {
+                    if (work.current) runCatching(read).onSuccess { onSimCells(work, subId, it) }.onFailure { logScanFailure(subId, it) }
+                } finally {
+                    if (remaining.decrementAndGet() == 0) work.finish()
                 }
+            }
+            if (!work.current) {
+                complete { emptyList() }
+            } else if (Build.VERSION.SDK_INT >= 29) {
+                runCatching {
+                    Android10CellApi.requestUpdate(tm, worker, { cells -> complete { cells } }, { complete { tm.allCellInfo.orEmpty() } })
+                }.onFailure { error -> complete { throw error } }
+            } else {
+                // Already on the scanner worker; no second queued job can outlive this admission.
+                complete { tm.allCellInfo.orEmpty() }
             }
         }
     }
@@ -127,13 +156,15 @@ class CellScanner(
     }
 
     /** Runs on the worker thread: merge this SIM's cells with other SIMs' recent ones. */
-    private fun onSimCells(subId: Int, cells: List<CellInfo>) {
+    private fun onSimCells(work: CallbackGeneration.Work, subId: Int, cells: List<CellInfo>) {
+        if (!work.current) return
         val now = SystemClock.elapsedRealtime()
-        process(measurements.update(subId, toMeasurements(cells, now), now))
+        process(work, measurements.update(subId, toMeasurements(cells, now), now))
     }
 
     /** Runs on the worker thread: turn modem data into observations, a position fix and (sometimes) a log line. */
-    private fun process(cells: List<CellMeasurement>) {
+    private fun process(work: CallbackGeneration.Work, cells: List<CellMeasurement>) {
+        if (!work.current) return
         val observations = cells.map { it.observation }
         observations.firstOrNull { it.serving && it.key.mcc in 1..999 }?.let { onServingMcc(it.key.mcc) }
         val now = SystemClock.elapsedRealtime()
@@ -142,15 +173,16 @@ class CellScanner(
         val usable = observations.filter { it.key.radio in radios }
         lastUsable = usable
         val fix = runCatching { CellPositioner.locate(usable, db) }.getOrNull()
+        if (!work.current) return
         lastFix = fix
         if (now - lastScanLogMs >= SCAN_LOG_EVERY_MS) {
             lastScanLogMs = now
-            logScan(observations, radios)
+            logScan(work, observations, radios)
         }
         if (fix == null) return
         val raw = measurements.positionFix(fix, cells, SystemClock.elapsedRealtime(), System.currentTimeMillis()) ?: return
-        main.post { onFix(raw, fix) } // consumers expect the main thread
-        onUsage(raw, fix)
+        main.post { if (work.current) onFix(raw, fix) } // consumers expect the main thread
+        if (work.current) onUsage(raw, fix)
     }
 
     /**
@@ -158,7 +190,7 @@ class CellScanner(
      * radio:mcc-mnc/area/cell, signal in dBm, `*` = serving cell, then the database source letter
      * (`?` = unknown tower), `(off)` if that radio type is disabled in Settings.
      */
-    private fun logScan(observations: List<CellObservation>, radios: Set<Radio>) {
+    private fun logScan(work: CallbackGeneration.Work, observations: List<CellObservation>, radios: Set<Radio>) {
         val sources = observations.associate { it.key to runCatching { db.resolve(it.key)?.second }.getOrNull() }
         val cellsText = observations.joinToString(" ") { obs ->
             val key = obs.key
@@ -169,7 +201,7 @@ class CellScanner(
             "${key.radio}:${key.mcc}-${key.mnc}/${key.area}/${key.cid}$signal$serving$source$disabled"
         }
         val known = sources.values.count { it != null }
-        main.post { log("cell_scan seen=${observations.size} known=$known $cellsText") }
+        main.post { if (work.current) log("cell_scan seen=${observations.size} known=$known $cellsText") }
     }
 
     /** Check modem ages before conversion, including the serving cell used to infer neighbor operators. */

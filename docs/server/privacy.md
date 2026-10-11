@@ -53,3 +53,21 @@ Account synchronization has its own `account_sync` consent. It stores private pr
 ## Browser trip history
 
 See [private browser trip history](trip_history.md) for manual uploads, playback, storage limits, consent and deletion.
+
+## Android consent ownership
+
+The phone scopes local receipts and queued withdrawals by normalized server URL, account ID
+and opaque `sync_identity`. A queued withdrawal remains attached to its originating account;
+signing in to a different account cannot send or acknowledge it. Return to the original account
+to retry its pending deletion. A newer withdrawal cannot be cleared by an older response.
+
+Legacy URL-only receipts and pending withdrawals cannot establish an owner. The phone retains
+those records but does not replay their deletion requests or use them as consent. Confirm consent
+again for the current account; to repeat an old withdrawal, sign in to its original account and
+turn the relevant purpose off again, or use that server's account page. Servers without a stable
+account identity cannot safely support these account-owned operations; update the server first.
+
+Privacy prompts are bound to the server and account used to fetch the displayed notice. Editing
+the server or switching accounts invalidates the prompt. A delayed or cancelled fetch cannot
+confirm registration or a grant for a different identity. Local servers without a public notice
+also require a separate account-scoped diagnostic capture choice.

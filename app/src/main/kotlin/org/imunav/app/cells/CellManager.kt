@@ -198,8 +198,9 @@ class CellManager(private val context: Context, private val scope: CoroutineScop
     fun privacyGranted(purpose: String, version: String): Boolean = privacy.isGranted(diagnosticServerUrl(), purpose, version)
 
     /** Record a separate server receipt only after the person has read that notice. */
-    suspend fun grantPrivacyConsent(purpose: String, version: String) = withContext(Dispatchers.IO) {
-        privacy.grant(diagnosticServerUrl(), purpose, version)
+    suspend fun grantPrivacyConsent(purpose: String, version: String, expected: DiagnosticOwner) = withContext(Dispatchers.IO) {
+        check(diagnosticOwner() == expected) { "Privacy account changed" }
+        privacy.grant(expected, purpose, version)
     }
 
     /** Stop uploads locally before the queued server deletion is attempted. */

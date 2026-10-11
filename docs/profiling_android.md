@@ -112,3 +112,14 @@ Uploads are limited to 48 MiB per ZIP and share the diagnostics quota of 256 MiB
 per account. Retrying the same ZIP does not create another copy. Leaving the screen or changing
 accounts cancels the request; if the server already accepted it, it can still appear in Diagnostics.
 The local ZIP remains available for sharing.
+
+## Capture failures
+
+The capture queue admits at most 4,096 input payloads and 8 MiB of estimated retained data,
+including the payload currently being written. These estimates exclude encoded strings, method
+trace storage and packaging temporaries. If the stream writer fails, admission stops immediately
+and waiting input is released. The capture control worker stops tracing and native profiling,
+then packages recoverable files as an interrupted capture. If packaging also fails, the app
+reports an error and leaves the session files available for recovery on the next launch.
+Navigation continues independently. A write failure while finishing also produces an interrupted
+capture, rather than a completed archive.

@@ -20,7 +20,7 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 /** Keeps the renewable sharing session encrypted at rest while access tokens stay in memory. */
-internal class CellAuth(context: Context) {
+internal class CellAuth(context: Context) : PrivacyAccount {
     private val prefs = context.getSharedPreferences("cell_auth", Context.MODE_PRIVATE)
     private val sessionLock = Any()
     private var generation = 0L
@@ -31,8 +31,11 @@ internal class CellAuth(context: Context) {
     /** Cancel diagnostic requests immediately when authentication changes ownership. */
     @Volatile var onDiagnosticIdentityChanged: (() -> Unit)? = null
 
+    /** Privacy and diagnostics have separate cancellation owners. */
+    @Volatile override var onPrivacyIdentityChanged: (() -> Unit)? = null
+
     /** Capture all owner fields under the same lock as session replacement. */
-    fun diagnosticOwner(): DiagnosticOwner? = synchronized(sessionLock) {
+    override fun diagnosticOwner(): DiagnosticOwner? = synchronized(sessionLock) {
         val server = prefs.getString("url", null) ?: return null
         val id = prefs.getLong("account_id", 0)
         val identity = prefs.getString("sync_identity", "").orEmpty()
@@ -57,12 +60,15 @@ internal class CellAuth(context: Context) {
     }
 
     /** A successful tower consent re-enables sharing on the server when email is verified. */
-    fun markSharingEnabled() = prefs.edit { putBoolean("sharing_enabled", true) }
+    override fun markSharingEnabled(expected: DiagnosticOwner) = synchronized(sessionLock) {
+        if (diagnosticOwner() == expected && emailVerified) prefs.edit { putBoolean("sharing_enabled", true) }
+    }
 
     /** A changed server cannot receive a token issued by the previous server. */
     fun clear() = synchronized(sessionLock) {
         generation++
         onDiagnosticIdentityChanged?.invoke()
+        onPrivacyIdentityChanged?.invoke()
         access = null
         expiresAtMs = 0
         prefs.edit { clear() }
@@ -99,9 +105,14 @@ internal class CellAuth(context: Context) {
     }
 
     /** Bind the returned token and owner atomically, including account switches during a refresh. */
-    fun diagnosticAccessToken(expected: DiagnosticOwner): String? {
+    override fun diagnosticAccessToken(expected: DiagnosticOwner): String? {
         accessToken(expected.server) ?: return null
         return synchronized(sessionLock) { if (diagnosticOwner() == expected) access else null }
+    }
+
+    /** Identify a caller's token atomically so a late account-A response cannot reconcile account B's receipts. */
+    override fun ownerForToken(url: String, token: String): DiagnosticOwner? = synchronized(sessionLock) {
+        diagnosticOwner()?.takeIf { it.server == url.trim().trimEnd('/') && access == token }
     }
 
     /** Revoke the server session before discarding local credentials. Called on an I/O thread. */
@@ -131,7 +142,10 @@ internal class CellAuth(context: Context) {
             val account = body.getJSONObject("account")
             val identity = body.optString("sync_identity")
             val owner = identity.takeIf(String::isNotBlank)?.let { DiagnosticOwner(url.trim().trimEnd('/'), account.getLong("id"), it) }
-            if (diagnosticOwner() != owner) onDiagnosticIdentityChanged?.invoke()
+            if (diagnosticOwner() != owner) {
+                onDiagnosticIdentityChanged?.invoke()
+                onPrivacyIdentityChanged?.invoke()
+            }
             prefs.edit {
                 putString("url", url.trim().trimEnd('/'))
                 putString("email", body.getJSONObject("account").getString("email"))

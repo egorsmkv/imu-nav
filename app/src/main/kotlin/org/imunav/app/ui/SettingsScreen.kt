@@ -52,6 +52,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -68,17 +69,20 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.imunav.app.AppGraph
 import org.imunav.app.BuildConfig
 import org.imunav.app.R
 import org.imunav.app.UiState
+import org.imunav.app.cells.CellPrivacy
 import org.imunav.app.cells.CellPrivacyNotice
 import org.imunav.app.cells.CellSource
 import org.imunav.app.diagnostics.DiagnosticPhase
 import org.imunav.app.diagnostics.ProfilePhase
 import org.imunav.core.cells.Radio
+import org.imunav.core.privacy.ConsentNoticeRequest
 import java.text.NumberFormat
 
 private val RADIO_CHOICES = listOf(Radio.GSM to "2G", Radio.UMTS to "3G", Radio.LTE to "4G", Radio.NR to "5G")
@@ -110,7 +114,13 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
     var accountEmail by remember { mutableStateOf(c.accountEmail.orEmpty()) }
     var accountPassword by remember { mutableStateOf("") }
     var autoSync by remember { mutableStateOf(c.autoSync) }
-    var privacyNotice by remember { mutableStateOf<CellPrivacyNotice?>(null) }
+    var noticeResponse by remember { mutableStateOf<CellPrivacyNotice?>(null) }
+    var noticeSource by remember { mutableStateOf<ConsentNoticeRequest?>(null) }
+    var noticeRevision by remember { mutableLongStateOf(0L) }
+    var pendingNotice by remember { mutableStateOf<CellPrivacyNotice?>(null) }
+    var pendingRequest by remember { mutableStateOf<ConsentNoticeRequest?>(null) }
+    val consentOwner = mgr.diagnosticOwner()
+    val privacyNotice = noticeResponse?.takeIf { noticeSource?.matches(syncUrl, consentOwner) == true }
     var pendingPrivacyAction by remember { mutableStateOf<String?>(null) }
     var towerConsented by remember { mutableStateOf(false) }
     var diagnosticConsented by remember { mutableStateOf(false) }
@@ -132,21 +142,34 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
             scope.launch { snackbar.showSnackbar(resources.getString(R.string.privacy_sign_in_first)) }
             return
         }
+        val request = ConsentNoticeRequest(syncUrl.trim().trimEnd('/'), mgr.diagnosticOwner())
+        val revision = ++noticeRevision
         scope.launch {
-            val result = runCatching { mgr.privacyNotice(syncUrl) }
+            val result = runCatching { mgr.privacyNotice(request.server) }
+            result.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+            if (revision != noticeRevision || !request.matches(syncUrl, mgr.diagnosticOwner())) return@launch
             val notice = result.getOrNull()
             if (result.isFailure) {
                 snackbar.showSnackbar(resources.getString(R.string.privacy_notice_unavailable))
                 return@launch
             }
-            privacyNotice = notice
+            noticeSource = request
+            noticeResponse = notice
             if (notice == null && action == "register") {
                 save()
                 mgr.authenticate(accountEmail, accountPassword, register = true)
                 accountPassword = ""
             } else if (notice == null && action == "diagnostics") {
-                app.diagnostics.setEnabled(true)
+                val owner = request.owner ?: return@launch
+                runCatching { mgr.grantPrivacyConsent("diagnostics", CellPrivacy.LOCAL_VERSION, owner) }
+                    .onSuccess { if (request.matches(syncUrl, mgr.diagnosticOwner())) app.diagnostics.setEnabled(true) }
+                    .onFailure {
+                        if (it is CancellationException) throw it
+                        snackbar.showSnackbar(resources.getString(R.string.privacy_consent_failed))
+                    }
             } else if (notice != null) {
+                pendingRequest = request
+                pendingNotice = notice
                 pendingPrivacyAction = action
             } else {
                 snackbar.showSnackbar(resources.getString(R.string.privacy_notice_unavailable))
@@ -154,11 +177,20 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
         }
     }
 
-    LaunchedEffect(c.accountEmail, syncUrl, c.lastSync) {
+    LaunchedEffect(consentOwner, syncUrl, c.lastSync) {
+        pendingPrivacyAction = null
+        pendingRequest = null
+        pendingNotice = null
+        towerConsented = false
+        diagnosticConsented = false
         if (syncUrl.isBlank() || !accountUrlAllowed) return@LaunchedEffect
-        val result = runCatching { mgr.privacyNotice(syncUrl) }
-        privacyNotice = result.getOrNull()
-        val notice = privacyNotice ?: return@LaunchedEffect
+        val request = ConsentNoticeRequest(syncUrl.trim().trimEnd('/'), mgr.diagnosticOwner())
+        val result = runCatching { mgr.privacyNotice(request.server) }
+        result.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+        if (!request.matches(syncUrl, mgr.diagnosticOwner())) return@LaunchedEffect
+        noticeSource = request
+        noticeResponse = result.getOrNull()
+        val notice = noticeResponse ?: return@LaunchedEffect
         towerConsented = mgr.privacyGranted("tower_upload", notice.version)
         diagnosticConsented = mgr.privacyGranted("diagnostics", notice.version)
     }
@@ -330,6 +362,8 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                     )
                     Field(syncUrl, {
                         syncUrl = it
+                        noticeRevision++
+                        pendingPrivacyAction = null
                         save()
                     }, stringResource(R.string.sync_url), "https://cells.example.org", keyboard = KeyboardType.Uri)
                     if (syncUrl.trim().startsWith("http://") && !accountUrlAllowed) {
@@ -374,7 +408,11 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                                     mgr.withdrawPrivacyConsent("tower_upload")
                                 }
                             }
-                            TextButton(onClick = { pendingPrivacyAction = "view" }, modifier = Modifier.padding(horizontal = 16.dp)) {
+                            TextButton(onClick = {
+                                pendingRequest = ConsentNoticeRequest(syncUrl.trim().trimEnd('/'), mgr.diagnosticOwner())
+                                pendingNotice = notice
+                                pendingPrivacyAction = "view"
+                            }, modifier = Modifier.padding(horizontal = 16.dp)) {
                                 Text(stringResource(R.string.privacy_view_notice, notice.controller))
                             }
                         }
@@ -477,7 +515,7 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                     SwitchItem(
                         stringResource(R.string.dev_diagnostics),
                         stringResource(R.string.dev_diagnostics_summary),
-                        diagnostics.enabled && (privacyNotice == null || diagnosticConsented),
+                        diagnostics.enabled && (if (privacyNotice == null) mgr.privacyGranted("diagnostics", CellPrivacy.LOCAL_VERSION) else diagnosticConsented),
                     ) { on ->
                         if (on && c.accountEmail == null) {
                             scope.launch { snackbar.showSnackbar(resources.getString(R.string.privacy_sign_in_first)) }
@@ -578,8 +616,9 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
         }
     }
 
-    val displayedNotice = privacyNotice
-    if (pendingPrivacyAction != null && displayedNotice != null) {
+    val displayedNotice = pendingNotice
+    val displayedRequest = pendingRequest
+    if (pendingPrivacyAction != null && displayedNotice != null && displayedRequest?.matches(syncUrl, consentOwner) == true) {
         val action = pendingPrivacyAction
         AlertDialog(
             onDismissRequest = { pendingPrivacyAction = null },
@@ -599,6 +638,7 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                 if (action != "view") {
                     TextButton(onClick = {
                         pendingPrivacyAction = null
+                        if (!displayedRequest.matches(syncUrl, mgr.diagnosticOwner())) return@TextButton
                         when (action) {
                             "register" -> {
                                 save()
@@ -608,8 +648,10 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
 
                             "tower_upload", "auto_sync", "diagnostics" -> scope.launch {
                                 val purpose = if (action == "diagnostics") "diagnostics" else "tower_upload"
-                                runCatching { mgr.grantPrivacyConsent(purpose, displayedNotice.version) }
+                                val owner = displayedRequest.owner ?: return@launch
+                                runCatching { mgr.grantPrivacyConsent(purpose, displayedNotice.version, owner) }
                                     .onSuccess {
+                                        if (!displayedRequest.matches(syncUrl, mgr.diagnosticOwner())) return@onSuccess
                                         if (purpose == "tower_upload") {
                                             towerConsented = true
                                             if (action == "auto_sync") {
@@ -621,7 +663,10 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                                             app.diagnostics.setEnabled(true)
                                         }
                                     }
-                                    .onFailure { snackbar.showSnackbar(resources.getString(R.string.privacy_consent_failed)) }
+                                    .onFailure {
+                                        if (it is CancellationException) throw it
+                                        snackbar.showSnackbar(resources.getString(R.string.privacy_consent_failed))
+                                    }
                             }
                         }
                     }) { Text(stringResource(R.string.privacy_agree)) }
