@@ -2,7 +2,6 @@ package org.imunav.core.nav
 
 import org.imunav.core.route.TravelMode
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -60,6 +59,5 @@ class NavigationMapCameraTest {
                 assertEquals(!hideZoom, options.showZoomButtons(navigating = true))
             }
         }
-        assertFalse(MapDisplayOptions(hideZoomButtons = true).showZoomButtons(navigating = true))
     }
 }
