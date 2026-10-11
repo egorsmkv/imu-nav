@@ -782,4 +782,17 @@
     <string name="cells_no_signal">Нет пригодного сотового сигнала. Невозможно определить ваше местоположение по вышкам.</string>
     <string name="cells_scan_failed">Данные сотовой сети недоступны. Невозможно определить ваше местоположение по вышкам.</string>
     <string name="cells_no_known_towers">Ближайшие вышки отсутствуют в базе данных. Невозможно определить ваше местоположение по ним.</string>
+
+    <!-- Map presentation -->
+    <string name="map_display_title">Вид карты</string>
+    <string name="map_buildings_3d">3D-здания</string>
+    <string name="map_buildings_3d_hint">Показывать объёмные здания, если они есть в стиле карты.</string>
+    <string name="map_car_perspective">Перспектива за рулём</string>
+    <string name="map_car_perspective_hint">Наклонять карту по направлению движения во время автомобильной навигации.</string>
+    <string name="map_automatic_zoom">Автоматический масштаб навигации</string>
+    <string name="map_automatic_zoom_hint">На большей скорости видно больше дороги. Ручной масштаб приостанавливает автомасштаб до нажатия кнопки центрирования.</string>
+    <string name="map_hide_tower_button">Скрыть кнопку вышек при навигации</string>
+    <string name="map_hide_tower_button_hint">Кнопка остаётся доступной при просмотре карты. Определение позиции по вышкам работает без изменений.</string>
+    <string name="map_hide_zoom_buttons">Скрыть кнопки масштаба при навигации</string>
+    <string name="map_hide_zoom_buttons_hint">Скрыть + и − во время поездки. Масштабирование двумя пальцами остаётся доступным.</string>
 </resources>

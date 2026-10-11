@@ -22,6 +22,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.imunav.app.MapStartPrefs
 import org.imunav.app.cells.TowerLayer
+import org.imunav.app.maps.BuildingVisibility
 import org.imunav.app.maps.MapMemoryCallbacks
 import org.imunav.app.maps.addNavigationLayers
 import org.imunav.app.maps.mapStyle
@@ -113,6 +114,7 @@ fun NavMap(
     offlineStyleJson: String? = null,
     /** False while another screen covers the map: rendering pauses (no GPU/battery use) but nothing is rebuilt. */
     active: Boolean = true,
+    buildings3d: Boolean = true,
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current.density
@@ -242,6 +244,11 @@ fun NavMap(
         if (!renderable || readyStyle === loaded) return@LaunchedEffect
         addNavigationLayers(loaded)
         readyStyle = loaded
+    }
+
+    val buildingVisibility = remember(readyStyle) { readyStyle?.let(::BuildingVisibility) }
+    LaunchedEffect(renderable, buildingVisibility, buildings3d) {
+        if (renderable) buildingVisibility?.apply(buildings3d)
     }
 
     // Keep the followed position, compass and attribution inside the visible (uncovered) map area.
