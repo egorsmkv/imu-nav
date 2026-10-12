@@ -12,6 +12,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.imunav.core.diagnostics.DiagnosticOwner
+import org.imunav.core.location.NavigationMirrorEncoder
+import org.imunav.core.location.NavigationMirrorInput
 import org.imunav.core.location.NavigationPositionSample
 import org.imunav.core.location.NavigationTcpServer
 import org.imunav.core.location.PositionSharingAccount
@@ -22,7 +24,7 @@ import java.net.InetAddress
 import java.net.NetworkInterface
 import java.util.concurrent.atomic.AtomicReference
 
-/** A deliberate per-trip choice; mode never changes implicitly on network failures. */
+/** A deliberate session choice; mode never changes implicitly on network failures. */
 enum class PositionSharingMode { LOCAL, INTERNET, BOTH }
 
 /** Safe localized status categories, with no remote response bodies or user positions. */
@@ -34,6 +36,8 @@ data class PositionTransportStatus(val phase: PositionSharingPhase = PositionSha
 /** Only session-local state is published; activation is never stored or synchronized. */
 data class PositionSharingStatus(
     val enabled: Boolean = false,
+    val shareNavigation: Boolean = false,
+    val standalone: Boolean = false,
     val addresses: List<String> = emptyList(),
     val local: PositionTransportStatus = PositionTransportStatus(),
     val internet: PositionTransportStatus = PositionTransportStatus(),
@@ -75,26 +79,51 @@ class PositionSharing(
         }
     }
 
-    /** Main-thread entry point; Start cannot restore a previous trip's activation. */
-    fun start(mode: PositionSharingMode, address: String?, navigating: Boolean) {
-        if (!navigating || session.value != null) return
+    /** Explicit main-thread opt-in; an idle session exports positions without authorizing future route details. */
+    fun start(mode: PositionSharingMode, address: String?, navigating: Boolean, shareNavigation: Boolean = false) {
+        if (session.value != null) return
+        val details = navigating && shareNavigation
         val owner = if (mode != PositionSharingMode.LOCAL) account.owner() else null
         _status.update {
             it.copy(
                 enabled = true,
+                shareNavigation = details,
+                standalone = !navigating,
                 local = PositionTransportStatus(if (mode == PositionSharingMode.INTERNET) PositionSharingPhase.OFF else PositionSharingPhase.WAITING),
                 internet = PositionTransportStatus(if (mode == PositionSharingMode.LOCAL) PositionSharingPhase.OFF else PositionSharingPhase.WAITING),
             )
         }
-        session.value = Session(++revision, mode, address, owner)
+        session.value = Session(++revision, mode, address, owner, details, standalone = !navigating)
+    }
+
+    /** Restart output sessions so disabling details closes old streams and clears the relay cache. */
+    fun setShareNavigation(enabled: Boolean) {
+        val current = session.value ?: return
+        if (current.standalone && enabled) return
+        if (current.shareNavigation == enabled) return
+        session.value = current.copy(revision = ++revision, shareNavigation = enabled)
+        _status.update {
+            it.copy(
+                shareNavigation = enabled,
+                local = it.local.copy(phase = if (current.mode == PositionSharingMode.INTERNET) PositionSharingPhase.OFF else PositionSharingPhase.WAITING),
+                internet = it.internet.copy(phase = if (current.mode == PositionSharingMode.LOCAL) PositionSharingPhase.OFF else PositionSharingPhase.WAITING),
+            )
+        }
     }
 
     /** Captures a new immutable output after every foreground-service tick, including with the screen off. */
-    fun update(state: GuidanceState, elapsedMs: Long, utcMs: Long, intervalMs: Long) {
-        if (!state.active) {
+    fun update(state: GuidanceState, elapsedMs: Long, utcMs: Long, intervalMs: Long, mirror: NavigationMirrorInput? = null, idleSample: NavigationPositionSample? = null) {
+        val current = session.value
+        if (state.active && current?.standalone == true) {
+            // Starting a trip enables its controls, but does not grant route-sharing consent.
+            session.value = current.copy(revision = ++revision, standalone = false)
+            _status.update { it.copy(standalone = false) }
+        }
+        if (!state.active && session.value?.standalone != true) {
             stop()
         } else {
-            input.value = Input(NavigationPositionSample.from(state, elapsedMs, utcMs), intervalMs, elapsedMs)
+            val sample = if (state.active) NavigationPositionSample.from(state, elapsedMs, utcMs) else idleSample
+            input.value = Input(sample, intervalMs, elapsedMs, mirror.takeIf { state.active })
         }
     }
 
@@ -103,13 +132,14 @@ class PositionSharing(
         session.value = null
         relay.get()?.cancel()
         input.value = Input(null, input.value.intervalMs, clock())
-        _status.update { it.copy(enabled = false, local = PositionTransportStatus(), internet = PositionTransportStatus()) }
+        _status.update { it.copy(enabled = false, shareNavigation = false, standalone = false, local = PositionTransportStatus(), internet = PositionTransportStatus()) }
     }
 
     private suspend fun local(selected: Session) {
         var server: NavigationTcpServer? = null
         var lastSent = -1L
         var lastAddressCheck = -1L
+        val encoder = NavigationMirrorEncoder()
         try {
             val address = selected.address ?: throw IOException("No local address")
             if (address !in addresses()) throw IOException("Local address unavailable")
@@ -128,7 +158,8 @@ class PositionSharing(
                     setLocal(selected, PositionTransportStatus(PositionSharingPhase.WAITING, endpoint))
                 } else if (lastSent < 0 || sample.elapsedMs - lastSent >= current.intervalMs) {
                     lastSent = sample.elapsedMs
-                    server.publish(sample)
+                    val mirror = encoder.encode(sample, current.mirror, selected.shareNavigation, clock())
+                    server.publish(sample, mirror.publication)
                     setLocal(selected, _status.value.local.copy(phase = PositionSharingPhase.ACTIVE, endpoint = endpoint))
                 }
             }
@@ -152,6 +183,7 @@ class PositionSharing(
         var retryAt = 0L
         var backoffMs = 1_000L
         var rejected = false
+        val encoder = NavigationMirrorEncoder()
         try {
             input.collect { current ->
                 if (account.owner() != owner) {
@@ -173,8 +205,10 @@ class PositionSharing(
                     if (!connected) transport.start()
                     connected = true
                     // HTTP setup/refresh may take time; discard the old sample and use the newest one.
-                    val newest = input.value.sample?.takeIf { it.fresh(clock()) } ?: return@collect
-                    transport.publish(newest, clock())
+                    val newestInput = input.value
+                    val newest = newestInput.sample?.takeIf { it.fresh(clock()) } ?: return@collect
+                    val mirror = encoder.encode(newest, newestInput.mirror, selected.shareNavigation, clock())
+                    transport.publish(newest, clock(), mirror)
                     lastSent = newest.elapsedMs
                     backoffMs = 1_000L
                     setInternet(selected, PositionTransportStatus(PositionSharingPhase.ACTIVE, transport.endpoint, transport.receivers))
@@ -206,8 +240,15 @@ class PositionSharing(
         if (session.value == selected) _status.update { it.copy(internet = value) }
     }
 
-    private data class Session(val revision: Long, val mode: PositionSharingMode, val address: String?, val owner: DiagnosticOwner?)
-    private data class Input(val sample: NavigationPositionSample?, val intervalMs: Long, val revision: Long)
+    private data class Session(
+        val revision: Long,
+        val mode: PositionSharingMode,
+        val address: String?,
+        val owner: DiagnosticOwner?,
+        val shareNavigation: Boolean,
+        val standalone: Boolean,
+    )
+    private data class Input(val sample: NavigationPositionSample?, val intervalMs: Long, val revision: Long, val mirror: NavigationMirrorInput? = null)
 
     private companion object {
         fun privateAddresses(): List<String> = NetworkInterface.getNetworkInterfaces()?.toList().orEmpty()

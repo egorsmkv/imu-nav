@@ -1212,6 +1212,7 @@ dependencies = [
  "flate2",
  "futures-util",
  "hotpath",
+ "imu-nav-protocol",
  "lettre",
  "native-tls",
  "postgres",
@@ -1235,6 +1236,16 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "zip",
+]
+
+[[package]]
+name = "imu-nav-protocol"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror",
+ "time",
 ]
 
 [[package]]

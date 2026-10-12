@@ -22,7 +22,7 @@ class NavigationTcpServer(address: InetAddress, port: Int = DEFAULT_PORT, privat
 
     private val selector = Selector.open()
     private val listener = ServerSocketChannel.open()
-    private val latest = AtomicReference<NavigationPositionSample?>()
+    private val latest = AtomicReference<Publication?>()
     private val invalidations = AtomicLong()
     private var lastInvalidation = 0L
     private val clients = mutableMapOf<SocketChannel, Client>()
@@ -46,9 +46,9 @@ class NavigationTcpServer(address: InetAddress, port: Int = DEFAULT_PORT, privat
     }
 
     /** Replaces pending data; null invalidates all existing receiver connections. */
-    fun publish(sample: NavigationPositionSample?) {
+    fun publish(sample: NavigationPositionSample?, mirror: NavigationMirrorPublication? = null) {
         if (sample == null) invalidations.incrementAndGet()
-        latest.set(sample)
+        latest.set(sample?.let { Publication(it, mirror) })
         selector.wakeup()
     }
 
@@ -74,7 +74,7 @@ class NavigationTcpServer(address: InetAddress, port: Int = DEFAULT_PORT, privat
     private fun accept() {
         repeat(MAX_ACCEPTS) {
             val socket = listener.accept() ?: return
-            if (clients.size >= MAX_CLIENTS || latest.get()?.fresh(clock()) != true) {
+            if (clients.size >= MAX_CLIENTS || latest.get()?.sample?.fresh(clock()) != true) {
                 socket.close()
             } else {
                 try {
@@ -97,33 +97,86 @@ class NavigationTcpServer(address: InetAddress, port: Int = DEFAULT_PORT, privat
             lastInvalidation = invalidation
         }
         val now = clock()
-        val sample = latest.get()?.takeIf { it.fresh(now) }
-        if (sample == null) {
+        val publication = latest.get()?.takeIf { it.sample.fresh(now) }
+        if (publication == null) {
             clients.keys.toList().forEach(::remove)
             return
         }
+        val sample = publication.sample
         val bytes = NavigationNmea.encode(sample).toByteArray(Charsets.US_ASCII)
         clients.toMap().forEach { (socket, client) ->
             try {
-                if (client.pending == null && client.lastElapsedMs != sample.elapsedMs) {
-                    client.pending = ByteBuffer.wrap(bytes)
-                    client.startedMs = now
-                    client.lastElapsedMs = sample.elapsedMs
-                }
-                client.pending?.let { buffer ->
-                    if (now - client.lastElapsedMs > NavigationPositionSample.MAX_AGE_MS || now - client.startedMs >= WRITE_TIMEOUT_MS) {
-                        remove(socket)
-                    } else {
-                        socket.write(buffer)
-                        if (!buffer.hasRemaining()) client.pending = null
-                    }
-                }
-                // A closed peer is detected even if the car has not produced a new sample.
-                if (socket.read(client.readProbe) < 0) remove(socket)
-                client.readProbe.clear()
+                readRequest(socket, client, publication.mirror != null)
+                if (client.pending == null) queueNext(client, publication, bytes, now)
+                writePending(socket, client, publication, now)
             } catch (_: IOException) {
                 remove(socket)
             }
+        }
+    }
+
+    private fun writePending(socket: SocketChannel, client: Client, publication: Publication, now: Long) {
+        val buffer = client.pending ?: return
+        if (now - client.pendingElapsedMs > NavigationPositionSample.MAX_AGE_MS || now - client.startedMs >= WRITE_TIMEOUT_MS) {
+            remove(socket)
+            return
+        }
+        socket.write(buffer)
+        if (!buffer.hasRemaining()) {
+            client.pending = null
+            if (client.mirror && client.sentRoute != publication.mirror?.routeRevision) selector.wakeup()
+        }
+    }
+
+    /** Only the fixed subscription line is accepted; a peer cannot grow the receive buffer. */
+    private fun readRequest(socket: SocketChannel, client: Client, available: Boolean) {
+        client.readProbe.clear()
+        val count = socket.read(client.readProbe)
+        if (count < 0) throw IOException("Receiver closed")
+        client.readProbe.flip()
+        while (client.readProbe.hasRemaining()) {
+            val byte = client.readProbe.get().toInt().toChar()
+            if (client.mirror || client.request.length >= NavigationMirrorEncoder.HANDSHAKE.length) throw IOException("Invalid receiver request")
+            client.request.append(byte)
+            if (!NavigationMirrorEncoder.HANDSHAKE.startsWith(client.request.toString())) throw IOException("Invalid receiver request")
+            if (client.request.toString() == NavigationMirrorEncoder.HANDSHAKE && available) {
+                client.mirror = true
+                client.hello = true
+                client.lastElapsedMs = -1L
+            }
+        }
+    }
+
+    /** Finish the current line before switching modes and interleave fresh states with route chunks. */
+    private fun queueNext(client: Client, publication: Publication, nmea: ByteArray, now: Long) {
+        val mirror = publication.mirror
+        val bytes = when {
+            client.hello -> {
+                client.hello = false
+                NavigationMirrorEncoder.HELLO.toByteArray(Charsets.UTF_8)
+            }
+
+            client.lastElapsedMs != publication.sample.elapsedMs -> {
+                client.lastElapsedMs = publication.sample.elapsedMs
+                if (client.mirror && mirror != null) mirror.stateLine else nmea
+            }
+
+            client.mirror && mirror != null && mirror.routeRevision != null && client.sentRoute != mirror.routeRevision -> {
+                if (client.pendingRoute != mirror.routeRevision) {
+                    client.pendingRoute = mirror.routeRevision
+                    client.routeIndex = 0
+                }
+                mirror.routeFrames.getOrNull(client.routeIndex++)?.also {
+                    if (client.routeIndex == mirror.routeFrames.size) client.sentRoute = mirror.routeRevision
+                }
+            }
+
+            else -> null
+        }
+        if (bytes != null) {
+            client.pending = ByteBuffer.wrap(bytes)
+            client.startedMs = now
+            client.pendingElapsedMs = publication.sample.elapsedMs
         }
     }
 
@@ -143,8 +196,17 @@ class NavigationTcpServer(address: InetAddress, port: Int = DEFAULT_PORT, privat
         var pending: ByteBuffer? = null
         var startedMs = 0L
         var lastElapsedMs = -1L
-        val readProbe: ByteBuffer = ByteBuffer.allocate(1)
+        var pendingElapsedMs = 0L
+        val readProbe: ByteBuffer = ByteBuffer.allocate(64)
+        val request = StringBuilder()
+        var mirror = false
+        var hello = false
+        var pendingRoute: Long? = null
+        var sentRoute: Long? = null
+        var routeIndex = 0
     }
+
+    private data class Publication(val sample: NavigationPositionSample, val mirror: NavigationMirrorPublication?)
 
     companion object {
         const val DEFAULT_PORT = 10110

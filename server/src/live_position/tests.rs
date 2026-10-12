@@ -62,6 +62,8 @@ fn expiry_discards_latest_samples_and_closes_subscriptions() {
     let hub = LivePositionHub::default();
     let (sender, mut receiver) = watch::channel(Some(Arc::new(Published {
         sample: sample(),
+        guidance: None,
+        route: None,
         received: Instant::now(),
     })));
     hub.sessions.lock().unwrap().insert(
@@ -74,6 +76,7 @@ fn expiry_discards_latest_samples_and_closes_subscriptions() {
             elapsed_ms: Some(1_000),
             samples: sender,
             slots: Arc::new(Semaphore::new(4)),
+            route: None,
         },
     );
     hub.prune();
@@ -151,6 +154,8 @@ async fn account_session_publishes_only_to_its_receiver_and_withdrawal_stops_it(
         .json()
         .await?;
     let session_id = session["session"].as_str().unwrap();
+    assert_eq!(session["receiver"]["navigation_version"], VERSION);
+    assert_body_limits(&client, &base, token, session_id).await?;
     let body = serde_json::json!({"sequence":1, "lat":-50.5,"lon":-30.25,"speed_mps":10.0,"bearing_deg":90.0,
         "uncertainty_m":80.0,"source":"DR","elapsed_ms":1_000,"utc_ms":1_767_225_600_000_i64,"age_ms":0});
     let publish = || {
@@ -181,6 +186,34 @@ async fn account_session_publishes_only_to_its_receiver_and_withdrawal_stops_it(
     );
     assert!(state.live_position.sessions.lock().unwrap().is_empty());
     server.abort();
+    Ok(())
+}
+
+/// Verify the original and mirror endpoints retain their distinct upload limits.
+async fn assert_body_limits(
+    client: &reqwest::Client,
+    base: &str,
+    token: &str,
+    session_id: &str,
+) -> anyhow::Result<()> {
+    for (suffix, limit) in [
+        ("", 2_048),
+        ("/navigation", 8_192),
+        ("/route", MAX_ROUTE_BYTES),
+    ] {
+        assert_eq!(
+            client
+                .put(format!("{base}/v1/live/session{suffix}"))
+                .bearer_auth(token)
+                .header("X-Live-Session", session_id)
+                .header("Content-Type", "application/json")
+                .body(" ".repeat(limit + 1))
+                .send()
+                .await?
+                .status(),
+            StatusCode::PAYLOAD_TOO_LARGE
+        );
+    }
     Ok(())
 }
 
@@ -293,6 +326,15 @@ async fn account_isolation_refresh_ordering_and_logout_are_enforced() -> anyhow:
     let mut next = sample();
     next.sequence = 2;
     next.elapsed_ms = 1_500;
+    // Keep the rate gate closed even if unrelated concurrent tests consume more than 250 ms.
+    state
+        .live_position
+        .sessions
+        .lock()
+        .unwrap()
+        .get_mut(&1)
+        .unwrap()
+        .updated = Instant::now() + Duration::from_secs(30);
     assert_eq!(
         publish(State(state.clone()), first.clone(), Json(next.clone()))
             .await
@@ -348,6 +390,8 @@ fn sample_expiry_clears_memory_before_the_session_lease_expires() {
     let hub = LivePositionHub::default();
     let (sender, mut receiver) = watch::channel(Some(Arc::new(Published {
         sample: sample(),
+        guidance: None,
+        route: None,
         received: Instant::now().checked_sub(SAMPLE_TTL).unwrap(),
     })));
     hub.sessions.lock().unwrap().insert(
@@ -360,6 +404,7 @@ fn sample_expiry_clears_memory_before_the_session_lease_expires() {
             elapsed_ms: Some(1000),
             samples: sender,
             slots: Arc::new(Semaphore::new(4)),
+            route: None,
         },
     );
     hub.stop_login(1, "old-login");
@@ -442,5 +487,200 @@ fn configure_accounts(state: &AppState) -> anyhow::Result<()> {
             },
         ],
     })?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn mirror_stream_sends_atomic_guidance_and_route_then_revocation_closes_it()
+-> anyhow::Result<()> {
+    use tokio::io::AsyncBufReadExt;
+    let (_file, state) = fixture()?;
+    configure_accounts(&state)?;
+    state
+        .store
+        .grant_privacy_consent(1, "live_position", "test")?;
+    let mut headers = headers(&state, 1, "mirror-login")?;
+    let Json(created) = start(State(state.clone()), headers.clone()).await.unwrap();
+    assert_eq!(created.receiver.navigation_version, VERSION);
+    headers.insert("X-Live-Session", created.session.parse()?);
+    let route = Route {
+        revision: 1,
+        geometry: vec![[-50.5, -30.25], [-50.49, -30.24]],
+        summary: "Synthetic".into(),
+        destination: [-50.49, -30.24],
+    };
+    publish_route(State(state.clone()), headers.clone(), Json(route.clone()))
+        .await
+        .unwrap();
+    let guidance: Guidance = serde_json::from_str(include_str!(
+        "../../../desktop/protocol/fixtures/guidance.json"
+    ))?;
+    let _ = publish_navigation(
+        State(state.clone()),
+        headers.clone(),
+        Json(NavigationPublish {
+            sample: sample(),
+            guidance: Some(guidance.clone()),
+        }),
+    )
+    .await
+    .unwrap();
+    let samples = state
+        .live_position
+        .sessions
+        .lock()
+        .unwrap()
+        .get(&1)
+        .unwrap()
+        .samples
+        .subscribe();
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?;
+    let receiver = TcpStream::connect(listener.local_addr()?).await?;
+    let (sender, _) = listener.accept().await?;
+    let worker = tokio::spawn(stream(
+        sender,
+        state.clone(),
+        1,
+        "mirror-login".into(),
+        samples,
+    ));
+    let mut receiver = tokio::io::BufReader::new(receiver);
+    let mut line = String::new();
+    tokio::time::timeout(Duration::from_secs(3), receiver.read_line(&mut line)).await??;
+    assert_eq!(line, sample().nmea());
+    for byte in imu_nav_protocol::HANDSHAKE {
+        receiver.get_mut().write_all(&[*byte]).await?;
+    }
+    line.clear();
+    tokio::time::timeout(Duration::from_secs(3), receiver.read_line(&mut line)).await??;
+    assert_eq!(
+        imu_nav_protocol::decode(line.as_bytes())?,
+        Frame::Hello { version: VERSION }
+    );
+    line.clear();
+    tokio::time::timeout(Duration::from_secs(3), receiver.read_line(&mut line)).await??;
+    let Frame::State {
+        state: mirrored, ..
+    } = imu_nav_protocol::decode(line.as_bytes())?
+    else {
+        panic!("mirror state");
+    };
+    assert_eq!(mirrored.guidance, Some(guidance));
+    assert!(mirrored.valid());
+    let mut assembly = imu_nav_protocol::RouteAssembly::default();
+    loop {
+        line.clear();
+        tokio::time::timeout(Duration::from_secs(3), receiver.read_line(&mut line)).await??;
+        if let Some(decoded) = assembly.accept(imu_nav_protocol::decode(line.as_bytes())?)? {
+            assert_eq!(decoded, route);
+            break;
+        }
+    }
+    state
+        .store
+        .withdraw_privacy_consent(1, "live_position", &state.policy())?;
+    state.live_position.stop(1);
+    line.clear();
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(3), receiver.read_line(&mut line)).await??,
+        0
+    );
+    worker.await?;
+    assert!(state.live_position.sessions.lock().unwrap().is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn mirror_routes_enforce_ownership_ordering_and_expiry() -> anyhow::Result<()> {
+    let (_file, state) = fixture()?;
+    configure_accounts(&state)?;
+    state
+        .store
+        .grant_privacy_consent(1, "live_position", "test")?;
+    let mut headers = headers(&state, 1, "route-login")?;
+    let Json(created) = start(State(state.clone()), headers.clone()).await.unwrap();
+    headers.insert("X-Live-Session", created.session.parse()?);
+    let route = Route {
+        revision: 2,
+        geometry: vec![[0.0, 0.0], [0.01, 0.01]],
+        summary: String::new(),
+        destination: [0.01, 0.01],
+    };
+    publish_route(State(state.clone()), headers.clone(), Json(route.clone()))
+        .await
+        .unwrap();
+    publish_route(State(state.clone()), headers.clone(), Json(route.clone()))
+        .await
+        .unwrap();
+    let mut older = route.clone();
+    older.revision = 1;
+    assert_eq!(
+        publish_route(State(state.clone()), headers.clone(), Json(older))
+            .await
+            .unwrap_err()
+            .0,
+        StatusCode::CONFLICT
+    );
+    let mut bad_headers = headers.clone();
+    bad_headers.insert("X-Live-Session", "b".repeat(64).parse()?);
+    assert_eq!(
+        publish_route(State(state.clone()), bad_headers, Json(route))
+            .await
+            .unwrap_err()
+            .0,
+        StatusCode::NOT_FOUND
+    );
+    let mut guidance: Guidance = serde_json::from_str(include_str!(
+        "../../../desktop/protocol/fixtures/guidance.json"
+    ))?;
+    assert_eq!(
+        publish_navigation(
+            State(state.clone()),
+            headers.clone(),
+            Json(NavigationPublish {
+                sample: sample(),
+                guidance: Some(guidance.clone())
+            })
+        )
+        .await
+        .err()
+        .unwrap()
+        .0,
+        StatusCode::CONFLICT
+    );
+    guidance.route_revision = Some(2);
+    let _ = publish_navigation(
+        State(state.clone()),
+        headers.clone(),
+        Json(NavigationPublish {
+            sample: sample(),
+            guidance: Some(guidance),
+        }),
+    )
+    .await
+    .unwrap();
+    {
+        let mut sessions = state.live_position.sessions.lock().unwrap();
+        let session = sessions.get_mut(&1).unwrap();
+        let published = session.samples.borrow().as_ref().unwrap().clone();
+        session.samples.send_replace(Some(Arc::new(Published {
+            sample: published.sample.clone(),
+            guidance: published.guidance.clone(),
+            route: published.route.clone(),
+            received: Instant::now().checked_sub(SAMPLE_TTL).unwrap(),
+        })));
+    }
+    state.live_position.prune();
+    assert!(
+        state
+            .live_position
+            .sessions
+            .lock()
+            .unwrap()
+            .get(&1)
+            .unwrap()
+            .route
+            .is_none()
+    );
     Ok(())
 }

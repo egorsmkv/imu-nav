@@ -1,6 +1,8 @@
 package org.imunav.core.location
 
 import org.imunav.core.geo.GeoPoint
+import org.imunav.core.gnss.FixSource
+import org.imunav.core.gnss.RawFix
 import org.imunav.core.nav.GuidanceState
 import org.imunav.core.nav.PositionSource
 import org.imunav.core.route.TravelMode
@@ -21,6 +23,24 @@ import java.util.concurrent.atomic.AtomicLong
 /** Exercises the wire contract and receiver lifecycle with synthetic positions and controlled elapsed time. */
 class NavigationPositionSharingTest {
     private val sample = NavigationPositionSample(GeoPoint(-50.5, -30.25), 10.0, 90.0, 80.0, PositionSource.DR, 1_000, 1_767_225_600_000)
+
+    @Test
+    fun idleSharingPreservesMeasurementTimingAndRejectsStaleMockAndFusedFixes() {
+        val fix = RawFix(FixSource.GPS, sample.utcMs, sample.elapsedMs, sample.point.lat, sample.point.lon, speedMps = 10f, bearingDeg = 90f, accuracyM = 80f)
+        val output = NavigationPositionSample.fromIdle(1_500, sample.utcMs + 500, fix, null)
+        assertEquals(sample.copy(source = PositionSource.GPS), output)
+        assertNull(NavigationPositionSample.fromIdle(3_001, sample.utcMs + 2_001, fix, null))
+        assertNull(NavigationPositionSample.fromIdle(999, sample.utcMs, fix, null))
+        assertNull(NavigationPositionSample.fromIdle(1_000, sample.utcMs, fix.copy(isMock = true), null))
+        assertNull(NavigationPositionSample.fromIdle(1_000, sample.utcMs, null, fix.copy(source = FixSource.FUSED)))
+        assertNull(NavigationPositionSample.fromIdle(1_000, sample.utcMs, fix.copy(accuracyM = null), null))
+        val coarse = fix.copy(source = FixSource.CELL, speedMps = null, bearingDeg = null)
+        assertEquals(sample.copy(source = PositionSource.CELL, speedMps = 0.0, bearingDeg = 0.0), NavigationPositionSample.fromIdle(1_000, sample.utcMs, null, coarse))
+        assertEquals(
+            PositionSource.CELL,
+            NavigationPositionSample.fromIdle(3_001, sample.utcMs + 2_001, fix, coarse.copy(elapsedMs = 3_001))?.source,
+        )
+    }
 
     @Test
     fun rmcHasCorrectUnitsUtcHemispheresChecksumAndEstimatedMode() {

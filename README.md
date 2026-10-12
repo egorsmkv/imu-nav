@@ -26,6 +26,7 @@ Start with [getting started](docs/getting_started.md). Look up unfamiliar terms 
 - [Getting started and network proxy](docs/getting_started.md)
 - [Navigation and positioning](docs/navigation.md)
 - [Share a navigation position](docs/position_sharing.md)
+- [Desktop navigation mirror (Windows)](docs/desktop.md)
 - [Offline routing and address search](docs/routing_and_search.md)
 - [Landscape driving and Android Auto](docs/android_auto.md)
 - [Bookmarks](docs/bookmarks.md)

@@ -1,0 +1,24 @@
+[package]
+name = "imu-nav-desktop"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Display-only desktop mirror of IMU Nav Android navigation"
+
+[dependencies]
+imu-nav-protocol = { path = "../protocol" }
+eframe = { version = "=0.36.2", default-features = false, features = ["glow", "default_fonts", "x11", "wayland", "persistence"] }
+egui = "=0.36.2"
+walkers = { version = "=0.60.0", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.40", features = ["bundled"] }
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg"] }
+rfd = "0.17"
+reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "rustls"] }
+sha2 = "0.10"
+httpdate = "1"
+
+[dev-dependencies]
+tempfile = "3"

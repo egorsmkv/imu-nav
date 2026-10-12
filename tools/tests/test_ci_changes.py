@@ -1,5 +1,6 @@
 """Policy cases and real git histories for selective CI; no GitHub-glob emulation."""
 import importlib.util
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -44,7 +45,12 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(self.selected('server/templates/trips.html'), {'server', 'kotlin'})
         self.assertEqual(self.selected('server/Cargo.lock'), {'server', 'kotlin'})
         self.assertEqual(self.selected('native/Cargo.lock'), {'native', 'kotlin', 'fdroid', 'android'})
-        self.assertEqual(self.selected('.cargo/config.toml'), {'native', 'server', 'kotlin', 'fdroid', 'android'})
+        self.assertEqual(self.selected('.cargo/config.toml'), {'native', 'server', 'kotlin', 'fdroid', 'android', 'desktop'})
+
+    def test_desktop_protocol_selects_its_relay_consumers(self):
+        self.assertEqual(self.selected('desktop/app/src/viewer.rs'), {'desktop'})
+        self.assertEqual(self.selected('desktop/protocol/src/lib.rs'), {'desktop', 'server', 'kotlin'})
+        self.assertEqual(self.selected('desktop/Cargo.toml'), {'desktop', 'server', 'kotlin'})
 
     def test_workflow_and_selector_changes(self):
         self.assertEqual(self.selected('.github/workflows/rust-coverage.yml'), {'native', 'server'})
@@ -144,10 +150,11 @@ class GitHistoryTests(unittest.TestCase):
         for index in range(310):
             self.write(f'docs/{index}.md', 'docs')
         self.write('server/src/z.rs', 'selected beyond 300 paths')
-        self.write('docs/new\nline.md', 'unusual path')
+        unusual_path = 'docs/new line.md' if os.name == 'nt' else 'docs/new\nline.md'
+        self.write(unusual_path, 'unusual path')
         paths = self.paths(self.base, self.commit())
         self.assertEqual(len(paths), 312)
-        self.assertIn('docs/new\nline.md', paths)
+        self.assertIn(unusual_path, paths)
         self.assertTrue(ci.affected('server', paths))
 
 

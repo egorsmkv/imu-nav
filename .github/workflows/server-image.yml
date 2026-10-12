@@ -7,6 +7,8 @@ on:
       - '.github/workflows/server-image.yml'
       - 'server/Dockerfile'
       - 'server/.dockerignore'
+      - '.dockerignore'
+      - 'desktop/protocol/**'
       - 'server/Cargo.toml'
       - 'server/Cargo.lock'
       - 'server/build.rs'
@@ -30,6 +32,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build server image
-        run: docker build --file server/Dockerfile --tag imu-nav-cell-server:ci server
+        run: docker build --file server/Dockerfile --tag imu-nav-cell-server:ci .
       - name: Check server binary starts
         run: docker run --rm imu-nav-cell-server:ci --help > /dev/null

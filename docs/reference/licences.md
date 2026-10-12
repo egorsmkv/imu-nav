@@ -114,3 +114,22 @@ UI or assets are included; the only data carried over is the coarse Ukraine bord
 The sharing server vendors MapLibre GL JS 5.20.0 under BSD-3-Clause. Its distribution licence and bundled third-party notices are in `server/static/maplibre/license.txt` and the distributed JavaScript. OpenFreeMap supplies map data with on-map attribution. The pinned assets are reproduced by `tools/vendor_trip_map.py`.
 
 The sharing server uses `zip` 8.6 (MIT) to validate user-uploaded profiling archives. It enables only DEFLATE support; this dependency is not included in the Android app.
+
+## Desktop navigation viewer
+
+The independent desktop workspace uses eframe/egui 0.36.2 (MIT/Apache 2.0), Walkers 0.60.0 (MIT),
+rusqlite 0.40 (MIT, bundled SQLite public domain), image 0.25.10 (MIT/Apache 2.0), rfd 0.17
+(MIT), serde/serde_json (MIT/Apache 2.0), time (MIT/Apache 2.0) and thiserror (MIT/Apache 2.0).
+Its exact resolved dependencies are pinned in `desktop/Cargo.lock`. The portable artifact includes
+dependency licence files collected from Cargo metadata by `desktop/tools/notices.py`. These GUI
+dependencies are not included in the Android APK or relay; the shared protocol crate contains only
+Serde, time and thiserror dependencies.
+
+The desktop HTTPS tile worker directly uses reqwest 0.13.5 (MIT/Apache 2.0), sha2 0.10
+(MIT/Apache 2.0), and httpdate 1 (MIT/Apache 2.0) for bounded fetching and HTTP caching. These
+versions are already part of the desktop's resolved dependency graph.
+
+The Kotlin core declares Jackson Core 2.19.2 (Apache 2.0) directly for streaming mirror JSON.
+This is the same Jackson version already included through GraphHopper, not an APK version upgrade.
+Online desktop maps use OpenStreetMap attribution and its public raster tile policy; offline map
+owners supply attribution through MBTiles metadata.

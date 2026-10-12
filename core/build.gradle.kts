@@ -19,6 +19,8 @@ dependencies {
     // HTTP client for everything that talks to a server (sync, downloads, routing, search).
     // `api` because callers pass OkHttp types (clients) into core classes.
     api(libs.okhttp)
+    // Streaming JSON for desktop output; the APK already includes this version through GraphHopper.
+    implementation(libs.jackson.core)
     testImplementation(kotlin("test"))
     testImplementation(libs.junit)
 }

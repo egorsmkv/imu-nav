@@ -1,6 +1,9 @@
 package org.imunav.core.location
 
 import org.imunav.core.geo.GeoPoint
+import org.imunav.core.gnss.FixSource
+import org.imunav.core.gnss.PlanningPosition
+import org.imunav.core.gnss.RawFix
 import org.imunav.core.nav.GuidanceState
 import org.imunav.core.nav.PositionSource
 import java.time.Instant
@@ -30,6 +33,24 @@ data class NavigationPositionSample(
     companion object {
         const val MAX_AGE_MS = 2_000L
         const val MAX_UTC_MS = 4_102_444_799_999L // NMEA's two-digit year is unambiguous through 2099.
+
+        /** Share the hub's trusted planning fix without a route; preserve measurement age instead of refreshing old coordinates. */
+        fun fromIdle(nowMs: Long, utcMs: Long, goodGps: RawFix?, coarse: RawFix?): NavigationPositionSample? {
+            val fix = PlanningPosition.select(nowMs, freshFix(goodGps, nowMs), freshFix(coarse, nowMs)) ?: return null
+            val accuracy = fix.accuracyM?.toDouble() ?: return null
+            val bearing = fix.bearingDeg?.toDouble() ?: 0.0
+            return NavigationPositionSample(
+                fix.point,
+                fix.speedMps?.toDouble() ?: 0.0,
+                ((bearing % 360) + 360) % 360,
+                accuracy,
+                if (fix.source == FixSource.GPS) PositionSource.GPS else PositionSource.CELL,
+                fix.elapsedMs,
+                utcMs - (nowMs - fix.elapsedMs),
+            ).takeIf { it.fresh(nowMs) }
+        }
+
+        private fun freshFix(fix: RawFix?, nowMs: Long): RawFix? = fix?.takeIf { !it.isMock && nowMs - it.elapsedMs in 0..MAX_AGE_MS }
 
         /** Called immediately after an engine tick, using the tick's monotonic clock. */
         fun from(state: GuidanceState, elapsedMs: Long, utcMs: Long): NavigationPositionSample? {

@@ -4,15 +4,16 @@ use crate::api::{ApiError, AppState, run_db};
 use crate::auth;
 use axum::extract::{DefaultBodyLimit, State};
 use axum::http::{HeaderMap, StatusCode};
-use axum::routing::{get, post};
+use axum::routing::{get, post, put};
 use axum::{Json, Router};
+use imu_nav_protocol::{Frame, Guidance, MAX_ROUTE_BYTES, Route, VERSION};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Semaphore, watch};
 use tokio::task::JoinSet;
@@ -151,6 +152,13 @@ fn coordinate(degrees: f64, width: usize) -> String {
 struct Published {
     sample: Sample,
     received: Instant,
+    guidance: Option<Guidance>,
+    route: Option<Arc<MirrorRoute>>,
+}
+
+struct MirrorRoute {
+    route: Route,
+    frames: Vec<Vec<u8>>,
 }
 
 struct Session {
@@ -161,6 +169,7 @@ struct Session {
     elapsed_ms: Option<u64>,
     samples: watch::Sender<Option<Arc<Published>>>,
     slots: Arc<Semaphore>,
+    route: Option<Arc<MirrorRoute>>,
 }
 
 /// Only the current sample and bounded active sessions survive in memory; nothing is archived.
@@ -205,6 +214,7 @@ impl LivePositionHub {
                     .is_some_and(|sample| sample.received.elapsed() >= SAMPLE_TTL);
                 if stale {
                     session.samples.send_replace(None);
+                    session.route = None;
                 }
                 if session.updated.elapsed() >= SESSION_TTL {
                     session.samples.send_replace(None);
@@ -264,6 +274,16 @@ pub(crate) fn router() -> Router<AppState> {
         .route("/v1/live", get(capability))
         .route("/v1/live/session", post(start).put(publish).delete(stop))
         .layer(DefaultBodyLimit::max(2_048))
+        .merge(
+            Router::new()
+                .route("/v1/live/session/navigation", put(publish_navigation))
+                .layer(DefaultBodyLimit::max(8_192)),
+        )
+        .merge(
+            Router::new()
+                .route("/v1/live/session/route", put(publish_route))
+                .layer(DefaultBodyLimit::max(MAX_ROUTE_BYTES)),
+        )
 }
 
 #[derive(Serialize)]
@@ -271,6 +291,7 @@ struct ReceiverInfo {
     address: Ipv4Addr,
     port: u16,
     receivers: usize,
+    navigation_version: u8,
 }
 
 fn receiver_info(state: &AppState, account: i64) -> Result<ReceiverInfo, ApiError> {
@@ -296,6 +317,7 @@ fn receiver_info(state: &AppState, account: i64) -> Result<ReceiverInfo, ApiErro
         address: config.bind,
         port: receiver.port,
         receivers,
+        navigation_version: VERSION,
     })
 }
 
@@ -382,6 +404,7 @@ async fn start(
             elapsed_ms: None,
             samples,
             slots: Arc::new(Semaphore::new(4)),
+            route: None,
         },
     );
     tracing::info!(sessions = sessions.len(), "live position session started");
@@ -403,6 +426,71 @@ async fn publish(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(sample): Json<Sample>,
+) -> Result<Json<ReceiverInfo>, ApiError> {
+    publish_sample(state, headers, sample, None).await
+}
+
+/// Atomic position/guidance publishing uses the same ordering and consent gates as RMC.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NavigationPublish {
+    sample: Sample,
+    guidance: Option<Guidance>,
+}
+
+async fn publish_navigation(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<NavigationPublish>,
+) -> Result<Json<ReceiverInfo>, ApiError> {
+    if input.guidance.as_ref().is_some_and(|guidance| {
+        !guidance.valid()
+            || guidance.source != input.sample.source
+            || guidance.uncertainty_m.to_bits() != input.sample.uncertainty_m.to_bits()
+    }) {
+        return Err(ApiError(StatusCode::BAD_REQUEST, "INVALID_LIVE_GUIDANCE"));
+    }
+    publish_sample(state, headers, input.sample, input.guidance).await
+}
+
+async fn publish_route(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(route): Json<Route>,
+) -> Result<StatusCode, ApiError> {
+    let _gate = state.write_gate.read().await;
+    let (account, login_id) = authorized(&state, &headers).await?;
+    let id = session_header(&headers)?;
+    let frames = route
+        .frames()
+        .map_err(|_| ApiError(StatusCode::BAD_REQUEST, "INVALID_LIVE_ROUTE"))?;
+    state.live_position.prune();
+    let mut sessions = state
+        .live_position
+        .sessions
+        .lock()
+        .expect("live session lock");
+    let session = sessions
+        .get_mut(&account)
+        .filter(|session| session.id == id && session.login_id == login_id)
+        .ok_or(ApiError(StatusCode::NOT_FOUND, "LIVE_SESSION_NOT_FOUND"))?;
+    if let Some(previous) = &session.route {
+        if previous.route == route {
+            return Ok(StatusCode::NO_CONTENT);
+        }
+        if route.revision <= previous.route.revision {
+            return Err(ApiError(StatusCode::CONFLICT, "LIVE_ROUTE_ORDER"));
+        }
+    }
+    session.route = Some(Arc::new(MirrorRoute { route, frames }));
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn publish_sample(
+    state: AppState,
+    headers: HeaderMap,
+    sample: Sample,
+    guidance: Option<Guidance>,
 ) -> Result<Json<ReceiverInfo>, ApiError> {
     if !sample.valid() {
         return Err(ApiError(StatusCode::BAD_REQUEST, "INVALID_LIVE_SAMPLE"));
@@ -431,11 +519,30 @@ async fn publish(
     if session.sequence > 0 && session.updated.elapsed() < Duration::from_millis(250) {
         return Err(ApiError(StatusCode::TOO_MANY_REQUESTS, "LIVE_RATE_LIMIT"));
     }
+    if let Some(revision) = guidance
+        .as_ref()
+        .and_then(|guidance| guidance.route_revision)
+        && session
+            .route
+            .as_ref()
+            .is_none_or(|route| route.route.revision != revision)
+    {
+        return Err(ApiError(StatusCode::CONFLICT, "LIVE_ROUTE_MISSING"));
+    }
+    if guidance
+        .as_ref()
+        .and_then(|guidance| guidance.route_revision)
+        .is_none()
+    {
+        session.route = None;
+    }
     session.sequence = sample.sequence;
     session.elapsed_ms = Some(sample.elapsed_ms);
     session.updated = Instant::now();
     session.samples.send_replace(Some(Arc::new(Published {
         sample,
+        guidance,
+        route: session.route.clone(),
         received: Instant::now(),
     })));
     Ok(Json(receiver))
@@ -497,31 +604,97 @@ async fn stream(
 ) {
     let mut interval = tokio::time::interval(AUTH_INTERVAL);
     let mut last_sequence = 0;
+    let mut mirror = false;
+    let mut request = Vec::new();
+    let mut request_byte = [0u8; 1];
+    let mut route_revision = None;
+    let mut route_index = 0;
+    let mut sent_revision = None;
+    let mut checked = Instant::now()
+        .checked_sub(AUTH_INTERVAL)
+        .unwrap_or_else(Instant::now);
     loop {
-        if !eligible(&state, account, &login_id).await.unwrap_or(false) {
-            state.live_position.stop_login(account, &login_id);
-            break;
+        if checked.elapsed() >= AUTH_INTERVAL {
+            if !eligible(&state, account, &login_id).await.unwrap_or(false) {
+                state.live_position.stop_login(account, &login_id);
+                break;
+            }
+            checked = Instant::now();
         }
         let current = samples.borrow_and_update().clone();
         let Some(current) = current.filter(|sample| sample.received.elapsed() < SAMPLE_TTL) else {
             break;
         };
         if current.sample.sequence != last_sequence {
-            let nmea = current.sample.nmea();
-            if !matches!(
-                tokio::time::timeout(WRITE_TIMEOUT, socket.write_all(nmea.as_bytes())).await,
-                Ok(Ok(()))
-            ) {
+            let bytes = if mirror {
+                let age = current.sample.age_ms
+                    + u64::try_from(current.received.elapsed().as_millis()).unwrap_or(5000);
+                let frame = Frame::State {
+                    version: VERSION,
+                    state: Box::new(imu_nav_protocol::State {
+                        sequence: current.sample.sequence,
+                        elapsed_ms: current.sample.elapsed_ms,
+                        utc_ms: current.sample.utc_ms,
+                        age_ms: age,
+                        nmea: current.sample.nmea(),
+                        guidance: current.guidance.clone(),
+                    }),
+                };
+                let Ok(bytes) = imu_nav_protocol::encode(&frame) else {
+                    break;
+                };
+                bytes
+            } else {
+                current.sample.nmea().into_bytes()
+            };
+            if !write_frame(&mut socket, &bytes).await {
                 break;
             }
             last_sequence = current.sample.sequence;
         }
+        if mirror
+            && let Some(route) = &current.route
+            && sent_revision != Some(route.route.revision)
+        {
+            if route_revision != Some(route.route.revision) {
+                route_revision = Some(route.route.revision);
+                route_index = 0;
+            }
+            if let Some(bytes) = route.frames.get(route_index) {
+                if !write_frame(&mut socket, bytes).await {
+                    break;
+                }
+                route_index += 1;
+                if route_index == route.frames.len() {
+                    sent_revision = route_revision;
+                }
+                continue;
+            }
+        }
         tokio::select! {
             changed = samples.changed() => { if changed.is_err() { break; } }
             _ = interval.tick() => {}
+            read = socket.read(&mut request_byte) => {
+                if !matches!(read, Ok(1)) || mirror { break; }
+                request.push(request_byte[0]);
+                if !imu_nav_protocol::HANDSHAKE.starts_with(&request) { break; }
+                if request == imu_nav_protocol::HANDSHAKE {
+                    let Ok(hello) = imu_nav_protocol::encode(&Frame::Hello { version: VERSION }) else { break; };
+                    if !write_frame(&mut socket, &hello).await { break; }
+                    mirror = true;
+                    last_sequence = 0;
+                }
+            }
         }
     }
     let _ = socket.shutdown().await;
+}
+
+async fn write_frame(socket: &mut TcpStream, bytes: &[u8]) -> bool {
+    matches!(
+        tokio::time::timeout(WRITE_TIMEOUT, socket.write_all(bytes)).await,
+        Ok(Ok(()))
+    )
 }
 
 #[cfg(test)]

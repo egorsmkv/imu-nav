@@ -6,6 +6,13 @@ A public cell server is operated by the person or organization that deploys it. 
 
 Review the English, Ukrainian, and Russian notice text in `server/config.production.toml` for the real deployment. Increase `CELLS_PRIVACY_VERSION` whenever a material notice change requires new consent. The server rejects uploads under an older version; downloads and sign-in remain available.
 
+Desktop navigation mirroring expands optional `live_position` processing to the planned route,
+destination, maneuvers and navigation/GPS status. Before deploying it, disclose those fields and
+the configured VPN recipients in all three notice languages, increase the operator notice version
+and obtain fresh consent. **Share route and guidance** is a separate per-trip opt-in on Android.
+The relay holds only the latest route and state in memory; expiry, stop and consent/account
+revocation clear them. No route history or navigation state is added to persistent storage.
+
 ## Data and controls
 
 | Record | Purpose | Default live retention | User control |

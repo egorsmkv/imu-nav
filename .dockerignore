@@ -1,0 +1,19 @@
+# Allowlist: the root build context must never send accounts, keys, captures or local config.
+**
+!server/
+!server/Dockerfile
+!server/Cargo.toml
+!server/Cargo.lock
+!server/src/
+!server/src/**
+!server/templates/
+!server/templates/**
+!server/static/
+!server/static/**
+!desktop/
+!desktop/protocol/
+!desktop/protocol/Cargo.toml
+!desktop/protocol/src/
+!desktop/protocol/src/**
+!desktop/protocol/fixtures/
+!desktop/protocol/fixtures/**

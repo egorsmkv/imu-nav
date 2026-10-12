@@ -20,11 +20,14 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.imunav.app.R
 import org.imunav.app.graph
+import org.imunav.app.location.PositionSharingPhase
 import org.imunav.app.ui.MainActivity
 import org.imunav.app.ui.formatDistance
 import org.imunav.app.ui.formatDuration
 import org.imunav.app.ui.instructionLine
 import org.imunav.core.location.MockLocationStatus
+import org.imunav.core.location.NavigationMirrorInput
+import org.imunav.core.location.NavigationPositionSample
 import org.imunav.core.nav.NavigationEngine
 import org.imunav.core.util.PeriodicDeadline
 import org.imunav.core.util.RenewableLease
@@ -40,7 +43,7 @@ import kotlin.time.Duration.Companion.milliseconds
  *  - holds a partial wake lock so the CPU keeps running the 2 Hz engine loop with the screen off,
  *  - calls [AppGraph.tick] every [NavigationEngine.TICK_MS] until navigation ends.
  *
- * Start with [start] when navigation starts; it stops itself when the engine is no longer active.
+ * Start with [start] for navigation or explicit position sharing; stop when neither needs location.
  */
 class NavService : LifecycleService() {
     /** The engine loop; null until started. */
@@ -85,18 +88,27 @@ class NavService : LifecycleService() {
         if (loop == null) {
             loop = lifecycleScope.launch {
                 app.awaitTripRestoration()
-                if (app.engine.state.active) app.startSensing()
+                if (app.engine.state.active || app.positionSharing.status.value.enabled) app.startSensing()
                 var tickCount = 0
                 val cadence = PeriodicDeadline(SystemClock.elapsedRealtime(), NavigationEngine.TICK_MS)
-                while (isActive && app.engine.state.active) {
+                while (isActive && (app.engine.state.active || app.positionSharing.status.value.enabled)) {
                     wakeLease.renewIfDue(SystemClock.elapsedRealtime()) { timeout ->
                         val lock = wakeLock
                         wakeControl.execute { lock?.acquire(timeout) }
                     }
-                    app.tick()
+                    if (app.engine.state.active) app.tick()
+                    val nowMs = SystemClock.elapsedRealtime()
+                    val utcMs = System.currentTimeMillis()
+                    app.hub.updateGpsState(nowMs)
                     app.mockLocationSharing.update(app.engine.state)
-                    app.positionSharing.update(app.engine.state, SystemClock.elapsedRealtime(), System.currentTimeMillis(), app.powerProfile.value.positionSharingMs)
-                    if (!app.engine.state.active) break
+                    app.positionSharing.update(
+                        app.engine.state,
+                        nowMs,
+                        utcMs,
+                        app.powerProfile.value.positionSharingMs,
+                        NavigationMirrorInput(app.engine.state, app.hub.gpsState, app.hub.lastJudged?.verdict?.level, app.hub.jammed),
+                        if (app.engine.state.active) null else NavigationPositionSample.fromIdle(nowMs, utcMs, app.hub.lastGood, app.hub.lastNet),
+                    )
                     if (tickCount % NOTIFY_EVERY_TICKS == 0) updateNotification()
                     tickCount++
                     delay(cadence.delayAfterWork(SystemClock.elapsedRealtime()).milliseconds)
@@ -114,6 +126,7 @@ class NavService : LifecycleService() {
         graph.mockLocationSharing.stop()
         graph.positionSharing.stop()
         graph.onNavigationServiceStopped()
+        graph.stopSensing()
         val lock = wakeLock
         wakeControl.execute { if (lock?.isHeld == true) lock.release() }
         wakeControl.shutdown()
@@ -125,8 +138,20 @@ class NavService : LifecycleService() {
         val state = graph.engine.state
         val step = state.nextStep
         val guidance = when {
+            !state.active -> getString(
+                if (graph.positionSharing.status.value.local.phase == PositionSharingPhase.ACTIVE ||
+                    graph.positionSharing.status.value.internet.phase == PositionSharingPhase.ACTIVE
+                ) {
+                    R.string.position_sharing_active
+                } else {
+                    R.string.position_sharing_waiting
+                },
+            )
+
             state.arrived -> getString(R.string.arrived)
+
             step != null -> formatDistance(resources, state.distToNextM) + " · " + instructionLine(resources, step)
+
             else -> formatDuration(resources, state.remainingS)
         }
         val text = if (graph.positionSharing.status.value.enabled) {
@@ -151,7 +176,7 @@ class NavService : LifecycleService() {
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         return NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_nav)
-            .setContentTitle(getString(R.string.notification_title))
+            .setContentTitle(getString(if (graph.engine.state.active) R.string.notification_title else R.string.position_sharing_title))
             .setContentText(text)
             .setContentIntent(open)
             .setOngoing(true)

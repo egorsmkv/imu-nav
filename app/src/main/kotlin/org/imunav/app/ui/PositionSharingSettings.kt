@@ -9,6 +9,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -43,12 +44,14 @@ internal fun PositionSharingSettings(app: AppGraph, navigating: Boolean) {
     val status by sharing.status.collectAsStateWithLifecycle()
     var mode by remember { mutableStateOf(PositionSharingMode.LOCAL) }
     var address by remember { mutableStateOf<String?>(null) }
+    var shareNavigation by remember { mutableStateOf(false) }
     var pending by remember { mutableStateOf<Pair<DiagnosticOwner, CellPrivacyNotice>?>(null) }
     var loading by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val resources = LocalResources.current
     LaunchedEffect(sharing) { sharing.refreshAddresses() }
+    LaunchedEffect(navigating) { if (!navigating) shareNavigation = false }
     LaunchedEffect(status.addresses) {
         if (address !in status.addresses) address = status.addresses.singleOrNull()
     }
@@ -56,6 +59,14 @@ internal fun PositionSharingSettings(app: AppGraph, navigating: Boolean) {
     SectionHeader(stringResource(R.string.position_sharing_title))
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(stringResource(R.string.position_sharing_explanation), style = MaterialTheme.typography.bodySmall)
+        FlowRow {
+            Checkbox(checked = if (status.enabled) status.shareNavigation else shareNavigation, enabled = navigating && !status.standalone && !loading, onCheckedChange = {
+                shareNavigation = it
+                if (status.enabled) sharing.setShareNavigation(it)
+            })
+            Text(stringResource(R.string.position_sharing_navigation))
+        }
+        Text(stringResource(R.string.position_sharing_navigation_warning), style = MaterialTheme.typography.bodySmall)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             PositionSharingMode.entries.forEach { choice ->
                 FilterChip(selected = mode == choice, enabled = !status.enabled && !loading, onClick = { mode = choice }, label = {
@@ -79,17 +90,17 @@ internal fun PositionSharingSettings(app: AppGraph, navigating: Boolean) {
         if (!navigating) Text(stringResource(R.string.position_sharing_start_route))
         if (failed) Text(stringResource(R.string.position_sharing_setup_failed), color = MaterialTheme.colorScheme.error)
         val localReady = mode == PositionSharingMode.INTERNET || address in status.addresses
-        Button(enabled = status.enabled || (navigating && localReady && !loading), onClick = {
+        Button(enabled = status.enabled || (localReady && !loading), onClick = {
             if (status.enabled) {
                 sharing.stop()
             } else if (mode == PositionSharingMode.LOCAL || app.cells.livePositionConsentGranted()) {
-                sharing.start(mode, address, app.engine.state.active)
+                app.startPositionSharing(mode, address, shareNavigation)
             } else {
                 failed = false
                 val owner = app.cells.diagnosticOwner()
                 if (owner == null) {
                     failed = true
-                    if (mode == PositionSharingMode.BOTH) sharing.start(mode, address, app.engine.state.active)
+                    if (mode == PositionSharingMode.BOTH) app.startPositionSharing(mode, address, shareNavigation)
                 } else {
                     loading = true
                     scope.launch {
@@ -97,16 +108,16 @@ internal fun PositionSharingSettings(app: AppGraph, navigating: Boolean) {
                             val notice = app.cells.privacyNotice(owner.server)
                             if (notice == null || app.cells.diagnosticOwner() != owner) {
                                 failed = true
-                                if (mode == PositionSharingMode.BOTH) sharing.start(mode, address, app.engine.state.active)
+                                if (mode == PositionSharingMode.BOTH) app.startPositionSharing(mode, address, shareNavigation)
                             } else if (app.cells.privacyGranted("live_position", notice.version)) {
-                                sharing.start(mode, address, app.engine.state.active)
+                                app.startPositionSharing(mode, address, shareNavigation)
                             } else {
                                 pending = owner to notice
                             }
                         }.onFailure { failure ->
                             if (failure is CancellationException) throw failure
                             failed = true
-                            if (mode == PositionSharingMode.BOTH) sharing.start(mode, address, app.engine.state.active)
+                            if (mode == PositionSharingMode.BOTH) app.startPositionSharing(mode, address, shareNavigation)
                         }
                         loading = false
                     }
@@ -143,7 +154,7 @@ internal fun PositionSharingSettings(app: AppGraph, navigating: Boolean) {
                     scope.launch {
                         runCatching {
                             app.cells.grantPrivacyConsent("live_position", notice.version, owner)
-                            if (app.cells.diagnosticOwner() == owner) sharing.start(mode, address, app.engine.state.active)
+                            if (app.cells.diagnosticOwner() == owner) app.startPositionSharing(mode, address, shareNavigation)
                         }.onFailure { failure ->
                             if (failure is CancellationException) throw failure
                             failed = true

@@ -1,0 +1,13 @@
+[workspace]
+members = ["app", "protocol"]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+rust-version = "1.99"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

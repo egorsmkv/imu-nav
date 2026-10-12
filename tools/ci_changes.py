@@ -20,13 +20,14 @@ NATIVE = ('native/nav-core/', 'native/nav-jni/', 'native/nav-sim/', 'native/Carg
           'native/Cargo.lock', 'native/.cargo/', 'native/rust-toolchain.toml', 'native/rust-toolchain')
 SERVER = ('server/src/', 'server/templates/', 'server/static/', 'server/Cargo.toml',
           'server/Cargo.lock', 'server/build.rs', 'server/.cargo/', 'server/rust-toolchain.toml',
-          'server/rust-toolchain')
+          'server/rust-toolchain', 'desktop/protocol/', 'desktop/Cargo.toml')
 CORE = ('core/src/',)
 ROUTING = ('routing/src/',)
 REPLAY = ('replay/src/',)
 COVERAGE = ('tools/rust_coverage.py', 'tools/rust_coverage_rustc.py', 'tools/tests/test_rust_coverage.py')
 ANDROID_RUST_BUILD = ('scripts/build-rust-android.sh', 'scripts/build-rust-android.ps1')
 SUITES = {
+    'desktop': ('.github/workflows/desktop.yml', 'desktop/') + RUST,
     'tools': ('tools/', '.github/workflows/kotlin-coverage.yml'),
     'android': ('.github/workflows/android-gps.yml', 'app/src/main/', 'app/src/fdroid/',
                 'app/src/debug/', 'app/src/androidTest/', 'app/lint.xml', 'app/proguard-rules.pro',

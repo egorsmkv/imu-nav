@@ -796,17 +796,17 @@
     <string name="map_hide_zoom_buttons">Приховати кнопки масштабу під час навігації</string>
     <string name="map_hide_zoom_buttons_hint">Приховати + та − під час поїздки. Масштабування двома пальцями залишається доступним.</string>
     <string name="position_sharing_title">Поділитися навігаційною позицією</string>
-    <string name="position_sharing_explanation">Передавайте оцінену навігаційну позицію в сумісні застосунки на іншому телефоні. Вмикайте передачу окремо для кожної поїздки. Передана позиція позначена як оцінена; числова невизначеність залишається в IMU Nav. Це дослідницький прототип, а не система безпеки.</string>
+    <string name="position_sharing_explanation">Передавайте поточну позицію в сумісні застосунки на іншому телефоні або комп’ютері, з поїздкою чи без неї. Вмикайте передавання явно для кожного сеансу. Передані позиції позначені як оцінені. Це дослідницький прототип, а не система безпеки.</string>
     <string name="position_sharing_local_warning">Самостійно ввімкніть точку доступу з паролем і підключіть інший телефон. Будь-хто в обраній локальній мережі може отримувати вашу точну позицію. Оберіть адресу точки доступу нижче.</string>
     <string name="position_sharing_refresh">Оновити адреси</string>
     <string name="position_sharing_no_address">Немає приватної IPv4-адреси. Увімкніть точку доступу або підключіться до приватної мережі Wi-Fi.</string>
     <string name="position_sharing_vpn">Передавання через інтернет потребує входу на сервер обміну, налаштованого приймача та приватного VPN на iPhone. Воно не замінює системний GPS в iOS.</string>
-    <string name="position_sharing_start_route">Почніть навігацію перед увімкненням передавання.</string>
+    <string name="position_sharing_start_route">Можна передавати позицію без поїздки. Потрібна свіжа довірена GPS-позиція або мережева чи стільникова позиція; маршрут і вказівки доступні лише під час навігації.</string>
     <string name="position_sharing_setup_failed">Не вдалося налаштувати. Увійдіть на обраний сервер обміну, перевірте з’єднання та повторіть.</string>
     <string name="position_sharing_stop">Зупинити передавання</string>
     <string name="position_sharing_start">Почати передавання</string>
     <string name="position_sharing_withdraw">Відкликати згоду на передавання позиції</string>
-    <string name="position_sharing_consent">Дозвольте серверу тимчасово обробляти вашу поточну позицію, швидкість, напрямок, джерело та невизначеність для приватного приймача. Історія позицій не зберігається. Зупинка завершує передавання для цієї поїздки; відкликання згоди також блокує майбутнє передавання через інтернет.</string>
+    <string name="position_sharing_consent">Дозвольте серверу тимчасово обробляти вашу поточну позицію, швидкість, напрямок, джерело та невизначеність для приватного приймача. Історія позицій не зберігається. Зупинка завершує цей сеанс; відкликання згоди також блокує майбутнє передавання через інтернет.</string>
     <string name="position_sharing_local">Локально</string>
     <string name="position_sharing_internet">Інтернет</string>
     <string name="position_sharing_both">Обидва</string>
@@ -822,4 +822,6 @@
     <string name="position_sharing_server_unavailable">Передавання позиції недоступне на цьому сервері</string>
     <string name="position_sharing_account_changed">Обліковий запис змінено; почніть новий сеанс передавання</string>
     <string name="position_sharing_notification">Передавання позиції · %1$s</string>
+    <string name="position_sharing_navigation">Поширювати маршрут і вказівки</string>
+    <string name="position_sharing_navigation_warning">Одержувачі бачитимуть пункт призначення, запланований маршрут і стан навігації. Цей вибір діє лише для поточної поїздки. Зміна перепідключає одержувачів.</string>
 </resources>

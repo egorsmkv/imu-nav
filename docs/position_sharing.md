@@ -3,7 +3,9 @@
 [Documentation index](../README.md)
 
 IMU Nav can send its current navigation estimate to compatible apps on another phone using NMEA over TCP.
-It works during car and walking navigation, including while the Android screen is off.
+The [Windows desktop viewer](desktop.md) can also mirror the route and guidance over the same local
+or private-VPN endpoint when **Share route and guidance** is enabled for the current trip.
+It works with or without a trip, including while the Android screen is off. Route and guidance require active car or walking navigation.
 Android supplies the position and voice guidance; the receiving app displays or records the position.
 The instructions below use Mergin Maps as an example receiver.
 This is a research prototype, not a safety system.
@@ -13,7 +15,7 @@ This is a research prototype, not a safety system.
 1. Download routing, map and tower data to Android before leaving coverage. Prepare and download
    an offline Mergin project to the iPhone; online map layers still need internet.
 2. Enable a password-protected Android hotspot yourself and connect the iPhone to it.
-3. Start a route in IMU Nav. Open **Settings → General → Share navigation position**.
+3. Open **Settings → General → Share navigation position**.
 4. Choose **Local**, refresh addresses, and select the hotspot's private IPv4 address. If several
    addresses appear, use the hotspot interface, not a VPN or another Wi-Fi interface.
 5. Tap **Start sharing**. IMU Nav displays the receiver address and port **10110**.
@@ -45,7 +47,12 @@ phones need an internet connection and the iPhone must keep its VPN connected.
 uses the receiver you selected; it does not automatically switch between the two addresses.
 Internet sharing reconnects with bounded backoff and sends only the newest fresh estimate.
 
-Sharing must be enabled for each trip. Stop it explicitly or end navigation; service teardown and
+Sharing must be explicitly enabled for each session. No trip is required: choose a mode and tap
+**Start sharing** to use fresh trusted GPS or network/cell fixes. The foreground notification
+stays visible, and sharing continues with the screen off. Without a usable fix the listener
+waits; manual starts, fused fixes and rejected/mock GPS are not exported. Route and guidance
+are unavailable without navigation. Starting a trip keeps sharing enabled but does not enable
+route/guidance automatically. Stop sharing explicitly or end navigation; service teardown and
 process restart also turn it off. **Withdraw live-position consent** stops sharing and blocks future
 internet publishing until you grant consent again. Changing accounts requires a new sharing session.
 Unreachable servers expire the stream automatically even if Android cannot deliver the stop request.
@@ -53,7 +60,9 @@ Unreachable servers expire the stream automatically even if Android cannot deliv
 ## What the receiving phone sees
 
 The sender exports an **estimated** RMC position, with UTC, speed in knots and route bearing. Even
-when Android has trusted GPS, the exported coordinate is navigation output rather than raw GPS.
+during navigation, the exported coordinate is navigation output rather than raw GPS. Without a
+trip, it uses the trusted planning position and preserves the original measurement age; absent
+speed/bearing are encoded as zero.
 When GPS is unreliable, IMU Nav continues using the selected navigation model and available inputs.
 The phones should travel together if the iPhone position is intended to represent its own location.
 
@@ -62,6 +71,19 @@ a navigation allowance, not a calibrated GPS error standard deviation; its numer
 visible on Android. Mergin's unknown altitude/accuracy must not be interpreted as zero uncertainty.
 Mergin is not supplied the route, voice instructions or regional map packs. Apple Maps and other
 iOS apps do not receive this stream as system GPS.
+
+### Desktop route and guidance
+
+**Share route and guidance** is off by default for every trip. Enabling it exposes your destination,
+planned route, maneuvers and current navigation/GPS status to mirror receivers, including through
+the relay if Internet sharing is selected. Turning it off reconnects receivers and clears the old
+relay session before position-only sharing resumes. Android remains responsible for route planning,
+navigation and voice guidance; the desktop cannot issue navigation commands.
+
+Default TCP receivers still receive exactly the same estimated RMC sentences. Desktop receivers
+request version 1 with a bounded subscription line and then receive newline-delimited JSON with
+embedded RMC and separately chunked geometry. See the [wire contract](desktop.md#mirror-protocol-version-1).
+Older Android/server endpoints provide position-only viewing. Desktop maps are configured separately.
 
 Samples older than two seconds are not sent. Invalid output disconnects receivers. The relay expires
 its cached sample after three seconds without a fresh upload; Mergin may take additional time to
@@ -77,6 +99,9 @@ Live sharing is disabled unless `[live_position]` is present. Run **one relay pr
 ports: session and position state are in memory and cannot be load-balanced between processes.
 An operator privacy notice is required, including disclosure of transient live position processing
 and VPN recipients. Change the notice version when enabling this purpose and inform existing users.
+Before deploying desktop mirroring, disclose optional route, destination and guidance processing in
+all notice languages, increase the operator notice version, and obtain current `live_position`
+consent. No additional listener, VPN peer or database schema is introduced.
 
 Example additions to the ignored server configuration (replace example IDs and VPN addresses):
 
@@ -115,9 +140,18 @@ All calls use the existing bearer account token. Only configured accounts have r
 | Endpoint | Behavior |
 | --- | --- |
 | `GET /v1/live` | Returns `{address, port, receivers}` for this account, or capability/configuration error. |
-| `POST /v1/live/session` | Creates a per-trip session; returns `{session, receiver: {address, port, receivers}}`. Requires eligibility and current `live_position` consent. |
+| `POST /v1/live/session` | Creates an explicitly enabled sharing session; returns `{session, receiver: {address, port, receivers}}`. Requires eligibility and current `live_position` consent. |
 | `PUT /v1/live/session` | With `X-Live-Session`, replaces the latest sample and returns receiver details. |
 | `DELETE /v1/live/session` | With `X-Live-Session`, idempotently ends the caller's matching session. |
+| `PUT /v1/live/session/navigation` | With `X-Live-Session`, atomically publishes `{sample, guidance}` under the existing ownership/consent gates; 8 KiB limit. `guidance: null` clears cached route/details. |
+| `PUT /v1/live/session/route` | With `X-Live-Session`, replaces `{revision, geometry, summary, destination}`; 1 MiB limit, at most 100,000 geographic points. Retries of identical geometry/revision are idempotent. |
+
+Receiver metadata additionally advertises `navigation_version: 1`. The original position-only
+endpoint retains its 2048-byte limit and input shape. Navigation updates retain the same sample
+ordering and maximum four-per-second rate; geometry is uploaded only when the route changes.
+The server retains only the newest route/state in memory, discarding them on sample/session expiry,
+stop, consent revocation or account/login invalidation. Slow receiver writes retain the two-second
+deadline. The mirror's numeric uncertainty is labelled a navigation allowance, not GPS accuracy.
 
 Publish JSON fields are `sequence`, `lat`, `lon`, `speed_mps`, `bearing_deg`, `uncertainty_m`, `source`,
 `elapsed_ms`, `utc_ms`, and `age_ms`. Sequence and elapsed sample time must strictly increase.

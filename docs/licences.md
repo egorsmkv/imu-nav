@@ -34,3 +34,8 @@ Compose UI Test JUnit4 uses the existing Compose BOM and Apache 2.0 licence; it 
 the AndroidTest APK and does not change production dependencies.
 
 The sharing server uses `zip` 8.6 (MIT) to validate user-uploaded profiling archives. It enables only DEFLATE support; this dependency is not included in the Android app.
+
+The desktop viewer uses eframe/egui, Walkers, image, rusqlite/SQLite and rfd under permissive
+licences; its GUI dependencies are separate from the APK and relay. The Windows artifact includes
+third-party notices. See the [desktop dependency reference](reference/licences.md#desktop-navigation-viewer).
+Kotlin's streaming mirror encoder directly uses the existing Jackson Core 2.19.2 (Apache 2.0).

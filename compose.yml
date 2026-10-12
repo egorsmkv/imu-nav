@@ -17,7 +17,8 @@ services:
 
   server:
     build:
-      context: ./server
+      context: .
+      dockerfile: server/Dockerfile
     restart: unless-stopped
     init: true
     depends_on:

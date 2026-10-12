@@ -25,6 +25,12 @@ curl http://127.0.0.1:8080/health
 
 Run these commands from the repository root. Generate a URL-safe database password with
 `openssl rand -hex 32`; the same value is used by PostgreSQL and the server connection URL.
+
+The server image now builds from the repository root so it can include the small shared desktop
+navigation protocol crate. For a direct image build, use
+`docker build --file server/Dockerfile --tag imu-nav-cell-server .`. The root `.dockerignore` is an
+allowlist: local credentials, server configuration, databases, captures and signing files are
+excluded from the build context. The image contains no desktop GUI dependencies.
 The URL and SMTP settings are required so registration can verify email and users can reset
 passwords.
 

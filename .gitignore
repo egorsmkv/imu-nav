@@ -5,6 +5,7 @@ build/
 .externalNativeBuild/
 native/target/
 server/target/
+desktop/target/
 server/*.sqlite3*
 server/config.toml
 .env

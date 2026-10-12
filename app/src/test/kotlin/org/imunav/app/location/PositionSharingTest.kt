@@ -10,6 +10,10 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.imunav.core.diagnostics.DiagnosticOwner
 import org.imunav.core.geo.GeoPoint
+import org.imunav.core.gnss.GpsState
+import org.imunav.core.location.NavigationMirrorEncoder
+import org.imunav.core.location.NavigationMirrorInput
+import org.imunav.core.location.NavigationPositionSample
 import org.imunav.core.location.PositionSharingAccount
 import org.imunav.core.nav.GuidanceState
 import org.imunav.core.nav.PositionSource
@@ -48,8 +52,6 @@ class PositionSharingTest {
 
     @Test
     fun bothModeKeepsLocalWorkingWithoutInternetAccountAndIdleStopRequiresNewOptIn() = runBlocking {
-        sharing.start(PositionSharingMode.LOCAL, "127.0.0.1", navigating = false)
-        assertFalse(sharing.status.value.enabled)
         sharing.refreshAddresses()
         await { it.addresses.isNotEmpty() }
         assertTrue(addressThread.get() != Thread.currentThread())
@@ -111,4 +113,71 @@ class PositionSharingTest {
     }
 
     private suspend fun await(predicate: (PositionSharingStatus) -> Boolean) = withTimeout(5_000) { sharing.status.first(predicate) }
+
+    @Test
+    fun standaloneSharingWaitsForAFixAndStaysEnabledWithoutGuidanceUntilStopped() = runBlocking {
+        sharing.start(PositionSharingMode.LOCAL, "127.0.0.1", navigating = false, shareNavigation = true)
+        assertTrue(sharing.status.value.enabled)
+        assertFalse(sharing.status.value.shareNavigation)
+        sharing.setShareNavigation(true)
+        assertFalse(sharing.status.value.shareNavigation)
+        sharing.update(GuidanceState(), clock.get(), 1_767_225_600_000, 500)
+        await { it.local.endpoint != null && it.local.phase == PositionSharingPhase.WAITING }
+        val sample = NavigationPositionSample.from(guidance, clock.get(), 1_767_225_600_000)
+        sharing.update(GuidanceState(), clock.get(), 1_767_225_600_000, 500, idleSample = sample)
+        await { it.local.phase == PositionSharingPhase.ACTIVE }
+        Socket("127.0.0.1", 10110).use { socket ->
+            socket.soTimeout = 3_000
+            val reader = socket.getInputStream().bufferedReader()
+            assertTrue(reader.readLine().startsWith("\$GPRMC,"))
+            socket.getOutputStream().write(NavigationMirrorEncoder.HANDSHAKE.toByteArray())
+            assertTrue(reader.readLine().contains("\"hello\""))
+            assertTrue(reader.readLine().contains("\"guidance\":null"))
+            clock.set(3_001)
+            sharing.update(GuidanceState(), clock.get(), 1_767_225_602_001, 500, idleSample = sample)
+            await { it.local.phase == PositionSharingPhase.WAITING }
+            assertNull(reader.readLine())
+            assertTrue(sharing.status.value.enabled)
+        }
+        sharing.stop()
+        assertFalse(sharing.status.value.enabled)
+    }
+
+    @Test
+    fun startingATripFromStandaloneSharingDoesNotAutomaticallyExposeItsRoute() {
+        sharing.start(PositionSharingMode.LOCAL, "127.0.0.1", navigating = false)
+        sharing.update(guidance, clock.get(), 1_767_225_600_000, 500)
+        assertFalse(sharing.status.value.standalone)
+        assertFalse(sharing.status.value.shareNavigation)
+        sharing.setShareNavigation(true)
+        assertTrue(sharing.status.value.shareNavigation)
+        sharing.update(GuidanceState(), clock.get(), 1_767_225_600_000, 500)
+        assertFalse(sharing.status.value.enabled)
+    }
+
+    @Test
+    fun disablingDetailsClosesTheOldStreamAndReconnectingReceivesOnlyPosition() = runBlocking {
+        sharing.start(PositionSharingMode.LOCAL, "127.0.0.1", navigating = true, shareNavigation = true)
+        sharing.update(guidance, clock.get(), 1_767_225_600_000, 500, NavigationMirrorInput(guidance, GpsState.LOST, null, false))
+        await { it.local.phase == PositionSharingPhase.ACTIVE }
+        Socket("127.0.0.1", 10110).use { socket ->
+            socket.soTimeout = 3_000
+            val reader = socket.getInputStream().bufferedReader()
+            assertTrue(reader.readLine().startsWith("\$GPRMC,"))
+            socket.getOutputStream().write(NavigationMirrorEncoder.HANDSHAKE.toByteArray())
+            assertTrue(reader.readLine().contains("\"hello\""))
+            assertTrue(reader.readLine().contains("\"guidance\":{"))
+            sharing.setShareNavigation(false)
+            assertNull(reader.readLine())
+        }
+        await { !it.shareNavigation && it.local.phase == PositionSharingPhase.ACTIVE }
+        Socket("127.0.0.1", 10110).use { socket ->
+            socket.soTimeout = 3_000
+            val reader = socket.getInputStream().bufferedReader()
+            assertTrue(reader.readLine().startsWith("\$GPRMC,"))
+            socket.getOutputStream().write(NavigationMirrorEncoder.HANDSHAKE.toByteArray())
+            assertTrue(reader.readLine().contains("\"hello\""))
+            assertTrue(reader.readLine().contains("\"guidance\":null"))
+        }
+    }
 }

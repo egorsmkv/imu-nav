@@ -782,17 +782,17 @@
     <string name="map_hide_zoom_buttons">Hide zoom buttons during navigation</string>
     <string name="map_hide_zoom_buttons_hint">Hide + and − during a trip. Pinch to zoom remains available.</string>
     <string name="position_sharing_title">Share navigation position</string>
-    <string name="position_sharing_explanation">Share the navigation estimate with compatible apps on another phone. Enable sharing separately for each trip. Exported positions are marked as estimates; numerical uncertainty remains in IMU Nav. This is a research prototype, not a safety system.</string>
+    <string name="position_sharing_explanation">Share your current position with compatible apps on another phone or computer, with or without a trip. Enable sharing explicitly for each session. Exported positions are marked as estimates. This is a research prototype, not a safety system.</string>
     <string name="position_sharing_local_warning">Enable a password-protected hotspot yourself and connect the other phone. Anyone on the selected local network can receive your precise position. Select the hotspot address below.</string>
     <string name="position_sharing_refresh">Refresh addresses</string>
     <string name="position_sharing_no_address">No private IPv4 address. Enable your hotspot or connect to a private Wi-Fi network.</string>
     <string name="position_sharing_vpn">Internet sharing requires your signed-in sharing server, a configured receiver, and a private VPN on the iPhone. It does not replace system GPS on iOS.</string>
-    <string name="position_sharing_start_route">Start navigation before enabling sharing.</string>
+    <string name="position_sharing_start_route">You can share position without a trip. A fresh trusted GPS or network/cell position is required; route and guidance sharing requires active navigation.</string>
     <string name="position_sharing_setup_failed">Setup failed. Sign in to the selected sharing server, check connectivity, and try again.</string>
     <string name="position_sharing_stop">Stop sharing</string>
     <string name="position_sharing_start">Start sharing</string>
     <string name="position_sharing_withdraw">Withdraw live-position consent</string>
-    <string name="position_sharing_consent">Allow this server to temporarily process your live position, speed, bearing, source and uncertainty for your private receiver. No live-position history is retained. Stopping sharing ends this trip; withdrawing consent also blocks future internet sharing.</string>
+    <string name="position_sharing_consent">Allow this server to temporarily process your live position, speed, bearing, source and uncertainty for your private receiver. No live-position history is retained. Stopping sharing ends this session; withdrawing consent also blocks future internet sharing.</string>
     <string name="position_sharing_local">Local</string>
     <string name="position_sharing_internet">Internet</string>
     <string name="position_sharing_both">Both</string>
@@ -808,4 +808,6 @@
     <string name="position_sharing_server_unavailable">Live sharing is unavailable on this server</string>
     <string name="position_sharing_account_changed">Account changed; start a new sharing session</string>
     <string name="position_sharing_notification">Position sharing · %1$s</string>
+    <string name="position_sharing_navigation">Share route and guidance</string>
+    <string name="position_sharing_navigation_warning">Receivers can see your destination, planned route and navigation status. This choice applies only to this trip. Changing it reconnects receivers.</string>
 </resources>

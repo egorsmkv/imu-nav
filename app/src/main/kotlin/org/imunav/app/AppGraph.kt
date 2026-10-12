@@ -30,6 +30,7 @@ import org.imunav.app.diagnostics.ProfileCapture
 import org.imunav.app.haptics.Haptics
 import org.imunav.app.location.MockLocationSharing
 import org.imunav.app.location.PositionSharing
+import org.imunav.app.location.PositionSharingMode
 import org.imunav.app.maps.MapDisplayPreferences
 import org.imunav.app.maps.OfflineMap
 import org.imunav.app.nativecore.NativeEstimatorBridge
@@ -413,7 +414,7 @@ class AppGraph(private val context: Context) {
 
     private fun updateDisplays() {
         restorationHost.value = displays.visible || serviceStartup.started
-        if (displays.needsSensing(engine.state.active)) startSensing() else stopSensing()
+        if (displays.needsSensing(engine.state.active) || positionSharing.status.value.enabled) startSensing() else stopSensing()
         if (displays.visible && idleRefresh == null) {
             idleRefresh = scope.launch {
                 while (isActive) {
@@ -495,7 +496,7 @@ class AppGraph(private val context: Context) {
 
     /** Stop them again to save battery. */
     fun stopSensing() {
-        if (displays.needsSensing(engine.state.active) &&
+        if ((displays.needsSensing(engine.state.active) || positionSharing.status.value.enabled) &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         ) {
             return
@@ -511,6 +512,12 @@ class AppGraph(private val context: Context) {
      * deliberately ignored — Android builds it largely from GPS, so it inherits spoofed positions.
      */
     fun currentPosition(): GeoPoint? = PlanningPosition.select(SystemClock.elapsedRealtime(), hub.lastGood, hub.lastNet)?.point
+
+    /** Explicit sharing owns the foreground location service even when there is no trip to tick. */
+    fun startPositionSharing(mode: PositionSharingMode, address: String?, shareNavigation: Boolean = false) {
+        positionSharing.start(mode, address, engine.state.active, shareNavigation)
+        runCatching { NavService.start(context) }.onFailure { onNavigationServiceFailure() }
+    }
 
     /** Use [p] as the route origin instead of the trusted position; [label] is from address search. */
     fun setManualStart(p: GeoPoint?, label: String? = null) {

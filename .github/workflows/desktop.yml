@@ -1,0 +1,62 @@
+name: Desktop Windows
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.event_name }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Select affected work
+        id: changes
+        run: python tools/ci_changes.py --suite desktop
+      - name: Install Rust
+        if: steps.changes.outputs.run == 'true'
+        run: rustup toolchain install 1.99.0 --profile minimal --component rustfmt --component clippy
+      - uses: actions/cache@v4
+        if: steps.changes.outputs.run == 'true'
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            desktop/target
+          key: desktop-${{ runner.os }}-${{ hashFiles('desktop/Cargo.lock') }}
+      - name: Check formatting
+        if: steps.changes.outputs.run == 'true'
+        run: cargo +1.99.0 fmt --manifest-path desktop/Cargo.toml --all --check
+      - name: Check code
+        if: steps.changes.outputs.run == 'true'
+        run: cargo +1.99.0 clippy --manifest-path desktop/Cargo.toml --workspace --all-targets --locked -- -W clippy::pedantic -D warnings
+      - name: Test desktop and protocol
+        if: steps.changes.outputs.run == 'true'
+        run: cargo +1.99.0 test --manifest-path desktop/Cargo.toml --workspace --locked
+      - name: Build portable executable
+        if: steps.changes.outputs.run == 'true'
+        run: cargo +1.99.0 build --manifest-path desktop/Cargo.toml -p imu-nav-desktop --release --locked
+      - name: Package executable and notices
+        if: steps.changes.outputs.run == 'true'
+        run: |
+          New-Item -ItemType Directory -Force dist/imu-nav-desktop
+          Copy-Item desktop/target/release/imu-nav-desktop.exe, LICENSE, docs/desktop.md dist/imu-nav-desktop
+          cargo +1.99.0 metadata --manifest-path desktop/Cargo.toml --locked --format-version 1 | Out-File -Encoding utf8 desktop/target/metadata.json
+          python desktop/tools/notices.py desktop/target/metadata.json dist/imu-nav-desktop/THIRD_PARTY_NOTICES.txt
+      - uses: actions/upload-artifact@v4
+        if: steps.changes.outputs.run == 'true'
+        with:
+          name: imu-nav-desktop-windows-x64
+          path: dist/imu-nav-desktop/
