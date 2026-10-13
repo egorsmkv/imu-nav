@@ -32,6 +32,11 @@ If the runner reports a Gradle failure, inspect that run's `gradle.log` first.
 CI also uploads the host test XML results, including assertion messages and
 stack traces, alongside coverage diagnostics when collection fails.
 
+The desktop NMEA fixture is a single text line; its checkout line ending may be
+LF or CRLF. `NavigationMirrorTest` reads that line independently of the file
+terminator and requires CRLF in both standalone NMEA output and the mirrored
+state's embedded NMEA value.
+
 JaCoCo 0.8.14 is pinned in the version catalog. Instrumentation is opt-in through
 `-PkotlinCoverage`; ordinary tests, release APKs and performance measurements do
 not use the agent. The runner invokes `kotlinCoverageReport` with this property

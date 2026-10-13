@@ -31,10 +31,18 @@ class NavigationMirrorTest {
     private val input = NavigationMirrorInput(state, GpsState.LOST, TrustLevel.BAD, jammed = true)
 
     @Test
+    fun nmeaFixtureMatchesCrlfWireFramesAndEmbeddedState() {
+        // Text fixture line endings depend on checkout; NMEA wire output must always use CRLF.
+        val expected = File("../desktop/protocol/fixtures/position.nmea").readLines().single() + "\r\n"
+        assertEquals(expected, NavigationNmea.encode(sample))
+        val encoded = NavigationMirrorEncoder().encode(sample, input, enabled = true, nowMs = sample.elapsedMs)
+        assertEquals(expected, fields(encoded.publication.stateLine.toString(Charsets.UTF_8))["nmea"])
+    }
+
+    @Test
     fun rustFixturesMatchPhoneEncodingAndTurningOffDetailsClearsRoute() {
         val encoder = NavigationMirrorEncoder()
         val encoded = encoder.encode(sample, input, enabled = true, nowMs = sample.elapsedMs)
-        assertEquals(File("../desktop/protocol/fixtures/position.nmea").readText(), NavigationNmea.encode(sample))
         assertEquals(fields(File("../desktop/protocol/fixtures/guidance.json").readText()), fields(encoded.guidanceJson.orEmpty()))
         assertEquals(1L, encoded.publication.routeRevision)
         assertNotNull(encoded.routeJson)
