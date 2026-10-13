@@ -15,6 +15,12 @@ The workflow selects affected app, core, routing, native and build inputs. Docum
 changes avoid builds and emulators; manual dispatch and merge queues run the suite. Matrix
 failures do not cancel other API results. This suite is separate from host Kotlin coverage.
 
+The 16 KB image uses 6144 MB of emulator RAM; the other images use 4096 MB.
+At 4096 MB, the 16 KB image's first-boot Google services exhausted guest memory
+and Android's low-memory killer terminated instrumentation before any tests
+completed. A `Process crashed` result still fails the job; inspect `logcat.txt`
+to distinguish a low-memory kill from an application exception.
+
 ## What is exercised
 
 Nine ordinary tests and two host-orchestrated recovery stages under `app/src/androidTest/kotlin/org/imunav/app/location/` exercise the production
