@@ -1,0 +1,166 @@
+name: Google Play bundle
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Unsigned validation or signed AAB (never uploads to Play)
+        type: choice
+        options: [test, release]
+        default: test
+      last_play_version_code:
+        description: Highest versionCode ever uploaded in Play Console; 0 only for a new app
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: play-bundle-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'validation' }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+
+jobs:
+  build:
+    name: Validate unsigned Play release
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate release request before building
+        env:
+          MODE: ${{ inputs.mode }}
+          LAST_CODE: ${{ inputs.last_play_version_code }}
+        run: |
+          if [[ "$MODE" == release ]]; then
+            [[ "$GITHUB_REF" == refs/heads/main ]] || { echo 'Release requires reviewed main source'; exit 1; }
+            [[ "$LAST_CODE" =~ ^[0-9]+$ ]] || { echo 'Enter the highest Play Console versionCode (0 for first upload)'; exit 1; }
+          fi
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Install pinned Android toolchain
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.99.0-beta
+          components: rustfmt, clippy
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+      - name: Test bundle and signing tooling
+        run: python3 -m unittest discover -s tools/tests -v
+      - name: Build release AAB and run project checks without credentials
+        env:
+          ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/28.2.13676358
+        run: ./gradlew --no-daemon -PunsignedPlay check :app:bundlePlayRelease :app:lintPlayRelease
+      - name: Download checksum-pinned bundletool
+        run: bash scripts/download-bundletool.sh "$RUNNER_TEMP/bundletool.jar"
+      - name: Verify bundle, versions and generated APK 16 KB alignment
+        env:
+          LAST_CODE: ${{ inputs.last_play_version_code }}
+        run: |
+          args=()
+          if [[ -n "$LAST_CODE" ]]; then args+=(--last-play-version-code "$LAST_CODE"); fi
+          python3 tools/play_bundle.py verify \
+            --bundle app/build/outputs/bundle/playRelease/app-play-release.aab \
+            --bundletool "$RUNNER_TEMP/bundletool.jar" \
+            --zipalign "$ANDROID_HOME/build-tools/36.0.0/zipalign" \
+            --output build/play-validation "${args[@]}"
+          cp app/build/outputs/bundle/playRelease/app-play-release.aab build/play-validation/
+          cp app/build/outputs/mapping/playRelease/mapping.txt build/play-validation/
+          echo 'Unsigned AAB validated. Not ready for upload. Static 16 KB checks do not replace ARM64 device testing.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: imu-nav-play-unsigned-${{ github.sha }}
+          path: build/play-validation/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload check reports even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: play-check-reports-${{ github.sha }}
+          path: |
+            app/build/reports/
+            core/build/reports/
+            routing/build/reports/
+            build/play-validation/*.json
+          if-no-files-found: warn
+
+  sign:
+    name: Sign verified bundle with existing upload key
+    needs: build
+    # No pull_request_target, PR source, tag source, Gradle execution or cache restoration here.
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'release' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: google-play-release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/download-artifact@v4
+        with:
+          name: imu-nav-play-unsigned-${{ github.sha }}
+          path: build/play-validation
+      - name: Verify artifact checksum
+        working-directory: build/play-validation
+        run: sha256sum --check --strict SHA256SUMS
+      - name: Sign a separate AAB and cryptographically verify every payload
+        env:
+          IMUNAV_RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          IMUNAV_RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          IMUNAV_RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          IMUNAV_RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          IMUNAV_PLAY_UPLOAD_CERT_SHA256: ${{ vars.PLAY_UPLOAD_CERT_SHA256 }}
+        run: >-
+          python3 tools/play_bundle.py sign
+          --bundle build/play-validation/app-play-release.aab
+          --output build/play-signed/app-play-release.aab
+      - name: Validate signed bundle structure
+        run: |
+          bash scripts/download-bundletool.sh "$RUNNER_TEMP/bundletool.jar"
+          java -jar "$RUNNER_TEMP/bundletool.jar" validate --bundle=build/play-signed/app-play-release.aab
+      - name: Stage public release evidence and checksum
+        env:
+          UPLOAD_CERT: ${{ vars.PLAY_UPLOAD_CERT_SHA256 }}
+        run: |
+          cp build/play-validation/{manifest.xml,bundle-config.json,verification.json} build/play-signed/
+          cp build/play-validation/mapping.txt build/play-signed/
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          directory = Path('build/play-signed')
+          bundle = directory / 'app-play-release.aab'
+          digest = hashlib.sha256(bundle.read_bytes()).hexdigest()
+          (directory / 'SHA256SUMS').write_text(f'{digest}  {bundle.name}\n')
+          (directory / 'signed-bundle.json').write_text(json.dumps({
+              'commit': os.environ['GITHUB_SHA'], 'aab_sha256': digest,
+              'upload_certificate_sha256': os.environ['UPLOAD_CERT'].replace(':', '').strip().lower(),
+              'notice': 'verification.json describes the unsigned input; SHA256SUMS describes the signed upload AAB. No Play upload performed.'
+          }, indent=2) + '\n')
+          PY
+          echo 'Signed AAB prepared. Download the artifact and follow docs/google_play.md; no upload or publication performed.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: imu-nav-play-signed-${{ github.sha }}
+          path: build/play-signed/
+          if-no-files-found: error
+          retention-days: 14

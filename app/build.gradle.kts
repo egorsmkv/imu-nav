@@ -58,7 +58,7 @@ android {
         Properties().apply { f.inputStream().use { load(it) } }
     }
     signingConfigs {
-        if (keystoreProps != null) {
+        if (keystoreProps != null && !providers.gradleProperty("unsignedPlay").isPresent) {
             create("release") {
                 storeFile = rootProject.file(keystoreProps.getProperty("storeFile"))
                 storePassword = keystoreProps.getProperty("storePassword")

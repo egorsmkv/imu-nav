@@ -69,3 +69,5 @@ but cannot load offline routing packs.
 For a host-only starting point, run the [Rust checks](docs/core/build-and-replay.md#building-and-testing)
 with Rust 1.99+; they do not need a JDK, Android SDK or NDK. Contributors should also run
 `./gradlew check` in a configured Android development environment.
+
+Google Play AAB preparation, protected signing and publication checklist: [Google Play guide](docs/google_play.md).
