@@ -40,8 +40,8 @@ android {
         applicationId = "org.imunav.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 8
-        versionName = "0.8.0"
+        versionCode = 9
+        versionName = "0.9.0"
         buildConfigField("String", "SOURCE_REVISION", buildConfigString(sourceRevision.get()))
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "MONOBANK_DONATION_URL", buildConfigString(configuredLink("monobankDonationUrl")))
