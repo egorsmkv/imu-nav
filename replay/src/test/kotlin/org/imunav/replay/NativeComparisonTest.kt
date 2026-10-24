@@ -106,6 +106,29 @@ class NativeComparisonTest {
     }
 
     @Test
+    fun handPlacedPositionMovesBothEstimatorsWithoutGps() {
+        val route = drive(1.0).filterIsInstance<TripEvent.RouteSet>().first().route
+        val point = route.pointAt(850.0).point
+        val events = buildList {
+            add(TripEvent.Start(START_MS, route.geometry.last(), emptyList(), 5.0))
+            add(TripEvent.RouteSet(START_MS, route))
+            // The driver puts the marker where they really are; the car is standing still.
+            add(TripEvent.ManualPosition(START_MS + 500, point, 50.0))
+            for (offset in 500L..3000L step 500) {
+                val time = START_MS + offset
+                // Reference-only: hidden from both estimators, it just marks where to score them.
+                add(TripEvent.Fix(RawFix(FixSource.GPS, WALL_MS + offset, time, point.lat, point.lon, accuracyM = 4f, speedMps = 0f)))
+            }
+        }
+        val result = NativeComparison().replay(events, 0.0)
+        assertTrue(result.samples.isNotEmpty())
+        // Without the correction both would still be near the start (s = 0); a few metres of glide is fine.
+        val first = result.samples.first()
+        assertEquals(850.0, first.kotlinS, 25.0)
+        assertEquals(850.0, first.nativeS, 25.0)
+    }
+
+    @Test
     fun commandWritesPairedCsvAndSummaryFromARecording() {
         val directory = Files.createTempDirectory("native-replay-test").toFile()
         try {
