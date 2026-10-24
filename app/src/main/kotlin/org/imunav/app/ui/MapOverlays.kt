@@ -58,24 +58,26 @@ internal fun ManeuverBanner(nav: GuidanceState) {
     val res = LocalResources.current
     val step = nav.nextStep ?: return
     val m = maneuverOf(step)
-    Surface(color = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary, shape = RoundedCornerShape(24.dp), shadowElevation = 6.dp) {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(m.icon, contentDescription = null, modifier = Modifier.size(52.dp))
-                Spacer(Modifier.width(14.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(formatDistance(res, nav.distToNextM), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                    Text(maneuverText(res, step), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    if (step.name.isNotBlank()) {
-                        Text(step.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                }
+    Surface(color = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary, shape = RoundedCornerShape(20.dp), shadowElevation = 6.dp) {
+        // One row: maneuver, what and where, then the following maneuver on the right — the banner stays short.
+        Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(m.icon, contentDescription = null, modifier = Modifier.size(44.dp))
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(formatDistance(res, nav.distToNextM), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 1)
+                val street = step.name.takeIf { it.isNotBlank() }
+                Text(
+                    if (street == null) maneuverText(res, step) else maneuverText(res, step) + " · " + street,
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
             nav.thenStep?.let { then ->
-                Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(stringResource(R.string.then), style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f, fill = false))
-                    Spacer(Modifier.width(6.dp))
-                    Icon(maneuverOf(then).icon, contentDescription = maneuverText(res, then), modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(stringResource(R.string.then), style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                    Icon(maneuverOf(then).icon, contentDescription = maneuverText(res, then), modifier = Modifier.size(24.dp))
                 }
             }
         }

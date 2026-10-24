@@ -277,7 +277,7 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
 
                     // ---------------- Cell towers
                     SectionHeader(stringResource(R.string.sec_cells))
-                    cellAvailabilityMessage(c.availability)?.let { Text(stringResource(it), color = MaterialTheme.colorScheme.error) }
+                    cellAvailabilityMessage(c.availability)?.let { SettingsWarning(stringResource(it)) }
                     CellHistorySection(app.cells.usageHistory)
                     SwitchItem(stringResource(R.string.cells_show_map), null, c.showTowers) { mgr.setShowTowers(it) }
                     ListItem(
@@ -315,7 +315,7 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                         keyboard = KeyboardType.Number,
                         helper = stringResource(R.string.cells_region_hint),
                     )
-                    if (mccs.isBlank()) Text(stringResource(R.string.cells_region_required), color = MaterialTheme.colorScheme.error)
+                    if (mccs.isBlank()) SettingsWarning(stringResource(R.string.cells_region_required))
 
                     // ---------------- Data sources
                     SectionHeader(stringResource(R.string.sec_sources))

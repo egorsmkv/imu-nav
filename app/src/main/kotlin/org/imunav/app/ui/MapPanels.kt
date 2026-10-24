@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,6 +21,7 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.AltRoute
 import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddLocationAlt
@@ -31,13 +31,15 @@ import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.TripOrigin
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -339,12 +341,15 @@ private fun IconLine(icon: ImageVector, text: String) {
     }
 }
 
-/** Bottom panel during navigation: time and distance left, speed, Reroute and Stop. */
+/**
+ * Bottom panel during navigation: time and distance left, speed, Reroute and Stop — all in one
+ * row, so the panel stays low and the map keeps most of the screen even with large fonts.
+ */
 @Composable
 internal fun NavigationPanel(nav: GuidanceState, showActions: Boolean, onStop: () -> Unit, onReroute: () -> Unit) {
     val context = LocalContext.current
     val res = LocalResources.current
-    PanelSurface {
+    PanelSurface(compact = true) {
         if (nav.arrived) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(R.string.arrived), style = MaterialTheme.typography.titleLarge)
@@ -352,41 +357,36 @@ internal fun NavigationPanel(nav: GuidanceState, showActions: Boolean, onStop: (
             }
             return@PanelSurface
         }
-        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Column {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.weight(1f)) {
                 Text(
                     formatDuration(res, nav.remainingS),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 val arrival = DateFormat.getTimeFormat(context).format(Date(System.currentTimeMillis() + (nav.remainingS * 1000).toLong()))
                 Text(
                     formatDistance(res, nav.remainingM) + " · " + stringResource(R.string.nav_arrival_at, arrival),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 if (nav.rerouting) Text(stringResource(R.string.rerouting), style = MaterialTheme.typography.bodySmall, color = WarnAmber)
             }
             SpeedBadge(nav.speedKmh.toInt(), nav.speedLimitKmh)
-        }
-        if (showActions) {
-            Spacer(Modifier.size(14.dp))
-            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = onReroute,
-                    enabled = !nav.rerouting,
-                    contentPadding = PaddingValues(horizontal = 12.dp),
-                ) {
-                    Text(stringResource(R.string.action_reroute))
+            if (showActions) {
+                OutlinedIconButton(onClick = onReroute, enabled = !nav.rerouting) {
+                    Icon(Icons.AutoMirrored.Filled.AltRoute, contentDescription = stringResource(R.string.action_reroute))
                 }
-                Button(
+                FilledIconButton(
                     onClick = onStop,
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError),
+                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError),
                 ) {
-                    Icon(Icons.Filled.Close, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.action_stop))
+                    Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.action_stop))
                 }
             }
         }

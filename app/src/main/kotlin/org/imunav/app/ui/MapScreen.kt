@@ -370,34 +370,50 @@ fun MapScreen(
             } else {
                 Modifier.align(Alignment.CenterEnd).offset { IntOffset(0, (topInsetPx - bottomInsetPx) / 2) }.padding(end = 12.dp)
             }
-            Column(
-                Modifier.heightIn(
-                    max = controlsMaxHeight,
-                ).windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)).then(mapControlsModifier).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(MapButtonSpacing),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                MapButton(Icons.Filled.Bookmark, stringResource(R.string.bookmarks), onClick = onOpenBookmarks)
+            val mapButtons = buildList<@Composable () -> Unit> {
+                add { MapButton(Icons.Filled.Bookmark, stringResource(R.string.bookmarks), onClick = onOpenBookmarks) }
                 if (showTowerButton) {
-                    MapButton(Icons.Filled.CellTower, stringResource(R.string.cd_towers), selected = ui.cells.showTowers) {
-                        app.cells.setShowTowers(!ui.cells.showTowers)
+                    add {
+                        MapButton(Icons.Filled.CellTower, stringResource(R.string.cd_towers), selected = ui.cells.showTowers) {
+                            app.cells.setShowTowers(!ui.cells.showTowers)
+                        }
                     }
                 }
                 if (showZoomButtons) {
-                    MapButton(Icons.Filled.Add, stringResource(R.string.cd_zoom_in)) { controller.zoomBy(1.0) }
-                    MapButton(Icons.Filled.Remove, stringResource(R.string.cd_zoom_out)) { controller.zoomBy(-1.0) }
+                    add { MapButton(Icons.Filled.Add, stringResource(R.string.cd_zoom_in)) { controller.zoomBy(1.0) } }
+                    add { MapButton(Icons.Filled.Remove, stringResource(R.string.cd_zoom_out)) { controller.zoomBy(-1.0) } }
                 }
                 if (nav.active && !nav.arrived) {
-                    MapButton(Icons.Filled.EditLocationAlt, stringResource(R.string.cd_correct_position), selected = correctingPosition) {
-                        correctingPosition = !correctingPosition
-                        if (correctingPosition) ui.currentPosition?.let { controller.moveTo(it, animate = false) }
+                    add {
+                        MapButton(Icons.Filled.EditLocationAlt, stringResource(R.string.cd_correct_position), selected = correctingPosition) {
+                            correctingPosition = !correctingPosition
+                            if (correctingPosition) ui.currentPosition?.let { controller.moveTo(it, animate = false) }
+                        }
                     }
                 }
                 val pos = ui.currentPosition
                 if (pos != null && showRecenter) {
-                    MapButton(Icons.Filled.MyLocation, stringResource(R.string.cd_recenter)) {
-                        controller.followZoom = null
-                        if (nav.active) following = true else controller.moveTo(pos)
+                    add {
+                        MapButton(Icons.Filled.MyLocation, stringResource(R.string.cd_recenter)) {
+                            controller.followZoom = null
+                            if (nav.active) following = true else controller.moveTo(pos)
+                        }
+                    }
+                }
+            }
+            // A short map area (small phone, large font, tall banner and panel) gets a second column of
+            // buttons instead of a scrolling rail where the lower buttons cannot be seen.
+            val buttonsPerColumn = ((controlsMaxHeight - MapOverlayPadding * 2 + MapButtonSpacing) / (MapButtonSize + MapButtonSpacing)).toInt().coerceAtLeast(1)
+            Row(
+                Modifier.heightIn(max = controlsMaxHeight)
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)).then(mapControlsModifier),
+                horizontalArrangement = Arrangement.spacedBy(MapButtonSpacing),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                // The first buttons stay in the rightmost column, where they always were.
+                mapButtons.chunked(buttonsPerColumn).reversed().forEach { column ->
+                    Column(verticalArrangement = Arrangement.spacedBy(MapButtonSpacing), horizontalAlignment = Alignment.CenterHorizontally) {
+                        column.forEach { button -> button() }
                     }
                 }
             }

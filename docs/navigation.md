@@ -13,7 +13,7 @@ The app tries to use trusted GPS first. When GPS is unreliable, it estimates pro
    The "Location is off" warning offers **Don’t show again**; to see it again, turn off **Settings → General → Map display → Hide the “Location is off” warning**.
 4. To pass through other places on the way, tap **Add stop** in the route panel (up to five stops), or long-press the map once a destination is set and choose **Add as stop**. Stops appear in driving order between **From** and **To**; tap a stop to replace it, or its × to remove it. Reroutes keep the stops that are still ahead.
 5. Review the proposed route, then tap **Start**. Tap the status pill to see positioning details, including why a GPS fix was rejected.
-6. Tap **Stop** when the trip ends. The ride is saved in **History**, even if it was short.
+6. Tap **Stop** (the red ✕ in the bottom panel) when the trip ends. The ride is saved in **History**, even if it was short. The fork button next to it is **Reroute**.
 
 ## Map display while navigating
 
@@ -34,6 +34,10 @@ setting, or start another trip. Recenter remains available after a manual zoom, 
 still following your position. Panning pauses position following; Recenter resumes it and restores
 the automatic scale. Walking keeps zoom 17.5; disabling automatic zoom uses zoom 16 for driving,
 unless you choose a manual scale. These options currently configure the phone map, not Android Auto.
+
+While navigating, the next-turn banner and the bottom panel (time, distance, speed, Reroute, Stop)
+each take a single row so most of the screen stays map, even with large fonts. When the map area is
+too short for one column of map buttons, they wrap into a second column instead of scrolling.
 
 While navigating, the part of the route already driven is drawn grey. A translucent beam around the
 blue position dot shows the direction you face: the road direction during navigation, the phone's
