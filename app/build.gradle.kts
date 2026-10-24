@@ -119,6 +119,18 @@ android {
 
     testCoverage { jacocoVersion = libs.versions.jacoco.get() }
 
+    // Robolectric host tests read the merged resources (strings, themes) of the app; on JDK 17+ it
+    // also needs reflective access to java.io file descriptors to emulate Android's shared memory.
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+        unitTests.all {
+            it.jvmArgs("--add-opens=java.base/java.io=ALL-UNNAMED", "--add-exports=java.base/jdk.internal.access=ALL-UNNAMED")
+            // The same host JNI build the replay tests use, so tests can create the app graph with its native estimators.
+            it.dependsOn(":replay:buildHostNative")
+            it.systemProperty("java.library.path", rootProject.file("native/target/debug").absolutePath)
+        }
+    }
+
     buildFeatures {
         buildConfig = true
         compose = true
@@ -228,6 +240,9 @@ dependencies {
 
     coreLibraryDesugaring(libs.desugar.jdk.libs)
     testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.okhttp.mockwebserver)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.junit)
     androidTestImplementation(platform(libs.compose.bom))

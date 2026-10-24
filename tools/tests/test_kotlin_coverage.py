@@ -56,6 +56,21 @@ class KotlinCoverageTests(unittest.TestCase):
         self.assertEqual(coverage.summarize(sources)['app']['lines'], 4)
         self.assertEqual(coverage.summarize(sources)['replay']['lines'], 2)
 
+    def test_app_screens_are_reported_but_not_gated(self):
+        sources = {
+            'app/src/main/kotlin/org/imunav/app/Logic.kt': {1: True, 2: False},
+            'app/src/main/kotlin/org/imunav/app/ui/Screen.kt': {1: False, 2: False, 3: False},
+            'core/src/main/kotlin/Core.kt': {1: True},
+            'routing/src/main/kotlin/Routing.kt': {1: True},
+            'replay/src/main/kotlin/Replay.kt': {1: True},
+        }
+        app = coverage.summarize(sources)['app']
+        self.assertEqual((app['covered'], app['lines'], app['percent']), (1, 2, 50.0))
+        self.assertEqual((app['ui_covered'], app['ui_lines']), (0, 3))
+        # A module made only of screens has nothing to gate, which is an error rather than 100 %.
+        with self.assertRaisesRegex(RuntimeError, 'No executable production lines for app'):
+            coverage.summarize({**sources, 'app/src/main/kotlin/org/imunav/app/Logic.kt': {}})
+
     def test_unknown_source_or_wrong_ownership_fails_instead_of_excluding_it(self):
         source = self.reports['core'].find('package/sourcefile')
         source.set('name', 'Missing.kt')

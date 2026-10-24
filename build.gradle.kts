@@ -111,6 +111,9 @@ subprojects {
             isEnabled = kotlinCoverageEnabled
             destinationFile = file("${kotlinCoverageOutput.get()}/execution/${project.name}-$name.exec")
             includes = listOf("org.imunav.*")
+            // Robolectric loads app classes through its own class loader: count them too, but not JDK internals.
+            isIncludeNoLocationClasses = true
+            excludes = listOf("jdk.internal.*")
         }
         if (kotlinCoverageEnabled) {
             outputs.upToDateWhen { false }

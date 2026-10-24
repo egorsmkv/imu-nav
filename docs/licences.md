@@ -32,6 +32,8 @@ library’s transitive Robolectric dependencies; production APK dependencies are
 See the [full library list](reference/licences.md) for versions and licences.
 Compose UI Test JUnit4 uses the existing Compose BOM and Apache 2.0 licence; it is confined to
 the AndroidTest APK and does not change production dependencies.
+App host unit tests use Robolectric 4.17 (MIT), AndroidX Test Core 1.6.1 and OkHttp MockWebServer 3
+5.4.0 (both Apache 2.0). They run only on the build machine and are not part of any APK.
 
 The sharing server uses `zip` 8.6 (MIT) to validate user-uploaded profiling archives. It enables only DEFLATE support; this dependency is not included in the Android app.
 

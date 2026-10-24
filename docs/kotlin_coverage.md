@@ -14,7 +14,7 @@ Coverage shows which Kotlin source lines ran during the test suites. A green lin
    python3 tools/kotlin_coverage.py
    ```
 
-3. Open `build/kotlin-coverage/index.html`. Check the per-module gates and follow the links to source lines and detailed reports.
+3. Open `build/kotlin-coverage/index.html`. Check the per-module gates and follow the links to source lines and detailed reports. The app gate counts code that does not draw on screen; screens are listed separately. The goal is 90 % for every module.
 4. If a gate fails, add meaningful tests or review the changed code. Update the saved baseline only after reviewing a full measurement.
 
 The CI job runs the Kotlin/server API test before coverage. This coverage report uses host JVM tests; it does not measure screens on an emulator. See the [detailed coverage reference](reference/kotlin_coverage.md) and the [glossary](glossary.md).

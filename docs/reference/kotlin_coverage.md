@@ -4,9 +4,27 @@
 
 The Kotlin coverage job measures production source lines in `:core`, `:routing`,
 `:replay` and `:app`. It runs host JVM tests, including the real JNI library,
-and F-Droid debug app unit tests. Android UI, services and device integration stay
-in the denominator even when these tests do not exercise them. This is not
-emulator or device coverage.
+and F-Droid debug app unit tests. This is not emulator or device coverage.
+
+**The app gate counts non-UI code.** Code that draws is verified on devices and is
+listed separately in the report (and `summary.json` as `ui_covered`/`ui_lines`):
+the Compose screens under `app/.../ui/`, the Android Auto screens
+(`CarNavigationScreen`, `CarSearchScreen`), the car map renderer and the MapLibre
+layers (`CarMapRenderer`, `NavigationLayers`, `BuildingVisibility`). The list is
+`UI_PREFIXES` in `tools/kotlin_coverage.py`. Services, sensors, storage, sync and
+the app graph stay in the gate even when tests do not reach them.
+
+**Goal: 90 % for every gate** (`TARGET_PERCENT`). The committed baselines are
+ratchets towards it: raise them whenever tests add coverage, never lower them.
+
+App unit tests run under **Robolectric** (`robolectric.properties` replaces the real
+`ImuNavApp` with a plain `Application`, so each test builds what it checks). They use
+real SQLite and SharedPreferences, the host JNI library (the same build the replay
+tests use), `MockWebServer` for HTTP, a tiny routing pack built with the real pack
+builder (`TestPacks`), and an in-memory stand-in for the Android Keystore
+(`FakeAndroidKeyStore`). A few assertions about replacing files by renaming are
+skipped on Windows hosts, where `File.renameTo` does not replace an existing file;
+Android and CI run them.
 
 ## Run and review
 

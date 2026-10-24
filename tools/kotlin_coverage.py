@@ -22,6 +22,17 @@ MODULES = ('core', 'routing', 'replay', 'app')
 EXECUTIONS = ('core-test', 'routing-test', 'replay-test', 'app-testFdroidDebugUnitTest')
 BASELINE = ROOT / 'config/kotlin-coverage-baseline.json'
 SCHEMA = 1
+# Sources excluded from the app gate (reported separately); the target for the rest is TARGET_PERCENT.
+# They draw: Compose screens, Android Auto screens and the MapLibre map layers (native, device-tested).
+UI_PREFIXES = (
+    'app/src/main/kotlin/org/imunav/app/ui/',
+    'app/src/main/kotlin/org/imunav/app/car/CarNavigationScreen.kt',
+    'app/src/main/kotlin/org/imunav/app/car/CarSearchScreen.kt',
+    'app/src/main/kotlin/org/imunav/app/car/CarMapRenderer.kt',
+    'app/src/main/kotlin/org/imunav/app/maps/NavigationLayers.kt',
+    'app/src/main/kotlin/org/imunav/app/maps/BuildingVisibility.kt',
+)
+TARGET_PERCENT = 90
 
 
 def jacoco_version():
@@ -94,13 +105,23 @@ def merge_reports(reports, inventory, root=ROOT):
     return sources
 
 
+def is_ui(path):
+    """Compose screens are verified on devices; host tests gate the app's non-UI code."""
+    return path.startswith(UI_PREFIXES)
+
+
 def summarize(sources):
     result = {}
     for module in MODULES:
-        lines = [hit for path, values in sources.items() if path.startswith(module + '/') for hit in values.values()]
+        owned = {path: values for path, values in sources.items() if path.startswith(module + '/')}
+        lines = [hit for path, values in owned.items() if not is_ui(path) for hit in values.values()]
         if not lines:
             raise RuntimeError(f'No executable production lines for {module}')
         result[module] = {'covered': sum(lines), 'lines': len(lines), 'percent': 100 * sum(lines) / len(lines)}
+        ui = [hit for path, values in owned.items() if is_ui(path) for hit in values.values()]
+        if ui:
+            # Reported, never silently dropped: the UI share is visible next to the gated number.
+            result[module].update({'ui_covered': sum(ui), 'ui_lines': len(ui)})
     return result
 
 
@@ -149,6 +170,11 @@ def validate_log(output, returncode):
         raise RuntimeError('Gradle failed or reported incompatible coverage data; see gradle.log')
 
 
+def ui_cell(item):
+    """The ungated UI share of a module, or nothing for modules without UI sources."""
+    return f'{item["ui_covered"]}/{item["ui_lines"]} (not gated)' if 'ui_lines' in item else ''
+
+
 def write_reports(output, domain_directory, sources, summary, root=ROOT):
     """Publish deduplicated line reports alongside original JaCoCo branch reports."""
     (output / 'summary.json').write_text(json.dumps({'schema': SCHEMA, 'jacoco': JACOCO, 'modules': summary}, indent=2) + '\n')
@@ -169,12 +195,14 @@ def write_reports(output, domain_directory, sources, summary, root=ROOT):
         file_rows.append(f'<tr><td><a href="sources/{html.escape(path)}.html">{html.escape(path)}</a></td><td>{sum(lines.values())}/{len(lines)}</td></tr>')
     (output / 'coverage.lcov').write_text('\n'.join(lcov) + '\n')
     rows = ''.join(f'<tr><td>{module}</td><td>{item["covered"]}/{item["lines"]}</td><td>{item["percent"]:.2f}%</td>'
-                   f'<td>{item["baseline_covered"]}/{item["baseline_lines"]}</td><td>{"PASS" if item["passed"] else "FAIL"}</td></tr>' for module, item in summary.items())
+                   f'<td>{item["baseline_covered"]}/{item["baseline_lines"]}</td><td>{"PASS" if item["passed"] else "FAIL"}</td>'
+                   f'<td>{ui_cell(item)}</td></tr>' for module, item in summary.items())
     relative = domain_directory.relative_to(output).as_posix()
     links = ''.join(f'<li><a href="{relative}/{module}/html/index.html">{module}: original JaCoCo lines and branches</a></li>' for module in MODULES)
     (output / 'index.html').write_text('<!doctype html><meta charset="utf-8"><title>Kotlin host coverage</title>' + style +
         '<h1>Kotlin host coverage</h1><p>Production source lines, counted once under their owning module. Branches are diagnostic in the original reports.</p>' +
-        '<table><tr><th>Module</th><th>Covered/total</th><th>Coverage</th><th>Baseline</th><th>Gate</th></tr>' + rows +
+        f'<p>The app gate counts non-UI code (Compose screens under {UI_PREFIXES[0]} are listed separately); the goal is {TARGET_PERCENT}% for every gate.</p>' +
+        '<table><tr><th>Module</th><th>Covered/total</th><th>Coverage</th><th>Baseline</th><th>Gate</th><th>UI (informational)</th></tr>' + rows +
         '</table><ul>' + links + '</ul><h2>Combined source coverage</h2><table>' + ''.join(file_rows) + '</table>')
 
 

@@ -83,6 +83,9 @@ These tools are not distributed with the app.
 | ktlint                                            | 1.8.0         | MIT        |
 | JUnit 4                                           | 4.13.2        | EPL 1.0    |
 | kotlin-test                                       | 2.3.21        | Apache 2.0 |
+| Robolectric (app host tests)                      | 4.17          | MIT        |
+| AndroidX Test Core (app host tests)               | 1.6.1         | Apache 2.0 |
+| OkHttp MockWebServer 3 (app host tests)           | 5.4.0         | Apache 2.0 |
 
 ### Data and online services
 

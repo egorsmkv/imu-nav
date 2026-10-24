@@ -11,6 +11,9 @@ coreKtx = "1.17.0"
 maplibre = "13.6.1"
 materialIcons = "1.7.8"
 junit = "4.13.2"
+# Host tests of Android classes (SharedPreferences, SQLite, system services); test-only, MIT licence.
+robolectric = "4.17"
+androidxTestCore = "1.6.1"
 androidTestRunner = "1.6.2"
 androidTestJunit = "1.2.1"
 graphhopper = "11.0"
@@ -41,10 +44,13 @@ compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
 compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended", version.ref = "materialIcons" }
 maplibre-android = { module = "org.maplibre.gl:android-sdk-opengl", version.ref = "maplibre" }
 junit = { module = "junit:junit", version.ref = "junit" }
+robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
+androidx-test-core = { module = "androidx.test:core", version.ref = "androidxTestCore" }
 androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidTestRunner" }
 androidx-test-junit = { module = "androidx.test.ext:junit", version.ref = "androidTestJunit" }
 graphhopper-core = { module = "com.graphhopper:graphhopper-core", version.ref = "graphhopper" }
 okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
+okhttp-mockwebserver = { module = "com.squareup.okhttp3:mockwebserver3", version.ref = "okhttp" }
 jackson-core = { module = "com.fasterxml.jackson.core:jackson-core", version = "2.19.2" }
 sqlite-jdbc = { module = "org.xerial:sqlite-jdbc", version.ref = "sqliteJdbc" }
 graphhopper-map-matching = { module = "com.graphhopper:graphhopper-map-matching", version.ref = "graphhopper" }
