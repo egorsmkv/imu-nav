@@ -75,6 +75,15 @@ Geofabrik Ukraine extract by default. The workflow accepts a different one-word 
 with `search.tantivy/` and no elevation tiles, validates the graph-root/index-directory layout and metadata (`tools/verify_routing_pack.py`
 rejects a pack without `"turnCosts":true`), extracts it, and opens the graph with `PhoneGraphHopper`.
 Expect roughly an hour for Ukraine on a hosted runner because of the edge-based car hierarchy.
+The workflow caches the native search builder and Cargo dependencies, keyed by runner OS/architecture,
+Rust version, manifests, lockfile and search source. A source-only change can reuse dependency builds;
+a cold cache still compiles everything. Generated graphs and search indexes are rebuilt from the input.
+
+In the 2026-10-24 Ukraine runs, the build step rose from 34m 29s
+([SQLite run](https://github.com/egorsmkv/imu-nav/actions/runs/40097041373)) to 36m 48s
+([Tantivy run](https://github.com/egorsmkv/imu-nav/actions/runs/40132906836)). The latter spent
+2m 26s compiling the native builder; pack generation itself was 2,048s versus 2,041s.
+Caching targets that compilation overhead; its net saving needs measurement on a subsequent cache hit.
 
 Pull requests affecting the builder or workflow run the same checks on a
 small Monaco extract. The downloadable GitHub artifact contains `routing-<name>.zip`, its SHA-256
