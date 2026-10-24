@@ -20,7 +20,8 @@ before walking support (`pack.json` without `"profiles"`) still load; _Walk_ is 
 turn of 25–80° and 12 s for a sharper left. Left turns cross oncoming traffic, so they cost more.
 Penalties only change which route is chosen; the estimated travel time stays the road speed. They
 need an edge-based contraction hierarchy: the Ukraine car graph takes ~31 min instead of ~2 min on a
-16-thread desktop, and the graph is ~50 % larger (712 MB instead of 469 MB car-only). `pack.json` says
+16-thread desktop, and the graph is ~50 % larger (car-only 712 MB instead of 469 MB; the full car + foot +
+search pack for Ukraine is 1.04 GB unpacked, a 531 MB ZIP). `pack.json` says
 `"turnCosts":true`. Older packs (without the field) still load and route as before, without turn costs;
 **rebuild and re-import a pack** to get restriction-aware routes on the phone.
 
@@ -57,8 +58,8 @@ On first start the app unpacks it in the background (~20 s for Ukraine) and uses
 reinstalled when an update ships a newer pack, and stays removed if the user removes it (Settings
 offers _Install built-in routing pack_).
 
-The APK grows by the zip size (~400+ MB for Ukraine with car and
-foot profiles and the search index, making the APK ~450+ MB — over Google Play's 200 MB base-APK limit, fine for
+The APK grows by the zip size (~530 MB for Ukraine with car (turn costs) and
+foot profiles and the search index, making the APK ~580+ MB — over Google Play's 200 MB base-APK limit, fine for
 sideloading); both files are gitignored.
 
 The F-Droid flavor deliberately never bundles this locally
