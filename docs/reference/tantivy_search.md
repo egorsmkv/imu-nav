@@ -106,3 +106,8 @@ entry point. Replay remained `p95=20 max=25 rms=10 m`. Windows scripts, a physic
 ARM phone and an Android Auto head unit were not exercised. The later Ukraine
 search-only host measurements are linked above. The release APK was unsigned on this host; the emulator used the
 debug-signed R8 benchmark build.
+
+Android search builds explicitly set both linker `max-page-size` and `common-page-size`
+to 16384, matching the estimator JNI library. This aligns LOAD segments and the end
+of GNU_RELRO for 16 KB Android pages. Release and benchmark APKs must pass
+`tools/verify_android_pages.py`; ZIP alignment alone does not check the ELF layout.

@@ -62,7 +62,7 @@ jobs:
             ~/.cargo/registry/src
             native/target/release
           # Keep compiler/profile/dependency changes separate; Cargo rebuilds changed source on a fallback hit.
-          key: routing-search-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.RUSTUP_TOOLCHAIN }}-${{ hashFiles('native/Cargo.lock', 'native/Cargo.toml', 'native/nav-search/Cargo.toml') }}-${{ hashFiles('native/nav-search/src/**') }}
+          key: routing-search-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.RUSTUP_TOOLCHAIN }}-${{ hashFiles('native/Cargo.lock', 'native/Cargo.toml', 'native/nav-search/Cargo.toml') }}-${{ hashFiles('native/nav-search/src/**', 'native/nav-search/build.rs') }}
           restore-keys: |
             routing-search-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.RUSTUP_TOOLCHAIN }}-${{ hashFiles('native/Cargo.lock', 'native/Cargo.toml', 'native/nav-search/Cargo.toml') }}-
       - name: Install native search builder toolchain
@@ -120,7 +120,7 @@ jobs:
             ~/.cargo/registry/src
             native/target/release
           # Keep compiler/profile/dependency changes separate; Cargo rebuilds changed source on a fallback hit.
-          key: routing-search-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.RUSTUP_TOOLCHAIN }}-${{ hashFiles('native/Cargo.lock', 'native/Cargo.toml', 'native/nav-search/Cargo.toml') }}-${{ hashFiles('native/nav-search/src/**') }}
+          key: routing-search-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.RUSTUP_TOOLCHAIN }}-${{ hashFiles('native/Cargo.lock', 'native/Cargo.toml', 'native/nav-search/Cargo.toml') }}-${{ hashFiles('native/nav-search/src/**', 'native/nav-search/build.rs') }}
           restore-keys: |
             routing-search-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.RUSTUP_TOOLCHAIN }}-${{ hashFiles('native/Cargo.lock', 'native/Cargo.toml', 'native/nav-search/Cargo.toml') }}-
       - name: Install native search builder toolchain
