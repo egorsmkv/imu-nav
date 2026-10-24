@@ -16,6 +16,7 @@ import org.imunav.core.search.AddressSearch
 import org.imunav.core.search.PlaceRow
 import org.imunav.core.search.SearchDb
 import org.imunav.core.search.SearchOrder
+import org.imunav.core.search.StreetAddressRow
 import org.imunav.core.search.StreetRow
 import java.io.File
 import java.sql.Connection
@@ -183,9 +184,9 @@ object SearchIndexBuilder {
     /** Tables: place / street / addr plus FTS4 full-text tables for fast prefix search. */
     private fun createSchema(c: Connection) = c.createStatement().use { st ->
         st.executeUpdate("CREATE TABLE place(id INTEGER PRIMARY KEY, name TEXT, name_en TEXT, kind TEXT, lat REAL, lon REAL, population INTEGER)")
-        st.executeUpdate("CREATE VIRTUAL TABLE place_fts USING fts4(names)")
+        st.executeUpdate("CREATE VIRTUAL TABLE place_fts USING fts4(names, prefix='2,3,4,6,8')")
         st.executeUpdate("CREATE TABLE street(id INTEGER PRIMARY KEY, name TEXT, place_id INTEGER, lat REAL, lon REAL, length REAL)")
-        st.executeUpdate("CREATE VIRTUAL TABLE street_fts USING fts4(name)")
+        st.executeUpdate("CREATE VIRTUAL TABLE street_fts USING fts4(name, prefix='2,3,4,6,8')")
         st.executeUpdate("CREATE TABLE addr(street_id INTEGER, number TEXT, lat REAL, lon REAL)")
         st.executeUpdate("CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT)")
     }
@@ -328,6 +329,17 @@ class JdbcSearchDb(file: File) :
             ps.setString(3, "$number %")
             ps.executeQuery().use { rs -> generateSequence { if (rs.next()) AddressRow(rs.getString(1), rs.getDouble(2), rs.getDouble(3)) else null }.toList() }
         }
+
+    override fun batchAddresses(streetIds: Collection<Long>, number: String): List<StreetAddressRow> {
+        if (streetIds.isEmpty()) return emptyList()
+        return c.prepareStatement("SELECT street_id,number,lat,lon FROM addr WHERE street_id IN (${streetIds.joinToString(",")}) AND (number=? OR number LIKE ?)").use { ps ->
+            ps.setString(1, number)
+            ps.setString(2, "$number %")
+            ps.executeQuery().use { rs ->
+                generateSequence { if (rs.next()) StreetAddressRow(rs.getLong(1), rs.getString(2), rs.getDouble(3), rs.getDouble(4)) else null }.toList()
+            }
+        }
+    }
 
     override fun close() = c.close()
 }

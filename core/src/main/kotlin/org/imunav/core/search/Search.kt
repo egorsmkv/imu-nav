@@ -22,12 +22,18 @@ data class PlaceRow(val id: Long, val name: String, val kind: String, val lat: D
 data class StreetRow(val id: Long, val name: String, val placeId: Long?, val placeName: String?, val lat: Double, val lon: Double)
 data class AddressRow(val number: String, val lat: Double, val lon: Double)
 
+/** An address retains its street identity throughout a batched lookup. */
+data class StreetAddressRow(val streetId: Long, val number: String, val lat: Double, val lon: Double)
+
 /** Storage-agnostic access to a search index (SQLite FTS4 on Android and on the desktop). */
 interface SearchDb {
     /** Places whose names match all FTS [terms] (already normalized, with prefix '*'). */
     fun places(match: String, limit: Int, near: GeoPoint? = null): List<PlaceRow>
     fun streets(match: String, limit: Int, placeIds: Collection<Long>? = null, near: GeoPoint? = null): List<StreetRow>
     fun addresses(streetId: Long, number: String): List<AddressRow>
+
+    /** All exact/building-part matches; the caller ranks by distance before retaining two per street. */
+    fun batchAddresses(streetIds: Collection<Long>, number: String): List<StreetAddressRow>
 }
 
 /**
@@ -43,70 +49,116 @@ object AddressSearch {
     )
     private val HOUSE = Regex("^\\d{1,4}\\p{L}?(/\\d{1,4}\\p{L}?)?$")
 
+    private val PLAIN_TOKEN = Regex("[\\p{L}\\p{N}]+")
+    private val BUILDING_PART = Regex("[кk]\\d{1,4}")
+    private val PUNCTUATION = Regex("[^\\p{L}\\p{N}'/]+")
+
     /** Lower-case, unify apostrophes, drop punctuation — the same function builds the index. */
     fun normalize(s: String): String = s.lowercase(Locale.ROOT)
         .replace('’', '\'').replace('ʼ', '\'').replace('`', '\'')
         .replace('ё', 'е')
-        .replace(Regex("[^\\p{L}\\p{N}'/]+"), " ")
+        .replace(PUNCTUATION, " ")
         .trim()
 
     private fun fts(tokens: List<String>) = tokens.joinToString(" ") { it.replace("'", "") + "*" }
 
-    fun search(db: SearchDb, query: String, near: GeoPoint?, limit: Int = 20): List<SearchResult> {
+    /** Search stages share request-local lookups and distances; cancellation is never converted to a miss. */
+    fun search(db: SearchDb, query: String, near: GeoPoint?, limit: Int = 20, checkCancelled: () -> Unit = {}): List<SearchResult> {
+        checkCancelled()
         val tokens = normalize(query).split(' ').filter { it.isNotBlank() && it !in STOP }
-        if (tokens.isEmpty()) return emptyList()
-        val number = tokens.lastOrNull()?.takeIf { tokens.size >= 2 && HOUSE.matches(it) }
-        val words = (if (number != null) tokens.dropLast(1) else tokens).filter { !HOUSE.matches(it) || it.length > 4 }
+        val numberWords = houseWordCount(tokens)
+        val number = tokens.takeLast(numberWords).joinToString(" ").takeIf { it.isNotEmpty() }
+        val words = tokens.dropLast(numberWords).filter { !HOUSE.matches(it) || it.length > 4 }
         if (words.isEmpty()) return emptyList()
-
-        val places = runCatching { db.places(fts(words), 30, near) }.getOrDefault(emptyList())
-        var streets = runCatching { db.streets(fts(words), 80, near = near) }.getOrDefault(emptyList())
-        // "Київ Хрещатик": one token names the settlement, the rest the street.
-        if (words.size >= 2) {
-            for (w in words) {
-                val towns = runCatching { db.places(fts(listOf(w)), 10, near) }.getOrDefault(emptyList())
-                    .filter { it.kind in SETTLEMENTS }
-                if (towns.isEmpty()) continue
-                val rest = words - w
-                val inTown = runCatching { db.streets(fts(rest), 40, towns.map { it.id }, near) }.getOrDefault(emptyList())
-                streets = (inTown + streets).distinctBy { it.id }
+        val placeCache = mutableMapOf<Pair<String, Int>, List<PlaceRow>>()
+        val streetCache = mutableMapOf<Triple<String, Int, List<Long>>, List<StreetRow>>()
+        fun places(parts: List<String>, count: Int): List<PlaceRow> {
+            checkCancelled()
+            val match = fts(parts)
+            return placeCache.getOrPut(match to count) {
+                provenPlaces(placeCache, parts, count) ?: db.places(match, count, near)
             }
         }
-
-        fun dist(lat: Double, lon: Double) = near?.let { Geo.distance(it.lat, it.lon, lat, lon) }
-        val out = ArrayList<Pair<Double, SearchResult>>()
-
-        // House numbers on the best-matching streets come first.
-        if (number != null) {
-            for (street in rankStreets(streets, near).take(5)) {
-                val hits = runCatching { db.addresses(street.id, number) }.getOrDefault(emptyList())
-                for ((number1, lat, lon) in hits.take(2)) {
-                    out += -1e9 + (dist(lat, lon) ?: 0.0) to SearchResult(
+        fun streets(parts: List<String>, count: Int, ids: List<Long> = emptyList()): List<StreetRow> {
+            checkCancelled()
+            val key = Triple(fts(parts), count, ids.sorted())
+            return streetCache.getOrPut(key) { db.streets(key.first, count, ids.takeIf { it.isNotEmpty() }, near) }
+        }
+        val places = places(words, 30)
+        val candidates = streets(words, 80).associateByTo(linkedMapOf()) { it.id }
+        val splits = buildList {
+            words.indices.filter { words.size > 1 }.forEach { index -> add(listOf(words[index]) to words.filterIndexed { i, _ -> i != index }) }
+            for (size in 2..minOf(3, words.size - 1)) {
+                add(words.take(size) to words.drop(size))
+                add(words.takeLast(size) to words.dropLast(size))
+            }
+        }.distinct()
+        for ((townWords, streetWords) in splits) {
+            val towns = places(townWords, 10).filter { it.kind in SETTLEMENTS }
+            if (towns.isNotEmpty()) streets(streetWords, 40, towns.map { it.id }).forEach { candidates[it.id] = it }
+        }
+        val distances = mutableMapOf<GeoPoint, Double?>()
+        fun distance(lat: Double, lon: Double): Double? = distances.getOrPut(GeoPoint(lat, lon)) { near?.let { Geo.distance(it.lat, it.lon, lat, lon) } }
+        val ranked = candidates.values.sortedWith(compareBy<StreetRow> { distance(it.lat, it.lon) ?: 0.0 }.thenBy { it.id })
+        val addresses = if (number == null || candidates.isEmpty()) {
+            emptyList()
+        } else {
+            checkCancelled()
+            val order = compareBy<StreetAddressRow> { it.number != number }.thenBy { distance(it.lat, it.lon) ?: 0.0 }
+                .thenBy { it.streetId }.thenBy { it.number }.thenBy { it.lat }.thenBy { it.lon }
+            val perStreet = mutableMapOf<Long, Int>()
+            db.batchAddresses(candidates.keys, number).sortedWith(order)
+                .filter { address ->
+                    val count = perStreet.getOrDefault(address.streetId, 0)
+                    perStreet[address.streetId] = count + 1
+                    count < 2
+                }.map { address ->
+                    val street = candidates.getValue(address.streetId)
+                    SearchResult(
                         ResultKind.ADDRESS,
-                        "${street.name}, $number1",
+                        "${street.name}, ${address.number}",
                         street.placeName.orEmpty(),
-                        GeoPoint(lat, lon),
-                        dist(lat, lon),
+                        GeoPoint(address.lat, address.lon),
+                        distance(address.lat, address.lon),
                     )
                 }
-            }
         }
-        for (place in places) {
-            val d = dist(place.lat, place.lon)
+        checkCancelled()
+        val normalizedWords = words.joinToString(" ")
+        val out = places.map { place ->
+            val d = distance(place.lat, place.lon)
             val weight = (KIND_WEIGHT[place.kind] ?: 1.0) * (1 + ln(1.0 + place.population / 1000.0))
-            val exact = if (normalize(place.name) == words.joinToString(" ")) 4.0 else 1.0
-            out += -(weight * exact * 1e6) / (1 + (d ?: 50_000.0) / 20_000.0) to
+            val exact = if (normalize(place.name) == normalizedWords) 4.0 else 1.0
+            -(weight * exact * 1e6) / (1 + (d ?: 50_000.0) / 20_000.0) to
                 SearchResult(ResultKind.PLACE, place.name, place.kind, GeoPoint(place.lat, place.lon), d)
+        } + ranked.mapIndexed { index, street ->
+            val d = distance(street.lat, street.lon)
+            (d ?: index * 1000.0) to SearchResult(ResultKind.STREET, street.name, street.placeName.orEmpty(), GeoPoint(street.lat, street.lon), d)
         }
-        for ((i, s) in rankStreets(streets, near).withIndex()) {
-            val d = dist(s.lat, s.lon)
-            out += (d ?: (i * 1000.0)) to SearchResult(ResultKind.STREET, s.name, s.placeName.orEmpty(), GeoPoint(s.lat, s.lon), d)
-        }
-        return out.sortedBy { it.first }.map { it.second }.distinctBy { it.kind to it.title to it.subtitle }.take(limit)
+        return (addresses + out.sortedBy { it.first }.map { it.second }).distinctBy { it.kind to it.title to it.subtitle }.take(limit)
     }
 
-    private fun rankStreets(streets: List<StreetRow>, near: GeoPoint?): List<StreetRow> =
-        if (near == null) streets else streets.sortedBy { Geo.distance(near.lat, near.lon, it.lat, it.lon) }
+    /** Keep an explicit building part with its number instead of interpreting it as a street word. */
+    private fun houseWordCount(tokens: List<String>): Int = when {
+        tokens.size >= 3 && BUILDING_PART.matches(tokens.last()) && HOUSE.matches(tokens[tokens.lastIndex - 1]) -> 2
+        tokens.size >= 2 && HOUSE.matches(tokens.last()) -> 1
+        else -> 0
+    }
+
+    /** A narrower conjunction keeps the same nearest rows if every leading superset row provably matches. */
+    private fun provenPlaces(cache: Map<Pair<String, Int>, List<PlaceRow>>, parts: List<String>, count: Int): List<PlaceRow>? {
+        if (!parts.all(PLAIN_TOKEN::matches)) return null
+        return cache.entries.firstOrNull { (key, rows) ->
+            key.second >= count && parts.containsAll(key.first.split(' ').map { it.removeSuffix("*") }) &&
+                rows.take(count).all { visibleNameMatches(it.name, parts) }
+        }?.value?.take(count)
+    }
+
+    /** Visible names can prove a positive FTS match; unknown aliases cannot prove a negative one. */
+    private fun visibleNameMatches(name: String, parts: List<String>): Boolean {
+        val words = normalize(name).replace("'", "").split(' ', '/')
+        return parts.all { prefix -> words.any { it.startsWith(prefix) } }
+    }
 
     val SETTLEMENTS = setOf("city", "town", "village", "hamlet")
     private val KIND_WEIGHT = mapOf("city" to 50.0, "town" to 12.0, "village" to 3.0, "suburb" to 2.5, "hamlet" to 1.0, "neighbourhood" to 1.0, "quarter" to 1.5)

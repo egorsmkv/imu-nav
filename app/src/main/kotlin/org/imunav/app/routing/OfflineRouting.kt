@@ -1,6 +1,7 @@
 package org.imunav.app.routing
 
 import android.content.Context
+import android.os.CancellationSignal
 import android.util.Log
 import androidx.core.content.edit
 import kotlinx.coroutines.CancellationException
@@ -24,7 +25,6 @@ import org.imunav.core.cells.ResumableHttpInputStream
 import org.imunav.core.geo.GeoPoint
 import org.imunav.core.route.Route
 import org.imunav.core.route.TravelMode
-import org.imunav.core.search.AddressSearch
 import org.imunav.core.search.SearchResult
 import org.imunav.core.util.PackFiles
 import org.imunav.core.util.ResourceAccess
@@ -235,8 +235,9 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
     }
 
     /** Called by PlaceSearch on its I/O dispatcher; the database reference never escapes. */
-    fun search(query: String, near: GeoPoint?): List<SearchResult> = resources.read {
-        searchDb?.let { AddressSearch.search(it, query, near) }.orEmpty()
+    fun search(query: String, near: GeoPoint?, cancellation: CancellationSignal): List<SearchResult> = resources.read {
+        cancellation.throwIfCanceled()
+        searchDb?.search(query, near, cancellation).orEmpty()
     }
 
     /** Allow or forbid the online OSRM fallback. */

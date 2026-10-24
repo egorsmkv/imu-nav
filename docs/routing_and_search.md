@@ -69,3 +69,9 @@ The Play APK reads its included map through an on-device range reader, with no f
 download the ZIP. Imported map archives have the same 20,000-entry limit and a 4 GiB extracted-data
 limit. See the [detailed routing reference](reference/routing_and_search.md) for the
 build inputs, size report, and local commands.
+
+Address search recognizes settlement names of up to three words at the beginning or end of a
+street query. House numbers are checked across all retrieved street candidates; exact numbers
+rank before building parts. If a house is missing, matching streets remain available. These
+improvements also work with existing packs. Newly built packs additionally index common Latin
+and Cyrillic prefixes for autocomplete; installed packs are not rewritten.

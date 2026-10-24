@@ -13,6 +13,8 @@ import androidx.car.app.model.Template
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.imunav.app.R
 import org.imunav.app.graph
@@ -21,6 +23,7 @@ import org.imunav.core.bookmarks.SavedPlace
 import org.imunav.core.bookmarks.SavedRoute
 import org.imunav.core.bookmarks.matching
 import org.imunav.core.route.TravelMode
+import org.imunav.core.search.SearchBatch
 import org.imunav.core.search.SearchResult
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -30,17 +33,23 @@ class CarSearchScreen(context: CarContext, private val start: Boolean, initialQu
     SearchTemplate.SearchCallback {
     private var query = initialQuery
     private var results = emptyList<SearchResult>()
+    private var batch: SearchBatch? = null
+    private val near get() = graph.ui.value.manualStart ?: graph.ui.value.currentPosition
     private var loading = true
     private var job: Job? = null
     private val graph get() = carContext.graph
 
     init {
         search(query)
+        lifecycleScope.launch {
+            graph.ui.map { it.manualStart ?: it.currentPosition }.distinctUntilChanged().collect { search(query) }
+        }
         lifecycleScope.launch { graph.bookmarks.state.collect { invalidate() } }
         lifecycleScope.launch {
             graph.search.recent.collect {
                 if (query.isBlank()) {
                     results = it
+                    batch = SearchBatch(query, near, it)
                     invalidate()
                 }
             }
@@ -54,22 +63,30 @@ class CarSearchScreen(context: CarContext, private val start: Boolean, initialQu
         query = value.take(256)
         job?.cancel()
         loading = true
+        batch = null
+        results = emptyList()
+        val requestedQuery = query
+        val requestedNear = near
         invalidate()
         job = lifecycleScope.launch {
             delay(250.milliseconds)
             results =
-                if (query.isBlank()) {
+                if (requestedQuery.isBlank()) {
                     graph.search.recent.value
                 } else {
                     graph.search.search(
-                        query,
-                        graph.ui.value.manualStart ?: graph.ui.value.currentPosition,
+                        requestedQuery,
+                        requestedNear,
                     )
                 }
+            batch = SearchBatch(requestedQuery, requestedNear, results)
             loading = false
             invalidate()
         }
     }
+
+    /** Host row callbacks may arrive after invalidation, so check the displayed batch at selection time. */
+    private fun ownsResults(displayed: SearchBatch?): Boolean = displayed != null && displayed === batch && displayed.query == query && displayed.near == near
 
     override fun onGetTemplate(): Template {
         val builder = SearchTemplate.Builder(this).setHeaderAction(Action.BACK).setInitialSearchText(query)
@@ -77,10 +94,12 @@ class CarSearchScreen(context: CarContext, private val start: Boolean, initialQu
         if (!loading) {
             val list = ItemList.Builder().setNoItemsMessage(carContext.getString(R.string.search_no_results))
             val limit = carContext.getCarService(ConstraintManager::class.java).getContentLimit(ConstraintManager.CONTENT_LIMIT_TYPE_LIST)
+            val displayedBatch = batch
             val saved = graph.bookmarks.state.value.items.matching(query).filterIsInstance<SavedPlace>().take(limit)
             saved.forEach { place ->
                 list.addItem(
                     Row.Builder().setTitle(place.name).addText(carContext.getString(R.string.bookmarks)).setOnClickListener {
+                        if (!ownsResults(displayedBatch)) return@setOnClickListener
                         graph.setTravelMode(TravelMode.CAR)
                         if (graph.useBookmark(place, start)) screenManager.popToRoot()
                     }.build(),
@@ -89,7 +108,9 @@ class CarSearchScreen(context: CarContext, private val start: Boolean, initialQu
             results.take((limit - saved.size).coerceAtLeast(0)).forEach { result ->
                 list.addItem(
                     Row.Builder().setTitle(result.title).addText(result.subtitle).setOnClickListener {
-                        if (!graph.engine.state.active && !graph.ui.value.startingNavigation) {
+                        if (ownsResults(displayedBatch) &&
+                            !graph.engine.state.active && !graph.ui.value.startingNavigation
+                        ) {
                             graph.setTravelMode(TravelMode.CAR)
                             if (start) graph.setManualStart(result.point, result.routePointLabel()) else graph.setDestination(result.point, result.routePointLabel())
                             graph.search.remember(result)

@@ -156,3 +156,95 @@ The bundled PMTiles loopback range server uses four workers and at most four que
 Additional connections close immediately. Request headers are limited to 8 KiB and 64 lines,
 with a five-second deadline from acceptance that also closes blocked response writes. Responses
 stream through a fixed 64 KiB asset buffer. Closing the server releases sockets and workers.
+
+Search requests cancel SQLite statements and Photon calls when superseded. Cancellation does not
+count as an empty offline result and cannot initiate online fallback. Android Auto also binds
+selectable results to the query and reference position. The 250 ms debounce is unchanged.
+
+House numbers are looked up in one batch across all retrieved street candidates, with exact
+numbers before building parts (`22`, then `22 к1`, never `220`), then distance and stable ties.
+Up to two addresses per street are retained after ranking. Missing house numbers still leave
+generic street results. Settlement parsing retains single-word interpretations and additionally
+tries contiguous prefixes and suffixes of up to three words, leaving at least one street word.
+There is no geographic cutoff on explicit settlements, fuzzy matching, or transliteration.
+
+New packs use FTS4 UTF-8 byte prefix lengths `2,3,4,6,8`; Cyrillic characters usually occupy two
+bytes. Existing tables and metadata are unchanged. Installed packs get the runtime improvements
+without being rewritten; prefix acceleration requires rebuilding the pack. Both readers use the
+same candidate limits and ordering. Request-local memoization has no cross-request invalidation.
+
+Run the synthetic offline benchmark with:
+
+```bash
+SEARCH_BENCHMARK=1 ./gradlew :routing:test --tests '*SearchBenchmarkTest*' --rerun-tasks
+```
+
+It creates 10,000 synthetic streets, settlements and addresses, compares old/new FTS schemas,
+and prints database size, first open plus lookup time, and warm p50/p95 from 50 samples after
+10 warmups per query. The first-open measurement does not flush the OS page cache. Times exclude
+debounce and network work. Synthetic timings do not establish performance on regional packs or phones.
+
+Measurements on 2026-10-24 used JDK 21 and SQLite JDBC 3.53.4.0. The baseline search
+object came from `e5d75df`, compiled alongside the same JDBC reader and benchmark harness.
+The final paired run stopped the emulator and ran the benchmark alone in separate JVMs.
+These host timings exclude debounce and network time; they are not phone timing claims.
+
+The 10,000-row synthetic corpus measured milliseconds as follows:
+
+| Query | Baseline, old index p50 / p95 | Updated, old index p50 / p95 | Updated, prefix index p50 / p95 |
+| --- | --- | --- | --- |
+| `ma` | 11.899 / 12.260 | 12.178 / 13.351 | 12.075 / 12.844 |
+| `го` | 12.077 / 12.467 | 11.998 / 12.944 | 12.244 / 12.967 |
+| `Main 22` | 12.423 / 12.861 | 12.858 / 13.627 | 12.132 / 12.780 |
+| `New Town Main 22` | 21.211 / 21.805 | 23.719 / 25.163 | 22.856 / 23.479 |
+| `Main New Town 22` | 22.032 / 22.596 | 24.039 / 25.145 | 23.707 / 24.574 |
+| `Main 99` | 11.997 / 12.509 | 12.226 / 13.063 | 11.974 / 12.652 |
+| `absent` | 0.175 / 0.193 | 0.176 / 0.182 | 0.145 / 0.150 |
+
+The older Monaco pack (built 2026-10-05, 10 places, 313 streets, 431 addresses) was measured
+on disposable copies. The prefix variant rebuilds only FTS, preserving every row ID and record.
+Set `SEARCH_PACK_DB=/path/to/monaco/search.db` alongside `SEARCH_BENCHMARK=1` to include
+this regional workload; the hard-coded public queries target Monaco.
+
+| Query | Baseline, old index p50 / p95 | Updated, old index p50 / p95 | Updated, prefix index p50 / p95 |
+| --- | --- | --- | --- |
+| `av` | 0.601 / 0.778 | 0.901 / 1.035 | 0.368 / 0.394 |
+| `ru` | 0.628 / 0.731 | 0.643 / 1.025 | 0.463 / 0.498 |
+| `Monaco` | 0.311 / 0.389 | 0.309 / 0.382 | 0.216 / 0.232 |
+| `Rue Bel Respiro 1` | 0.555 / 0.635 | 0.636 / 0.792 | 0.594 / 0.622 |
+| `Rue Bel Respiro 9999` | 0.484 / 0.594 | 0.561 / 0.634 | 0.568 / 0.627 |
+| `La Condamine Rue Imberty 6` | 0.542 / 0.590 | 0.678 / 0.732 | 0.618 / 0.638 |
+| `го` | 0.198 / 0.220 | 0.213 / 0.239 | 0.181 / 0.193 |
+| `absent` | 0.169 / 0.179 | 0.184 / 0.190 | 0.160 / 0.174 |
+
+First open plus the first query (not OS-cold; includes JVM/library warmup) measured:
+
+| Corpus | Baseline old / prefix index | Updated old / prefix index |
+| --- | --- | --- |
+| synthetic | 13.87 / 43.89 ms | 13.47 / 28.23 ms |
+| Monaco | 123.33 / 2.27 ms | 128.87 / 0.79 ms |
+
+Prefix indexes grew the synthetic database from 2,162,688 to 2,846,720 bytes (+31.6%), and
+Monaco from 143,360 to 163,840 bytes (+14.3%). The first-open measurements are particularly
+sensitive to warmup, so they do not establish a prefix-index startup speedup.
+
+Ordinary synthetic house queries use three database calls instead of seven: one batched address
+lookup replaces five individual calls. Synthetic multiword queries use nine instead of seven
+calls, returning addresses that the baseline misses. Request-local reuse of proven matching
+nearest candidates avoids two additional settlement scans; unknown aliases still query SQLite.
+Monaco's tested house queries already have one candidate street and remain at six total calls.
+
+**The blanket no-latency-regression acceptance target is not met.** Repeated runs show small
+regional address-query increases (roughly 0.08–0.14 ms p50 on the old Monaco index in the final
+pair) and roughly 2–2.5 ms additional p50 for synthetic multiword interpretations. Prefixes help
+some queries but do not eliminate every increase. Do not claim an across-the-board speedup;
+these measurements expose the cost of broader matching as well as index growth.
+
+Validation: full `./gradlew check`, both release/benchmark APK builds, old/new synthetic-index
+regressions, native Android SQLite cancellation, delayed Photon cancellation, and the Monaco
+phone-loader smoke test passed. The final R8 benchmark APK imported the older Monaco pack on
+the emulator, found and selected `Rue Bel Respiro, 1`, retained a generic street for missing house
+`9999`, and kept stale results from being selected during edits and the keyboard Search action.
+Replay accuracy remained `p95=20 max=25 rms=10 m`. No Android Auto head-unit test was available;
+its selection ownership checks were compiled and statically checked. Large-country pack timing, concurrent pack replacement during device search,
+and on-device SQLite cancellation timing remain unmeasured.
