@@ -6,7 +6,7 @@ Coverage shows which Kotlin source lines ran during the test suites. A green lin
 
 ## Run and read the report
 
-1. On Linux, install Python 3.10+, JDK 17, Android SDK platform 36 and build-tools 36.0.0, and a Rust toolchain supported by `native/Cargo.toml`.
+1. On Linux, install Python 3.10+, JDK 21+, Android SDK platform 36 and build-tools 36.0.0, and a Rust toolchain supported by `native/Cargo.toml`.
 2. From the project root, run:
 
    ```bash

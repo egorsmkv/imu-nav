@@ -54,8 +54,8 @@ Start with [getting started](docs/getting_started.md). Look up unfamiliar terms 
 ## Quick build
 
 From a complete source checkout, follow [build and test](docs/build_and_test.md#prepare-the-tools)
-to set up JDK 17+, Android SDK platform 36, build-tools 36.0.0, the Android NDK and Rust 1.99+
-with all three Android targets. Build a debug-signed APK with offline-routing support:
+to set up JDK 21+ (required for Android host unit tests), Android SDK platform 36, build-tools 36.0.0,
+the Android NDK and Rust 1.99+ with all three Android targets. Build a debug-signed APK with offline-routing support:
 
 ```bash
 ./gradlew :app:assemblePlayBenchmark

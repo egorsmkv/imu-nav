@@ -5,7 +5,9 @@
 Runs on Android 8.0 (API 26) and newer; targets Android 16 (API 36). Build requirements: JDK 17+,
 Android SDK 36, Android NDK 28.2.13676358, CMake 3.22.1 and Rust 1.99+ (edition 2024) with the `aarch64-linux-android`,
 `armv7-linux-androideabi` and `x86_64-linux-android` targets. Set `ANDROID_NDK_HOME` when the NDK
-is outside the Android SDK. Android builds compile and package the Rust estimator automatically.
+is outside the Android SDK. App host unit tests, Kotlin coverage and `check` require JDK 21+
+for Robolectric's Android SDK 36 sandbox; compilation still targets Java 17. Android builds compile
+and package the Rust estimator automatically.
 
 For SDK/NDK selection, Rust target installation, APK output paths and setup failures, follow
 the [tool preparation steps](../build_and_test.md#prepare-the-tools).

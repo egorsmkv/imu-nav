@@ -18,7 +18,11 @@ project configuration. The host algorithms and host JNI still execute without An
 | Rust host tests and simulator | Rust 1.99+ and Cargo |
 | Kotlin core tests and JVM replay | JDK 17+ and the checked-in Gradle wrapper; Rust is also needed for JNI replay tests |
 | Android APK, lint and device tests | JDK 17+, Android SDK platform 36, build-tools 36.0.0, NDK 28.2.13676358, CMake 3.22.1 and Rust 1.99+ with the targets below |
-| Full `./gradlew check` | The Android toolchain above; it also builds and tests the local Rust cell server |
+| Android host unit tests and full `./gradlew check` | JDK 21+ and the Android toolchain above; `check` also builds and tests the local Rust cell server |
+
+Robolectric tests targeting Android SDK 36 require Java 21. Set `JAVA_HOME` to a JDK 21+
+installation before running app unit tests, Kotlin coverage or `check`. Java/Kotlin compilation
+still targets Java 17; this does not change the app's minimum Android version.
 
 Install the SDK platform, build tools, NDK and CMake through Android Studio's SDK Manager or your SDK
 command-line tools. Gradle pins NDK 28.2.13676358, whose linker defaults to 16 KB alignment.

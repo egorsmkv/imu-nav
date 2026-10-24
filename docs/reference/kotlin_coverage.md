@@ -28,7 +28,7 @@ Android and CI run them.
 
 ## Run and review
 
-Use Linux, Python 3.10+, JDK 17, Android SDK platform 36/build-tools 36.0.0, and a
+Use Linux, Python 3.10+, JDK 21+, Android SDK platform 36/build-tools 36.0.0, and a
 Rust toolchain supported by `native/Cargo.toml`. CI uses `nightly-2026-09-25`, also
 used by Rust coverage. Set `JAVA_HOME`, `ANDROID_HOME` and `RUSTUP_TOOLCHAIN` as
 needed. Android NDK 28.2.13676358 and CMake 3.22.1 are required for Gradle project
