@@ -16,7 +16,11 @@ One native retrieval call collects candidates across all query stages. Kotlin's
 shared matcher retains exact-house priority, building-part distinction, geographic
 ranking, multiword settlements, generic street results for missing houses and
 stable ordering. Request-local snapshots are discarded after each request.
-Tantivy's reader has no writer and never changes the installed index.
+Tantivy's reader has no writer and never changes the installed index. Within a
+request, native retrieval reuses lazy per-segment fast-field handles across all
+interpretations, stops empty intersections early, and reads sparse house postings
+directly. Those handles are discarded with the request; no cross-request result
+cache is introduced. These optimizations work with existing `tantivy-1` indexes.
 
 All opening/search work stays off the main thread and under the existing resource
 lock. Each request has its own cancellation flag. Android `CancellationSignal`
@@ -62,8 +66,15 @@ native-only packs. Keep SQLite packs for clients that cannot upgrade.
 The [historical comparison](tantivy_search_experiment.md) found large gains for
 broad matches on synthetic large indexes, but a slower short prefix on Monaco.
 The switch accepts that measured small-pack tradeoff; it is not a claim that
-Tantivy wins every query. No large-country real-pack or physical ARM latency
-measurement is available. ARMv7, ARM64 and x86-64 cross-compilation is checked.
+Tantivy wins every query. The subsequent [Ukraine host benchmark](../benchmarks/ukraine-search-2026-10-24.md)
+measures 1.11 million indexed addresses: broad-prefix gains, specific-address
+regressions, and a 50% larger compressed search index. The
+[expanded 216-case run](../benchmarks/ukraine-search-extended-2026-10-24.md) confirms
+the address-query tradeoff and records shared distant-town/house-suffix matching gaps.
+The subsequent [runtime optimization comparison](../benchmarks/ukraine-search-optimized-2026-10-24.md)
+measures roughly 2.4× faster typical address cases and 2.6× faster multiword
+settlement cases, while preserving result parity and index compatibility. Physical ARM latency
+measurements remain unavailable. ARMv7, ARM64 and x86-64 cross-compilation is checked.
 
 `./gradlew check` includes native tests, Kotlin tests, formatting, static analysis
 and Android Lint. The miniature OSM integration test now builds and searches a
@@ -85,6 +96,6 @@ validator/CI-selection tests passed. The final R8 x86-64 emulator run passed all
 three instrumentation tests above using public Monaco and synthetic fixtures.
 Release APK inspection confirmed ARM64/ARMv7 reader libraries and no JNI writer
 entry point. Replay remained `p95=20 max=25 rms=10 m`. Windows scripts, a physical
-ARM phone, an Android Auto head unit, and large-country real-pack performance were
-not exercised. The release APK was unsigned on this host; the emulator used the
+ARM phone and an Android Auto head unit were not exercised. The later Ukraine
+search-only host measurements are linked above. The release APK was unsigned on this host; the emulator used the
 debug-signed R8 benchmark build.

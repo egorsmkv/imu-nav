@@ -144,3 +144,75 @@ fn cancellation_interrupts_broad_posting_work() {
             .is_ok()
     );
 }
+
+#[test]
+fn staged_lookups_keep_segment_columns_and_deletions_separate() {
+    let mut address = row("address", 1, "", 20.0);
+    address.number = "22".into();
+    let rows = [
+        row("place", 1, "new town", 20.0),
+        row("street", 1, "main", 20.0),
+        row("street", 2, "main obsolete", 20.0),
+        address,
+    ];
+    let (directory, _original_reader) = fixture(&rows);
+    let underlying = tantivy::Index::open_in_dir(directory.path().join("index")).unwrap();
+    let schema = underlying.schema();
+    let mut writer = underlying
+        .writer_with_num_threads::<tantivy::TantivyDocument>(1, 50_000_000)
+        .unwrap();
+    writer.set_merge_policy(Box::new(tantivy::merge_policy::NoMergePolicy));
+    writer.delete_term(tantivy::Term::from_field_text(
+        schema.get_field("street").unwrap(),
+        "obsolete",
+    ));
+    // A second segment restarts document IDs but has different row IDs and coordinates.
+    for (kind, text) in [("place", "new town"), ("street", "main"), ("address", "")] {
+        let mut value = row(kind, 10, text, -179.99);
+        value.place_id = Some(10);
+        value.number = "22".into();
+        let mut document = tantivy::TantivyDocument::default();
+        let field = schema.get_field(kind).unwrap();
+        if kind == "address" {
+            document.add_text(field, "10\t22");
+        } else {
+            for token in text.split_whitespace() {
+                document.add_text(field, token);
+            }
+        }
+        document.add_u64(schema.get_field("id").unwrap(), 10);
+        document.add_u64(schema.get_field("place_id").unwrap(), 10);
+        document.add_f64(schema.get_field("lat").unwrap(), 0.0);
+        document.add_f64(schema.get_field("lon").unwrap(), -179.99);
+        document.add_text(
+            schema.get_field("row").unwrap(),
+            serde_json::to_string(&value).unwrap(),
+        );
+        writer.add_document(document).unwrap();
+    }
+    writer.commit().unwrap();
+    writer.wait_merging_threads().unwrap();
+    assert_eq!(underlying.searchable_segment_ids().unwrap().len(), 2);
+    let index = SearchIndex::open(&directory.path().join("index")).unwrap();
+    let mut query = request(&["new", "town", "ma"]);
+    query.splits = vec![(vec!["new".into(), "town".into()], vec!["ma".into()])];
+    query.near = Some((0.0, 179.99));
+    query.number = Some("22".into());
+    query.count = true;
+    let cancel = AtomicBool::new(false);
+    let response = index.search(&query, &cancel).unwrap();
+    assert!(response.streets[0].rows.is_empty());
+    assert_eq!(response.streets[1].count, Some(2));
+    assert_eq!(response.streets[1].rows[0].id, 10);
+    assert_eq!(response.streets[1].rows[1].id, 1);
+    assert_eq!(response.addresses.len(), 2);
+    let empty = index
+        .search(&request(&["main", "absent"]), &cancel)
+        .unwrap();
+    assert!(empty.streets[0].rows.is_empty());
+    query.near = None;
+    assert_eq!(
+        index.search(&query, &cancel).unwrap().streets[1].rows[0].id,
+        1
+    );
+}

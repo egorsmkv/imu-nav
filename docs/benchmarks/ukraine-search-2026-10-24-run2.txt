@@ -1,0 +1,16 @@
+parity queries=15 reference_positions=3 passed=true
+warm case=0 results=20 sqlite_calls=2 house_calls=0 retrieval_jni_calls=1 sqlite_p50=12.836559 sqlite_p95=13.620212 tantivy_p50=2.459007 tantivy_p95=2.747859
+warm case=1 results=20 sqlite_calls=2 house_calls=0 retrieval_jni_calls=1 sqlite_p50=10.652439 sqlite_p95=11.030377 tantivy_p50=2.154625 tantivy_p95=2.386248
+warm case=2 results=20 sqlite_calls=2 house_calls=0 retrieval_jni_calls=1 sqlite_p50=0.511951 sqlite_p95=0.580635 tantivy_p50=0.633915 tantivy_p95=0.749862
+warm case=3 results=20 sqlite_calls=2 house_calls=0 retrieval_jni_calls=1 sqlite_p50=11.232893 sqlite_p95=11.771259 tantivy_p50=1.629676 tantivy_p95=1.790455
+warm case=4 results=20 sqlite_calls=2 house_calls=0 retrieval_jni_calls=1 sqlite_p50=2.478435 sqlite_p95=2.701272 tantivy_p50=0.898519 tantivy_p95=0.974564
+warm case=5 results=20 sqlite_calls=2 house_calls=0 retrieval_jni_calls=1 sqlite_p50=2.603695 sqlite_p95=2.815182 tantivy_p50=1.271151 tantivy_p95=1.398698
+warm case=6 results=20 sqlite_calls=3 house_calls=1 retrieval_jni_calls=1 sqlite_p50=0.483179 sqlite_p95=0.535388 tantivy_p50=1.218384 tantivy_p95=1.260664
+warm case=7 results=3 sqlite_calls=7 house_calls=1 retrieval_jni_calls=1 sqlite_p50=1.590744 sqlite_p95=1.796476 tantivy_p50=2.391407 tantivy_p95=2.543612
+warm case=8 results=18 sqlite_calls=3 house_calls=1 retrieval_jni_calls=1 sqlite_p50=0.448005 sqlite_p95=0.474591 tantivy_p50=1.050564 tantivy_p95=1.087006
+warm case=9 results=2 sqlite_calls=13 house_calls=1 retrieval_jni_calls=1 sqlite_p50=2.015786 sqlite_p95=2.221370 tantivy_p50=5.129300 tantivy_p95=5.387440
+warm case=10 results=5 sqlite_calls=7 house_calls=1 retrieval_jni_calls=1 sqlite_p50=4.292095 sqlite_p95=4.616812 tantivy_p50=2.538411 tantivy_p95=2.652724
+warm case=11 results=0 sqlite_calls=2 house_calls=0 retrieval_jni_calls=1 sqlite_p50=0.163120 sqlite_p95=0.196354 tantivy_p50=0.044410 tantivy_p95=0.048846
+warm case=12 results=3 sqlite_calls=8 house_calls=1 retrieval_jni_calls=1 sqlite_p50=1.246728 sqlite_p95=1.342268 tantivy_p50=3.002933 tantivy_p95=3.132223
+warm case=13 results=2 sqlite_calls=8 house_calls=1 retrieval_jni_calls=1 sqlite_p50=1.273034 sqlite_p95=1.435950 tantivy_p50=3.051449 tantivy_p95=3.158184
+warm case=14 results=1 sqlite_calls=8 house_calls=1 retrieval_jni_calls=1 sqlite_p50=1.230245 sqlite_p95=1.292014 tantivy_p50=2.941346 tantivy_p95=3.067131

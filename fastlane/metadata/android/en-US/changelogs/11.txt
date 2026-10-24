@@ -1,0 +1,1 @@
+Offline address search now uses Tantivy in newly built routing packs. Older SQLite packs remain supported. Improved search responsiveness and cancellation.

@@ -62,6 +62,9 @@ val buildSearchNative = tasks.register<Exec>("buildSearchNative") {
 }
 tasks.test {
     dependsOn(buildSearchNative)
+    // JNI behavior can change without a Kotlin/JVM class changing; invalidate cached test results too.
+    inputs.file(searchNativeDirectory.map { "$it/${System.mapLibraryName("imu_nav_search")}" })
+    inputs.property("tantivyDataDir", providers.environmentVariable("TANTIVY_DATA_DIR").orElse(""))
     systemProperty("java.library.path", searchNativeDirectory.get())
 }
 tasks.named<JavaExec>("run") {

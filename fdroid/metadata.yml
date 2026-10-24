@@ -42,7 +42,15 @@ Builds:
     gradle:
       - fdroid
 
+  - versionName: 0.11.0
+    versionCode: 11
+    # TODO: create and push this tag on the exact release commit before fdroiddata submission.
+    commit: v0.11.0
+    subdir: app
+    gradle:
+      - fdroid
+
 AutoUpdateMode: Version
 UpdateCheckMode: Tags
-CurrentVersion: 0.10.0
-CurrentVersionCode: 10
+CurrentVersion: 0.11.0
+CurrentVersionCode: 11

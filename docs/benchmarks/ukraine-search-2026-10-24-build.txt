@@ -1,0 +1,9 @@
+build stage=base_graph seconds=73.801
+[search] 1139408 building addresses
+[search] 36864 places, 1232779 addresses
+[search] 245738 streets
+[search] 1111630 addresses attached to streets
+[search] 99 MB → search.db
+build stage=sqlite_staging seconds=74.279
+build stage=tantivy seconds=9.073
+size sqlite_bytes=104259584 tantivy_bytes=103608864

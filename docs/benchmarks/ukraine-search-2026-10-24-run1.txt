@@ -1,0 +1,16 @@
+parity queries=15 reference_positions=3 passed=true
+warm case=0 results=20 sqlite_calls=2 house_calls=0 retrieval_jni_calls=1 sqlite_p50=12.795231 sqlite_p95=13.670138 tantivy_p50=2.459055 tantivy_p95=2.707273
+warm case=1 results=20 sqlite_calls=2 house_calls=0 retrieval_jni_calls=1 sqlite_p50=10.583075 sqlite_p95=11.070008 tantivy_p50=2.172819 tantivy_p95=2.390698
+warm case=2 results=20 sqlite_calls=2 house_calls=0 retrieval_jni_calls=1 sqlite_p50=0.515230 sqlite_p95=0.565308 tantivy_p50=0.637202 tantivy_p95=0.689681
+warm case=3 results=20 sqlite_calls=2 house_calls=0 retrieval_jni_calls=1 sqlite_p50=11.102255 sqlite_p95=11.631913 tantivy_p50=1.626337 tantivy_p95=1.750824
+warm case=4 results=20 sqlite_calls=2 house_calls=0 retrieval_jni_calls=1 sqlite_p50=2.446920 sqlite_p95=2.671833 tantivy_p50=0.905073 tantivy_p95=0.987628
+warm case=5 results=20 sqlite_calls=2 house_calls=0 retrieval_jni_calls=1 sqlite_p50=2.585879 sqlite_p95=2.787210 tantivy_p50=1.275124 tantivy_p95=1.389890
+warm case=6 results=20 sqlite_calls=3 house_calls=1 retrieval_jni_calls=1 sqlite_p50=0.489146 sqlite_p95=0.535675 tantivy_p50=1.232407 tantivy_p95=1.312418
+warm case=7 results=3 sqlite_calls=7 house_calls=1 retrieval_jni_calls=1 sqlite_p50=1.567762 sqlite_p95=1.805965 tantivy_p50=2.365734 tantivy_p95=2.510900
+warm case=8 results=18 sqlite_calls=3 house_calls=1 retrieval_jni_calls=1 sqlite_p50=0.447815 sqlite_p95=0.543635 tantivy_p50=1.048874 tantivy_p95=1.223423
+warm case=9 results=2 sqlite_calls=13 house_calls=1 retrieval_jni_calls=1 sqlite_p50=1.975905 sqlite_p95=2.143604 tantivy_p50=5.135839 tantivy_p95=5.281129
+warm case=10 results=5 sqlite_calls=7 house_calls=1 retrieval_jni_calls=1 sqlite_p50=4.333317 sqlite_p95=4.623847 tantivy_p50=2.553787 tantivy_p95=2.732870
+warm case=11 results=0 sqlite_calls=2 house_calls=0 retrieval_jni_calls=1 sqlite_p50=0.163658 sqlite_p95=0.215515 tantivy_p50=0.045284 tantivy_p95=0.064713
+warm case=12 results=3 sqlite_calls=8 house_calls=1 retrieval_jni_calls=1 sqlite_p50=1.255662 sqlite_p95=1.364411 tantivy_p50=3.050813 tantivy_p95=3.202225
+warm case=13 results=2 sqlite_calls=8 house_calls=1 retrieval_jni_calls=1 sqlite_p50=1.290605 sqlite_p95=1.463378 tantivy_p50=3.066572 tantivy_p95=3.203110
+warm case=14 results=1 sqlite_calls=8 house_calls=1 retrieval_jni_calls=1 sqlite_p50=1.218839 sqlite_p95=1.283305 tantivy_p50=2.932035 tantivy_p95=3.092325

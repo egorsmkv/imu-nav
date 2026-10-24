@@ -6,6 +6,7 @@ use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::io::BufRead;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
+use tantivy::columnar::Column;
 use tantivy::schema::{FAST, Field, IndexRecordOption, STORED, STRING, Schema, Value};
 use tantivy::{DocAddress, DocSet, Index, IndexReader, ReloadPolicy, TERMINATED, TantivyDocument};
 
@@ -232,106 +233,22 @@ impl SearchIndex {
             if !found {
                 return Ok(Vec::new());
             }
+            let mut any = false;
             for (offset, (target, found)) in intersection.iter_mut().zip(bits).enumerate() {
                 if offset.is_multiple_of(256) {
                     check(cancel)?;
                 }
                 *target &= found;
+                any |= *target != 0;
+            }
+            if !any {
+                return Ok(Vec::new());
             }
         }
         if terms.is_empty() {
             intersection.fill(0);
         }
         Ok(intersection)
-    }
-
-    fn lookup(
-        &self,
-        kind: &str,
-        words: &[String],
-        limit: usize,
-        ids: &[u64],
-        request: &Request,
-        cancel: &AtomicBool,
-    ) -> Result<Lookup> {
-        let terms: Vec<_> = words
-            .iter()
-            .flat_map(|word| {
-                let clean = word.replace('\'', "");
-                let parts: Vec<_> = tokens(&clean).map(str::to_owned).collect();
-                let last = parts.len().saturating_sub(1);
-                parts
-                    .into_iter()
-                    .enumerate()
-                    .map(move |(index, part)| (part, index == last))
-            })
-            .collect();
-        let searcher = self.reader.searcher();
-        let mut heap = BinaryHeap::new();
-        let mut count = 0;
-        let longitude_weight = request.near.map(|p| p.0.to_radians().cos().powi(2));
-        for (ordinal, segment) in searcher.segment_readers().iter().enumerate() {
-            let bits = Self::matches(segment, self.schema.get_field(kind)?, &terms, cancel)?;
-            if bits.is_empty() {
-                continue;
-            }
-            let fast = segment.fast_fields();
-            let row_ids = fast.u64("id")?;
-            let places = fast.u64("place_id")?;
-            let latitudes = fast.f64("lat")?;
-            let longitudes = fast.f64("lon")?;
-            for (block, mut mask) in bits.into_iter().enumerate() {
-                check(cancel)?;
-                while mask != 0 {
-                    let doc = u32::try_from(block * 64 + mask.trailing_zeros() as usize)?;
-                    mask &= mask - 1;
-                    if doc >= segment.max_doc() || segment.is_deleted(doc) {
-                        continue;
-                    }
-                    if !ids.is_empty() && !ids.contains(&places.first(doc).unwrap_or(0)) {
-                        continue;
-                    }
-                    count += 1;
-                    let distance = request.near.map_or(0.0, |(lat, lon)| {
-                        let delta_lat = latitudes.first(doc).unwrap_or(0.0) - lat;
-                        let delta_lon = (longitudes.first(doc).unwrap_or(0.0) - lon).abs();
-                        delta_lat * delta_lat
-                            + delta_lon.min(360.0 - delta_lon).powi(2)
-                                * longitude_weight.unwrap_or(1.0)
-                    });
-                    let candidate = Candidate {
-                        distance,
-                        id: row_ids.first(doc).unwrap_or(0),
-                        address: DocAddress::new(u32::try_from(ordinal)?, doc),
-                    };
-                    if heap.len() == limit && heap.peek().is_some_and(|worst| candidate >= *worst) {
-                        continue;
-                    }
-                    heap.push(candidate);
-                    if heap.len() > limit {
-                        heap.pop();
-                    }
-                }
-            }
-        }
-        let mut rows = Vec::new();
-        for candidate in heap.into_sorted_vec() {
-            check(cancel)?;
-            let document: TantivyDocument = searcher.doc(candidate.address)?;
-            rows.push(serde_json::from_str(
-                document
-                    .get_first(self.schema.get_field("row")?)
-                    .and_then(|value| value.as_str())
-                    .ok_or("missing stored row")?,
-            )?);
-        }
-        Ok(Lookup {
-            words: words.to_vec(),
-            limit,
-            ids: ids.to_vec(),
-            rows,
-            count: request.count.then_some(count),
-        })
     }
 
     /// Retrieve all stages in one JNI request; Kotlin applies the existing final scoring and deduplication.
@@ -351,8 +268,18 @@ impl SearchIndex {
         {
             return Err("invalid reference".into());
         }
-        let mut places = vec![self.lookup("place", &request.words, 30, &[], request, cancel)?];
-        let mut streets = vec![self.lookup("street", &request.words, 80, &[], request, cancel)?];
+        let searcher = self.reader.searcher();
+        let mut context = SearchContext {
+            columns: (0..searcher.segment_readers().len())
+                .map(|_| None)
+                .collect(),
+            searcher,
+            index: self,
+            request,
+            cancel,
+        };
+        let mut places = vec![context.lookup("place", &request.words, 30, &[])?];
+        let mut streets = vec![context.lookup("street", &request.words, 80, &[])?];
         let mut place_keys = HashMap::new();
         let mut street_keys = HashSet::new();
         for (town, street) in &request.splits {
@@ -360,7 +287,7 @@ impl SearchIndex {
                 *index
             } else {
                 let index = places.len();
-                places.push(self.lookup("place", town, 10, &[], request, cancel)?);
+                places.push(context.lookup("place", town, 10, &[])?);
                 place_keys.insert(town.clone(), index);
                 index
             };
@@ -377,7 +304,7 @@ impl SearchIndex {
                 .collect();
             ids.sort_unstable();
             if !ids.is_empty() && street_keys.insert((street.clone(), ids.clone())) {
-                streets.push(self.lookup("street", street, 40, &ids, request, cancel)?);
+                streets.push(context.lookup("street", street, 40, &ids)?);
             }
         }
         let mut addresses = Vec::new();
@@ -386,48 +313,186 @@ impl SearchIndex {
                 .iter()
                 .flat_map(|lookup| lookup.rows.iter().map(|row| row.id))
                 .collect();
-            let searcher = self.reader.searcher();
-            for segment_index in 0..searcher.segment_readers().len() {
-                let segment = &searcher.segment_readers()[segment_index];
-                for street_id in &ids {
-                    for (term, prefix) in [
-                        (format!("{street_id}\t{number}"), false),
-                        (format!("{street_id}\t{number} "), true),
-                    ] {
-                        let bits = Self::matches(
-                            segment,
-                            self.schema.get_field("address")?,
-                            &[(term, prefix)],
-                            cancel,
-                        )?;
-                        for (block, mut mask) in bits.into_iter().enumerate() {
-                            check(cancel)?;
-                            while mask != 0 {
-                                let doc =
-                                    u32::try_from(block * 64 + mask.trailing_zeros() as usize)?;
-                                mask &= mask - 1;
-                                if doc >= segment.max_doc() || segment.is_deleted(doc) {
-                                    continue;
-                                }
-                                let document: TantivyDocument = searcher
-                                    .doc(DocAddress::new(u32::try_from(segment_index)?, doc))?;
-                                addresses.push(serde_json::from_str(
-                                    document
-                                        .get_first(self.schema.get_field("row")?)
-                                        .and_then(|value| value.as_str())
-                                        .ok_or("missing address")?,
-                                )?);
-                            }
-                        }
-                    }
-                }
-            }
+            addresses = context.addresses(number, &ids)?;
         }
         check(cancel)?;
         Ok(Snapshot {
             places,
             streets,
             addresses,
+        })
+    }
+}
+
+/// Fast-field opening decodes column metadata. Share those handles across stages of one request.
+/// The handles are discarded with the request, so pack replacement needs no cache invalidation.
+struct SegmentColumns {
+    ids: Column<u64>,
+    places: Column<u64>,
+    latitudes: Column<f64>,
+    longitudes: Column<f64>,
+}
+
+impl SegmentColumns {
+    fn open(segment: &tantivy::SegmentReader) -> Result<Self> {
+        let fields = segment.fast_fields();
+        Ok(Self {
+            ids: fields.u64("id")?,
+            places: fields.u64("place_id")?,
+            latitudes: fields.f64("lat")?,
+            longitudes: fields.f64("lon")?,
+        })
+    }
+}
+
+/// One stable searcher and lazy column handles for all interpretations of the query.
+struct SearchContext<'a> {
+    index: &'a SearchIndex,
+    request: &'a Request,
+    cancel: &'a AtomicBool,
+    searcher: tantivy::Searcher,
+    columns: Vec<Option<SegmentColumns>>,
+}
+
+impl SearchContext<'_> {
+    /// House keys are sparse: visit their postings directly instead of allocating and scanning
+    /// a segment-sized bitset for every candidate street. Exact and space-suffix keys are disjoint.
+    fn addresses(&self, number: &str, ids: &HashSet<u64>) -> Result<Vec<Row>> {
+        let mut rows = Vec::new();
+        let field = self.index.schema.get_field("address")?;
+        for (ordinal, segment) in self.searcher.segment_readers().iter().enumerate() {
+            let inverted = segment.inverted_index(field)?;
+            for street_id in ids {
+                for (term, prefix) in [
+                    (format!("{street_id}\t{number}"), false),
+                    (format!("{street_id}\t{number} "), true),
+                ] {
+                    check(self.cancel)?;
+                    let mut stream = inverted.terms().range().ge(term.as_bytes()).into_stream()?;
+                    while stream.advance() {
+                        check(self.cancel)?;
+                        if if prefix {
+                            !stream.key().starts_with(term.as_bytes())
+                        } else {
+                            stream.key() != term.as_bytes()
+                        } {
+                            break;
+                        }
+                        let mut postings = inverted.read_postings_from_terminfo(
+                            stream.value(),
+                            IndexRecordOption::Basic,
+                        )?;
+                        let mut steps = 0u32;
+                        while postings.doc() != TERMINATED {
+                            let doc = postings.doc();
+                            if !segment.is_deleted(doc) {
+                                rows.push(self.row(DocAddress::new(u32::try_from(ordinal)?, doc))?);
+                            }
+                            postings.advance();
+                            steps += 1;
+                            if steps.is_multiple_of(256) {
+                                check(self.cancel)?;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(rows)
+    }
+
+    fn row(&self, address: DocAddress) -> Result<Row> {
+        let document: TantivyDocument = self.searcher.doc(address)?;
+        Ok(serde_json::from_str(
+            document
+                .get_first(self.index.schema.get_field("row")?)
+                .and_then(|value| value.as_str())
+                .ok_or("missing stored row")?,
+        )?)
+    }
+
+    fn lookup(
+        &mut self,
+        kind: &str,
+        words: &[String],
+        limit: usize,
+        ids: &[u64],
+    ) -> Result<Lookup> {
+        let request = self.request;
+        let cancel = self.cancel;
+        let terms: Vec<_> = words
+            .iter()
+            .flat_map(|word| {
+                let clean = word.replace('\'', "");
+                let parts: Vec<_> = tokens(&clean).map(str::to_owned).collect();
+                let last = parts.len().saturating_sub(1);
+                parts
+                    .into_iter()
+                    .enumerate()
+                    .map(move |(index, part)| (part, index == last))
+            })
+            .collect();
+        let searcher = &self.searcher;
+        let mut heap = BinaryHeap::new();
+        let mut count = 0;
+        let longitude_weight = request.near.map(|p| p.0.to_radians().cos().powi(2));
+        for (ordinal, segment) in searcher.segment_readers().iter().enumerate() {
+            let bits =
+                SearchIndex::matches(segment, self.index.schema.get_field(kind)?, &terms, cancel)?;
+            if bits.is_empty() {
+                continue;
+            }
+            if self.columns[ordinal].is_none() {
+                self.columns[ordinal] = Some(SegmentColumns::open(segment)?);
+            }
+            let columns = self.columns[ordinal]
+                .as_ref()
+                .ok_or("missing segment columns")?;
+            for (block, mut mask) in bits.into_iter().enumerate() {
+                check(cancel)?;
+                while mask != 0 {
+                    let doc = u32::try_from(block * 64 + mask.trailing_zeros() as usize)?;
+                    mask &= mask - 1;
+                    if doc >= segment.max_doc() || segment.is_deleted(doc) {
+                        continue;
+                    }
+                    if !ids.is_empty() && !ids.contains(&columns.places.first(doc).unwrap_or(0)) {
+                        continue;
+                    }
+                    count += 1;
+                    let distance = request.near.map_or(0.0, |(lat, lon)| {
+                        let delta_lat = columns.latitudes.first(doc).unwrap_or(0.0) - lat;
+                        let delta_lon = (columns.longitudes.first(doc).unwrap_or(0.0) - lon).abs();
+                        delta_lat * delta_lat
+                            + delta_lon.min(360.0 - delta_lon).powi(2)
+                                * longitude_weight.unwrap_or(1.0)
+                    });
+                    let candidate = Candidate {
+                        distance,
+                        id: columns.ids.first(doc).unwrap_or(0),
+                        address: DocAddress::new(u32::try_from(ordinal)?, doc),
+                    };
+                    if heap.len() == limit && heap.peek().is_some_and(|worst| candidate >= *worst) {
+                        continue;
+                    }
+                    heap.push(candidate);
+                    if heap.len() > limit {
+                        heap.pop();
+                    }
+                }
+            }
+        }
+        let mut rows = Vec::new();
+        for candidate in heap.into_sorted_vec() {
+            check(cancel)?;
+            rows.push(self.row(candidate.address)?);
+        }
+        Ok(Lookup {
+            words: words.to_vec(),
+            limit,
+            ids: ids.to_vec(),
+            rows,
+            count: request.count.then_some(count),
         })
     }
 }
