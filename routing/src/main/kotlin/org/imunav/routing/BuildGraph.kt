@@ -18,11 +18,16 @@ data class PackInfo(
     val profiles: List<String> = listOf(GraphSpec.CAR),
     /** The graph stores a height for every road point (needed for barometric terrain matching). */
     val elevation: Boolean = false,
+    /**
+     * The car obeys turn restrictions and pays turn and U-turn penalties ([GraphSpec.CAR_TURN_PENALTIES]).
+     * Missing in packs built before turn costs; such packs are loaded without them.
+     */
+    val turnCosts: Boolean = false,
 ) {
     /** Written as `pack.json` next to the graph; the app reads it to show and compare packs. */
     fun toJson(): String = "{\"name\":\"$name\",\"builtAt\":\"$builtAt\",\"source\":\"$source\",\"graphhopper\":\"11.0\"," +
         "\"bounds\":[${bounds.joinToString(",")}],\"sizeBytes\":$sizeBytes," +
-        "\"profiles\":[${profiles.joinToString(",") { "\"$it\"" }}],\"elevation\":$elevation}"
+        "\"profiles\":[${profiles.joinToString(",") { "\"$it\"" }}],\"elevation\":$elevation,\"turnCosts\":$turnCosts}"
 
     companion object {
         const val FILE = "pack.json"
@@ -38,7 +43,8 @@ data class PackInfo(
                 ?.split(',')?.map { it.trim().trim('"') }?.filter { it.isNotEmpty() }
                 ?: listOf(GraphSpec.CAR)
             val elevation = Regex("\"elevation\"\\s*:\\s*true").containsMatchIn(json)
-            PackInfo(str("name"), str("builtAt"), str("source"), b, size, profiles, elevation)
+            val turnCosts = Regex("\"turnCosts\"\\s*:\\s*true").containsMatchIn(json)
+            PackInfo(str("name"), str("builtAt"), str("source"), b, size, profiles, elevation, turnCosts)
         }.getOrNull()
     }
 }
@@ -65,12 +71,14 @@ fun buildGraph(
     profiles: List<String> = GraphSpec.ALL_PROFILES,
     /** Store road heights from a digital elevation model (null = flat 2-D pack, like older packs). */
     elevation: PackElevation? = null,
+    /** Turn restrictions and turn penalties for the car (off only for tests of older packs). */
+    turnCosts: Boolean = true,
 ): PackInfo {
     require(osmFile.exists()) { "OSM file not found: $osmFile" }
     outDir.deleteRecursively()
     outDir.mkdirs()
     val hopper = GraphHopper()
-    val config = GraphSpec.config(outDir.absolutePath, profiles)
+    val config = GraphSpec.config(outDir.absolutePath, profiles, turnCosts)
         .putObject("datareader.file", osmFile.absolutePath)
         // Drop tiny disconnected road islands (parking lots, private yards) that routes cannot use.
         .putObject("prepare.min_network_size", minNetworkSize)
@@ -92,7 +100,7 @@ fun buildGraph(
     if (withSearch) SearchIndexBuilder.build(osmFile, hopper, File(outDir, SearchIndexBuilder.FILE), withAddresses)
     hopper.close()
     val size = outDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
-    val info = PackInfo(name, Instant.now().toString(), osmFile.name, doubleArrayOf(b.minLat, b.maxLat, b.minLon, b.maxLon), size, profiles, elevation != null)
+    val info = PackInfo(name, Instant.now().toString(), osmFile.name, doubleArrayOf(b.minLat, b.maxLat, b.minLon, b.maxLon), size, profiles, elevation != null, turnCosts)
     File(outDir, PackInfo.FILE).writeText(info.toJson())
     return info
 }

@@ -1,0 +1,52 @@
+"""Check the routing archive validator used by the routing-pack workflow."""
+
+import json
+import sys
+import tempfile
+import unittest
+import zipfile
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parents[1]))
+from verify_routing_pack import verify  # noqa: E402
+
+
+def write_pack(path: Path, **overrides) -> None:
+    """A minimal flat archive with a valid pack.json; [overrides] replace pack.json fields."""
+    files = {"properties": b"graph", "search.db": b"SQLite format 3\x00" + b"index"}
+    info = {
+        "name": "Test",
+        "builtAt": "2026-10-24T00:00:00Z",
+        "source": "test.osm.pbf",
+        "graphhopper": "11.0",
+        "bounds": [44.0, 52.0, 22.0, 40.0],
+        "sizeBytes": sum(len(data) for data in files.values()),
+        "profiles": ["car", "foot"],
+        "elevation": False,
+        "turnCosts": True,
+    }
+    info.update(overrides)
+    with zipfile.ZipFile(path, "w") as archive:
+        for name, data in files.items():
+            archive.writestr(name, data)
+        archive.writestr("pack.json", json.dumps({key: value for key, value in info.items() if value is not None}))
+
+
+class VerifyRoutingPackTests(unittest.TestCase):
+    def test_current_pack_with_turn_costs_is_valid(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            archive = Path(temporary) / "routing.zip"
+            write_pack(archive)
+            self.assertTrue(verify(archive)["turnCosts"])
+
+    def test_pack_without_turn_costs_is_rejected(self):
+        for value in (False, None):
+            with self.subTest(turnCosts=value), tempfile.TemporaryDirectory() as temporary:
+                archive = Path(temporary) / "routing.zip"
+                write_pack(archive, turnCosts=value)
+                with self.assertRaisesRegex(ValueError, "turnCosts"):
+                    verify(archive)
+
+
+if __name__ == "__main__":
+    unittest.main()

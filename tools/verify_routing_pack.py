@@ -27,6 +27,9 @@ def verify(archive_path: Path) -> dict:
             raise ValueError("pack.json has invalid name or GraphHopper version")
         if info.get("profiles") != ["car", "foot"] or not isinstance(info.get("elevation"), bool):
             raise ValueError("pack.json must describe the car and foot profiles and elevation flag")
+        # Current builders store turn restrictions and turn penalties; a pack without them is stale.
+        if info.get("turnCosts") is not True:
+            raise ValueError("pack.json must declare turnCosts: true (rebuild the pack with the current :routing builder)")
         bounds = info.get("bounds")
         if not isinstance(bounds, list) or len(bounds) != 4 or not all(isinstance(value, (int, float)) and math.isfinite(value) for value in bounds):
             raise ValueError("pack.json has invalid bounds")

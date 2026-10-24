@@ -14,7 +14,20 @@ streets, preferring pleasant ways over busy roads). Choose _Car_ or _Walk_ in th
 before starting. Walking routes are offline-only (the public OSRM server drives only). Packs built
 before walking support (`pack.json` without `"profiles"`) still load; _Walk_ is then disabled.
 
-Build one active routing pack for the region you need (needs a desktop JVM; a full Ukraine pack takes a few minutes and ~10 GB RAM). Use an OSM extract for another country in the same command:
+**Turn restrictions and turn penalties (car):** packs obey OSM turn restrictions (`no_left_turn`,
+`only_straight_on`…), charge 60 s of route weight for a U-turn and add a penalty per turn from
+`GraphSpec.CAR_TURN_PENALTIES`: 2 s for a right turn of 25–80°, 5 s for a sharper right, 8 s for a left
+turn of 25–80° and 12 s for a sharper left. Left turns cross oncoming traffic, so they cost more.
+Penalties only change which route is chosen; the estimated travel time stays the road speed. They
+need an edge-based contraction hierarchy: the Ukraine car graph takes ~31 min instead of ~2 min on a
+16-thread desktop, and the graph is ~50 % larger (712 MB instead of 469 MB car-only). `pack.json` says
+`"turnCosts":true`. Older packs (without the field) still load and route as before, without turn costs;
+**rebuild and re-import a pack** to get restriction-aware routes on the phone.
+
+Walking routes never have turn costs.
+
+Build one active routing pack for the region you need (needs a desktop JVM; a full Ukraine pack takes
+about half an hour to an hour with turn costs and ~10 GB RAM). Use an OSM extract for another country in the same command:
 
 ```bash
 curl -LO https://download.geofabrik.de/europe/ukraine-latest.osm.pbf
@@ -57,9 +70,10 @@ large regions do not need a large heap.
 
 **CI archive:** **Actions → Offline routing pack → Run workflow** runs the routing builder on a
 Geofabrik Ukraine extract by default. The workflow accepts a different one-word pack name and HTTPS
-`.osm.pbf` URL, with an optional expected SHA-256. It builds car and foot profiles with `search.db`
-and no elevation tiles, validates the flat ZIP layout and metadata, extracts it, and opens the graph
-with `PhoneGraphHopper`.
+`.osm.pbf` URL, with an optional expected SHA-256. It builds car (with turn costs) and foot profiles
+with `search.db` and no elevation tiles, validates the flat ZIP layout and metadata (`tools/verify_routing_pack.py`
+rejects a pack without `"turnCosts":true`), extracts it, and opens the graph with `PhoneGraphHopper`.
+Expect roughly an hour for Ukraine on a hosted runner because of the edge-based car hierarchy.
 
 Pull requests affecting the builder or workflow run the same checks on a
 small Monaco extract. The downloadable GitHub artifact contains `routing-<name>.zip`, its SHA-256
@@ -72,6 +86,9 @@ that ZIP to an HTTPS host for the app's Download field. The workflow does not de
 Android cannot compile GraphHopper's custom models at runtime (Janino generates JVM bytecode), so
 `PhoneGraphHopper` builds the same weighting from plain code; `GraphSpec` holds everything the
 builder and the phone must agree on, and `OfflineGraphTest` checks both give identical routes.
+For turn costs the phone builds GraphHopper's own `DefaultTurnCostProvider` (turn restrictions,
+U-turn costs) with a turn-penalty function evaluated from the same `CAR_TURN_PENALTIES` table that
+generates the desktop custom-model statements; a test also checks that a forbidden left turn is avoided.
 
 ## Offline display map build and distribution
 

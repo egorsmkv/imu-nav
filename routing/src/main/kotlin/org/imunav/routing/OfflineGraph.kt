@@ -12,11 +12,16 @@ import com.graphhopper.matching.Observation
 import com.graphhopper.routing.WeightingFactory
 import com.graphhopper.routing.ev.BooleanEncodedValue
 import com.graphhopper.routing.ev.DecimalEncodedValue
+import com.graphhopper.routing.ev.Orientation
+import com.graphhopper.routing.ev.TurnRestriction
+import com.graphhopper.routing.weighting.DefaultTurnCostProvider
 import com.graphhopper.routing.weighting.TurnCostProvider
 import com.graphhopper.routing.weighting.custom.CustomWeighting
+import com.graphhopper.routing.weighting.custom.CustomWeightingHelper
 import com.graphhopper.util.CustomModel
 import com.graphhopper.util.Instruction
 import com.graphhopper.util.PMap
+import com.graphhopper.util.TurnCostsConfig
 import com.graphhopper.util.shapes.GHPoint
 import org.imunav.core.geo.GeoPoint
 import org.imunav.core.route.Route
@@ -62,13 +67,32 @@ object GraphSpec {
     /** Packs with elevation: extra height samples on edges longer than this, meters. */
     const val ELEVATION_SAMPLING_M = 60
 
+    /** Turn-cost packs store each edge's compass direction, from which the turn angle is computed. */
+    const val TURN_COST_ENCODED_VALUES = "orientation"
+
+    /** Weight of a U-turn for the car, seconds (a legal U-turn is still possible, just rarely worth it). */
+    const val U_TURN_COSTS_S = 60
+
+    /**
+     * Car turn penalties, applied in addition to the travel time. They change which route is chosen,
+     * not its estimated duration. Left turns cross oncoming traffic in Ukraine, so they cost more.
+     * The same table drives the desktop model ([customModel]) and the phone weighting ([PhoneGraphHopper]).
+     */
+    val CAR_TURN_PENALTIES = listOf(
+        TurnPenalty(TurnPenalty.RIGHT, 25.0, 80.0, 2.0),
+        TurnPenalty(TurnPenalty.RIGHT, 80.0, 181.0, 5.0),
+        TurnPenalty(TurnPenalty.LEFT, 25.0, 80.0, 8.0),
+        TurnPenalty(TurnPenalty.LEFT, 80.0, 181.0, 12.0),
+    )
+
     /**
      * The routing model of a profile.
-     *  - car: drive at the average speed of each road, never where cars may not go;
+     *  - car: drive at the average speed of each road, never where cars may not go; with [turnCosts]
+     *    also pay [CAR_TURN_PENALTIES] (turn restrictions and U-turn costs live in the profile);
      *  - foot: walk at the typical walking speed of each way, preferring pleasant ways (footways,
      *    parks) over busy roads, never where pedestrians may not go.
      */
-    fun customModel(profile: String = CAR): CustomModel = when (profile) {
+    fun customModel(profile: String = CAR, turnCosts: Boolean = false): CustomModel = when (profile) {
         FOOT -> CustomModel()
             .addToPriority(Statement.If("!foot_access", Statement.Op.MULTIPLY, "0"))
             .addToPriority(Statement.Else(Statement.Op.MULTIPLY, "foot_priority"))
@@ -81,23 +105,59 @@ object GraphSpec {
             .addToSpeed(Statement.If("true", Statement.Op.LIMIT, "car_average_speed"))
             .setDistanceInfluence(DISTANCE_INFLUENCE)
             .setHeadingPenalty(HEADING_PENALTY_S)
+            .also { model -> if (turnCosts) CAR_TURN_PENALTIES.forEach { model.addToTurnPenalty(it.statement()) } }
     }
 
-    /** One routing profile with our custom model. */
-    fun profile(name: String = CAR): Profile = Profile(name).setCustomModel(customModel(name))
+    /**
+     * One routing profile with our custom model. With [turnCosts] the car obeys OSM turn restrictions
+     * (no left turn, only straight on…) and pays [U_TURN_COSTS_S] for a U-turn; walking never has turn costs.
+     */
+    fun profile(name: String = CAR, turnCosts: Boolean = false): Profile {
+        val profile = Profile(name).setCustomModel(customModel(name, turnCosts))
+        return if (turnCosts && name == CAR) profile.setTurnCostsConfig(TurnCostsConfig.car().setUTurnCosts(U_TURN_COSTS_S)) else profile
+    }
 
     /**
      * GraphHopper settings for a pack with [profiles] — shared by the desktop builder and the phone;
-     * both must agree or the graph will not load.
+     * both must agree or the graph will not load. [turnCosts] is what [PackInfo.turnCosts] says:
+     * new packs have it, packs built before it are loaded without.
      */
-    fun config(graphDir: String, profiles: List<String> = ALL_PROFILES): GraphHopperConfig {
+    fun config(graphDir: String, profiles: List<String> = ALL_PROFILES, turnCosts: Boolean = false): GraphHopperConfig {
         val carOnly = profiles == listOf(CAR)
+        val encodedValues = if (carOnly) CAR_ENCODED_VALUES else ENCODED_VALUES
         return GraphHopperConfig()
             .putObject("graph.location", graphDir)
-            .putObject("graph.encoded_values", if (carOnly) CAR_ENCODED_VALUES else ENCODED_VALUES)
+            .putObject("graph.encoded_values", if (turnCosts) "$encodedValues, $TURN_COST_ENCODED_VALUES" else encodedValues)
             .putObject("import.osm.ignored_highways", if (carOnly) CAR_ONLY_IGNORED_HIGHWAYS else IGNORED_HIGHWAYS)
-            .setProfiles(profiles.map { profile(it) })
+            .setProfiles(profiles.map { profile(it, turnCosts) })
             .setCHProfiles(profiles.map { CHProfile(it) })
+    }
+}
+
+/**
+ * Extra route weight ([seconds]) for turning to the [side] by at least [fromDeg] and less than
+ * [untilDeg] degrees. GraphHopper's `change_angle` is positive for right turns, negative for left.
+ */
+data class TurnPenalty(val side: Int, val fromDeg: Double, val untilDeg: Double, val seconds: Double) {
+    /** Does a turn by [changeAngle] degrees fall into this band? */
+    fun matches(changeAngle: Double): Boolean {
+        val towardSide = changeAngle * side
+        return towardSide >= fromDeg && towardSide < untilDeg
+    }
+
+    /** The same band as a GraphHopper custom-model statement (desktop builder, compiled by Janino). */
+    fun statement(): Statement {
+        val condition = if (side == RIGHT) {
+            "change_angle >= $fromDeg && change_angle < $untilDeg"
+        } else {
+            "change_angle <= -$fromDeg && change_angle > -$untilDeg"
+        }
+        return Statement.If(condition, Statement.Op.ADD, seconds.toString())
+    }
+
+    companion object {
+        const val RIGHT = 1
+        const val LEFT = -1
     }
 }
 
@@ -107,25 +167,51 @@ object GraphSpec {
  * JVM bytecode generated on the fly). Each function below must mirror [GraphSpec.customModel].
  */
 class PhoneGraphHopper : GraphHopper() {
-    override fun createWeightingFactory(): WeightingFactory = WeightingFactory { profile, _, _ ->
+    override fun createWeightingFactory(): WeightingFactory = WeightingFactory { profile, _, disableTurnCosts ->
         when (profile.name) {
             GraphSpec.FOOT -> footWeighting()
-            else -> carWeighting()
+            else -> carWeighting(profile.turnCostsConfig.takeIf { profile.hasTurnCosts() && !disableTurnCosts })
         }
     }
 
-    /** Car: speed = car_average_speed; priority 1 where cars may drive, else 0. */
-    private fun carWeighting(): CustomWeighting {
+    /**
+     * Car: speed = car_average_speed; priority 1 where cars may drive, else 0. With [turnCosts]
+     * (packs built with them) also turn restrictions, U-turn costs and [GraphSpec.CAR_TURN_PENALTIES],
+     * exactly like GraphHopper's own factory does for the Janino-compiled model.
+     */
+    private fun carWeighting(turnCosts: TurnCostsConfig?): CustomWeighting {
         val speed: DecimalEncodedValue = encodingManager.getDecimalEncodedValue("car_average_speed")
         val access: BooleanEncodedValue = encodingManager.getBooleanEncodedValue("car_access")
+        val turnPenalty: CustomWeighting.TurnPenaltyMapping = if (turnCosts == null) {
+            CustomWeighting.TurnPenaltyMapping { _, _, _, _, _ -> 0.0 }
+        } else {
+            val orientation: DecimalEncodedValue = encodingManager.getDecimalEncodedValue(Orientation.KEY)
+            CustomWeighting.TurnPenaltyMapping { graph, edgeIntAccess, inEdge, viaNode, outEdge ->
+                // Same direction flags as GraphHopper's generated code for `change_angle`.
+                val angle = CustomWeightingHelper.calcChangeAngle(
+                    edgeIntAccess,
+                    orientation,
+                    inEdge,
+                    !graph.isAdjNode(inEdge, viaNode),
+                    outEdge,
+                    !graph.isAdjNode(outEdge, viaNode),
+                )
+                GraphSpec.CAR_TURN_PENALTIES.filter { it.matches(angle) }.sumOf { it.seconds }
+            }
+        }
+        val turnCostProvider = if (turnCosts == null) {
+            TurnCostProvider.NO_TURN_COST_PROVIDER
+        } else {
+            DefaultTurnCostProvider(encodingManager.getTurnBooleanEncodedValue(TurnRestriction.key(GraphSpec.CAR)), baseGraph, turnCosts, turnPenalty)
+        }
         return CustomWeighting(
-            TurnCostProvider.NO_TURN_COST_PROVIDER,
+            turnCostProvider,
             CustomWeighting.Parameters(
                 { edge, reverse -> if (reverse) edge.getReverse(speed) else edge.get(speed) },
                 { speed.maxOrMaxStorableDecimal },
                 { edge, reverse -> if (if (reverse) edge.getReverse(access) else edge.get(access)) 1.0 else 0.0 },
                 { 1.0 },
-                { _, _, _, _, _ -> 0.0 },
+                turnPenalty,
                 GraphSpec.DISTANCE_INFLUENCE,
                 GraphSpec.HEADING_PENALTY_S,
             ),
@@ -233,14 +319,16 @@ class OfflineGraph private constructor(private val hopper: GraphHopper, val dir:
             // Which profiles the pack was built with decides the settings it must be loaded with.
             val info = File(dir, PackInfo.FILE).takeIf { it.exists() }?.let { PackInfo.parse(it.readText()) }
             val profiles = info?.profiles ?: GraphSpec.ALL_PROFILES
+            // Turn costs change the stored encoded values and the CH shortcuts; older packs have none.
+            val turnCosts = info?.turnCosts == true
             val hopper = PhoneGraphHopper()
-            val cfg = GraphSpec.config(dir.absolutePath, profiles)
+            val cfg = GraphSpec.config(dir.absolutePath, profiles, turnCosts)
                 .putObject("graph.dataaccess.default_type", if (memoryMapped) "MMAP_RO" else "RAM_STORE")
             // init() copies every custom model through Jackson, which needs Class.getRecordComponents
             // (Android 14+) for GraphHopper's record classes. Our models are plain objects already, so
             // initialize without them and hand the same profiles over directly.
             hopper.init(cfg.setProfiles(emptyList()))
-            hopper.setProfiles(profiles.map { GraphSpec.profile(it) })
+            hopper.setProfiles(profiles.map { GraphSpec.profile(it, turnCosts) })
             // A 3-D graph must be opened as 3-D (GraphHopper checks the stored dimension); no DEM is needed to read it.
             hopper.setElevation(info?.elevation == true)
             hopper.setAllowWrites(false)

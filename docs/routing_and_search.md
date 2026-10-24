@@ -30,13 +30,15 @@ Online search sends your search text to the chosen server. Turn it off if you wa
 
 ## Build a pack on a computer
 
-A full Ukraine build needs about 10 GB of RAM; other regions vary. Download the OpenStreetMap extract for your chosen region and run, for example:
+A full Ukraine build needs about 10 GB of RAM and, because car routes obey turn restrictions, about half an hour to an hour; other regions vary. Download the OpenStreetMap extract for your chosen region and run, for example:
 
 ```bash
 ./gradlew :routing:run --args="--osm ukraine-latest.osm.pbf --out graph-ukraine --name Ukraine"
 ```
 
 Import the resulting ZIP in the app. For road heights, pack bundling and matching the phone's routing rules, see the [detailed routing reference](reference/routing_and_search.md).
+
+Packs built before turn restrictions were added keep working, but their car routes may include forbidden turns and needless U-turns. Rebuild the pack (or run the CI workflow) and import it again to get the improved routes.
 
 ## Build an offline routing pack in CI
 

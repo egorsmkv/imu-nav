@@ -36,7 +36,7 @@ Package root: `org.imunav.<module>`. Put new logic in `:core` whenever it does n
 ./gradlew detekt                # static analysis only
 GRAPH_DIR=/path/to/graph-ukraine ./gradlew :routing:test --tests '*PackSmokeTest*'   # needs a real pack
 ./gradlew :replay:run --args="trips/ --hide-gps-after 60 --out replay-out"
-./gradlew :routing:run --args="--osm ukraine-latest.osm.pbf --out graph-ukraine --name Ukraine"  # ~10 GB RAM
+./gradlew :routing:run --args="--osm ukraine-latest.osm.pbf --out graph-ukraine --name Ukraine"  # ~10 GB RAM, ~30–60 min (turn costs)
 ```
 
 Requirements: JDK 17+, Android SDK platform 36, build-tools 36.0.0, NDK 28.2.13676358, CMake 3.22.1 and Rust 1.99+.
@@ -97,9 +97,11 @@ Use the SDK's `platform-tools/adb`; its path depends on the development host.
   `HttpURLConnection` or new clients; use `Http.client.newBuilder()` for different timeouts.
 - **Travel mode** (`TravelMode.CAR` / `FOOT`) selects the GraphHopper profile and the engine's motion
   model. Car-only corrections must stay gated by `mode == CAR` (or `Tuning.forWalking()`); walking uses
-  the `Pedometer` (steps × learned stride). Both profiles live in one pack; `GraphSpec.config(profiles)`
-  must match what `pack.json` says the pack contains, and `PhoneGraphHopper` mirrors each custom model in
-  plain code — change both together (`OfflineGraphTest` compares phone and desktop for car and foot).
+  the `Pedometer` (steps × learned stride). Both profiles live in one pack; `GraphSpec.config(profiles, turnCosts)`
+  must match what `pack.json` says the pack contains (`profiles`, `turnCosts`), and `PhoneGraphHopper` mirrors each
+  custom model in plain code — change both together (`OfflineGraphTest` compares phone and desktop for car and foot).
+  Car turn penalties live in one table, `GraphSpec.CAR_TURN_PENALTIES`, used by both sides; changing it,
+  the U-turn cost or the encoded values requires rebuilding packs (edge-based CH: ~30+ min for Ukraine).
 - **Positioning inputs** go through `PositioningHub` (which also records them for replay). Anything the
   engine consumes must be recorded in `TripEvent`, or replays will diverge from real drives.
 - **Trust:** the fused provider and Android's cached GPS fix are never trusted for navigation

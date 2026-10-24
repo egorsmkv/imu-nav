@@ -51,6 +51,9 @@ jobs:
         run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
       - uses: gradle/actions/setup-gradle@v4
         if: steps.changes.outputs.run == 'true'
+      - name: Test the archive validator
+        if: steps.changes.outputs.run == 'true'
+        run: python3 -m unittest discover -s tools/tests -p test_verify_routing_pack.py -v
       - name: Download small Monaco extract
         if: steps.changes.outputs.run == 'true'
         run: |
@@ -113,7 +116,9 @@ jobs:
             exit 1
           fi
           echo "OSM_SHA256_ACTUAL=$actual" >> "$GITHUB_ENV"
-      - name: Build car, foot and address-search pack
+      # Car turn restrictions and penalties need an edge-based contraction hierarchy: on a desktop the
+      # Ukraine car graph took ~31 min instead of ~2 min, so expect roughly an hour on a hosted runner.
+      - name: Build car (with turn costs), foot and address-search pack
         run: |
           /usr/bin/time -v -o build/routing-build-time.txt ./gradlew --no-daemon :routing:run \
             --args="--osm build/routing-source/$PACK_SLUG.osm.pbf --out build/routing-work/graph --name $PACK_NAME"

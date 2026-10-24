@@ -124,7 +124,8 @@ class OfflineGraphTest {
             assertEquals(30, route.maxspeedAtSegment(route.segmentAt(route.length - 200)))
 
             // Same answer as desktop GraphHopper with the Janino-compiled model.
-            val desktop = GraphHopper().init(GraphSpec.config(dir.absolutePath)).also { it.load() }
+            assertTrue(info.turnCosts, "new packs are built with turn costs")
+            val desktop = GraphHopper().init(GraphSpec.config(dir.absolutePath, turnCosts = true)).also { it.load() }
             val ref = desktop.route(GHRequest(GHPoint(start.lat, start.lon), GHPoint(end.lat, end.lon)).setProfile(GraphSpec.CAR)).best
             assertEquals(ref.distance, route.length, 1.0)
             assertEquals(ref.time / 1000.0, route.durationS, 1.0)
@@ -176,17 +177,99 @@ class OfflineGraphTest {
         val tmp = createTempDirectory()
         val osm = File(tmp, "test.osm").also { writeOsm(it) }
         val dir = File(tmp, "graph")
-        buildGraph(osm, dir, "old", minNetworkSize = 0, withSearch = false, profiles = listOf(GraphSpec.CAR))
+        buildGraph(osm, dir, "old", minNetworkSize = 0, withSearch = false, profiles = listOf(GraphSpec.CAR), turnCosts = false)
         assertEquals(listOf(GraphSpec.CAR), PackInfo.parse(File(dir, PackInfo.FILE).readText())?.profiles)
+        assertFalse(PackInfo.parse(File(dir, PackInfo.FILE).readText())!!.turnCosts)
         OfflineGraph.load(dir).use { g ->
             assertTrue(!g.supports(TravelMode.FOOT))
             val route = g.route(listOf(GeoPoint(50.4502, 30.5001), GeoPoint(50.4611, 30.5135)))
             assertTrue(route.length in 2000.0..2600.0)
             assertFailsWith<OfflineRoutingException> { g.route(listOf(GeoPoint(50.4502, 30.5001), GeoPoint(50.4611, 30.5135)), TravelMode.FOOT) }
         }
-        // pack.json written before profiles existed means car-only.
-        assertEquals(listOf(GraphSpec.CAR), PackInfo.parse("{\"name\":\"x\",\"bounds\":[1,2,3,4],\"sizeBytes\":5}")?.profiles)
+        // pack.json written before profiles existed means car-only, and before turn costs means none.
+        val legacy = PackInfo.parse("{\"name\":\"x\",\"bounds\":[1,2,3,4],\"sizeBytes\":5}")
+        assertEquals(listOf(GraphSpec.CAR), legacy?.profiles)
+        assertFalse(legacy!!.turnCosts)
         tmp.deleteRecursively()
+    }
+
+    /**
+     * A junction where Mainway continues north and Westway branches off to the left. Turning left is
+     * forbidden (OSM restriction relation); the legal way round is north, then west and back south.
+     */
+    private fun writeRestrictedJunction(file: File) {
+        val nodes = mapOf(
+            1L to (50.450 to 30.500), // south end of Mainway
+            2L to (50.455 to 30.500), // the junction
+            3L to (50.460 to 30.500), // north end of Mainway
+            4L to (50.455 to 30.495), // west end of Westway
+            5L to (50.460 to 30.495), // north-west corner of the detour
+        )
+        val sb = StringBuilder("<?xml version='1.0' encoding='UTF-8'?>\n<osm version='0.6'>\n")
+        nodes.forEach { (id, p) -> sb.append("<node id='$id' lat='${p.first}' lon='${p.second}' version='1'/>\n") }
+        fun way(id: Long, from: Long, to: Long, name: String) =
+            sb.append("<way id='$id' version='1'><nd ref='$from'/><nd ref='$to'/><tag k='highway' v='secondary'/><tag k='name' v='$name'/></way>\n")
+        way(11, 1, 2, "Mainway")
+        way(12, 2, 3, "Mainway")
+        way(13, 2, 4, "Westway")
+        way(14, 3, 5, "Northloop")
+        way(15, 5, 4, "Westloop")
+        sb.append("<relation id='21' version='1'><member type='way' ref='11' role='from'/><member type='node' ref='2' role='via'/>")
+        sb.append("<member type='way' ref='13' role='to'/><tag k='type' v='restriction'/><tag k='restriction' v='no_left_turn'/></relation>\n")
+        sb.append("</osm>\n")
+        file.writeText(sb.toString())
+    }
+
+    @Test
+    fun turnRestrictionsAreObeyedOnPhoneAndDesktop() {
+        val tmp = createTempDirectory()
+        val osm = File(tmp, "junction.osm").also { writeRestrictedJunction(it) }
+        val from = GeoPoint(50.4510, 30.5000)
+        val to = GeoPoint(50.4550, 30.4960)
+
+        // A pack built before turn costs takes the forbidden left turn: about 900 m.
+        val oldDir = File(tmp, "old")
+        buildGraph(osm, oldDir, "old", minNetworkSize = 0, withSearch = false, turnCosts = false)
+        val forbidden = OfflineGraph.load(oldDir).use { it.route(listOf(from, to)) }
+        assertTrue(forbidden.steps.any { it.name == "Westway" && it.type == "turn" && it.modifier == "left" }, "steps: ${forbidden.steps}")
+        assertTrue(forbidden.length < 1000.0, "length ${forbidden.length}")
+
+        // Current packs go round via Northloop and Westloop: the restriction holds on the phone path.
+        val dir = File(tmp, "turns")
+        assertTrue(buildGraph(osm, dir, "turns", minNetworkSize = 0, withSearch = false).turnCosts)
+        OfflineGraph.load(dir).use { g ->
+            val legal = g.route(listOf(from, to))
+            // The corners have no other road, so GraphHopper emits no instruction there: check the shape instead.
+            assertTrue(legal.geometry.any { abs(it.lat - 50.460) < 1e-5 && abs(it.lon - 30.495) < 1e-5 }, "detour via the north-west corner: ${legal.geometry}")
+            assertTrue(legal.steps.none { it.name == "Westway" && it.modifier == "left" }, "no forbidden left turn: ${legal.steps}")
+            assertTrue(legal.length > forbidden.length + 500.0, "legal ${legal.length} vs forbidden ${forbidden.length}")
+
+            // Phone weighting (plain code) and desktop weighting (Janino) agree on routes with turns.
+            val desktop = GraphHopper().init(GraphSpec.config(dir.absolutePath, turnCosts = true)).also { it.load() }
+            for ((a, b) in listOf(from to to, to to from, GeoPoint(50.4595, 30.4955) to GeoPoint(50.4510, 30.5000))) {
+                val phone = g.route(listOf(a, b))
+                val ref = desktop.route(GHRequest(GHPoint(a.lat, a.lon), GHPoint(b.lat, b.lon)).setProfile(GraphSpec.CAR)).best
+                assertEquals(ref.distance, phone.length, 1.0, "distance $a → $b")
+                assertEquals(ref.time / 1000.0, phone.durationS, 1.0, "time $a → $b")
+            }
+            desktop.close()
+        }
+        tmp.deleteRecursively()
+    }
+
+    @Test
+    fun turnPenaltiesFollowTheSharedTable() {
+        // GraphHopper's change_angle: positive to the right, negative to the left.
+        val penalty = { angle: Double -> GraphSpec.CAR_TURN_PENALTIES.filter { it.matches(angle) }.sumOf { it.seconds } }
+        assertEquals(0.0, penalty(0.0))
+        assertEquals(0.0, penalty(24.0))
+        assertEquals(2.0, penalty(45.0))
+        assertEquals(5.0, penalty(180.0))
+        assertEquals(8.0, penalty(-45.0))
+        assertEquals(12.0, penalty(-120.0))
+        assertTrue(penalty(-90.0) > penalty(90.0), "left turns cross oncoming traffic and cost more")
+        // The desktop statements describe exactly the same bands.
+        assertEquals("change_angle <= -25.0 && change_angle > -80.0", GraphSpec.CAR_TURN_PENALTIES[2].statement().condition)
     }
 
     private fun createTempDirectory(): File = kotlin.io.path.createTempDirectory("gh").toFile()

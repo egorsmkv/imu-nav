@@ -46,7 +46,8 @@ SUITES = {
     'server': ('.github/workflows/rust-coverage.yml', 'server/tests/', 'server/tools/') + SERVER + COVERAGE + RUST,
     'map': ('.github/workflows/map-pack.yml', 'tools/make_map_pack.py',
             'tools/verify_map_pack.py', 'tools/tests/test_map_pack.py'),
-    'routing': ('.github/workflows/routing-pack.yml', 'tools/verify_routing_pack.py') + CORE + ROUTING,
+    'routing': ('.github/workflows/routing-pack.yml', 'tools/verify_routing_pack.py',
+                'tools/tests/test_verify_routing_pack.py') + CORE + ROUTING,
 }
 GRADLE_SUITES = {'fdroid', 'kotlin', 'native', 'routing', 'android'}
 
