@@ -83,8 +83,9 @@ jobs:
       - name: Build and verify importable archive
         if: steps.changes.outputs.run == 'true'
         run: |
-          ./gradlew --no-daemon :routing:run \
-            --args="--osm build/routing-source/monaco.osm.pbf --out build/routing-work/graph --name Monaco"
+          ./gradlew --no-daemon :routing:installDist
+          routing/build/install/routing/bin/routing \
+            --osm build/routing-source/monaco.osm.pbf --out build/routing-work/graph --name Monaco
           python3 tools/verify_routing_pack.py build/routing-work/graph.zip
           mkdir -p build/routing-import
           unzip -q build/routing-work/graph.zip -d build/routing-import
@@ -136,6 +137,8 @@ jobs:
             exit 1
           fi
           echo "PACK_SLUG=${PACK_NAME,,}" >> "$GITHUB_ENV"
+          mkdir -p build
+          lscpu | tee build/routing-runner-cpu.txt
           df -h .
           free -h
       - name: Download and verify source extract
@@ -149,12 +152,17 @@ jobs:
             exit 1
           fi
           echo "OSM_SHA256_ACTUAL=$actual" >> "$GITHUB_ENV"
+      - name: Compile standalone routing builder
+        run: |
+          /usr/bin/time -v -o build/routing-compile-time.txt \
+            ./gradlew --no-daemon :routing:installDist
       # Car turn restrictions and penalties need an edge-based contraction hierarchy: on a desktop the
       # Ukraine car graph took ~31 min instead of ~2 min, so expect roughly an hour on a hosted runner.
       - name: Build car (with turn costs), foot and address-search pack
         run: |
-          /usr/bin/time -v -o build/routing-build-time.txt ./gradlew --no-daemon :routing:run \
-            --args="--osm build/routing-source/$PACK_SLUG.osm.pbf --out build/routing-work/graph --name $PACK_NAME"
+          # The Gradle process has exited: reserve the runner for the graph builder JVM.
+          /usr/bin/time -v -o build/routing-build-time.txt routing/build/install/routing/bin/routing \
+            --osm "build/routing-source/$PACK_SLUG.osm.pbf" --out build/routing-work/graph --name "$PACK_NAME"
           mkdir -p dist
           mv build/routing-work/graph.zip "dist/routing-$PACK_SLUG.zip"
       - name: Check archive and phone graph loader
@@ -212,4 +220,15 @@ jobs:
             dist/routing-build.json
           if-no-files-found: error
           compression-level: 0
+          retention-days: 30
+      - name: Upload build timing diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: routing-diagnostics-${{ github.run_id }}
+          path: |
+            build/routing-compile-time.txt
+            build/routing-build-time.txt
+            build/routing-runner-cpu.txt
+          if-no-files-found: warn
           retention-days: 30

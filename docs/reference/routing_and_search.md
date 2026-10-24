@@ -78,6 +78,12 @@ Expect roughly an hour for Ukraine on a hosted runner because of the edge-based 
 The workflow caches the native search builder and Cargo dependencies, keyed by runner OS/architecture,
 Rust version, manifests, lockfile and search source. A source-only change can reuse dependency builds;
 a cold cache still compiles everything. Generated graphs and search indexes are rebuilt from the input.
+Compilation uses `:routing:installDist`, then the standalone builder runs after Gradle exits, so
+Gradle's JVM does not remain resident during graph preparation. Both the Monaco fixture and full
+pack job exercise this launch path. The separate `routing-diagnostics-<run-id>` artifact retains
+CPU information and `/usr/bin/time -v` reports for compilation and pack generation, including on
+failure when available. These separate wall time, CPU time, peak memory and I/O; the build report's
+`peak_rss_kb` now measures the standalone builder rather than the Gradle invocation.
 
 In the 2026-10-24 Ukraine runs, the build step rose from 34m 29s
 ([SQLite run](https://github.com/egorsmkv/imu-nav/actions/runs/40097041373)) to 36m 48s
