@@ -6,8 +6,10 @@ import com.graphhopper.reader.dem.ElevationProvider
 import com.graphhopper.util.shapes.GHPoint
 import org.imunav.core.geo.GeoPoint
 import org.imunav.core.route.TravelMode
-import org.imunav.core.search.AddressSearch
 import org.imunav.core.search.ResultKind
+import org.imunav.core.search.TantivyRequest
+import org.imunav.core.search.TantivySearch
+import org.imunav.core.util.PackFiles
 import java.io.File
 import kotlin.math.abs
 import kotlin.test.Test
@@ -60,6 +62,8 @@ class OfflineGraphTest {
 
         override fun release() = Unit
     }
+
+    private fun search(index: TantivySearch, query: String, near: GeoPoint) = TantivyRequest().use { index.search(query, near, it) }
 
     @Test
     fun packWithElevationGivesRoutesAHeightProfile() {
@@ -152,19 +156,30 @@ class OfflineGraphTest {
             }
             val matched = g.mapMatch(noisy, accuracyM = 15.0)
             assertTrue(matched.lengthM in 1700.0..2000.0, "matched length ${matched.lengthM}")
+            // Archives must preserve the native directory and omit relational staging data.
+            assertTrue(!File(dir, SearchIndexBuilder.FILE).exists())
+            val archive = File(dir.parentFile, "native-pack.zip")
+            zipPack(dir, archive)
+            val unpacked = File(dir.parentFile, "unpacked").apply { mkdirs() }
+            archive.inputStream().use { input ->
+                PackFiles.extract(input, unpacked, true, PackFiles.Limits(100_000_000, 1000), {}, setOf(TantivySearch.DIRECTORY)) {}
+            }
+            TantivySearch(File(unpacked, TantivySearch.DIRECTORY)).use { index ->
+                assertEquals("Northway, 12", search(index, "Тестове Northway 12", GeoPoint(50.455, 30.505)).first().title)
+            }
             // Offline search index built next to the graph.
-            JdbcSearchDb(File(dir, SearchIndexBuilder.FILE)).use { db ->
+            TantivySearch(File(dir, TantivySearch.DIRECTORY)).use { db ->
                 val near = GeoPoint(50.455, 30.505)
-                val town = AddressSearch.search(db, "тесто", near)
+                val town = search(db, "тесто", near)
                 assertEquals("Тестове", town.first().title, "prefix match on a settlement: $town")
-                assertEquals("Тестове", AddressSearch.search(db, "Testove", near).first().title, "English name")
-                val street = AddressSearch.search(db, "вул. Eastway", near)
+                assertEquals("Тестове", search(db, "Testove", near).first().title, "English name")
+                val street = search(db, "вул. Eastway", near)
                 assertEquals("Eastway", street.first().title, "street-type word ignored: $street")
                 assertEquals("Тестове", street.first().subtitle, "street attached to its settlement")
-                val house = AddressSearch.search(db, "Eastway 5а", near)
+                val house = search(db, "Eastway 5а", near)
                 assertEquals(ResultKind.ADDRESS, house.first().kind, "house number found: $house")
                 assertEquals(50.4612, house.first().point.lat, 1e-6)
-                val combo = AddressSearch.search(db, "Тестове Northway 12", near)
+                val combo = search(db, "Тестове Northway 12", near)
                 assertEquals("Northway, 12", combo.first().title, "settlement + street + number: $combo")
             }
             assertTrue(matched.geometry.all { abs(it.lon - 30.500) < 1e-4 || abs(it.lat - 50.461) < 1e-4 }, "matched points lie on the roads")

@@ -30,6 +30,7 @@ dependencies {
     compileOnly(libs.sqlite.jdbc)
     builder(libs.sqlite.jdbc)
     testImplementation(libs.sqlite.jdbc)
+    testImplementation(libs.jackson.core)
     api(libs.graphhopper.core)
     api(libs.graphhopper.map.matching) {
         exclude(group = "ch.qos.logback") // desktop logging backend; not wanted on Android
@@ -49,3 +50,45 @@ tasks.named<JavaExec>("run") {
 }
 tasks.named<CreateStartScripts>("startScripts") { classpath = classpath!! + builder }
 distributions { main { contents { from(builder) { into("lib") } } } }
+
+// Desktop pack generation uses the writer-enabled host library; Android builds omit that entry point.
+val searchNativeTarget = providers.environmentVariable("CARGO_TARGET_DIR").map { rootProject.file(it).absolutePath }.orElse(rootProject.file("native/target").absolutePath)
+val searchNativeDirectory = searchNativeTarget.map { "$it/release" }
+val buildSearchNative = tasks.register<Exec>("buildSearchNative") {
+    commandLine("cargo", "build", "--manifest-path", rootProject.file("native/Cargo.toml"), "-p", "imu-nav-search", "--release", "--features", "builder")
+    environment("CARGO_TARGET_DIR", searchNativeTarget.get())
+    inputs.files(rootProject.fileTree("native/nav-search"), rootProject.file("native/Cargo.lock"), rootProject.file("native/Cargo.toml"))
+    outputs.file(searchNativeDirectory.map { "$it/${System.mapLibraryName("imu_nav_search")}" })
+}
+tasks.test {
+    dependsOn(buildSearchNative)
+    systemProperty("java.library.path", searchNativeDirectory.get())
+}
+tasks.named<JavaExec>("run") {
+    dependsOn(buildSearchNative)
+    systemProperty("java.library.path", searchNativeDirectory.get())
+}
+// Native distributions are host-specific, like the pack builder's JDBC binary.
+distributions {
+    main {
+        contents {
+            from(searchNativeDirectory) {
+                include(System.mapLibraryName("imu_nav_search"))
+                into("lib")
+            }
+        }
+    }
+}
+tasks.named("installDist") { dependsOn(buildSearchNative) }
+tasks.named("distZip") { dependsOn(buildSearchNative) }
+tasks.named("distTar") { dependsOn(buildSearchNative) }
+tasks.named<CreateStartScripts>("startScripts") {
+    dependsOn(buildSearchNative)
+    doLast {
+        val libraryEnvironment = """export LD_LIBRARY_PATH="${'$'}APP_HOME/lib:${'$'}{LD_LIBRARY_PATH:-}"
+export DYLD_LIBRARY_PATH="${'$'}APP_HOME/lib:${'$'}{DYLD_LIBRARY_PATH:-}"
+CLASSPATH="""
+        unixScript.writeText(unixScript.readText().replace("CLASSPATH=", libraryEnvironment))
+        windowsScript.writeText(windowsScript.readText().replace("set CLASSPATH=", "set PATH=%APP_HOME%\\lib;%PATH%\r\nset CLASSPATH="))
+    }
+}

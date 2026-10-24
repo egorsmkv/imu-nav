@@ -72,7 +72,7 @@ large regions do not need a large heap.
 **CI archive:** **Actions → Offline routing pack → Run workflow** runs the routing builder on a
 Geofabrik Ukraine extract by default. The workflow accepts a different one-word pack name and HTTPS
 `.osm.pbf` URL, with an optional expected SHA-256. It builds car (with turn costs) and foot profiles
-with `search.db` and no elevation tiles, validates the flat ZIP layout and metadata (`tools/verify_routing_pack.py`
+with `search.tantivy/` and no elevation tiles, validates the graph-root/index-directory layout and metadata (`tools/verify_routing_pack.py`
 rejects a pack without `"turnCosts":true`), extracts it, and opens the graph with `PhoneGraphHopper`.
 Expect roughly an hour for Ukraine on a hosted runner because of the edge-based car hierarchy.
 
@@ -130,15 +130,23 @@ pack both add to the base package, and their combined size may exceed the limit 
 
 ## Address search
 
-Routing packs also contain `search.db`, an SQLite FTS4 index of settlements, streets and house
-numbers built from the same OSM extract (~87 MB for Ukraine; skip with `--no-addresses` or
-`--no-search`). Queries like `Хрещатик 22`, `Київ Хрещатик`, `вул. Шевченка, Львів` or `Буча`
-work offline; street-type words are ignored and results near you rank first. Both Android and
-desktop SQLite readers order matching settlement/street candidates geographically before applying
-their limits. The shared candidate heuristic uses latitude and wrapped longitude with a latitude
-scale; final street ranking uses geodesic distance. It needs no pack schema migration. With no
-reference position, candidate order is deterministic by ID. Queries with many matches may cost
-more than selective queries because SQLite sorts matching candidates.
+New routing packs contain `search.tantivy/`, an immutable Tantivy index of settlements,
+streets and house numbers built from the same OSM extract. `--no-addresses` skips house
+numbers and `--no-search` omits the index. The desktop builder uses temporary SQLite
+staging data, exports it to Tantivy, then removes the staging database before packaging.
+
+Queries like `Хрещатик 22`, `Київ Хрещатик`, `вул. Шевченка, Львів` and `Буча`
+work offline. Native prefix matching selects nearest candidates before the existing limits;
+shared Kotlin code applies final address ranking. The wrapped-longitude heuristic and
+geodesic final ranking are unchanged, with deterministic ID ordering without a reference.
+
+The app prefers Tantivy. Existing packs containing only `search.db` remain readable through
+the legacy SQLite reader; they are not rewritten on the phone. Rebuild/import a pack to use
+Tantivy. New metadata declares `searchFormat: "tantivy-1"`; missing, unsupported or corrupt
+native indexes are rejected before replacing a working pack. Older app versions need an
+upgrade to search these new packs. See [Tantivy search](tantivy_search.md) for the format,
+build workflow and validation, and the [benchmark report](tantivy_search_experiment.md)
+for the measured large-index gains and small-pack tradeoffs.
 
 Phone search batches are bound to their query and reference position. Editing either removes
 stale results from selection, including the keyboard Search action, during debounce and lookup.
@@ -157,7 +165,7 @@ Additional connections close immediately. Request headers are limited to 8 KiB a
 with a five-second deadline from acceptance that also closes blocked response writes. Responses
 stream through a fixed 64 KiB asset buffer. Closing the server releases sockets and workers.
 
-Search requests cancel SQLite statements and Photon calls when superseded. Cancellation does not
+Search requests cancel native retrieval, legacy SQLite statements and Photon calls when superseded. Cancellation does not
 count as an empty offline result and cannot initiate online fallback. Android Auto also binds
 selectable results to the query and reference position. The 250 ms debounce is unchanged.
 
@@ -168,10 +176,15 @@ generic street results. Settlement parsing retains single-word interpretations a
 tries contiguous prefixes and suffixes of up to three words, leaving at least one street word.
 There is no geographic cutoff on explicit settlements, fuzzy matching, or transliteration.
 
-New packs use FTS4 UTF-8 byte prefix lengths `2,3,4,6,8`; Cyrillic characters usually occupy two
-bytes. Existing tables and metadata are unchanged. Installed packs get the runtime improvements
-without being rewritten; prefix acceleration requires rebuilding the pack. Both readers use the
-same candidate limits and ordering. Request-local memoization has no cross-request invalidation.
+Tantivy and the legacy SQLite reader use the same candidate limits and ordering.
+Request-local memoization has no cross-request invalidation.
+
+### Historical SQLite optimization measurements
+
+The measurements below describe the SQLite optimization preceding Tantivy adoption and
+remain relevant to legacy packs. That builder used FTS4 UTF-8 byte prefix lengths
+`2,3,4,6,8`; Cyrillic characters usually occupy two bytes. See the
+[Tantivy comparison](tantivy_search_experiment.md) for the subsequent backend comparison.
 
 Run the synthetic offline benchmark with:
 
@@ -248,3 +261,7 @@ the emulator, found and selected `Rue Bel Respiro, 1`, retained a generic street
 Replay accuracy remained `p95=20 max=25 rms=10 m`. No Android Auto head-unit test was available;
 its selection ownership checks were compiled and statically checked. Large-country pack timing, concurrent pack replacement during device search,
 and on-device SQLite cancellation timing remain unmeasured.
+
+The [historical Tantivy comparison](tantivy_search_experiment.md) records the measurements
+preceding adoption. Tantivy now handles newly built packs; the SQLite measurements above
+remain relevant only to legacy packs.

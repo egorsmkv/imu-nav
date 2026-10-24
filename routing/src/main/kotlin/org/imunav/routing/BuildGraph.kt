@@ -2,6 +2,7 @@ package org.imunav.routing
 
 import com.graphhopper.GraphHopper
 import com.graphhopper.reader.dem.ElevationProvider
+import org.imunav.core.search.TantivySearch
 import java.io.File
 import java.time.Instant
 import java.util.zip.ZipEntry
@@ -23,11 +24,15 @@ data class PackInfo(
      * Missing in packs built before turn costs; such packs are loaded without them.
      */
     val turnCosts: Boolean = false,
+    /** Absent on legacy SQLite packs and packs built without address search. */
+    val searchFormat: String? = null,
 ) {
     /** Written as `pack.json` next to the graph; the app reads it to show and compare packs. */
     fun toJson(): String = "{\"name\":\"$name\",\"builtAt\":\"$builtAt\",\"source\":\"$source\",\"graphhopper\":\"11.0\"," +
         "\"bounds\":[${bounds.joinToString(",")}],\"sizeBytes\":$sizeBytes," +
-        "\"profiles\":[${profiles.joinToString(",") { "\"$it\"" }}],\"elevation\":$elevation,\"turnCosts\":$turnCosts}"
+        "\"profiles\":[${profiles.joinToString(",") {
+            "\"$it\""
+        }}],\"elevation\":$elevation,\"turnCosts\":$turnCosts,\"searchFormat\":${searchFormat?.let { "\"$it\"" } ?: "null"}}"
 
     companion object {
         const val FILE = "pack.json"
@@ -44,7 +49,7 @@ data class PackInfo(
                 ?: listOf(GraphSpec.CAR)
             val elevation = Regex("\"elevation\"\\s*:\\s*true").containsMatchIn(json)
             val turnCosts = Regex("\"turnCosts\"\\s*:\\s*true").containsMatchIn(json)
-            PackInfo(str("name"), str("builtAt"), str("source"), b, size, profiles, elevation, turnCosts)
+            PackInfo(str("name"), str("builtAt"), str("source"), b, size, profiles, elevation, turnCosts, str("searchFormat").takeIf { it.isNotBlank() })
         }.getOrNull()
     }
 }
@@ -97,19 +102,37 @@ fun buildGraph(
     elevation?.custom?.let { hopper.setElevationProvider(it) }
     hopper.importOrLoad()
     val b = hopper.baseGraph.bounds
-    if (withSearch) SearchIndexBuilder.build(osmFile, hopper, File(outDir, SearchIndexBuilder.FILE), withAddresses)
+    if (withSearch) {
+        val staging = File(outDir, SearchIndexBuilder.FILE)
+        try {
+            SearchIndexBuilder.build(osmFile, hopper, staging, withAddresses)
+            TantivyIndexBuilder.build(staging, File(outDir, TantivySearch.DIRECTORY))
+        } finally {
+            staging.delete()
+        }
+    }
     hopper.close()
     val size = outDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
-    val info = PackInfo(name, Instant.now().toString(), osmFile.name, doubleArrayOf(b.minLat, b.maxLat, b.minLon, b.maxLon), size, profiles, elevation != null, turnCosts)
+    val info =
+        PackInfo(
+            name, Instant.now().toString(), osmFile.name,
+            doubleArrayOf(
+                b.minLat,
+                b.maxLat,
+                b.minLon,
+                b.maxLon,
+            ),
+            size, profiles, elevation != null, turnCosts, if (withSearch) TantivySearch.FORMAT else null,
+        )
     File(outDir, PackInfo.FILE).writeText(info.toJson())
     return info
 }
 
-/** Zip a graph folder (flat: its files at the archive root) for distribution. */
+/** Zip graph files at the archive root and retain the Tantivy search subdirectory. */
 fun zipPack(dir: File, zip: File) {
     ZipOutputStream(zip.outputStream().buffered()).use { out ->
-        dir.listFiles().orEmpty().filter { it.isFile }.sortedBy { it.name }.forEach { f ->
-            out.putNextEntry(ZipEntry(f.name))
+        dir.walkTopDown().filter { it.isFile }.sortedBy { it.relativeTo(dir).invariantSeparatorsPath }.forEach { f ->
+            out.putNextEntry(ZipEntry(f.relativeTo(dir).invariantSeparatorsPath))
             f.inputStream().use { it.copyTo(out) }
             out.closeEntry()
         }
@@ -119,7 +142,7 @@ fun zipPack(dir: File, zip: File) {
 /**
  * Build an offline routing pack:
  *   ./gradlew :routing:run --args="--osm ukraine-latest.osm.pbf --out build/graph-ukraine --name Ukraine"
- * Produces the graph folder (with the address search index `search.db`) and `<out>.zip` to import
+ * Produces the graph folder (with the address search index `search.tantivy/`) and `<out>.zip` to import
  * in the app (Settings → Offline routing). `--no-addresses` skips house numbers, `--no-search` the index.
  * `--elevation skadi` (or srtm, cgiar, gmted…) stores road heights for barometric terrain matching;
  * `--elevation-cache <dir>` keeps the downloaded elevation tiles for the next build.

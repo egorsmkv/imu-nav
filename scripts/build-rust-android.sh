@@ -33,7 +33,7 @@ if [[ -z "$host_toolchain" ]]; then
 fi
 
 api=26
-rust_target_dir="$repo_root/native/target/android"
+rust_target_dir="${IMUNAV_ANDROID_TARGET_DIR:-$repo_root/native/target/android}"
 
 build_target() {
     local rust_target=$1
@@ -47,10 +47,13 @@ build_target() {
 
     local linker_var
     linker_var="CARGO_TARGET_$(printf '%s' "$rust_target" | tr '[:lower:]-' '[:upper:]_')_LINKER"
-    env "$linker_var=$linker" CARGO_TARGET_DIR="$rust_target_dir" \
-        cargo build --manifest-path "$repo_root/native/Cargo.toml" --package imu-nav-jni --release --target "$rust_target"
+    local cc_var="CC_${rust_target//-/_}"
+    local ar_var="AR_${rust_target//-/_}"
+    env "$linker_var=$linker" "$cc_var=$linker" "$ar_var=$host_toolchain/bin/llvm-ar" CARGO_TARGET_DIR="$rust_target_dir" \
+        cargo build --manifest-path "$repo_root/native/Cargo.toml" --package imu-nav-jni --package imu-nav-search --lib --release --target "$rust_target"
     mkdir -p "$output_root/$abi"
     install -m 0644 "$rust_target_dir/$rust_target/release/libimu_nav_jni.so" "$output_root/$abi/libimu_nav_jni.so"
+    install -m 0644 "$rust_target_dir/$rust_target/release/libimu_nav_search.so" "$output_root/$abi/libimu_nav_search.so"
 }
 
 build_target aarch64-linux-android arm64-v8a aarch64-linux-android

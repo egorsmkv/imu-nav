@@ -53,3 +53,6 @@
 -keep class org.imunav.app.nativecore.NativeTrustEvaluator {
     native <methods>;
 }
+
+# JNI resolves these names from the shared Kotlin search adapter.
+-keep class org.imunav.core.search.TantivyNative { *; }

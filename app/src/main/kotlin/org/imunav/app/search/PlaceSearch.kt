@@ -179,6 +179,11 @@ class PlaceSearch(
             // Never log search text or a database exception that may embed it.
             Log.w(TAG, "offline search failed type=${e.javaClass.simpleName}")
             continuation.resume(emptyList())
+        } catch (e: IOException) {
+            Log.w(TAG, "offline search failed type=${e.javaClass.simpleName}")
+            continuation.resume(emptyList())
+        } catch (e: CancellationException) {
+            continuation.cancel(e)
         } catch (e: OperationCanceledException) {
             continuation.cancel(CancellationException("Offline search cancelled", e))
         }

@@ -45,7 +45,7 @@ class PackFilesTest {
         val staging = temporary.newFolder("staging")
         val archive = archive("data" to ByteArray(200_000))
         assertFailsWith<IOException> {
-            PackFiles.extract(archive.inputStream(), staging, false, PackFiles.Limits(100_000, 10), {}, {})
+            PackFiles.extract(archive.inputStream(), staging, false, PackFiles.Limits(100_000, 10), {}, progress = {})
         }
         assertTrue(File(staging, "data").length() <= 100_000)
     }
@@ -55,9 +55,23 @@ class PackFilesTest {
         val staging = temporary.newFolder("staging")
         val archive = archive("one" to byteArrayOf(1), "two" to byteArrayOf(2))
         assertFailsWith<IOException> {
-            PackFiles.extract(archive.inputStream(), staging, false, PackFiles.Limits(100, 1), {}, {})
+            PackFiles.extract(archive.inputStream(), staging, false, PackFiles.Limits(100, 1), {}, progress = {})
         }
         assertFalse(File(staging, "two").exists())
+    }
+
+    @Test
+    fun wrappedRoutingPacksRetainTheirNativeIndexDirectory() {
+        val staging = temporary.newFolder("native-index")
+        val zip = archive("region/properties" to byteArrayOf(1), "region/search.tantivy/meta.json" to byteArrayOf(2))
+        PackFiles.extract(zip.inputStream(), staging, true, PackFiles.Limits(100, 10), {}, setOf("search.tantivy")) {}
+        assertTrue(File(staging, "properties").isFile)
+        assertEquals(2, File(staging, "search.tantivy/meta.json").readBytes().single().toInt())
+        assertFalse(File(staging, "meta.json").exists())
+        val attack = archive("search.tantivy/../../escape" to byteArrayOf(3))
+        assertFailsWith<IOException> {
+            PackFiles.extract(attack.inputStream(), staging, true, PackFiles.Limits(100, 10), {}, setOf("search.tantivy")) {}
+        }
     }
 
     private fun archive(vararg entries: Pair<String, ByteArray>): ByteArray = ByteArrayOutputStream().also { bytes ->

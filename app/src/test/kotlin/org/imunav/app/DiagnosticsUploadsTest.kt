@@ -86,7 +86,10 @@ class DiagnosticsUploadsTest {
         diagnostics.onEvent("t2", TripEvent.VehicleSpeed(SystemClock.elapsedRealtime(), 42f))
         diagnostics.onLog("gps_state=OK token=secret", SystemClock.elapsedRealtime())
         diagnostics.endTrip("t2")
-        waitFor("upload", { diagnostics.status.value.toString() }) { server.debugBatches.any { it.endsWith("/finish") } }
+        // Server receipt precedes client completion; disabling mid-response tests cancellation instead of a completed upload.
+        waitFor("upload", { diagnostics.status.value.toString() }) {
+            server.debugBatches.any { it.endsWith("/finish") } && diagnostics.status.value.phase == DiagnosticPhase.UPLOADED
+        }
         assertTrue(server.requests.contains("POST /v1/debug/sessions"))
 
         diagnostics.setEnabled(false)

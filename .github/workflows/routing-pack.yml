@@ -25,6 +25,9 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  RUSTUP_TOOLCHAIN: 1.99.0
+
 jobs:
   fixture:
     if: github.event_name != 'workflow_dispatch'
@@ -49,6 +52,9 @@ jobs:
       - name: Install pinned Android tools for project configuration
         if: steps.changes.outputs.run == 'true'
         run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
+      - name: Install native search builder toolchain
+        if: steps.changes.outputs.run == 'true'
+        run: rustup toolchain install 1.99.0 --profile minimal
       - uses: gradle/actions/setup-gradle@v4
         if: steps.changes.outputs.run == 'true'
       - name: Test the archive validator
@@ -91,6 +97,8 @@ jobs:
           packages: platform-tools
       - name: Install pinned Android tools for project configuration
         run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
+      - name: Install native search builder toolchain
+        run: rustup toolchain install 1.99.0 --profile minimal
       - uses: gradle/actions/setup-gradle@v4
       - name: Validate inputs and report runner capacity
         run: |

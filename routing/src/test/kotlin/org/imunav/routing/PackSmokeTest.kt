@@ -3,6 +3,9 @@ package org.imunav.routing
 import org.imunav.core.geo.GeoPoint
 import org.imunav.core.route.TravelMode
 import org.imunav.core.search.AddressSearch
+import org.imunav.core.search.SearchResult
+import org.imunav.core.search.TantivyRequest
+import org.imunav.core.search.TantivySearch
 import org.junit.Assume.assumeTrue
 import java.io.File
 import kotlin.test.Test
@@ -13,6 +16,15 @@ import kotlin.test.assertTrue
  *   GRAPH_DIR=graph-ukraine ./gradlew :routing:test --tests '*PackSmokeTest*'
  */
 class PackSmokeTest {
+    private fun searchPack(directory: File, query: String, near: GeoPoint?): List<SearchResult> {
+        val native = File(directory, TantivySearch.DIRECTORY)
+        return if (native.exists()) {
+            TantivySearch(native).use { search -> TantivyRequest().use { search.search(query, near, it).take(3) } }
+        } else {
+            JdbcSearchDb(File(directory, SearchIndexBuilder.FILE)).use { AddressSearch.search(it, query, near, limit = 3) }
+        }
+    }
+
     @Test
     fun packagedGraphLoadsWithPhoneRules() {
         val dir = System.getenv("GRAPH_DIR")?.let(::File)
@@ -21,9 +33,7 @@ class PackSmokeTest {
             assertTrue(graph.supports(TravelMode.CAR))
             assertTrue(graph.supports(TravelMode.FOOT))
         }
-        JdbcSearchDb(File(dir, SearchIndexBuilder.FILE)).use { search ->
-            search.places("zzzz", 1) // An empty lookup still checks the imported FTS schema.
-        }
+        searchPack(requireNotNull(dir), "zzzz", null) // Empty lookup checks the imported search format.
     }
 
     @Test
@@ -81,9 +91,9 @@ class PackSmokeTest {
     @Test
     fun addressSearchOnRealPack() {
         val dir = System.getenv("GRAPH_DIR")?.let(::File)
-        assumeTrue("GRAPH_DIR not set", dir != null && File(dir, SearchIndexBuilder.FILE).exists())
+        assumeTrue("GRAPH_DIR not set", dir != null && (File(dir, SearchIndexBuilder.FILE).exists() || File(dir, TantivySearch.DIRECTORY).isDirectory))
         val kyiv = GeoPoint(50.4501, 30.5234)
-        JdbcSearchDb(File(dir!!, SearchIndexBuilder.FILE)).use { db ->
+        run {
             for ((q, near) in listOf(
                 "Хрещатик 22" to kyiv,
                 "Львів" to kyiv,
@@ -95,7 +105,7 @@ class PackSmokeTest {
                 "вул. Велика Васильківська 100" to kyiv,
             )) {
                 val t = System.nanoTime()
-                val r = AddressSearch.search(db, q, near, limit = 3)
+                val r = searchPack(requireNotNull(dir), q, near)
                 val ms = (System.nanoTime() - t) / 1_000_000
                 println("'$q' ($ms ms): " + r.joinToString(" | ") { "${it.kind} ${it.title} [${it.subtitle}] ${it.distanceM?.let { d -> (d / 1000).toInt() }}km" })
                 assertTrue(r.isNotEmpty(), "no results for $q")

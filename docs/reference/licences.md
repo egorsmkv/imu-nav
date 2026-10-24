@@ -136,3 +136,15 @@ The Kotlin core declares Jackson Core 2.19.2 (Apache 2.0) directly for streaming
 This is the same Jackson version already included through GraphHopper, not an APK version upgrade.
 Online desktop maps use OpenStreetMap attribution and its public raster tile policy; offline map
 owners supply attribution through MBTiles metadata.
+
+## Native address retrieval
+
+`native/nav-search` is the production Tantivy reader, packaged separately from
+`nav-jni`. Direct dependencies are Tantivy 0.26.1 (MIT), JNI 0.21.1
+(MIT/Apache-2.0), Serde and serde_json 1 (MIT/Apache-2.0); tempfile 3
+(MIT/Apache-2.0) is test-only. Resolved versions are pinned in `native/Cargo.lock`.
+The `builder` feature exposes the writer JNI entry point only in desktop builds.
+The upstream `tantivy-jni` wrapper is neither copied nor linked. Kotlin transport
+uses the existing Jackson Core 2.19.2 (Apache-2.0). SQLite JDBC remains a desktop
+staging/build dependency and is not packaged in Android APKs; legacy pack reading
+uses the Android platform SQLite implementation.

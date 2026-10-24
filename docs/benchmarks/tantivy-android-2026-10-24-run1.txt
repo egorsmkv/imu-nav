@@ -1,0 +1,28 @@
+open dataset=regional-prefix.db sqlite_ms=2.465208 native_ms=22.938031
+warm dataset=regional-prefix.db case=0 sqlite_calls=2 house_calls=0 retrieval_jni_calls=1 sqlite_p50=0.482461 sqlite_p95=0.53483 native_p50=0.783411 native_p95=1.033413
+warm dataset=regional-prefix.db case=1 sqlite_calls=2 house_calls=0 retrieval_jni_calls=1 sqlite_p50=0.28278 sqlite_p95=0.301014 native_p50=0.268732 native_p95=0.315521
+warm dataset=regional-prefix.db case=2 sqlite_calls=6 house_calls=1 retrieval_jni_calls=1 sqlite_p50=0.652464 sqlite_p95=0.838039 native_p50=0.399615 native_p95=0.443705
+warm dataset=regional-prefix.db case=3 sqlite_calls=6 house_calls=1 retrieval_jni_calls=1 sqlite_p50=0.606044 sqlite_p95=0.696458 native_p50=0.329888 native_p95=0.392035
+warm dataset=regional-prefix.db case=4 sqlite_calls=6 house_calls=0 retrieval_jni_calls=1 sqlite_p50=0.789664 sqlite_p95=0.910963 native_p50=0.536212 native_p95=0.620901
+open dataset=regional.db sqlite_ms=0.913579 native_ms=0.958482
+warm dataset=regional.db case=0 sqlite_calls=2 house_calls=0 retrieval_jni_calls=1 sqlite_p50=0.38958 sqlite_p95=0.457581 native_p50=0.485885 native_p95=0.553163
+warm dataset=regional.db case=1 sqlite_calls=2 house_calls=0 retrieval_jni_calls=1 sqlite_p50=0.233688 sqlite_p95=0.297733 native_p50=0.188192 native_p95=0.247854
+warm dataset=regional.db case=2 sqlite_calls=6 house_calls=1 retrieval_jni_calls=1 sqlite_p50=0.571747 sqlite_p95=0.647136 native_p50=0.284191 native_p95=0.326118
+warm dataset=regional.db case=3 sqlite_calls=6 house_calls=1 retrieval_jni_calls=1 sqlite_p50=0.55192 sqlite_p95=0.643117 native_p50=0.255132 native_p95=0.347831
+warm dataset=regional.db case=4 sqlite_calls=6 house_calls=0 retrieval_jni_calls=1 sqlite_p50=0.723888 sqlite_p95=0.863689 native_p50=0.454322 native_p95=0.524515
+open dataset=synthetic-10000.db sqlite_ms=11.272945 native_ms=1.919838
+warm dataset=synthetic-10000.db case=0 sqlite_calls=2 house_calls=0 retrieval_jni_calls=1 sqlite_p50=9.536903 sqlite_p95=10.621937 native_p50=1.111014 native_p95=1.346986
+warm dataset=synthetic-10000.db case=1 sqlite_calls=2 house_calls=0 retrieval_jni_calls=1 sqlite_p50=9.651625 sqlite_p95=10.621902 native_p50=1.087273 native_p95=1.260212
+warm dataset=synthetic-10000.db case=2 sqlite_calls=3 house_calls=1 retrieval_jni_calls=1 sqlite_p50=10.065038 sqlite_p95=10.923949 native_p50=2.080056 native_p95=2.255024
+warm dataset=synthetic-10000.db case=3 sqlite_calls=3 house_calls=1 retrieval_jni_calls=1 sqlite_p50=9.88836 sqlite_p95=10.127556 native_p50=1.822421 native_p95=1.933621
+warm dataset=synthetic-10000.db case=4 sqlite_calls=9 house_calls=1 retrieval_jni_calls=1 sqlite_p50=18.363351 sqlite_p95=19.020637 native_p50=2.202511 native_p95=2.352865
+warm dataset=synthetic-10000.db case=5 sqlite_calls=12 house_calls=1 retrieval_jni_calls=1 sqlite_p50=10.037226 sqlite_p95=10.445344 native_p50=1.200025 native_p95=1.278989
+warm dataset=synthetic-10000.db case=6 sqlite_calls=2 house_calls=0 retrieval_jni_calls=1 sqlite_p50=0.163757 sqlite_p95=0.240267 native_p50=0.074436 native_p95=0.237707
+open dataset=synthetic-100000.db sqlite_ms=82.814651 native_ms=4.94335
+warm dataset=synthetic-100000.db case=0 sqlite_calls=2 house_calls=0 retrieval_jni_calls=1 sqlite_p50=80.471211 sqlite_p95=82.19124 native_p50=3.654315 native_p95=3.840655
+warm dataset=synthetic-100000.db case=1 sqlite_calls=2 house_calls=0 retrieval_jni_calls=1 sqlite_p50=79.520915 sqlite_p95=81.854161 native_p50=3.610813 native_p95=3.742973
+warm dataset=synthetic-100000.db case=2 sqlite_calls=3 house_calls=1 retrieval_jni_calls=1 sqlite_p50=80.572258 sqlite_p95=82.341377 native_p50=6.152911 native_p95=7.484175
+warm dataset=synthetic-100000.db case=3 sqlite_calls=3 house_calls=1 retrieval_jni_calls=1 sqlite_p50=79.893637 sqlite_p95=81.239861 native_p50=5.949251 native_p95=7.174658
+warm dataset=synthetic-100000.db case=4 sqlite_calls=9 house_calls=1 retrieval_jni_calls=1 sqlite_p50=159.687247 sqlite_p95=161.770714 native_p50=12.023105 native_p95=12.421887
+warm dataset=synthetic-100000.db case=5 sqlite_calls=12 house_calls=1 retrieval_jni_calls=1 sqlite_p50=82.2148 sqlite_p95=83.346279 native_p50=6.038412 native_p95=6.275035
+warm dataset=synthetic-100000.db case=6 sqlite_calls=2 house_calls=0 retrieval_jni_calls=1 sqlite_p50=0.156561 sqlite_p95=0.218834 native_p50=0.070824 native_p95=0.137187

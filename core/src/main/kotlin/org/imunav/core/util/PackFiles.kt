@@ -59,7 +59,7 @@ object PackFiles {
     }
 
     /** Check cancellation even inside a single large final ZIP entry. */
-    fun extract(input: InputStream, staging: File, flat: Boolean, limits: Limits, check: () -> Unit, progress: (Long) -> Unit) {
+    fun extract(input: InputStream, staging: File, flat: Boolean, limits: Limits, check: () -> Unit, preserveDirectories: Set<String> = emptySet(), progress: (Long) -> Unit) {
         val stagingPath = staging.canonicalPath + File.separator
         var bytes = 0L
         var entries = 0
@@ -70,7 +70,15 @@ object PackFiles {
                 val entry = zip.nextEntry ?: break
                 entries++
                 if (entries > limits.maxEntries) throw IOException("pack has too many entries")
-                val name = if (flat) File(entry.name).name else entry.name
+                // Legacy routing ZIPs may have a wrapper directory; preserve only named index subtrees.
+                val parts = entry.name.split('/')
+                if (parts.any { it == ".." || '\\' in it }) throw IOException("bad path in pack")
+                val preserved = parts.indexOfFirst { it in preserveDirectories }
+                val name = when {
+                    !flat -> entry.name
+                    preserved >= 0 -> parts.drop(preserved).joinToString("/")
+                    else -> File(entry.name).name
+                }
                 if (name.isBlank() || (flat && entry.isDirectory)) continue
                 val target = File(staging, name)
                 if (!target.canonicalPath.startsWith(stagingPath)) throw IOException("bad path in pack: ${entry.name}")

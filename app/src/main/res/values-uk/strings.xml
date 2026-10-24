@@ -844,4 +844,5 @@
     <string name="cd_correct_position">Виправити мою позицію</string>
     <string name="correct_position_hint">Посуньте карту, щоб хрестик був там, де ви є, і натисніть «Я тут».</string>
     <string name="action_i_am_here">Я тут</string>
+    <string name="routing_search_invalid">Не вдалося прочитати адресний індекс пакета. Перебудуйте пакет поточною версією збирача.</string>
 </resources>

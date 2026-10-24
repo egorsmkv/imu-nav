@@ -149,7 +149,27 @@ android {
         }
     }
 
-    sourceSets.getByName("main").jniLibs.directories.add("build/generated/rustJniLibs")
+    sourceSets.getByName("main").jniLibs.directories.add(layout.buildDirectory.dir("generated/rustJniLibs").get().asFile.absolutePath)
+    // The opt-in comparison harness targets the same R8 backend used in production.
+    providers.gradleProperty("searchPrototypeDir").orNull?.let { experiment ->
+        testBuildType = "benchmark"
+        buildTypes.getByName("benchmark").proguardFiles("search-experiment-rules.pro")
+        providers.gradleProperty("searchPrototypeAbi").orNull?.let { abi ->
+            require(abi in setOf("arm64-v8a", "x86_64"))
+            buildTypes.getByName("benchmark").ndk.abiFilters.apply {
+                clear()
+                add(abi)
+            }
+        }
+        sourceSets.getByName("androidTest").apply {
+            // Existing instrumentation uses debug-only activities; this isolated suite targets R8 instead.
+            java.directories.clear()
+            kotlin.directories.clear()
+            kotlin.directories.add(rootProject.file("routing/src/test/kotlin/org/imunav/search").absolutePath)
+            kotlin.directories.add("src/searchExperiment/kotlin")
+            assets.directories.add("$experiment/assets")
+        }
+    }
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
@@ -218,9 +238,11 @@ dependencies {
 
     implementation(libs.androidx.car.app)
     implementation(libs.androidx.car.projected)
-    androidTestImplementation(libs.androidx.car.testing) {
-        // Device tests use Android itself; Robolectric's service-loaded activity/thread adapters crash here.
-        exclude(group = "org.robolectric")
+    if (!providers.gradleProperty("searchPrototypeDir").isPresent) {
+        androidTestImplementation(libs.androidx.car.testing) {
+            // Device tests use Android itself; Robolectric's service-loaded activity/thread adapters crash here.
+            exclude(group = "org.robolectric")
+        }
     }
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
@@ -243,6 +265,7 @@ dependencies {
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.okhttp.mockwebserver)
+    androidTestImplementation(libs.jackson.core)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.junit)
     androidTestImplementation(platform(libs.compose.bom))

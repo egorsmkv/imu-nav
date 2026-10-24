@@ -830,4 +830,5 @@
     <string name="cd_correct_position">Correct my position</string>
     <string name="correct_position_hint">Move the map until the cross is where you are, then tap “I am here”.</string>
     <string name="action_i_am_here">I am here</string>
+    <string name="routing_search_invalid">Cannot read this pack’s address index. Rebuild the pack with the current builder.</string>
 </resources>

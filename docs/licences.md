@@ -41,3 +41,8 @@ The desktop viewer uses eframe/egui, Walkers, image, rusqlite/SQLite and rfd und
 licences; its GUI dependencies are separate from the APK and relay. The Windows artifact includes
 third-party notices. See the [desktop dependency reference](reference/licences.md#desktop-navigation-viewer).
 Kotlin's streaming mirror encoder directly uses the existing Jackson Core 2.19.2 (Apache 2.0).
+
+Offline address search uses Tantivy 0.26.1 (MIT), JNI 0.21.1 and Serde/serde_json
+(MIT/Apache-2.0). The read-only native library is included in Android APKs for
+ARM64, ARMv7 and x86-64 (emulator builds). The writer JNI entry point is enabled
+only for desktop pack generation. See [Tantivy search](reference/tantivy_search.md).

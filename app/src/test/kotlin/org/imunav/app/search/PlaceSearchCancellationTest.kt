@@ -18,6 +18,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.SQLiteMode
 import java.net.ServerSocket
 import java.nio.file.Files
+import java.util.concurrent.CancellationException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -28,6 +29,26 @@ import java.util.concurrent.atomic.AtomicInteger
 @Config(sdk = [34])
 @SQLiteMode(SQLiteMode.Mode.NATIVE)
 class PlaceSearchCancellationTest {
+    @Test
+    fun nativeCancellationNeverStartsOnlineFallback() = runBlocking {
+        val onlineChecks = AtomicInteger()
+        val search = PlaceSearch(
+            ApplicationProvider.getApplicationContext<Context>(),
+            { _, _, _ -> throw CancellationException("native request cancelled") },
+            { true },
+            {
+                onlineChecks.incrementAndGet()
+                true
+            },
+        )
+        try {
+            search.search("synthetic", null)
+            throw AssertionError("Cancellation must propagate")
+        } catch (_: CancellationException) {
+            assertEquals(0, onlineChecks.get())
+        }
+    }
+
     @Test
     fun cancelledOfflineRequestSignalsWorkerAndNeverChecksOnlinePolicy() = runBlocking {
         val entered = CountDownLatch(1)

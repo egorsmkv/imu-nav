@@ -16,7 +16,7 @@ SHARED = ('tools/ci_changes.py', 'tools/tests/test_ci_changes.py')
 GRADLE = ('gradle/', 'gradlew', 'gradlew.bat', 'gradle.properties', '.editorconfig',
           'links.properties', 'config/detekt.yml')
 RUST = ('.cargo/', 'rust-toolchain', 'rust-toolchain.toml', 'rustfmt.toml', '.rustfmt.toml')
-NATIVE = ('native/nav-core/', 'native/nav-jni/', 'native/nav-sim/', 'native/Cargo.toml',
+NATIVE = ('native/nav-search/', 'native/nav-core/', 'native/nav-jni/', 'native/nav-sim/', 'native/Cargo.toml',
           'native/Cargo.lock', 'native/.cargo/', 'native/rust-toolchain.toml', 'native/rust-toolchain')
 SERVER = ('server/src/', 'server/templates/', 'server/static/', 'server/Cargo.toml',
           'server/Cargo.lock', 'server/build.rs', 'server/.cargo/', 'server/rust-toolchain.toml',
@@ -47,7 +47,7 @@ SUITES = {
     'map': ('.github/workflows/map-pack.yml', 'tools/make_map_pack.py',
             'tools/verify_map_pack.py', 'tools/tests/test_map_pack.py'),
     'routing': ('.github/workflows/routing-pack.yml', 'tools/verify_routing_pack.py',
-                'tools/tests/test_verify_routing_pack.py') + CORE + ROUTING,
+                'tools/tests/test_verify_routing_pack.py', 'native/nav-search/', 'native/Cargo.toml', 'native/Cargo.lock') + CORE + ROUTING,
 }
 GRADLE_SUITES = {'fdroid', 'kotlin', 'native', 'routing', 'android'}
 

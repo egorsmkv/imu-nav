@@ -44,7 +44,8 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(self.selected('server/static/maplibre/license.txt'), {'server', 'kotlin'})
         self.assertEqual(self.selected('server/templates/trips.html'), {'server', 'kotlin'})
         self.assertEqual(self.selected('server/Cargo.lock'), {'server', 'kotlin'})
-        self.assertEqual(self.selected('native/Cargo.lock'), {'native', 'kotlin', 'fdroid', 'android'})
+        self.assertIn('routing', self.selected('native/nav-search/src/lib.rs'))
+        self.assertEqual(self.selected('native/Cargo.lock'), {'native', 'kotlin', 'fdroid', 'android', 'routing'})
         self.assertEqual(self.selected('.cargo/config.toml'), {'native', 'server', 'kotlin', 'fdroid', 'android', 'desktop'})
 
     def test_desktop_protocol_selects_its_relay_consumers(self):

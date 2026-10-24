@@ -18,7 +18,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.imunav.app.R
 import org.imunav.app.packs.PackTasks
-import org.imunav.app.search.AndroidSearchDb
+import org.imunav.app.search.PackSearch
 import org.imunav.app.setup.Preparation
 import org.imunav.app.setup.bundledRoutingPreparation
 import org.imunav.core.cells.ResumableHttpInputStream
@@ -26,6 +26,7 @@ import org.imunav.core.geo.GeoPoint
 import org.imunav.core.route.Route
 import org.imunav.core.route.TravelMode
 import org.imunav.core.search.SearchResult
+import org.imunav.core.search.TantivySearch
 import org.imunav.core.util.PackFiles
 import org.imunav.core.util.ResourceAccess
 import org.imunav.routing.GraphCoverage
@@ -71,8 +72,8 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
     private val tasks = PackTasks(scope)
     private val resources = ResourceAccess()
 
-    /** Address search index shipped inside the pack (`search.db`), if present. */
-    private var searchDb: AndroidSearchDb? = null
+    /** Address search index shipped inside the pack, with legacy SQLite compatibility. */
+    private var searchDb: PackSearch? = null
 
     private val _status = MutableStateFlow(
         OfflineRoutingStatus(allowOnline = prefs.getBoolean("allow_online", true), packUrl = prefs.getString("pack_url", "").orEmpty()),
@@ -177,15 +178,20 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
     /** A string resource in the current app language. */
     private fun str(id: Int, vararg args: Any) = context.getString(id, *args)
 
+    /** Imported native errors become a localized action without exposing index internals. */
+    private fun openSearch(directory: File): PackSearch? = try {
+        PackSearch.open(directory)
+    } catch (failure: IOException) {
+        throw IOException(str(R.string.routing_search_invalid), failure)
+    }
+
     /** Open the installed pack (graph + search index); runs in the background. */
     private fun load(strict: Boolean = false) = resources.write {
         closeResources()
-        searchDb = File(current, "search.db").takeIf { it.exists() }?.let { f ->
-            runCatching { AndroidSearchDb(f) }.onFailure {
-                log("search_db_open_failed ${it.message}")
-                if (strict) throw it
-            }.getOrNull()
-        }
+        searchDb = runCatching { openSearch(current) }.onFailure {
+            log("search_db_open_failed type=${it.javaClass.simpleName}")
+            if (strict) throw it
+        }.getOrNull()
         val info = File(current, PackInfo.FILE).takeIf { it.exists() }?.let { PackInfo.parse(it.readText()) }
         if (info == null) {
             _status.update { it.copy(pack = null, loaded = false, walking = false, searchAvailable = searchDb != null) }
@@ -316,6 +322,7 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
             input,
             staging,
             flat = true,
+            preserveDirectories = setOf(TantivySearch.DIRECTORY),
             limits = PackFiles.limitsFor(staging, MAX_ROUTING_PACK_BYTES, MAX_ROUTING_PACK_ENTRIES),
             check = ::checkCancellation,
         ) { copied ->
@@ -340,7 +347,7 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
         // Validate by loading before replacing the working pack.
         OfflineGraph.load(staging).close()
         checkCancellation()
-        File(staging, "search.db").takeIf { it.exists() }?.let { AndroidSearchDb(it).use { /* Verify the index opens before replacing the pack. */ } }
+        openSearch(staging)?.use { /* Validate native or legacy search before replacing the working pack. */ }
         withContext(NonCancellable + Dispatchers.IO) {
             resources.write {
                 checkCancellation()

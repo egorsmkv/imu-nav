@@ -25,7 +25,7 @@ data class AddressRow(val number: String, val lat: Double, val lon: Double)
 /** An address retains its street identity throughout a batched lookup. */
 data class StreetAddressRow(val streetId: Long, val number: String, val lat: Double, val lon: Double)
 
-/** Storage-agnostic access to a search index (SQLite FTS4 on Android and on the desktop). */
+/** Storage-agnostic access to a search index (legacy SQLite FTS4 or a request-local Tantivy snapshot). */
 interface SearchDb {
     /** Places whose names match all FTS [terms] (already normalized, with prefix '*'). */
     fun places(match: String, limit: Int, near: GeoPoint? = null): List<PlaceRow>
@@ -34,6 +34,17 @@ interface SearchDb {
 
     /** All exact/building-part matches; the caller ranks by distance before retaining two per street. */
     fun batchAddresses(streetIds: Collection<Long>, number: String): List<StreetAddressRow>
+}
+
+/** Normalized words and settlement interpretations, shared with experimental candidate providers. */
+data class SearchPlan(val words: List<String>, val number: String?) {
+    val splits: List<Pair<List<String>, List<String>>> = buildList {
+        words.indices.filter { words.size > 1 }.forEach { index -> add(listOf(words[index]) to words.filterIndexed { i, _ -> i != index }) }
+        for (size in 2..minOf(3, words.size - 1)) {
+            add(words.take(size) to words.drop(size))
+            add(words.takeLast(size) to words.dropLast(size))
+        }
+    }.distinct()
 }
 
 /**
@@ -65,10 +76,24 @@ object AddressSearch {
     /** Search stages share request-local lookups and distances; cancellation is never converted to a miss. */
     fun search(db: SearchDb, query: String, near: GeoPoint?, limit: Int = 20, checkCancelled: () -> Unit = {}): List<SearchResult> {
         checkCancelled()
+        val plan = prepare(query)
+        return search(db, plan, near, limit, checkCancelled)
+    }
+
+    /** Prepared input lets experimental backends retrieve candidates in one native request. */
+    fun prepare(query: String): SearchPlan {
         val tokens = normalize(query).split(' ').filter { it.isNotBlank() && it !in STOP }
         val numberWords = houseWordCount(tokens)
         val number = tokens.takeLast(numberWords).joinToString(" ").takeIf { it.isNotEmpty() }
         val words = tokens.dropLast(numberWords).filter { !HOUSE.matches(it) || it.length > 4 }
+        return SearchPlan(words, number)
+    }
+
+    /** Shared ranking keeps storage experiments subject to the same address semantics. */
+    fun search(db: SearchDb, plan: SearchPlan, near: GeoPoint?, limit: Int = 20, checkCancelled: () -> Unit = {}): List<SearchResult> {
+        checkCancelled()
+        val words = plan.words
+        val number = plan.number
         if (words.isEmpty()) return emptyList()
         val placeCache = mutableMapOf<Pair<String, Int>, List<PlaceRow>>()
         val streetCache = mutableMapOf<Triple<String, Int, List<Long>>, List<StreetRow>>()
@@ -86,13 +111,7 @@ object AddressSearch {
         }
         val places = places(words, 30)
         val candidates = streets(words, 80).associateByTo(linkedMapOf()) { it.id }
-        val splits = buildList {
-            words.indices.filter { words.size > 1 }.forEach { index -> add(listOf(words[index]) to words.filterIndexed { i, _ -> i != index }) }
-            for (size in 2..minOf(3, words.size - 1)) {
-                add(words.take(size) to words.drop(size))
-                add(words.takeLast(size) to words.dropLast(size))
-            }
-        }.distinct()
+        val splits = plan.splits
         for ((townWords, streetWords) in splits) {
             val towns = places(townWords, 10).filter { it.kind in SETTLEMENTS }
             if (towns.isNotEmpty()) streets(streetWords, 40, towns.map { it.id }).forEach { candidates[it.id] = it }
