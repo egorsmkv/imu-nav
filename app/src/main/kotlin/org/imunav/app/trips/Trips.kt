@@ -237,6 +237,11 @@ class TripManager(
         persist(force = true)
     }
 
+    /** Record a position the user placed by hand, so replays apply the same correction. */
+    fun onManualPosition(point: GeoPoint, accuracyM: Double, elapsedMs: Long) {
+        if (recorder != null) record(TripEvent.ManualPosition(elapsedMs, point, accuracyM))
+    }
+
     /** Record a step (walking trips). */
     fun onStep(elapsedMs: Long) {
         if (recorder != null) record(TripEvent.StepTaken(elapsedMs))

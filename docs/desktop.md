@@ -75,6 +75,11 @@ Plain sharing TCP has no encryption or login; use a private network or the confi
 
 ## Developer verification
 
+Kotlin and Rust share the synthetic fixtures in `desktop/protocol/fixtures/`.
+The `.nmea` fixture contains the exact RMC wire bytes, including its CRLF terminator.
+Git line-ending conversion is disabled for these files so checkouts and source archives
+preserve the same protocol bytes on every host.
+
 ```powershell
 cargo fmt --manifest-path desktop/Cargo.toml --all --check
 cargo clippy --manifest-path desktop/Cargo.toml --workspace --all-targets --locked -- -W clippy::pedantic -D warnings

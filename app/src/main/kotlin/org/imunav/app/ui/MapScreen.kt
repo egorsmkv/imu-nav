@@ -37,6 +37,7 @@ import androidx.compose.material.icons.automirrored.filled.AltRoute
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.CellTower
+import androidx.compose.material.icons.filled.EditLocationAlt
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LocationOff
 import androidx.compose.material.icons.filled.MyLocation
@@ -82,6 +83,7 @@ import androidx.core.content.edit
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.imunav.app.AppGraph
+import org.imunav.app.MAX_ROUTE_STOPS
 import org.imunav.app.MapStartMode
 import org.imunav.app.R
 import org.imunav.app.UiState
@@ -144,6 +146,15 @@ fun MapScreen(
     var wasNavigating by rememberSaveable { mutableStateOf(nav.active) }
     var showDiagnostics by rememberSaveable { mutableStateOf(false) }
     var searchTarget by rememberSaveable { mutableStateOf<RoutePoint?>(null) }
+
+    /** Which stop a [RoutePoint.VIA] search replaces; null adds a new stop. */
+    var stopIndex by rememberSaveable { mutableStateOf<Int?>(null) }
+
+    /** Navigation: the user is moving the map under the cross to say where they really are. */
+    var correctingPosition by rememberSaveable { mutableStateOf(false) }
+
+    /** A long-pressed point waiting for the user's choice (destination or stop / "I am here"). */
+    var pressedPoint by remember { mutableStateOf<GeoPoint?>(null) }
     var searchWidth by remember { mutableIntStateOf(0) }
     var expanded by rememberSaveable { mutableStateOf(false) }
     // Opening view: the last known GPS / trusted position, or the fixed place from Settings.
@@ -167,6 +178,7 @@ fun MapScreen(
     }
 
     LaunchedEffect(nav.active) {
+        if (!nav.active) correctingPosition = false
         if (nav.active && !wasNavigating) following = true
         controller.followZoom = null
         wasNavigating = nav.active
@@ -222,7 +234,7 @@ fun MapScreen(
         val showRecenter = ui.currentPosition != null && !(nav.active && following && controller.followZoom == null)
         val showTowerButton = mapOptions.showTowerButton(nav.active)
         val showZoomButtons = mapOptions.showZoomButtons(nav.active)
-        val mapButtonCount = 1 + (if (showTowerButton) 1 else 0) + (if (showZoomButtons) 2 else 0) + (if (showRecenter) 1 else 0)
+        val mapButtonCount = 1 + (if (showTowerButton) 1 else 0) + (if (showZoomButtons) 2 else 0) + (if (showRecenter) 1 else 0) + (if (nav.active && !nav.arrived) 1 else 0)
         val controlsHeight = MapButtonSize * mapButtonCount + MapButtonSpacing * (mapButtonCount - 1)
         val topInset = with(LocalDensity.current) { cameraTop.toDp() }
         val bottomInset = with(LocalDensity.current) { bottomInsetPx.toDp() }
@@ -242,13 +254,12 @@ fun MapScreen(
             accuracyM = accuracy,
             bearingDeg = nav.bearingDeg,
             destination = ui.destination ?: nav.destination,
-            following = nav.active && following,
+            following = nav.active && following && !correctingPosition,
             towers = if (ui.cells.showTowers) towerLayer else null,
             onLongPress = {
-                if (!nav.active) {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    app.setDestination(it)
-                }
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                // A first point is simply the destination; later ones (and any point while driving) need a choice.
+                if (!nav.active && ui.destination == null) app.setDestination(it) else pressedPoint = it
             },
             onCenterChanged = {
                 mapCenter = it
@@ -270,10 +281,13 @@ fun MapScreen(
             cameraTilt = NavigationMapCamera.tilt(nav.travelMode, nav.active, mapOptions.carPerspective),
             offlineStyleJson = if (offlineMapStatus.offlineInUse) app.offlineMap.styleJson(dark, mapCenter ?: startView.point) else null,
             active = mapActive && (searchTarget == null || landscape),
+            passedM = nav.s.takeIf { nav.active },
+            waypoints = if (nav.active) nav.waypoints else ui.waypoints.map { it.point },
+            headingDeg = if (nav.active) nav.bearingDeg else ui.compassDeg,
         )
 
         if (showControls) {
-            if (pickStart) {
+            if (pickStart || correctingPosition) {
                 val crosshairModifier = if (landscape) {
                     Modifier.align(Alignment.Center).offset { IntOffset(cameraStart / 2, cameraTop / 2) }
                 } else {
@@ -330,14 +344,16 @@ fun MapScreen(
                                 stringResource(R.string.permission_title),
                                 stringResource(R.string.permission_text),
                                 stringResource(R.string.action_allow),
-                                onRequestPermission,
+                                onAction = onRequestPermission,
                             )
 
-                            !ui.locationEnabled -> WarningBanner(
+                            !ui.locationEnabled && !mapOptions.hideLocationOffWarning -> WarningBanner(
                                 Icons.Filled.LocationOff,
                                 stringResource(R.string.location_off_title),
                                 stringResource(R.string.location_off_text),
                                 stringResource(R.string.action_turn_on),
+                                dismiss = stringResource(R.string.action_dont_show),
+                                onDismiss = { app.mapDisplay.update { it.copy(hideLocationOffWarning = true) } },
                             ) {
                                 context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
                             }
@@ -370,6 +386,12 @@ fun MapScreen(
                 if (showZoomButtons) {
                     MapButton(Icons.Filled.Add, stringResource(R.string.cd_zoom_in)) { controller.zoomBy(1.0) }
                     MapButton(Icons.Filled.Remove, stringResource(R.string.cd_zoom_out)) { controller.zoomBy(-1.0) }
+                }
+                if (nav.active && !nav.arrived) {
+                    MapButton(Icons.Filled.EditLocationAlt, stringResource(R.string.cd_correct_position), selected = correctingPosition) {
+                        correctingPosition = !correctingPosition
+                        if (correctingPosition) ui.currentPosition?.let { controller.moveTo(it, animate = false) }
+                    }
                 }
                 val pos = ui.currentPosition
                 if (pos != null && showRecenter) {
@@ -431,7 +453,7 @@ fun MapScreen(
                                 IconButton(onClick = onOpenHistory) { Icon(Icons.Filled.History, stringResource(R.string.cd_history)) }
                                 if (!hasLocation) {
                                     TextButton(onClick = onRequestPermission) { Text(stringResource(R.string.action_allow)) }
-                                } else if (!ui.locationEnabled) {
+                                } else if (!ui.locationEnabled && !mapOptions.hideLocationOffWarning) {
                                     TextButton(onClick = { context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)) }) {
                                         Text(stringResource(R.string.action_turn_on))
                                     }
@@ -441,6 +463,22 @@ fun MapScreen(
                     }
                     if (ui.cells.showTowers) TowerLegend(towerLayer, ui.cells.radios)
                     SnackbarHost(snackbar)
+                    if (nav.active && correctingPosition) {
+                        PositionCorrectionCard(
+                            onConfirm = {
+                                mapCenter?.let {
+                                    haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                                    app.correctPosition(it)
+                                }
+                                correctingPosition = false
+                                following = true
+                            },
+                            onCancel = {
+                                correctingPosition = false
+                                following = true
+                            },
+                        )
+                    }
                     if (!shortWindow || landscape || expanded) {
                         if (nav.active) {
                             NavigationPanel(nav, showActions = !shortWindow, onStop = {
@@ -481,6 +519,11 @@ fun MapScreen(
                                     app.startNavigation()
                                 },
                                 onClearDestination = { app.setDestination(null) },
+                                onSearchStop = { index ->
+                                    stopIndex = index
+                                    searchTarget = RoutePoint.VIA
+                                },
+                                onRemoveStop = app::removeWaypoint,
                             )
                         }
                     }
@@ -500,21 +543,45 @@ fun MapScreen(
         )
     }
 
+    pressedPoint?.let { point ->
+        LongPressDialog(
+            navigating = nav.active,
+            canAddStop = ui.waypoints.size < MAX_ROUTE_STOPS,
+            onDestination = { app.setDestination(point) },
+            onStop = { app.setWaypoint(null, point) },
+            onHere = { app.correctPosition(point) },
+            onDismiss = { pressedPoint = null },
+        )
+    }
+
     searchTarget?.let { target ->
         DrivingOverlay(onWidth = { searchWidth = it }) {
             SearchScreen(
                 search = app.search,
                 bookmarks = app.bookmarks,
                 onBookmarkPick = { place ->
-                    if (app.useBookmark(place, target == RoutePoint.START)) searchTarget = null
+                    val used = if (target == RoutePoint.VIA) {
+                        app.setWaypoint(stopIndex, place.endpoint.point, place.name)
+                        true
+                    } else {
+                        app.useBookmark(place, target == RoutePoint.START)
+                    }
+                    if (used) searchTarget = null
                 },
-                near = if (target == RoutePoint.DESTINATION) ui.manualStart ?: ui.currentPosition ?: mapCenter else ui.currentPosition ?: mapCenter,
-                hint = stringResource(if (target == RoutePoint.START) R.string.search_from_hint else R.string.search_to_hint),
+                near = if (target == RoutePoint.START) ui.currentPosition ?: mapCenter else ui.manualStart ?: ui.currentPosition ?: mapCenter,
+                hint = stringResource(
+                    when (target) {
+                        RoutePoint.START -> R.string.search_from_hint
+                        RoutePoint.VIA -> R.string.search_via_hint
+                        RoutePoint.DESTINATION -> R.string.search_to_hint
+                    },
+                ),
                 onPick = { r ->
                     haptic.performHapticFeedback(HapticFeedbackType.Confirm)
                     app.search.remember(r)
                     when (target) {
                         RoutePoint.START -> app.setManualStart(r.point, r.routePointLabel())
+                        RoutePoint.VIA -> app.setWaypoint(stopIndex, r.point, r.routePointLabel())
                         RoutePoint.DESTINATION -> app.setDestination(r.point, r.routePointLabel())
                     }
                     following = false

@@ -32,6 +32,7 @@ import androidx.core.content.edit
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.imunav.app.AppGraph
 import org.imunav.app.AppLanguage
+import org.imunav.app.AppTheme
 import org.imunav.app.UiState
 import org.imunav.app.graph
 import org.imunav.app.trips.TripSummary
@@ -84,8 +85,8 @@ class MainActivity : ComponentActivity() {
         }.toTypedArray(),
     )
 
-    /** Apply the in-app language before any resources are loaded. */
-    override fun attachBaseContext(newBase: Context) = super.attachBaseContext(AppLanguage.wrap(newBase))
+    /** Apply the in-app language and theme before any resources are loaded. */
+    override fun attachBaseContext(newBase: Context) = super.attachBaseContext(AppTheme.wrap(AppLanguage.wrap(newBase)))
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -93,9 +94,12 @@ class MainActivity : ComponentActivity() {
         hasLocation = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val app = graph
         val languageAtCreation = AppLanguage.get(this)
+        val themeAtCreation = AppTheme.get(this)
         setContent {
             val language by app.language.collectAsStateWithLifecycle()
             LaunchedEffect(language) { if (language != languageAtCreation) recreate() }
+            val theme by app.theme.collectAsStateWithLifecycle()
+            LaunchedEffect(theme) { if (theme != themeAtCreation) recreate() }
             ImuNavTheme {
                 HapticFeedbackProvider(app.haptics) {
                     AppRoot(app, hasLocation, ::requestPermissions, ::setKeepScreenOn, ::refreshPermissions)

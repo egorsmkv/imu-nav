@@ -15,9 +15,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.EditLocationAlt
 import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.GpsNotFixed
 import androidx.compose.material.icons.filled.GpsOff
+import androidx.compose.material.icons.filled.Place
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SmallFloatingActionButton
@@ -78,9 +82,9 @@ internal fun ManeuverBanner(nav: GuidanceState) {
     }
 }
 
-/** A card explaining a problem (e.g. Location is off) with one action button. */
+/** A card explaining a problem (e.g. Location is off) with one action button and an optional [dismiss] button. */
 @Composable
-internal fun WarningBanner(icon: ImageVector, title: String, text: String, action: String, onAction: () -> Unit) {
+internal fun WarningBanner(icon: ImageVector, title: String, text: String, action: String, dismiss: String? = null, onDismiss: () -> Unit = {}, onAction: () -> Unit) {
     Surface(
         color = MaterialTheme.colorScheme.errorContainer,
         contentColor = MaterialTheme.colorScheme.onErrorContainer,
@@ -96,9 +100,75 @@ internal fun WarningBanner(icon: ImageVector, title: String, text: String, actio
                     Text(text, style = MaterialTheme.typography.bodySmall)
                 }
             }
-            TextButton(onClick = onAction) { Text(action) }
+            Row {
+                TextButton(onClick = onAction) { Text(action) }
+                if (dismiss != null) TextButton(onClick = onDismiss) { Text(dismiss) }
+            }
         }
     }
+}
+
+/**
+ * Shown while the user corrects their position during navigation: they move the map until the
+ * cross is where they really are, then confirm. The engine snaps that point to the route.
+ */
+@Composable
+internal fun PositionCorrectionCard(onConfirm: () -> Unit, onCancel: () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        shape = RoundedCornerShape(20.dp),
+        shadowElevation = 4.dp,
+    ) {
+        Column(Modifier.padding(start = 16.dp, top = 12.dp, end = 8.dp, bottom = 4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.EditLocationAlt, contentDescription = null)
+                Spacer(Modifier.width(12.dp))
+                Text(stringResource(R.string.correct_position_hint), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onConfirm) { Text(stringResource(R.string.action_i_am_here)) }
+                TextButton(onClick = onCancel) { Text(stringResource(R.string.action_cancel)) }
+            }
+        }
+    }
+}
+
+/**
+ * Choice after a long press: before navigation the point becomes the destination or a stop on the
+ * way; during navigation it can be the user's real position ("I am here").
+ */
+@Composable
+internal fun LongPressDialog(navigating: Boolean, canAddStop: Boolean, onDestination: () -> Unit, onStop: () -> Unit, onHere: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Filled.Place, contentDescription = null) },
+        title = { Text(stringResource(if (navigating) R.string.long_press_here_title else R.string.long_press_title)) },
+        text = { if (navigating) Text(stringResource(R.string.long_press_here_text)) },
+        confirmButton = {
+            Column(horizontalAlignment = Alignment.End) {
+                if (navigating) {
+                    TextButton(onClick = {
+                        onHere()
+                        onDismiss()
+                    }) { Text(stringResource(R.string.action_i_am_here)) }
+                } else {
+                    TextButton(onClick = {
+                        onDestination()
+                        onDismiss()
+                    }) { Text(stringResource(R.string.action_set_destination)) }
+                    if (canAddStop) {
+                        TextButton(onClick = {
+                            onStop()
+                            onDismiss()
+                        }) { Text(stringResource(R.string.action_add_as_stop)) }
+                    }
+                }
+                // One right-aligned column: a separate dismiss button would sit beside only the first choice.
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+            }
+        },
+    )
 }
 
 /** Compact "where does my position come from" chip; tap for details. */

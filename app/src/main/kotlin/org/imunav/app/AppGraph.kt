@@ -3,7 +3,6 @@ package org.imunav.app
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
-import android.content.res.Configuration
 import android.os.Build
 import android.os.SystemClock
 import androidx.core.content.ContextCompat
@@ -138,6 +137,15 @@ class AppGraph(private val context: Context) {
         tripLog.write("language $choice")
     }
 
+    /** Light / dark / follow the phone (Settings → Theme); the activity recreates itself to apply it. */
+    val theme = MutableStateFlow(AppTheme.get(context))
+
+    fun setTheme(choice: String) {
+        AppTheme.set(context, choice)
+        theme.value = choice
+        tripLog.write("theme $choice")
+    }
+
     /** Enable or silence spoken navigation while keeping visual guidance unchanged. */
     fun setVoiceEnabled(enabled: Boolean) {
         voicePrefs.edit { putBoolean("enabled", enabled) }
@@ -159,8 +167,8 @@ class AppGraph(private val context: Context) {
     /** Offline map display: a downloaded map pack, and maps saved along planned routes. */
     val offlineMap = OfflineMap(context, scope, tripLog::write)
 
-    /** Is the phone in dark mode? (Decides which map style a route download uses.) */
-    private fun darkTheme(): Boolean = (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+    /** Is the app dark (Settings → Theme, or the phone)? Decides which map style a route download uses. */
+    private fun darkTheme(): Boolean = AppTheme.isDark(context)
 
     /** Address search: the pack's offline index, Photon online when allowed. */
     val search = PlaceSearch(context, offlineRouting::search, { offlineRouting.status.value.searchAvailable }, { offlineRouting.status.value.allowOnline })
@@ -539,6 +547,44 @@ class AppGraph(private val context: Context) {
         planRoutePreview()
     }
 
+    /** Add a stop the route must pass through ([index] = null appends it, otherwise it replaces that stop). */
+    fun setWaypoint(index: Int?, p: GeoPoint, label: String? = null) {
+        if (engine.state.active || _ui.value.startingNavigation) return
+        val stops = _ui.value.waypoints
+        if (index == null && stops.size >= MAX_ROUTE_STOPS) return
+        val stop = RouteStop(p, label)
+        val updated = if (index != null && index in stops.indices) stops.toMutableList().also { it[index] = stop } else stops + stop
+        tripLog.write("waypoint_set index=${index ?: stops.size} count=${updated.size}")
+        _ui.value = _ui.value.copy(waypoints = updated, error = null)
+        planRoutePreview()
+    }
+
+    /** Remove the stop at [index] from the planned route. */
+    fun removeWaypoint(index: Int) {
+        if (engine.state.active || _ui.value.startingNavigation) return
+        val stops = _ui.value.waypoints
+        if (index !in stops.indices) return
+        tripLog.write("waypoint_removed index=$index count=${stops.size - 1}")
+        _ui.value = _ui.value.copy(waypoints = stops.filterIndexed { i, _ -> i != index }, error = null)
+        planRoutePreview()
+    }
+
+    /**
+     * The driver says where they really are during navigation, because the sensors drifted. The
+     * correction is recorded first (replays must see it at the same moment), then both estimators jump there.
+     */
+    fun correctPosition(p: GeoPoint) {
+        if (!engine.state.active) return
+        val now = SystemClock.elapsedRealtime()
+        trips.onManualPosition(p, MANUAL_POSITION_ACCURACY_M, now)
+        val s = engine.correctPosition(p, MANUAL_POSITION_ACCURACY_M, now) ?: return
+        val route = engine.route ?: return
+        nativeRouteProjector.geometryFor(route)?.let { geometry ->
+            runCatching { nativeEstimator.replaceRoute(geometry, s, MANUAL_POSITION_ACCURACY_M) }.onFailure { tripLog.write("manual_position_native_failed ${it.message}") }
+        }
+        refresh()
+    }
+
     /** Apply both endpoints before calculating, avoiding previews with half of a saved route. */
     fun openBookmark(route: SavedRoute): Boolean {
         if (engine.state.active || _ui.value.startingNavigation) return false
@@ -550,6 +596,7 @@ class AppGraph(private val context: Context) {
             manualStartLabel = start?.label,
             destination = route.destination.point,
             destinationLabel = route.destination.label,
+            waypoints = emptyList(),
             mapFocusRequest = route.destination.point,
             error = null,
         )
@@ -575,7 +622,7 @@ class AppGraph(private val context: Context) {
         if (engine.state.active || _ui.value.startingNavigation) return
         val destination = _ui.value.destination
         val from = _ui.value.manualStart ?: currentPosition()
-        routePreview.update(from, destination, travelMode.value) { result ->
+        routePreview.update(from, destination, _ui.value.waypoints.map { it.point }, travelMode.value) { result ->
             _ui.value = when (result) {
                 PreviewResult.Cleared -> _ui.value.copy(previewRoute = null, planning = false)
                 PreviewResult.Loading -> _ui.value.copy(previewRoute = null, planning = true, error = null)
@@ -611,6 +658,7 @@ class AppGraph(private val context: Context) {
         restorationJob?.cancel()
         routePreview.cancel()
         val mode = travelMode.value
+        val via = _ui.value.waypoints.map { it.point }
         _ui.value = _ui.value.copy(planning = true, startingNavigation = true, error = null)
         navigationWork.launch(onFailure = {
             tripLog.write("navigation_start_failed ${it.message}")
@@ -623,18 +671,19 @@ class AppGraph(private val context: Context) {
         }, onFinished = {
             _ui.value = _ui.value.copy(planning = false, startingNavigation = false)
         }) {
-            if (!sensors.checkLocationEnabled()) {
+            // Without Android Location only a hand-placed start works (towers, OBD-II and the IMU navigate from it).
+            if (_ui.value.manualStart == null && !sensors.checkLocationEnabled()) {
                 ensureCurrent()
                 _ui.value = _ui.value.copy(planning = false, startingNavigation = false, error = context.getString(R.string.error_location_off))
                 return@launch
             }
             ensureCurrent()
-            val request = RoutePreviewRequest(from, dest, mode)
-            val route = routePreview.reusableRoute(_ui.value.previewRoute, request) ?: router.route(from, dest, mode = mode)
+            val request = RoutePreviewRequest(from, dest, mode, via)
+            val route = routePreview.reusableRoute(_ui.value.previewRoute, request) ?: router.route(from, dest, via, mode)
             ensureCurrent()
             withPreparedResource(create = { NativeRouteGeometry.create(route) }) { prepared ->
                 ensureCurrent()
-                navigationSession.start(prepared, route, dest, startAccuracy, mode, initialSpeedAt = { now ->
+                navigationSession.start(prepared, route, dest, via, startAccuracy, mode, initialSpeedAt = { now ->
                     planningFix?.takeIf { it.source == FixSource.GPS && _ui.value.manualStart == null && now - it.elapsedMs in 0..START_SPEED_MAX_AGE_MS }?.speedMps?.toDouble()
                         ?: 0.0
                 }, selectedEstimator = navigationEstimator.value)
@@ -681,9 +730,12 @@ class AppGraph(private val context: Context) {
         navigationWork.cancel()
         if (_ui.value.startingNavigation) _ui.value = _ui.value.copy(startingNavigation = false, planning = false)
         if (!engine.state.active) return
+        val arrived = engine.state.arrived
         navigationSession.stop()
         updateDisplays()
         refresh()
+        // A trip stopped on the way keeps its destination and stops: show the way from here again.
+        if (!arrived) planRoutePreview()
     }
 
     /** Debug: drive as if GPS were jammed (to test dead reckoning with a working GPS). */
@@ -756,6 +808,7 @@ class AppGraph(private val context: Context) {
             lastVerdict = hub.lastJudged?.verdict,
             gnss = hub.gnss,
             jammed = hub.jammed,
+            compassDeg = hub.compassDeg,
             currentPosition = if (engine.state.active) engine.state.position else _ui.value.manualStart ?: planningFix?.point,
             hasTrustedPosition = planningFix != null,
             trustedAccuracyM = planningFix?.accuracyM?.toDouble(),
@@ -839,4 +892,8 @@ class AppGraph(private val context: Context) {
 }
 
 private const val MANUAL_START_ACCURACY_M = 100.0
+
+/** How well a driver can place themself on the zoomed-in map while moving, meters. */
+private const val MANUAL_POSITION_ACCURACY_M = 50.0
+
 private const val START_SPEED_MAX_AGE_MS = 2_500L

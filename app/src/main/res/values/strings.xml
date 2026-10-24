@@ -80,7 +80,7 @@
 
     <!-- Banners -->
     <string name="location_off_title">Location is off</string>
-    <string name="location_off_text">Android delivers no positions while Location is switched off.</string>
+    <string name="location_off_text">Android delivers no positions while Location is switched off. To navigate without it, place the start by hand.</string>
     <string name="action_turn_on">Turn on</string>
     <string name="permission_title">Location access needed</string>
     <string name="permission_text">The app needs precise location to navigate.</string>
@@ -810,4 +810,24 @@
     <string name="position_sharing_notification">Position sharing · %1$s</string>
     <string name="position_sharing_navigation">Share route and guidance</string>
     <string name="position_sharing_navigation_warning">Receivers can see your destination, planned route and navigation status. This choice applies only to this trip. Changing it reconnects receivers.</string>
+    <!-- Theme, stops, position correction -->
+    <string name="theme_title">Theme</string>
+    <string name="theme_hint">Light or dark look of the app and the map.</string>
+    <string name="theme_system">Phone default</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="map_hide_location_warning">Hide the “Location is off” warning</string>
+    <string name="map_hide_location_warning_hint">For navigating by cell towers and OBD-II with Android Location switched off. Place the start by hand.</string>
+    <string name="action_dont_show">Don’t show again</string>
+    <string name="route_via">Stop %1$d</string>
+    <string name="action_add_stop">Add stop</string>
+    <string name="search_via_hint">Search for a stop</string>
+    <string name="long_press_title">Use this point</string>
+    <string name="long_press_here_title">Are you here?</string>
+    <string name="long_press_here_text">The marker moves to this point on the route. Use it when the sensors have drifted.</string>
+    <string name="action_set_destination">Set as destination</string>
+    <string name="action_add_as_stop">Add as stop</string>
+    <string name="cd_correct_position">Correct my position</string>
+    <string name="correct_position_hint">Move the map until the cross is where you are, then tap “I am here”.</string>
+    <string name="action_i_am_here">I am here</string>
 </resources>

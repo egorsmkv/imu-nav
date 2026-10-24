@@ -27,4 +27,7 @@ internal fun MapDisplaySettings(preferences: MapDisplayPreferences) {
     SwitchItem(stringResource(R.string.map_hide_zoom_buttons), stringResource(R.string.map_hide_zoom_buttons_hint), options.hideZoomButtons) { checked ->
         preferences.update { it.copy(hideZoomButtons = checked) }
     }
+    SwitchItem(stringResource(R.string.map_hide_location_warning), stringResource(R.string.map_hide_location_warning_hint), options.hideLocationOffWarning) { checked ->
+        preferences.update { it.copy(hideLocationOffWarning = checked) }
+    }
 }

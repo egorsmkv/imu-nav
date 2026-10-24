@@ -328,6 +328,39 @@ class NavigationEngine(
         requestReroute(from, auto = false)
     }
 
+    /**
+     * The user put the marker where they really are, because the sensors drifted. The point is
+     * projected onto the route and the marker jumps there; dead-reckoning drift restarts from
+     * [accuracyM]. A point farther from the route than the off-route limit means the car left the
+     * route, so a new route is requested from it instead of snapping to the wrong road.
+     *
+     * Returns the new position `s`, or null when not navigating.
+     */
+    fun correctPosition(point: GeoPoint, accuracyM: Double, nowMs: Long): Double? {
+        val car = cursor ?: return null
+        val route = car.route
+        val proj = routeProjector.project(route, point, car.s, route.length, route.length, 0.0)
+        val offRoute = proj.offsetM > settings().offRouteM
+        log("manual_position from_s=${car.s.toInt()} to_s=${proj.s.toInt()} offset=${proj.offsetM.toInt()} acc=${accuracyM.toInt()} off_route=$offRoute")
+        car.moveTo(proj.s)
+        // Turns behind the new position were driven; turns ahead of it must be matched again.
+        turnProgress.reset()
+        turnProgress.markPassed(route, proj.s)
+        networkCorrection.clearCatchUp()
+        smoother.valid = false
+        startAccuracyM = accuracyM.coerceAtLeast(0.0)
+        drDriftM = 0.0
+        trustedPoint = point
+        offRouteDeclared = false
+        offRouteSinceMs = -1L
+        offRouteFastSinceMs = -1L
+        if (deviation.pending) deviation.clear(nowMs, 90_000)
+        state = state.copy(s = car.s, position = route.pointAt(car.s).point, uncertaintyM = startAccuracyM)
+        if (offRoute) requestReroute(point, auto = false)
+        publishFlags()
+        return car.s
+    }
+
     /** Start following [route] from its beginning and reset all per-route state. */
     private fun installRoute(route: Route, nowMs: Long) {
         comparisonTurns.reset()
@@ -349,7 +382,7 @@ class NavigationEngine(
         smoother.valid = false
         lastTickMs = -1L
         deviation.cooldownUntilMs = max(deviation.cooldownUntilMs, nowMs + 40_000)
-        state = GuidanceState(active = true, route = route, destination = destination, position = route.pointAt(0.0).point)
+        state = GuidanceState(active = true, route = route, destination = destination, waypoints = waypoints, position = route.pointAt(0.0).point)
     }
 
     // ------------------------------------------------------------------ main loop

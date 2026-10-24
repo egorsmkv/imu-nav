@@ -20,6 +20,9 @@ class NativeRouteProjector :
         this.geometry = geometry
     }
 
+    /** The prepared geometry of [route] if it is the installed one (still owned by this projector). */
+    fun geometryFor(route: Route): NativeRouteGeometry? = geometry.takeIf { route === installedRoute }
+
     override fun project(route: Route, point: GeoPoint, aroundS: Double, behindM: Double, aheadM: Double, globalIfFartherM: Double): Projection {
         val nativeGeometry = geometry
         return if (route === installedRoute && nativeGeometry != null) {

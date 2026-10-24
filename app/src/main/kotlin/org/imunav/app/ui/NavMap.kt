@@ -26,8 +26,10 @@ import org.imunav.app.maps.BuildingVisibility
 import org.imunav.app.maps.MapMemoryCallbacks
 import org.imunav.app.maps.addNavigationLayers
 import org.imunav.app.maps.mapStyle
+import org.imunav.app.maps.passedRouteFeatures
 import org.imunav.app.maps.routeFeatures
 import org.imunav.app.maps.updateMapPoint
+import org.imunav.app.maps.updateMapPoints
 import org.imunav.app.maps.updateMapPosition
 import org.imunav.core.cells.CellTower
 import org.imunav.core.geo.GeoPoint
@@ -117,6 +119,12 @@ fun NavMap(
     buildings3d: Boolean = true,
     /** Desired pitch, including zero when navigation stops or changes to walking. */
     cameraTilt: Double = 0.0,
+    /** Metres of [route] already driven (drawn grey); null when not navigating. */
+    passedM: Double? = null,
+    /** Intermediate stops of the route. */
+    waypoints: List<GeoPoint> = emptyList(),
+    /** Direction the user faces (compass bearing) for the beam around the dot; null hides it. */
+    headingDeg: Float? = null,
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current.density
@@ -125,6 +133,7 @@ fun NavMap(
     var style by remember { mutableStateOf<Style?>(null) }
     var readyStyle by remember { mutableStateOf<Style?>(null) }
     var appliedRoute by remember { mutableStateOf<Pair<Style, Route?>?>(null) }
+    var appliedPassed by remember { mutableStateOf<Triple<Style, Route?, Long>?>(null) }
     var appliedTowers by remember { mutableStateOf<Pair<Style, TowerLayer?>?>(null) }
     var requestedStyle by remember { mutableStateOf<Pair<Boolean, String?>?>(null) }
     var styleGeneration by remember { mutableLongStateOf(0L) }
@@ -236,6 +245,7 @@ fun NavMap(
         style = null
         readyStyle = null
         appliedRoute = null
+        appliedPassed = null
         appliedTowers = null
         m.setStyle(mapStyle(offlineStyleJson, dark)) { loaded ->
             if (!disposed && loadedMap === m && requestedStyle == key && styleGeneration == generation) style = loaded
@@ -276,6 +286,21 @@ fun NavMap(
     }
 
     LaunchedEffect(renderable, readyStyle, destination) { if (renderable) readyStyle?.let { updateMapPoint(it, "dest", destination) } }
+    LaunchedEffect(renderable, readyStyle, waypoints) { if (renderable) readyStyle?.let { updateMapPoints(it, "via", waypoints) } }
+
+    // The grey "already driven" line follows the marker in steps, so a long route is not rebuilt for every centimetre.
+    val passedStep = passedM?.let { (it / PASSED_ROUTE_STEP_M).toLong() } ?: -1L
+    LaunchedEffect(renderable, readyStyle, route, passedStep) {
+        if (!renderable) return@LaunchedEffect
+        val target = readyStyle ?: return@LaunchedEffect
+        val applied = appliedPassed
+        if (applied != null && applied.first === target && applied.second === route && applied.third == passedStep) return@LaunchedEffect
+        val features = withContext(Dispatchers.Default) { passedRouteFeatures(route, passedStep.takeIf { it >= 0 }?.let { it * PASSED_ROUTE_STEP_M }) }
+        if (currentlyRenderable && !disposed && readyStyle === target) {
+            target.getSourceAs<GeoJsonSource>("route-passed")?.setGeoJson(features)
+            appliedPassed = Triple(target, route, passedStep)
+        }
+    }
 
     LaunchedEffect(renderable, readyStyle, towers) {
         if (!renderable) return@LaunchedEffect
@@ -296,7 +321,7 @@ fun NavMap(
         }
     }
 
-    LaunchedEffect(renderable, readyStyle, position, accuracyM) { if (renderable) readyStyle?.let { updateMapPosition(it, position, accuracyM) } }
+    LaunchedEffect(renderable, readyStyle, position, accuracyM, headingDeg) { if (renderable) readyStyle?.let { updateMapPosition(it, position, accuracyM, headingDeg) } }
 
     LaunchedEffect(renderable, loadedMap, maxFps, prefetchZoomDelta) {
         if (renderable) {
@@ -334,3 +359,6 @@ fun NavMap(
 
 /** MapView's own lifecycle steps, in order. */
 private enum class MapViewState { CREATED, STARTED, RESUMED }
+
+/** The driven part of the route is redrawn every this many metres. */
+private const val PASSED_ROUTE_STEP_M = 5.0

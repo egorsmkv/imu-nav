@@ -32,9 +32,9 @@ class RoutePreviewCoordinatorTest {
         val oldRoute = route(origin, oldDestination)
         val latestRoute = route(origin, destination)
 
-        coordinator.update(origin, oldDestination, TravelMode.CAR, events::add)
+        coordinator.update(origin, oldDestination, emptyList(), TravelMode.CAR, events::add)
         dispatcher.drain()
-        coordinator.update(origin, destination, TravelMode.CAR, events::add)
+        coordinator.update(origin, destination, emptyList(), TravelMode.CAR, events::add)
         dispatcher.drain()
         pending[0].resume(oldRoute)
         dispatcher.drain()
@@ -45,6 +45,8 @@ class RoutePreviewCoordinatorTest {
         assertEquals(listOf(PreviewResult.Loading, PreviewResult.Loading, PreviewResult.Ready(latestRoute)), events)
         assertSame(latestRoute, coordinator.reusableRoute(latestRoute, RoutePreviewRequest(origin, destination, TravelMode.CAR)))
         assertNull(coordinator.reusableRoute(latestRoute, RoutePreviewRequest(origin, destination, TravelMode.FOOT)))
+        // A route planned without the stop the user just added is not the route they asked for.
+        assertNull(coordinator.reusableRoute(latestRoute, RoutePreviewRequest(origin, destination, TravelMode.CAR, listOf(oldDestination))))
         coordinator.clear()
         assertNull(coordinator.reusableRoute(latestRoute, RoutePreviewRequest(origin, destination, TravelMode.CAR)))
         scope.cancel()
@@ -60,9 +62,9 @@ class RoutePreviewCoordinatorTest {
         val destination = GeoPoint(50.02, 30.02)
         val events = mutableListOf<PreviewResult>()
 
-        coordinator.update(origin, destination, TravelMode.CAR, events::add)
+        coordinator.update(origin, destination, emptyList(), TravelMode.CAR, events::add)
         dispatcher.drain()
-        coordinator.update(origin, destination, TravelMode.FOOT, events::add)
+        coordinator.update(origin, destination, emptyList(), TravelMode.FOOT, events::add)
         dispatcher.drain()
         pending[0].resumeWithException(IllegalStateException("stale error"))
         dispatcher.drain()
@@ -71,7 +73,7 @@ class RoutePreviewCoordinatorTest {
         pending[1].resumeWithException(IllegalStateException("current error"))
         dispatcher.drain()
         assertEquals(PreviewResult.Failed("current error"), events.last())
-        coordinator.update(null, destination, TravelMode.FOOT, events::add)
+        coordinator.update(null, destination, emptyList(), TravelMode.FOOT, events::add)
         assertEquals(PreviewResult.Cleared, events.last())
         scope.cancel()
     }

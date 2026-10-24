@@ -97,12 +97,20 @@ sealed class TripEvent {
 
     /** Air pressure from the phone's barometer, hPa. */
     data class Pressure(override val elapsedMs: Long, val hPa: Float) : TripEvent()
+
+    /** The user placed their own position by hand during navigation (the sensors had drifted). */
+    data class ManualPosition(override val elapsedMs: Long, val point: GeoPoint, val accuracyM: Double) : TripEvent() {
+        init {
+            require(accuracyM.isFinite() && accuracyM >= 0.0)
+        }
+    }
 }
 
 /**
  * Line-oriented trip recording (`*.rec.gz`). One event per line, comma-separated, first field is
  * the type: F fix, I imu, S satellites, A agc, D start, M travel mode, R route, Q restored progress, P step, X stop,
- * E engine estimate, V vehicle (OBD-II) speed, B barometer, K estimator selection, U raw inertial sensor. Empty fields = null. Readers skip
+ * E engine estimate, V vehicle (OBD-II) speed, B barometer, K estimator selection, U raw inertial sensor,
+ * C hand-placed position. Empty fields = null. Readers skip
  * types they do not know, so new event types keep old app versions able to read recordings.
  */
 object TripFormat {
@@ -163,6 +171,8 @@ object TripFormat {
         is TripEvent.VehicleSpeed -> "V,${e.elapsedMs},${n(e.kmh)}"
 
         is TripEvent.Pressure -> "B,${e.elapsedMs},${n(e.hPa)}"
+
+        is TripEvent.ManualPosition -> "C,${e.elapsedMs},${n(e.point.lat)},${n(e.point.lon)},${n(e.accuracyM)}"
 
         is TripEvent.Estimate -> listOf("E", e.elapsedMs, n(e.lat), n(e.lon), String.format(Locale.US, "%.1f", e.s), e.uncertaintyM.toInt(), e.source).joinToString(",")
     }
@@ -241,6 +251,8 @@ object TripFormat {
                 "V" -> TripEvent.VehicleSpeed(time, fields[2].recordingFloat())
 
                 "B" -> TripEvent.Pressure(time, fields[2].recordingFloat())
+
+                "C" -> TripEvent.ManualPosition(time, GeoPoint(fields[2].recordingDouble(), fields[3].recordingDouble()), fields[4].recordingDouble())
 
                 "E" -> TripEvent.Estimate(
                     time,

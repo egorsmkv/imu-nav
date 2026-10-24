@@ -189,6 +189,11 @@ class NativeComparison(
 
                 is TripEvent.Pressure -> engine.onPressure(event.hPa.toDouble(), event.elapsedMs)
 
+                // Both estimators restart from the hand-placed position, as on the phone.
+                is TripEvent.ManualPosition -> engine.correctPosition(event.point, event.accuracyM, event.elapsedMs)?.let { s ->
+                    engine.route?.let { route -> NativeRouteGeometry.create(route).use { geometry -> native?.replaceRoute(geometry, s, event.accuracyM) } }
+                }
+
                 is TripEvent.StepTaken -> engine.onStep(event.elapsedMs)
 
                 is TripEvent.Estimate -> Unit

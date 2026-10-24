@@ -187,6 +187,8 @@ class TripReplayer(private val tuning: Tuning = Tuning.DEFAULT, private val area
 
                 is TripEvent.Pressure -> engine.onPressure(e.hPa.toDouble(), e.elapsedMs)
 
+                is TripEvent.ManualPosition -> engine.correctPosition(e.point, e.accuracyM, e.elapsedMs)
+
                 is TripEvent.RouteSet -> onRoute(e)
 
                 is TripEvent.Resume -> onResume(e)

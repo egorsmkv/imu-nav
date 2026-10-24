@@ -115,7 +115,8 @@ navigation vibrations; it remains visible even on devices without a vibrator. Wh
 feedback still follows Android's touch-feedback setting. Vibration service calls run off the UI thread.
 
 The interface and voice follow the phone's language (Ukrainian, English or Russian) unless changed in
-**Settings → General → Language**, and the phone's light/dark theme.
+**Settings → General → Language**. The light/dark theme follows the phone unless changed in
+**Settings → General → Theme** (phone default, light or dark); the map style follows the same choice.
 
 Spoken directions can be disabled under
 **Settings → General → Navigation without GPS**. The phone vibrates as well, with a different

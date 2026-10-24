@@ -24,9 +24,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AddLocationAlt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Navigation
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.TripOrigin
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -61,6 +63,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import org.imunav.app.MAX_ROUTE_STOPS
 import org.imunav.app.R
 import org.imunav.app.UiState
 import org.imunav.app.bookmarks.Bookmarks
@@ -102,6 +105,9 @@ internal fun IdlePanel(
     onClearStart: () -> Unit,
     onStart: () -> Unit,
     onClearDestination: () -> Unit,
+    /** Search for a stop: null adds a new one, an index replaces that stop. */
+    onSearchStop: (Int?) -> Unit = {},
+    onRemoveStop: (Int) -> Unit = {},
 ) {
     val res = LocalResources.current
     val startValue = when {
@@ -132,6 +138,10 @@ internal fun IdlePanel(
             onSearchDestination = onSearchDestination,
             onClearStart = onClearStart.takeIf { ui.manualStart != null },
             onClearDestination = onClearDestination.takeIf { ui.destination != null },
+            stops = ui.waypoints.map { it.label ?: stringResource(R.string.route_point_on_map) },
+            canAddStop = ui.destination != null && ui.waypoints.size < MAX_ROUTE_STOPS,
+            onSearchStop = onSearchStop,
+            onRemoveStop = onRemoveStop,
         )
         var more by remember { mutableStateOf(false) }
         if (!compact || more) BookmarkSaveActions(ui, mode, bookmarks)
@@ -183,7 +193,10 @@ internal fun IdlePanel(
     }
 }
 
-/** Start and destination fields are side by side when vertical space is scarce. */
+/**
+ * Start, optional stops and destination. Start and destination are side by side when vertical
+ * space is scarce; the stops then follow below them in driving order.
+ */
 @Composable
 private fun RoutePointEditor(
     startValue: String,
@@ -193,10 +206,25 @@ private fun RoutePointEditor(
     onSearchDestination: () -> Unit,
     onClearStart: (() -> Unit)?,
     onClearDestination: (() -> Unit)?,
+    stops: List<String>,
+    canAddStop: Boolean,
+    onSearchStop: (Int?) -> Unit,
+    onRemoveStop: (Int) -> Unit,
 ) {
     BoxWithConstraints {
         val sideBySide = compact && maxWidth / LocalDensity.current.fontScale >= ROUTE_FIELDS_MIN_WIDTH_DP.dp
-        Column {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            val stopFields = @Composable {
+                stops.forEachIndexed { index, label ->
+                    RoutePointField(
+                        icon = Icons.Filled.Place,
+                        label = stringResource(R.string.route_via, index + 1),
+                        value = label,
+                        onClick = { onSearchStop(index) },
+                        onClear = { onRemoveStop(index) },
+                    )
+                }
+            }
             if (sideBySide) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     RoutePointField(
@@ -216,6 +244,7 @@ private fun RoutePointEditor(
                         modifier = Modifier.weight(1f),
                     )
                 }
+                stopFields()
             } else {
                 RoutePointField(
                     icon = Icons.Filled.TripOrigin,
@@ -224,7 +253,7 @@ private fun RoutePointEditor(
                     onClick = onSearchStart,
                     onClear = onClearStart,
                 )
-                Spacer(Modifier.size(8.dp))
+                stopFields()
                 RoutePointField(
                     icon = Icons.Filled.Navigation,
                     label = stringResource(R.string.route_to),
@@ -232,6 +261,13 @@ private fun RoutePointEditor(
                     onClick = onSearchDestination,
                     onClear = onClearDestination,
                 )
+            }
+            if (canAddStop) {
+                TextButton(onClick = { onSearchStop(null) }) {
+                    Icon(Icons.Filled.AddLocationAlt, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.action_add_stop))
+                }
             }
         }
     }
@@ -262,8 +298,8 @@ private fun RoutePointField(icon: ImageVector, label: String, value: String, onC
     }
 }
 
-/** Which endpoint a search result should replace. */
-internal enum class RoutePoint { START, DESTINATION }
+/** Which route point a search result should replace (or, for [VIA], add). */
+internal enum class RoutePoint { START, VIA, DESTINATION }
 
 /** Compact address shown in the route editor after a search result is selected. */
 fun SearchResult.routePointLabel(): String = if (kind == ResultKind.PLACE || subtitle.isBlank()) title else "$title, $subtitle"

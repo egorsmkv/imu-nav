@@ -77,7 +77,9 @@ diagnostics retains the existing explicit unsent-data deletion behavior.
   along the route after the new start and route events. Kotlin and native comparison replay reset
   transient sensor state and use that distance and the restored uncertainty. Kotlin also marks
   already passed route turns as consumed. Older recordings without `Q` retain their existing replay
-  behavior. Accept the battery-optimisation exemption
+  behavior. A `C` event (`C,elapsed_ms,lat,lon,accuracy_m`) records a position the driver placed by hand;
+  both replays apply it at the same moment as `NavigationEngine.correctPosition` did on the phone.
+  Readers that do not know `C` skip it. Accept the battery-optimisation exemption
   when offered (**Settings → General → Battery**) so this is rare.
 - **Replay tool:** re-runs recordings through the engine on a computer, optionally hiding GPS after
   N seconds, and compares the engine against the real (trusted GPS) track:

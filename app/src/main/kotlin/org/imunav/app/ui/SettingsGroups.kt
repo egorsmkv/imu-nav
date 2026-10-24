@@ -65,6 +65,10 @@ internal fun EverydaySettings(app: AppGraph, ui: UiState, context: Context, save
         SectionHeader(stringResource(R.string.sec_language))
         LanguageSelector(app, onBeforeChange = save)
 
+        // ---------------- Theme
+        SectionHeader(stringResource(R.string.theme_title))
+        ThemeSelector(app, onBeforeChange = save)
+
         // ---------------- Map start
         MapStartSection(app, ui)
         MapDisplaySettings(app.mapDisplay)

@@ -79,7 +79,7 @@
 
     <!-- Банери -->
     <string name="location_off_title">Геолокацію вимкнено</string>
-    <string name="location_off_text">Поки геолокацію вимкнено, Android не передає жодних координат.</string>
+    <string name="location_off_text">Поки геолокацію вимкнено, Android не передає жодних координат. Щоб їхати без неї, поставте старт вручну.</string>
     <string name="action_turn_on">Увімкнути</string>
     <string name="permission_title">Потрібен доступ до геолокації</string>
     <string name="permission_text">Для навігації застосунку потрібна точна геолокація.</string>
@@ -824,4 +824,24 @@
     <string name="position_sharing_notification">Передавання позиції · %1$s</string>
     <string name="position_sharing_navigation">Поширювати маршрут і вказівки</string>
     <string name="position_sharing_navigation_warning">Одержувачі бачитимуть пункт призначення, запланований маршрут і стан навігації. Цей вибір діє лише для поточної поїздки. Зміна перепідключає одержувачів.</string>
+    <!-- Тема, зупинки, виправлення позиції -->
+    <string name="theme_title">Тема</string>
+    <string name="theme_hint">Світлий чи темний вигляд застосунку та карти.</string>
+    <string name="theme_system">Як у телефоні</string>
+    <string name="theme_light">Світла</string>
+    <string name="theme_dark">Темна</string>
+    <string name="map_hide_location_warning">Не показувати попередження «Геолокацію вимкнено»</string>
+    <string name="map_hide_location_warning_hint">Для навігації за вишками та OBD-II з вимкненою геолокацією Android. Старт ставте вручну.</string>
+    <string name="action_dont_show">Більше не показувати</string>
+    <string name="route_via">Зупинка %1$d</string>
+    <string name="action_add_stop">Додати зупинку</string>
+    <string name="search_via_hint">Пошук зупинки</string>
+    <string name="long_press_title">Використати цю точку</string>
+    <string name="long_press_here_title">Ви тут?</string>
+    <string name="long_press_here_text">Позначка переміститься в цю точку маршруту. Використовуйте, коли датчики дають похибку.</string>
+    <string name="action_set_destination">Зробити пунктом призначення</string>
+    <string name="action_add_as_stop">Додати як зупинку</string>
+    <string name="cd_correct_position">Виправити мою позицію</string>
+    <string name="correct_position_hint">Посуньте карту, щоб хрестик був там, де ви є, і натисніть «Я тут».</string>
+    <string name="action_i_am_here">Я тут</string>
 </resources>

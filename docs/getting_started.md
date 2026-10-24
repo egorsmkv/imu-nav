@@ -12,7 +12,7 @@ IMU Nav can guide a trip when GPS becomes unreliable. You can finish setup with 
 4. Choose **Install built-in routing pack** or **Install built-in towers** if those options are available and you want the offline data. Both are optional. F-Droid users can import or download a routing pack later in Settings.
 5. Tap **Continue with limited functionality** when you are ready. Any chosen data installation can finish in the background.
 
-You can also change the language in **Settings → General → Language**. Tap the current language to open the options; the change applies immediately.
+You can also change the language in **Settings → General → Language**. Tap the current language to open the options; the change applies immediately. **Settings → General → Theme** switches between the phone's theme, light and dark.
 
 To return to the checklist, open **Settings → Set up IMU Nav**. Skipping a pack does not erase tower data already on the phone.
 

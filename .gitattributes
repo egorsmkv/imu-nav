@@ -1,0 +1,2 @@
+# NMEA fixtures contain protocol CRLF bytes; preserve them in Git and source archives.
+desktop/protocol/fixtures/*.nmea -text whitespace=cr-at-eol

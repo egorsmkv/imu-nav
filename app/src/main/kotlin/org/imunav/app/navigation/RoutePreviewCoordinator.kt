@@ -9,7 +9,7 @@ import org.imunav.core.route.Route
 import org.imunav.core.route.TravelMode
 
 /** Inputs that make a preview reusable when navigation starts. */
-internal data class RoutePreviewRequest(val from: GeoPoint, val destination: GeoPoint, val mode: TravelMode)
+internal data class RoutePreviewRequest(val from: GeoPoint, val destination: GeoPoint, val mode: TravelMode, val via: List<GeoPoint> = emptyList())
 
 /** Keeps only the latest route preview; an older routing result must never replace a newer one. */
 internal class RoutePreviewCoordinator(private val scope: CoroutineScope, private val router: Router) {
@@ -29,23 +29,23 @@ internal class RoutePreviewCoordinator(private val scope: CoroutineScope, privat
         request = null
     }
 
-    /** Return the completed preview only when both endpoints and travel mode still agree. */
+    /** Return the completed preview only when the endpoints, stops and travel mode still agree. */
     fun reusableRoute(candidate: Route?, requested: RoutePreviewRequest): Route? = candidate.takeIf { request == requested }
 
     /** Calculate a preview and publish only the result of the latest request. */
-    fun update(from: GeoPoint?, destination: GeoPoint?, mode: TravelMode, publish: (PreviewResult) -> Unit) {
+    fun update(from: GeoPoint?, destination: GeoPoint?, via: List<GeoPoint>, mode: TravelMode, publish: (PreviewResult) -> Unit) {
         cancel()
         if (from == null || destination == null) {
             request = null
             publish(PreviewResult.Cleared)
             return
         }
-        val next = RoutePreviewRequest(from, destination, mode)
+        val next = RoutePreviewRequest(from, destination, mode, via)
         val currentGeneration = generation
         request = next
         publish(PreviewResult.Loading)
         job = scope.launch {
-            runCatching { router.route(next.from, next.destination, mode = next.mode) }
+            runCatching { router.route(next.from, next.destination, next.via, next.mode) }
                 .onSuccess { route -> if (currentGeneration == generation) publish(PreviewResult.Ready(route)) }
                 .onFailure { error -> if (currentGeneration == generation) publish(PreviewResult.Failed(error.message)) }
         }

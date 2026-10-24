@@ -35,6 +35,7 @@ internal class NavigationSessionLifecycle(
         prepared: PreparedResource<NativeRouteGeometry>,
         route: Route,
         destination: GeoPoint,
+        waypoints: List<GeoPoint>,
         startAccuracyM: Double,
         mode: TravelMode,
         initialSpeedAt: (Long) -> Double,
@@ -55,9 +56,9 @@ internal class NavigationSessionLifecycle(
             transaction.acquire(estimatorBridge::close) { estimatorBridge.start(prepared.value, 0.0, initialSpeedMps, startAccuracyM, mode, now) }
             transaction.acquire(voice::stop) {}
             transaction.acquire(engine::stop) {
-                engine.start(route, destination, nowMs = now, startAccuracyM = startAccuracyM, mode = mode, estimator = selectedEstimator)
+                engine.start(route, destination, waypoints, nowMs = now, startAccuracyM = startAccuracyM, mode = mode, estimator = selectedEstimator)
             }
-            transaction.acquire({ trips.end(arrived = false) }) { trips.begin(route, destination, emptyList(), startAccuracyM, mode) }
+            transaction.acquire({ trips.end(arrived = false) }) { trips.begin(route, destination, waypoints, startAccuracyM, mode) }
             if (mode == TravelMode.CAR) transaction.acquire(obd::stop, obd::start)
             applyPower()
             transaction.commit()

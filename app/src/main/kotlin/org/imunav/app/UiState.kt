@@ -21,12 +21,16 @@ data class UiState(
     val lastVerdict: Verdict? = null,
     val gnss: GnssSnapshot = GnssSnapshot(),
     val jammed: Boolean = false,
+    /** Compass heading of the phone, degrees clockwise from north; null without a rotation sensor. */
+    val compassDeg: Float? = null,
     /** Where to draw the position dot (active engine estimate, else manual start or fresh automatic fix). */
     val currentPosition: GeoPoint? = null,
     /** Destination picked on the map or in search, before navigation starts. */
     val destination: GeoPoint? = null,
     /** Address shown for a destination chosen in search; null for a point chosen directly on the map. */
     val destinationLabel: String? = null,
+    /** Intermediate stops between the start and the destination, in driving order. */
+    val waypoints: List<RouteStop> = emptyList(),
     /** One-shot camera request when a bookmark is applied from the library. */
     val mapFocusRequest: GeoPoint? = null,
     /** Start point chosen by the user on the map or in search; it overrides the trusted position. */
@@ -58,3 +62,9 @@ data class UiState(
     val log: List<String> = emptyList(),
     val cells: CellStatus = CellStatus(),
 )
+
+/** Stops per route; more would make the editor hard to use while driving and routing slow. */
+const val MAX_ROUTE_STOPS = 5
+
+/** A stop the route must pass through; [label] is the search result shown in the route editor (null = point on the map). */
+data class RouteStop(val point: GeoPoint, val label: String? = null)

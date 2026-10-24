@@ -83,6 +83,8 @@ data class GuidanceState(
     /** A new route is being computed. */
     val rerouting: Boolean = false,
     val destination: GeoPoint? = null,
+    /** Intermediate stops the trip was planned through, in order (drawn on the map). */
+    val waypoints: List<GeoPoint> = emptyList(),
     /** Seconds since the last usable GPS fix. */
     val blindS: Int = 0,
     /** How far off the marker may be, meters (drawn as the blue circle). */

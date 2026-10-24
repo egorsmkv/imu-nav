@@ -17,6 +17,7 @@ class MapDisplayPreferences(context: Context) {
             automaticZoom = prefs.getBoolean("automatic_zoom", defaults.automaticZoom),
             hideTowerButton = prefs.getBoolean("hide_tower_button", defaults.hideTowerButton),
             hideZoomButtons = prefs.getBoolean("hide_zoom_buttons", defaults.hideZoomButtons),
+            hideLocationOffWarning = prefs.getBoolean("hide_location_off_warning", defaults.hideLocationOffWarning),
         ),
     )
     val options = mutableOptions.asStateFlow()
@@ -30,6 +31,7 @@ class MapDisplayPreferences(context: Context) {
             putBoolean("automatic_zoom", updated.automaticZoom)
             putBoolean("hide_tower_button", updated.hideTowerButton)
             putBoolean("hide_zoom_buttons", updated.hideZoomButtons)
+            putBoolean("hide_location_off_warning", updated.hideLocationOffWarning)
         }
         mutableOptions.value = updated
     }
