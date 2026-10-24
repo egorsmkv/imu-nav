@@ -171,6 +171,11 @@ selectable results to the query and reference position. The 250 ms debounce is u
 
 House numbers are looked up in one batch across all retrieved street candidates, with exact
 numbers before building parts (`22`, then `22 к1`, never `220`), then distance and stable ties.
+A trailing spaced letter is retained as part of the house number (`4 в`, `181 а`,
+`12/2 а`, or `4 в к1`), before removing street/place abbreviations. The indexed spelling
+is preserved: `4 в` is not automatically treated as `4в`. This works on existing SQLite
+and Tantivy packs without rebuilding them. See the
+[Ukraine suffix regression report](../benchmarks/ukraine-search-house-suffix-2026-10-24.md).
 Up to two addresses per street are retained after ranking. Missing house numbers still leave
 generic street results. Settlement parsing retains single-word interpretations and additionally
 tries contiguous prefixes and suffixes of up to three words, leaving at least one street word.

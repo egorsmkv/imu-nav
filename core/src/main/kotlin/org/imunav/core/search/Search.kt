@@ -60,6 +60,9 @@ object AddressSearch {
     )
     private val HOUSE = Regex("^\\d{1,4}\\p{L}?(/\\d{1,4}\\p{L}?)?$")
 
+    private val HOUSE_STEM = Regex("\\d{1,4}(/\\d{1,4})?")
+    private val HOUSE_LETTER = Regex("\\p{L}")
+
     private val PLAIN_TOKEN = Regex("[\\p{L}\\p{N}]+")
     private val BUILDING_PART = Regex("[кk]\\d{1,4}")
     private val PUNCTUATION = Regex("[^\\p{L}\\p{N}'/]+")
@@ -82,10 +85,13 @@ object AddressSearch {
 
     /** Prepared input lets experimental backends retrieve candidates in one native request. */
     fun prepare(query: String): SearchPlan {
-        val tokens = normalize(query).split(' ').filter { it.isNotBlank() && it !in STOP }
-        val numberWords = houseWordCount(tokens)
+        val rawTokens = normalize(query).split(' ').filter { it.isNotBlank() }
+        // Parse the house first: suffix letters such as "с", "г", and "м" are also street/place stop words.
+        val rawNumberWords = houseWordCount(rawTokens)
+        val tokens = if (rawNumberWords > 0) rawTokens else rawTokens.filter { it !in STOP }
+        val numberWords = if (rawNumberWords > 0) rawNumberWords else houseWordCount(tokens)
         val number = tokens.takeLast(numberWords).joinToString(" ").takeIf { it.isNotEmpty() }
-        val words = tokens.dropLast(numberWords).filter { !HOUSE.matches(it) || it.length > 4 }
+        val words = tokens.dropLast(numberWords).filter { it !in STOP && (!HOUSE.matches(it) || it.length > 4) }
         return SearchPlan(words, number)
     }
 
@@ -157,11 +163,16 @@ object AddressSearch {
         return (addresses + out.sortedBy { it.first }.map { it.second }).distinctBy { it.kind to it.title to it.subtitle }.take(limit)
     }
 
-    /** Keep an explicit building part with its number instead of interpreting it as a street word. */
-    private fun houseWordCount(tokens: List<String>): Int = when {
-        tokens.size >= 3 && BUILDING_PART.matches(tokens.last()) && HOUSE.matches(tokens[tokens.lastIndex - 1]) -> 2
-        tokens.size >= 2 && HOUSE.matches(tokens.last()) -> 1
-        else -> 0
+    /** Preserve the indexed spelling of spaced letter suffixes and optional building parts. */
+    private fun houseWordCount(tokens: List<String>): Int {
+        if (tokens.size < 2) return 0
+        val partWords = if (BUILDING_PART.matches(tokens.last())) 1 else 0
+        val houseEnd = tokens.lastIndex - partWords
+        return when {
+            houseEnd >= 2 && HOUSE_LETTER.matches(tokens[houseEnd]) && HOUSE_STEM.matches(tokens[houseEnd - 1]) -> 2 + partWords
+            houseEnd >= 1 && HOUSE.matches(tokens[houseEnd]) -> 1 + partWords
+            else -> 0
+        }
     }
 
     /** A narrower conjunction keeps the same nearest rows if every leading superset row provably matches. */

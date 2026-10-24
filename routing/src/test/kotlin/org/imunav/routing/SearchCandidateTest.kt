@@ -6,6 +6,8 @@ import org.imunav.core.search.PlaceRow
 import org.imunav.core.search.ResultKind
 import org.imunav.core.search.SearchDb
 import org.imunav.core.search.StreetAddressRow
+import org.imunav.core.search.TantivyRequest
+import org.imunav.core.search.TantivySearch
 import org.junit.Test
 import java.io.File
 import java.nio.file.Files
@@ -49,7 +51,7 @@ class SearchCandidateTest {
                     sql.execute("INSERT INTO street VALUES (2, 'Main', NULL, 0, -179.99)")
                     sql.execute("INSERT INTO street_fts(rowid,name) VALUES (1, 'main'), (2, 'main')")
                     sql.execute("INSERT INTO place VALUES (1, 'Main', 'town', 0, 170, 1000), (2, 'Main', 'town', 0, -179.99, 1000)")
-                    sql.execute("INSERT INTO place_fts(rowid,name) VALUES (1, 'main'), (2, 'main')")
+                    sql.execute("INSERT INTO place_fts(rowid,names) VALUES (1, 'main'), (2, 'main')")
                 }
             }
             JdbcSearchDb(file).use { db ->
@@ -69,7 +71,7 @@ class SearchCandidateTest {
                             val id = index + 1
                             val town = if (id == 12) "New Town" else "Old City $id"
                             sql.execute("INSERT INTO place VALUES ($id, '$town', 'town', $id, 30, 1000)")
-                            sql.execute("INSERT INTO place_fts(rowid,name) VALUES ($id, '${town.lowercase()}')")
+                            sql.execute("INSERT INTO place_fts(rowid,names) VALUES ($id, '${town.lowercase()}')")
                             sql.execute("INSERT INTO street VALUES ($id, 'Main', $id, $id, 30)")
                             sql.execute("INSERT INTO street_fts(rowid,name) VALUES ($id, 'main головна')")
                         }
@@ -112,7 +114,7 @@ class SearchCandidateTest {
             DriverManager.getConnection("jdbc:sqlite:$file").use { connection ->
                 connection.createStatement().use { sql ->
                     sql.execute("INSERT INTO place VALUES (1, 'New Town', 'town', 1, 30, 1000), (2, 'Alias', 'town', 2, 30, 1000)")
-                    sql.execute("INSERT INTO place_fts(rowid,name) VALUES (1, 'new town'), (2, 'new town alias')")
+                    sql.execute("INSERT INTO place_fts(rowid,names) VALUES (1, 'new town'), (2, 'new town alias')")
                     sql.execute("INSERT INTO street VALUES (2, 'Main', 2, 2, 30)")
                     sql.execute("INSERT INTO street_fts(rowid,name) VALUES (2, 'main')")
                     sql.execute("INSERT INTO addr VALUES (2, '22', 2, 30)")
@@ -132,6 +134,50 @@ class SearchCandidateTest {
         }
     }
 
+    @Test
+    fun spacedHouseSuffixesFindTheExactAddressInBothBackends() {
+        for (prefix in listOf(false, true)) {
+            withIndex(prefix) { file ->
+                val numbers = listOf("4", "4 в", "4 в к1", "4в", "40 в", "181 а", "7 с", "8 г", "9 м", "10 c", "12/2 а")
+                DriverManager.getConnection("jdbc:sqlite:$file").use { connection ->
+                    connection.createStatement().use { sql ->
+                        sql.execute("INSERT INTO place VALUES (1, 'Львів', 'city', 49.84, 24.03, 1000)")
+                        sql.execute("INSERT INTO place_fts(rowid,names) VALUES (1, 'львів')")
+                        sql.execute("INSERT INTO street VALUES (1, 'Топольна', 1, 49.84, 24.03)")
+                        sql.execute("INSERT INTO street_fts(rowid,name) VALUES (1, 'топольна')")
+                        numbers.forEachIndexed { index, number ->
+                            sql.execute("INSERT INTO addr VALUES (1, '$number', ${49.84 + index * 0.001}, 24.03)")
+                        }
+                    }
+                }
+                val root = Files.createTempDirectory("spaced-house-search").toFile()
+                try {
+                    val directory = File(root, TantivySearch.DIRECTORY)
+                    TantivyIndexBuilder.build(file, directory)
+                    JdbcSearchDb(file).use { sqlite ->
+                        TantivySearch(directory).use { native ->
+                            for (number in numbers) {
+                                for (query in listOf("Львів Топольна $number", "Топольна Львів $number")) {
+                                    val near = GeoPoint(49.842, 24.03) // The building part is closer than the exact "4 в".
+                                    val expected = AddressSearch.search(sqlite, query, near)
+                                    val actual = TantivyRequest().use { native.search(query, near, it) }
+                                    assertEquals(expected, actual, query)
+                                    assertEquals(ResultKind.ADDRESS, actual.first().kind, query)
+                                    assertEquals("Топольна, $number", actual.first().title, query)
+                                }
+                            }
+                            val missing = TantivyRequest().use { native.search("Львів Топольна 9999 а", null, it) }
+                            assertEquals(ResultKind.STREET, missing.first().kind)
+                            assertEquals(AddressSearch.search(sqlite, "Львів Топольна 9999 а", null), missing)
+                        }
+                    }
+                } finally {
+                    root.deleteRecursively()
+                }
+            }
+        }
+    }
+
     private fun withIndex(prefix: Boolean = false, test: (File) -> Unit) {
         val file = Files.createTempFile("synthetic-search", ".db").toFile()
         try {
@@ -142,7 +188,7 @@ class SearchCandidateTest {
                     sql.execute("CREATE TABLE addr(street_id INTEGER, number TEXT, lat REAL, lon REAL)")
                     val options = if (prefix) ", prefix='2,3,4,6,8'" else ""
                     sql.execute("CREATE VIRTUAL TABLE street_fts USING fts4(name$options)")
-                    sql.execute("CREATE VIRTUAL TABLE place_fts USING fts4(name$options)")
+                    sql.execute("CREATE VIRTUAL TABLE place_fts USING fts4(names$options)")
                 }
             }
             test(file)

@@ -15,7 +15,10 @@ new backend. Both phone and Android Auto use `OfflineRouting.search`.
 One native retrieval call collects candidates across all query stages. Kotlin's
 shared matcher retains exact-house priority, building-part distinction, geographic
 ranking, multiword settlements, generic street results for missing houses and
-stable ordering. Request-local snapshots are discarded after each request.
+stable ordering. Spaced house letters such as `4 в` and `181 а` are now parsed
+before street-type stop words, so they reach the existing exact-number lookup
+instead of adding street/settlement interpretations. This also works on legacy
+SQLite packs; no index rebuild is needed. Request-local snapshots are discarded after each request.
 Tantivy's reader has no writer and never changes the installed index. Within a
 request, native retrieval reuses lazy per-segment fast-field handles across all
 interpretations, stops empty intersections early, and reads sparse house postings
@@ -73,7 +76,11 @@ regressions, and a 50% larger compressed search index. The
 the address-query tradeoff and records shared distant-town/house-suffix matching gaps.
 The subsequent [runtime optimization comparison](../benchmarks/ukraine-search-optimized-2026-10-24.md)
 measures roughly 2.4× faster typical address cases and 2.6× faster multiword
-settlement cases, while preserving result parity and index compatibility. Physical ARM latency
+settlement cases, while preserving result parity and index compatibility. The
+[spaced-house-suffix fix](../benchmarks/ukraine-search-house-suffix-2026-10-24.md)
+then restores exact house hits and cuts the formerly slowest Lviv query from
+3.63 ms to 0.60 ms p50 on the same host. The distant-town candidate-limit gap
+remains separate. Physical ARM latency
 measurements remain unavailable. ARMv7, ARM64 and x86-64 cross-compilation is checked.
 
 `./gradlew check` includes native tests, Kotlin tests, formatting, static analysis

@@ -5,6 +5,10 @@ stops empty term intersections early, and reads house-key postings directly.
 The change speeds up typical specific-address cases about **2.4×** and multiword
 settlement cases about **2.6×** in the expanded Ukraine desktop corpus.
 
+A later [spaced-house-suffix fix](ukraine-search-house-suffix-2026-10-24.md)
+addresses the slow `4 в` query variants and their missing house results. The
+measurements below remain the native-optimization baseline before that parser fix.
+
 ## What changed and why
 
 Temporary native stage timing of the public query
