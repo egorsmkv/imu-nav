@@ -7,8 +7,14 @@ pub fn write(directory: &Path, output: &Path, routing_level: i64) -> crate::Resu
     if !matches!(routing_level, 6 | 9) {
         return Err("routing compression must be 6 or 9".into());
     }
-    let parent = output.parent().filter(|path| !path.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
-    if parent.canonicalize()?.starts_with(directory.canonicalize()?) {
+    let parent = output
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    if parent
+        .canonicalize()?
+        .starts_with(directory.canonicalize()?)
+    {
         return Err("archive output must be outside the pack directory".into());
     }
     let mut archive = zip::ZipWriter::new(std::fs::File::create_new(output)?);

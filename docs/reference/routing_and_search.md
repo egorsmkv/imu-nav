@@ -39,15 +39,16 @@ and checks the public extract, builds the pack, verifies the ZIP and runs the ac
 Its existing `ch_threads` input now selects **Rayon workers within each profile** (1, 2 or 4;
 default 2). Car and foot preparation run sequentially. Import geometry/transitions are staged on
 disk and OSM/search-builder memory is released before contraction. Cargo dependencies and build
-outputs are cached; generated packs are rebuilt. The workflow uploads the ZIP, SHA-256, source
-checksum and process timing/memory artifacts; it does not publish to a server.
+outputs are cached; generated packs are rebuilt. The workflow derives car-only and walking-only packs from the combined graph, trimming unused shared data.
+It uploads three separate ZIP artifacts (`car`, `walk`, `car-walk`), each with SHA-256 and a build report,
+plus process timing/memory diagnostics; it does not publish to a server.
 
-A pack contains `pack.json`, `car.routing`, `foot.routing`, `shared.routing`, and normally `search.tantivy/`.
-The profile files contain road geometry/names, access-specific directed roads, a snap grid and
-an immutable CH. They do not contain OSM PBFs, display-map tiles, GraphHopper files or downloaded DEM
+A pack contains `pack.json`, `shared.routing`, the declared `car.routing` and/or `foot.routing` profile files, and normally `search.tantivy/`.
+The shared file contains geometry and names. Profile files contain access-specific directed roads,
+references to that shared data, a snap grid and an immutable CH. They do not contain OSM PBFs, display-map tiles, GraphHopper files or downloaded DEM
 tiles. Route data is memory-mapped instead of deserializing the benchmark's bincode hierarchy.
 The loader checks offsets, sizes, coordinates, CSR ranges, hierarchy acyclicity and shortcut costs.
-The `IMURT001` header and all numeric records are explicitly little-endian and versioned.
+The `IMURT002` profile header and all numeric records are explicitly little-endian and versioned.
 
 To bundle a pack in Play builds, copy its ZIP to `app/src/play/assets/routing/pack.zip` and its
 metadata to `app/src/play/assets/routing/pack.json`. Both are gitignored. The F-Droid flavor does not

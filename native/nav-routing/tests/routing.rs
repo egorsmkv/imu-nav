@@ -420,3 +420,64 @@ fn malformed_shared_ranges_and_coordinates_are_rejected() {
     std::fs::write(&path, &original[..63]).unwrap();
     assert!(imu_nav_routing::pack::Pack::open(&output).is_err());
 }
+
+#[test]
+fn single_mode_packs_trim_shared_data_and_preserve_routes_and_search() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("test.osm");
+    std::fs::write(&input, fixture()).unwrap();
+    let combined = tmp.path().join("combined");
+    builder::build(&input, &combined, "Test", 0, true, true).unwrap();
+    let original = imu_nav_routing::pack::Pack::open(&combined).unwrap();
+    let query = Request {
+        points: vec![[50.4502, 30.5001], [50.4601, 30.5099]],
+    };
+    for profile in ["car", "foot"] {
+        let output = tmp.path().join(profile);
+        let info = builder::subset::create(&combined, &output, profile).unwrap();
+        assert_eq!(info["profiles"], serde_json::json!([profile]));
+        let selected = imu_nav_routing::pack::Pack::open(&output).unwrap();
+        let other = if profile == "car" { "foot" } else { "car" };
+        assert!(selected.profile(other).is_err());
+        assert!(!output.join(format!("{other}.routing")).exists());
+        let expected = route(
+            original.profile(profile).unwrap(),
+            &query,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        let actual = route(
+            selected.profile(profile).unwrap(),
+            &query,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        assert_eq!(
+            serde_json::to_value(expected).unwrap(),
+            serde_json::to_value(actual).unwrap()
+        );
+        for entry in std::fs::read_dir(combined.join("search.tantivy")).unwrap() {
+            let entry = entry.unwrap();
+            assert_eq!(
+                std::fs::read(entry.path()).unwrap(),
+                std::fs::read(output.join("search.tantivy").join(entry.file_name())).unwrap()
+            );
+        }
+        if profile == "car" {
+            assert!(
+                std::fs::metadata(output.join("shared.routing"))
+                    .unwrap()
+                    .len()
+                    < std::fs::metadata(combined.join("shared.routing"))
+                        .unwrap()
+                        .len()
+            );
+        }
+        let source_bytes = std::fs::read(combined.join(format!("{profile}.routing"))).unwrap();
+        let selected_bytes = std::fs::read(output.join(format!("{profile}.routing"))).unwrap();
+        let records_end = 72 + original.profile(profile).unwrap().count * 40;
+        assert_eq!(source_bytes[..72], selected_bytes[..72]);
+        assert_eq!(source_bytes[records_end..], selected_bytes[records_end..]);
+        assert!(builder::subset::create(&combined, &output, profile).is_err());
+    }
+}

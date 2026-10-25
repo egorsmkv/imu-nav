@@ -53,6 +53,33 @@ class RustOfflineGraphTest {
     }
 
     @Test
+    fun singleModePacksEnableOnlyTheirDeclaredMode() {
+        val temporary = createTempDirectory().toFile()
+        try {
+            val input = File(temporary, "test.osm").also { it.writeText(osm) }
+            val combined = File(temporary, "combined")
+            val info = buildGraph(input, combined, "Test", minNetworkSize = 0, withSearch = false)
+            for (mode in TravelMode.entries) {
+                val selected = File(temporary, mode.profile)
+                combined.copyRecursively(selected)
+                val other = if (mode == TravelMode.CAR) TravelMode.FOOT else TravelMode.CAR
+                assertTrue(File(selected, "${other.profile}.routing").delete())
+                val size = selected.walkTopDown().filter { it.isFile && it.name != PackInfo.FILE }.sumOf { it.length() }
+                File(selected, PackInfo.FILE).writeText(info.copy(profiles = listOf(mode.profile), sizeBytes = size).toJson())
+                OfflineGraph.load(selected).use { graph ->
+                    assertTrue(graph.supports(mode))
+                    assertTrue(!graph.supports(other))
+                    val points = listOf(GeoPoint(50.4502, 30.5001), GeoPoint(50.4601, 30.5099))
+                    assertTrue(graph.route(points, mode).length > 0)
+                    assertFailsWith<OfflineRoutingException> { graph.route(points, other) }
+                }
+            }
+        } finally {
+            temporary.deleteRecursively()
+        }
+    }
+
+    @Test
     fun oldPacksAreRejectedBeforeOpeningNativeFiles() {
         val temporary = createTempDirectory().toFile()
         try {

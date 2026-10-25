@@ -19,7 +19,7 @@ struct Geometry {
     count: u32,
     next: Option<u32>,
 }
-struct Dictionary {
+pub(super) struct Dictionary {
     points: BufWriter<File>,
     reader: File,
     bytes: u64,
@@ -30,7 +30,7 @@ struct Dictionary {
     name_ids: HashMap<String, u32>,
 }
 impl Dictionary {
-    fn new(directory: &Path, elevation: bool) -> Result<Self> {
+    pub(super) fn new(directory: &Path, elevation: bool) -> Result<Self> {
         let path = directory.join("geometry.staging");
         let file = std::fs::OpenOptions::new()
             .read(true)
@@ -48,7 +48,7 @@ impl Dictionary {
             name_ids: HashMap::new(),
         })
     }
-    fn name(&mut self, name: &str) -> Result<u32> {
+    pub(super) fn name(&mut self, name: &str) -> Result<u32> {
         if let Some(&id) = self.name_ids.get(name) {
             return Ok(id);
         }
@@ -57,10 +57,10 @@ impl Dictionary {
         self.name_ids.insert(name.to_owned(), id);
         Ok(id)
     }
-    fn width(&self) -> usize {
+    pub(super) fn width(&self) -> usize {
         if self.elevation { 16 } else { 8 }
     }
-    fn geometry(&mut self, mut encoded: Vec<u8>) -> Result<(u32, bool)> {
+    pub(super) fn geometry(&mut self, mut encoded: Vec<u8>) -> Result<(u32, bool)> {
         let width = self.width();
         let reverse = encoded
             .chunks_exact(width)
@@ -118,7 +118,7 @@ impl Dictionary {
         ))?;
         Ok(existing == encoded)
     }
-    fn finish(mut self, directory: &Path) -> Result<()> {
+    pub(super) fn finish(mut self, directory: &Path) -> Result<()> {
         self.points.flush()?;
         let mut output = BufWriter::new(File::create_new(directory.join(crate::shared::FILE))?);
         output.write_all(crate::shared::MAGIC)?;

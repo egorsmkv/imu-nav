@@ -19,7 +19,8 @@ fn main() -> Result<()> {
     let opened = Instant::now();
     let pack = Pack::open(&dir)?;
     println!("pack_open_ms={:.3}", opened.elapsed().as_secs_f64() * 1000.);
-    for profile in ["car", "foot"] {
+    for profile in info["profiles"].as_array().ok_or("missing profiles")? {
+        let profile = profile.as_str().ok_or("invalid profile")?;
         let network = pack.profile(profile)?;
         if let Some(data) = &queries {
             let requests: Vec<Request> = serde_json::from_slice(data)?;

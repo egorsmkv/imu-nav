@@ -11,8 +11,11 @@ fn main() -> Result<()> {
         return Err("usage: benchmark-routing PACK QUERIES_JSON OUTPUT_JSON".into());
     }
     let requests: Vec<Request> = serde_json::from_slice(&std::fs::read(&args[1])?)?;
+    let metadata: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(PathBuf::from(&args[0]).join("pack.json"))?)?;
     let mut output = vec![];
-    for profile in ["car", "foot"] {
+    for profile in metadata["profiles"].as_array().ok_or("missing profiles")? {
+        let profile = profile.as_str().ok_or("invalid profile")?;
         let started = Instant::now();
         let network = Network::open(&PathBuf::from(&args[0]).join(format!("{profile}.routing")))?;
         let open_ms = started.elapsed().as_secs_f64() * 1000.;

@@ -79,9 +79,16 @@ jobs:
           native/target/release/build-routing \
             --osm build/routing-source/monaco.osm.pbf --out build/routing-work/graph --name Monaco --threads 2
           python3 tools/verify_routing_pack.py build/routing-work/graph.zip
-          mkdir -p build/routing-import
-          unzip -q build/routing-work/graph.zip -d build/routing-import
-          native/target/release/check-routing build/routing-import
+          mkdir -p build/routing-import/combined
+          unzip -q build/routing-work/graph.zip -d build/routing-import/combined
+          native/target/release/check-routing build/routing-import/combined
+          for mode in car walk; do
+            native/target/release/subset-routing build/routing-work/graph "build/routing-work/$mode" "$mode"
+            python3 tools/verify_routing_pack.py "build/routing-work/$mode.zip"
+            mkdir -p "build/routing-import/$mode"
+            unzip -q "build/routing-work/$mode.zip" -d "build/routing-import/$mode"
+            native/target/release/check-routing "build/routing-import/$mode"
+          done
 
   build:
     if: github.event_name == 'workflow_dispatch'
@@ -149,17 +156,31 @@ jobs:
           /usr/bin/time -v -o build/routing-build-time.txt native/target/release/build-routing \
             --osm "build/routing-source/$PACK_SLUG.osm.pbf" --out build/routing-work/graph --name "$PACK_NAME" --threads "$CH_THREADS"
           mkdir -p dist
-          mv build/routing-work/graph.zip "dist/routing-$PACK_SLUG.zip"
-      - name: Check archive and phone graph loader
+          mv build/routing-work/graph.zip "dist/routing-$PACK_SLUG-car-walk.zip"
+      - name: Package and verify each download choice
         run: |
-          python3 tools/verify_routing_pack.py "dist/routing-$PACK_SLUG.zip"
+          # Reuse prepared hierarchies; single-mode packs keep only their referenced shared data.
+          for mode in car walk; do
+            /usr/bin/time -v -o "build/routing-$mode-time.txt" native/target/release/subset-routing \
+              build/routing-work/graph "build/routing-work/$mode" "$mode"
+            mv "build/routing-work/$mode.zip" "dist/routing-$PACK_SLUG-$mode.zip"
+            python3 tools/verify_routing_pack.py "dist/routing-$PACK_SLUG-$mode.zip"
+            rm -rf "build/routing-work/$mode"
+            mkdir -p build/routing-import
+            unzip -q "dist/routing-$PACK_SLUG-$mode.zip" -d build/routing-import
+            native/target/release/check-routing build/routing-import
+            rm -rf build/routing-import
+          done
+          python3 tools/verify_routing_pack.py "dist/routing-$PACK_SLUG-car-walk.zip"
           rm -rf build/routing-work/graph
           mkdir -p build/routing-import
-          unzip -q "dist/routing-$PACK_SLUG.zip" -d build/routing-import
+          unzip -q "dist/routing-$PACK_SLUG-car-walk.zip" -d build/routing-import
           native/target/release/check-routing build/routing-import
       - name: Record checksums and build details
         run: |
-          (cd dist && sha256sum "routing-$PACK_SLUG.zip" > "routing-$PACK_SLUG.zip.sha256")
+          for mode in car walk car-walk; do
+            (cd dist && sha256sum "routing-$PACK_SLUG-$mode.zip" > "routing-$PACK_SLUG-$mode.zip.sha256")
+          done
           python3 - <<'PY'
           import hashlib
           import json
@@ -168,23 +189,24 @@ jobs:
           import zipfile
           from pathlib import Path
 
-          archive = Path('dist') / f"routing-{os.environ['PACK_SLUG']}.zip"
           timing = Path('build/routing-build-time.txt').read_text()
           peak = re.search(r'Maximum resident set size \(kbytes\):\s*(\d+)', timing)
-          with zipfile.ZipFile(archive) as pack:
-              info = json.loads(pack.read('pack.json'))
-          with archive.open('rb') as stream:
-              archive_sha256 = hashlib.file_digest(stream, 'sha256').hexdigest()
+          archives = {}
+          for mode in ('car', 'walk', 'car-walk'):
+              archive = Path('dist') / f"routing-{os.environ['PACK_SLUG']}-{mode}.zip"
+              with zipfile.ZipFile(archive) as pack:
+                  info = json.loads(pack.read('pack.json'))
+              with archive.open('rb') as stream:
+                  checksum = hashlib.file_digest(stream, 'sha256').hexdigest()
+              archives[mode] = {'filename': archive.name, 'sha256': checksum, 'bytes': archive.stat().st_size, 'pack': info}
           report = {
               'source_url': os.environ['OSM_URL'],
               'source_sha256': os.environ['OSM_SHA256_ACTUAL'],
               'source_bytes': (Path('build/routing-source') / f"{os.environ['PACK_SLUG']}.osm.pbf").stat().st_size,
-              'archive_sha256': archive_sha256,
-              'archive_bytes': archive.stat().st_size,
+              'archives': archives,
               'peak_rss_kb': int(peak.group(1)) if peak else None,
               'source_commit': os.environ['GITHUB_SHA'],
               'ch_threads': int(os.environ['CH_THREADS']),
-              'pack': info,
           }
           Path('dist/routing-build.json').write_text(json.dumps(report, indent=2) + '\n')
           print(json.dumps(report, indent=2))
@@ -195,13 +217,35 @@ jobs:
           df -h .
           free -h
           du -sh build/routing-source build/routing-work build/routing-import dist 2>/dev/null || true
-      - name: Upload archive for app import or server publication
+      - name: Upload car-only pack
         uses: actions/upload-artifact@v4
         with:
-          name: routing-pack-${{ github.run_id }}
+          name: routing-pack-car-${{ github.run_id }}
           path: |
-            dist/routing-*.zip
-            dist/routing-*.zip.sha256
+            dist/routing-${{ env.PACK_SLUG }}-car.zip
+            dist/routing-${{ env.PACK_SLUG }}-car.zip.sha256
+            dist/routing-build.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+      - name: Upload walking-only pack
+        uses: actions/upload-artifact@v4
+        with:
+          name: routing-pack-walk-${{ github.run_id }}
+          path: |
+            dist/routing-${{ env.PACK_SLUG }}-walk.zip
+            dist/routing-${{ env.PACK_SLUG }}-walk.zip.sha256
+            dist/routing-build.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+      - name: Upload combined car and walking pack
+        uses: actions/upload-artifact@v4
+        with:
+          name: routing-pack-car-walk-${{ github.run_id }}
+          path: |
+            dist/routing-${{ env.PACK_SLUG }}-car-walk.zip
+            dist/routing-${{ env.PACK_SLUG }}-car-walk.zip.sha256
             dist/routing-build.json
           if-no-files-found: error
           compression-level: 0
@@ -214,6 +258,8 @@ jobs:
           path: |
             build/routing-compile-time.txt
             build/routing-build-time.txt
+            build/routing-car-time.txt
+            build/routing-walk-time.txt
             build/routing-runner-cpu.txt
           if-no-files-found: warn
           retention-days: 30

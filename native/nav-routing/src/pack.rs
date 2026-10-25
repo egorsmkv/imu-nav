@@ -23,6 +23,9 @@ impl Pack {
             return Err("invalid profile count".into());
         }
         let shared = Arc::new(Shared::open(&directory.join(crate::shared::FILE))?);
+        if metadata["elevation"].as_bool() != Some(shared.has_elevation()) {
+            return Err("elevation metadata does not match shared geometry".into());
+        }
         let mut networks = HashMap::new();
         for value in profiles {
             let name = value.as_str().ok_or("invalid profile")?;

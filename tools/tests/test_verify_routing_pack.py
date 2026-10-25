@@ -29,6 +29,11 @@ def write_pack(path: Path, native: bool = False, **overrides) -> None:
         "searchFormat": "tantivy-1" if native else None,
     }
     info.update(overrides)
+    if "profiles" in overrides:
+        for profile in ("car", "foot"):
+            if profile not in info["profiles"]:
+                files.pop(f"{profile}.routing")
+        info["sizeBytes"] = sum(len(data) for data in files.values())
     with zipfile.ZipFile(path, "w") as archive:
         for name, data in files.items():
             archive.writestr(name, data)
@@ -41,6 +46,26 @@ class VerifyRoutingPackTests(unittest.TestCase):
             archive = Path(temporary) / "routing.zip"
             write_pack(archive)
             self.assertTrue(verify(archive)["turnCosts"])
+
+    def test_single_mode_archives_are_valid(self):
+        for profiles in (["car"], ["foot"]):
+            with self.subTest(profiles=profiles), tempfile.TemporaryDirectory() as temporary:
+                archive = Path(temporary) / "routing.zip"
+                write_pack(archive, native=True, profiles=profiles)
+                self.assertEqual(verify(archive)["profiles"], profiles)
+                with zipfile.ZipFile(archive, "a") as pack:
+                    other = "foot" if profiles == ["car"] else "car"
+                    pack.writestr(f"{other}.routing", b"IMURT002")
+                with self.assertRaisesRegex(ValueError, "declared profiles"):
+                    verify(archive)
+
+    def test_empty_or_unknown_profiles_are_rejected(self):
+        for profiles in ([], ["car", "car"], ["bicycle"]):
+            with self.subTest(profiles=profiles), tempfile.TemporaryDirectory() as temporary:
+                archive = Path(temporary) / "routing.zip"
+                write_pack(archive, profiles=profiles)
+                with self.assertRaisesRegex(ValueError, "profiles"):
+                    verify(archive)
 
     def test_native_directory_and_format_are_validated(self):
         with tempfile.TemporaryDirectory() as temporary:

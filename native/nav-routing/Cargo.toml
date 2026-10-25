@@ -38,3 +38,8 @@ required-features = ["builder"]
 name = "archive-routing"
 path = "src/bin/archive-routing.rs"
 required-features = ["builder"]
+
+[[bin]]
+name = "subset-routing"
+path = "src/bin/subset-routing.rs"
+required-features = ["builder"]

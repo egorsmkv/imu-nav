@@ -97,7 +97,7 @@ Use the SDK's `platform-tools/adb`; its path depends on the development host.
   `HttpURLConnection` or new clients; use `Http.client.newBuilder()` for different timeouts.
 - **Travel mode** (`TravelMode.CAR` / `FOOT`) selects the Rust profile and engine motion
   model. Car-only corrections stay gated by `mode == CAR`; walking uses the pedometer.
-  Both profiles live in a versioned `rust-ch-2` pack. `native/nav-routing` owns OSM access,
+  Versioned `rust-ch-2` packs may contain car, foot, or both profiles. `native/nav-routing` owns OSM access,
   turn restrictions, contraction, geometry and guidance. Changes to its binary layout require
   a format version change; changes to imported policy require rebuilding packs.
 - **Positioning inputs** go through `PositioningHub` (which also records them for replay). Anything the

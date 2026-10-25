@@ -6,7 +6,8 @@ A routing pack lets the phone calculate routes and search addresses without inte
 
 In **Settings → Maps and routes**, the app shows storage available for the packs, including cache space Android can reclaim.
 Allow room for the ZIP, its extracted contents, and the currently installed pack during replacement.
-The measured Ukraine Rust routing payload alone is about 5.9 GB unpacked; display maps need additional space.
+Measured Ukraine routing downloads are about 909 MB for car, 667 MB for walking, or 1.34 GB for both.
+Their installed payloads are about 1.68 GB, 1.22 GB, and 2.53 GB respectively; display maps need additional space.
 Use **Check again** after freeing space.
 
 The app accepts locations worldwide. Install packs for the region you will use; only one map pack and one routing pack are active at a time. Outside a map pack's bounds, the map uses online tiles when available.
@@ -46,16 +47,23 @@ The new app requires newly built Rust packs; previous GraphHopper and v1 Rust ar
 
 ## Build an offline routing pack in CI
 
-Open **Actions → Offline routing pack → Run workflow**. The `ch_threads` input defaults to `2` to use two workers inside each hierarchy preparation. Profiles run sequentially; select `1` if memory is limited. The defaults build a Ukraine pack with car
-and foot routes plus offline address search. For another region, enter a one-word pack name and an
+Open **Actions → Offline routing pack → Run workflow**. The `ch_threads` input defaults to `2` to use two workers inside each hierarchy preparation. Profiles run sequentially; select `1` if memory is limited. The defaults prepare Ukraine once, then publish car-only, walking-only and combined downloads with offline address search. For another region, enter a one-word pack name and an
 HTTPS link to its `.osm.pbf` extract. You can enter the extract's SHA-256 checksum to reject a
 changed download.
 
-After the workflow succeeds, download the `routing-pack-...` artifact and unzip that GitHub artifact.
-Import the `routing-<name>.zip` inside it through **Settings → Maps and routes → Offline
-routing → Import pack**. You can also upload that ZIP to your own HTTPS server and enter its URL in
-the app's **Download** field. The artifact also includes a checksum and build details. CI does not
-publish the archive to a server.
+After the workflow succeeds, choose one GitHub artifact:
+
+- `routing-pack-car-...`: car routes only, with address search.
+- `routing-pack-walk-...`: walking routes only, with address search.
+- `routing-pack-car-walk-...`: both modes, with address search.
+
+Unzip that GitHub artifact, then import its `routing-<region>-<mode>.zip` through
+**Settings → Maps and routes → Offline routing → Import pack**. Each download includes a
+checksum and a report listing the sizes of all three choices. You can also upload a ZIP to
+your own HTTPS server and enter its URL in the app's **Download** field. CI does not publish
+archives to a server. Only one routing pack is installed at a time: choose the combined pack
+if you want both modes. Single-mode packs contain only their selected hierarchy and referenced
+shared geometry; their Tantivy address index is unchanged.
 
 The workflow checks the ZIP and opens its extracted graph with the phone's routing rules before
 uploading it. It uses a hosted runner and may need a larger runner for a region that exceeds its

@@ -1,0 +1,59 @@
+{
+  "equivalent": true,
+  "queries": [
+    {
+      "profile": "car",
+      "query": 0,
+      "baselineP50Ms": 62.020702,
+      "compactP50Ms": 61.74548,
+      "baselineP95Ms": 62.910145,
+      "compactP95Ms": 63.610324999999996,
+      "maxGeometryErrorM": 0.0
+    },
+    {
+      "profile": "car",
+      "query": 1,
+      "baselineP50Ms": 48.955715,
+      "compactP50Ms": 48.835485,
+      "baselineP95Ms": 49.635546000000005,
+      "compactP95Ms": 49.975505000000005,
+      "maxGeometryErrorM": 0.0
+    },
+    {
+      "profile": "car",
+      "query": 2,
+      "baselineP50Ms": 68.660229,
+      "compactP50Ms": 68.599294,
+      "baselineP95Ms": 70.069423,
+      "compactP95Ms": 70.45702299999999,
+      "maxGeometryErrorM": 0.0
+    },
+    {
+      "profile": "car",
+      "query": 3,
+      "baselineP50Ms": 68.72874800000001,
+      "compactP50Ms": 68.295302,
+      "baselineP95Ms": 69.439162,
+      "compactP95Ms": 70.263961,
+      "maxGeometryErrorM": 0.0
+    },
+    {
+      "profile": "car",
+      "query": 4,
+      "baselineP50Ms": 44.745117,
+      "compactP50Ms": 44.619285000000005,
+      "baselineP95Ms": 45.91601,
+      "compactP95Ms": 46.243063,
+      "maxGeometryErrorM": 0.0
+    },
+    {
+      "profile": "car",
+      "query": 5,
+      "baselineP50Ms": 57.362347,
+      "compactP50Ms": 57.26984,
+      "baselineP95Ms": 59.073952,
+      "compactP95Ms": 58.08493,
+      "maxGeometryErrorM": 0.0
+    }
+  ]
+}

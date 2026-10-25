@@ -13,6 +13,7 @@ pub mod osm;
 pub mod profile;
 mod restrictions;
 mod search;
+pub mod subset;
 mod write;
 use crate::{
     Result,

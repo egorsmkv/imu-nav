@@ -56,3 +56,18 @@ E7 rounding gives under 1 cm positional error. Routing weights, original distanc
 posted speeds and elevation precision are retained. Public-coordinate snapping at exact ties
 may be sensitive to rounding; conformance tests compare geometry with a tolerance and compare
 fixed-vertex routing costs and sequences exactly. No road simplification is performed.
+
+## Single-mode downloads
+
+`subset-routing SOURCE_PACK OUTPUT_PACK car|walk` derives a pack from existing prepared data.
+The internal walking profile remains `foot`. The command retains topology IDs, costs, hierarchy
+sections and snapping postings exactly, remaps shared geometry/name IDs, and writes only
+referenced shared records. Tantivy files are copied byte-for-byte. It does not import OSM or
+run contraction again. Metadata declares only the selected profile; the loader and validator
+reject missing or undeclared profile files. The output directory and ZIP must be new and
+outside the source pack.
+
+CI prepares the combined pack once and derives the two single-mode packs sequentially, freeing
+temporary directories between validations. It publishes separate car, walk and car-walk GitHub
+artifacts so users download only their preferred pack. Each artifact includes its checksum and
+the common size/build report.

@@ -1,0 +1,68 @@
+{
+  "equivalent": true,
+  "queries": [
+    {
+      "profile": "foot",
+      "query": 0,
+      "baselineP50Ms": 122.86931600000001,
+      "compactP50Ms": 120.358499,
+      "baselineP95Ms": 123.891784,
+      "compactP95Ms": 125.61095499999999,
+      "maxGeometryErrorM": 0.0
+    },
+    {
+      "profile": "foot",
+      "query": 1,
+      "baselineP50Ms": 90.63212299999999,
+      "compactP50Ms": 89.527333,
+      "baselineP95Ms": 91.52938300000001,
+      "compactP95Ms": 90.55922,
+      "maxGeometryErrorM": 0.0
+    },
+    {
+      "profile": "foot",
+      "query": 2,
+      "baselineP50Ms": 147.410176,
+      "compactP50Ms": 145.195734,
+      "baselineP95Ms": 149.52414,
+      "compactP95Ms": 147.15471399999998,
+      "maxGeometryErrorM": 0.0
+    },
+    {
+      "profile": "foot",
+      "query": 3,
+      "baselineP50Ms": 147.943772,
+      "compactP50Ms": 144.93162800000002,
+      "baselineP95Ms": 149.36371300000002,
+      "compactP95Ms": 146.744853,
+      "maxGeometryErrorM": 0.0
+    },
+    {
+      "profile": "foot",
+      "query": 4,
+      "baselineP50Ms": 78.214652,
+      "compactP50Ms": 77.260068,
+      "baselineP95Ms": 79.455786,
+      "compactP95Ms": 79.122953,
+      "maxGeometryErrorM": 0.0
+    },
+    {
+      "profile": "foot",
+      "query": 5,
+      "baselineP50Ms": 114.04312399999999,
+      "compactP50Ms": 111.974102,
+      "baselineP95Ms": 115.28226099999999,
+      "compactP95Ms": 113.34786,
+      "maxGeometryErrorM": 0.0
+    },
+    {
+      "profile": "foot",
+      "query": 6,
+      "baselineP50Ms": 153.84809199999998,
+      "compactP50Ms": 151.26193099999998,
+      "baselineP95Ms": 155.555849,
+      "compactP95Ms": 154.946845,
+      "maxGeometryErrorM": 0.0
+    }
+  ]
+}

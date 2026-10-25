@@ -1,0 +1,122 @@
+{
+  "equivalent": true,
+  "queries": [
+    {
+      "profile": "car",
+      "query": 0,
+      "baselineP50Ms": 62.01317,
+      "compactP50Ms": 62.415436,
+      "baselineP95Ms": 62.86559799999999,
+      "compactP95Ms": 64.261364,
+      "maxGeometryErrorM": 4.088779587896202e-09
+    },
+    {
+      "profile": "car",
+      "query": 1,
+      "baselineP50Ms": 49.006018999999995,
+      "compactP50Ms": 49.908226,
+      "baselineP95Ms": 49.706435,
+      "compactP95Ms": 50.613469,
+      "maxGeometryErrorM": 4.289395277253285e-09
+    },
+    {
+      "profile": "car",
+      "query": 2,
+      "baselineP50Ms": 68.874108,
+      "compactP50Ms": 69.391713,
+      "baselineP95Ms": 70.83013000000001,
+      "compactP95Ms": 70.325225,
+      "maxGeometryErrorM": 4.024041621042144e-09
+    },
+    {
+      "profile": "car",
+      "query": 3,
+      "baselineP50Ms": 68.93250400000001,
+      "compactP50Ms": 69.683617,
+      "baselineP95Ms": 70.205028,
+      "compactP95Ms": 71.793852,
+      "maxGeometryErrorM": 2.1617150211386154e-09
+    },
+    {
+      "profile": "car",
+      "query": 4,
+      "baselineP50Ms": 45.135195,
+      "compactP50Ms": 45.470281,
+      "baselineP95Ms": 45.989290000000004,
+      "compactP95Ms": 46.405797,
+      "maxGeometryErrorM": 4.773035302122224e-09
+    },
+    {
+      "profile": "car",
+      "query": 5,
+      "baselineP50Ms": 57.432578,
+      "compactP50Ms": 57.552372,
+      "baselineP95Ms": 58.157365000000006,
+      "compactP95Ms": 58.57498,
+      "maxGeometryErrorM": 4.1430706409704315e-09
+    },
+    {
+      "profile": "foot",
+      "query": 0,
+      "baselineP50Ms": 125.86282100000001,
+      "compactP50Ms": 123.729565,
+      "baselineP95Ms": 127.22663100000001,
+      "compactP95Ms": 125.628558,
+      "maxGeometryErrorM": 8.13201131132959e-09
+    },
+    {
+      "profile": "foot",
+      "query": 1,
+      "baselineP50Ms": 93.877027,
+      "compactP50Ms": 91.658393,
+      "baselineP95Ms": 95.368676,
+      "compactP95Ms": 92.97656599999999,
+      "maxGeometryErrorM": 8.862733564425942e-09
+    },
+    {
+      "profile": "foot",
+      "query": 2,
+      "baselineP50Ms": 145.26036100000002,
+      "compactP50Ms": 149.083012,
+      "baselineP95Ms": 146.92834,
+      "compactP95Ms": 150.339951,
+      "maxGeometryErrorM": 2.558574062117787e-09
+    },
+    {
+      "profile": "foot",
+      "query": 3,
+      "baselineP50Ms": 145.087655,
+      "compactP50Ms": 149.163414,
+      "baselineP95Ms": 146.236895,
+      "compactP95Ms": 151.222655,
+      "maxGeometryErrorM": 2.161846164629674e-09
+    },
+    {
+      "profile": "foot",
+      "query": 4,
+      "baselineP50Ms": 82.887597,
+      "compactP50Ms": 79.010922,
+      "baselineP95Ms": 84.657941,
+      "compactP95Ms": 80.826437,
+      "maxGeometryErrorM": 5.782119641526035e-09
+    },
+    {
+      "profile": "foot",
+      "query": 5,
+      "baselineP50Ms": 116.694966,
+      "compactP50Ms": 115.212661,
+      "baselineP95Ms": 119.657797,
+      "compactP95Ms": 117.274057,
+      "maxGeometryErrorM": 6.824212807118384e-09
+    },
+    {
+      "profile": "foot",
+      "query": 6,
+      "baselineP50Ms": 155.949385,
+      "compactP50Ms": 155.420281,
+      "baselineP95Ms": 158.418388,
+      "compactP95Ms": 157.71446,
+      "maxGeometryErrorM": 8.13201131132959e-09
+    }
+  ]
+}

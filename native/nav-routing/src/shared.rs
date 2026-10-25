@@ -117,6 +117,9 @@ impl Shared {
             u32::from_le_bytes(self.data.bytes::<4>(table + id * 16 + 8)),
         )
     }
+    pub(crate) fn has_elevation(&self) -> bool {
+        self.point_width == 16
+    }
     pub fn geometry(&self, id: u32) -> (usize, u32) {
         self.descriptor(self.geometry_table, id as usize)
     }

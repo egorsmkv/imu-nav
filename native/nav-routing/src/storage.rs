@@ -129,6 +129,10 @@ impl Network {
         network.validate()?;
         Ok(network)
     }
+    #[must_use]
+    pub fn has_elevation(&self) -> bool {
+        self.shared.has_elevation()
+    }
     fn integer(&self, at: usize, width: usize) -> u64 {
         if width == 4 {
             u64::from(self.u32(at))
