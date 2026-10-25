@@ -95,6 +95,17 @@ pack had 90,471,463 and 250,673,746 bytes respectively. Both v2 profiles passed 
 smoke routes and the archive validator. This regional build ran alongside project checks;
 its duration is deliberately not used as a performance comparison.
 
+## Automated checks
+
+`spotlessApply check` passed, including native tests/Clippy, Kotlin tests, detekt and Android
+Lint. The single-mode native test builds a real Tantivy index and verifies route preservation,
+trimming and exact search-file copies. The Kotlin/JNI test routes with each declared profile
+and rejects the unavailable mode. All 11 routing-validator/equivalence Python tests passed;
+workflow YAML, shell blocks and embedded Python parsed successfully. Replay retains
+`p95=20 max=25 rms=10 m`.
+Both F-Droid release and R8-enabled benchmark APKs built successfully and passed the 16 KiB
+ELF/ZIP alignment verifier. The complete final Gradle run took 6m 9s.
+
 ## Validation limits
 
 No emulator or phone is attached. Android installation, real JNI execution, device startup
