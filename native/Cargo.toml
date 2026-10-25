@@ -1,5 +1,5 @@
 [workspace]
-members = ["nav-core", "nav-jni", "nav-sim", "nav-search"]
+members = ["nav-core", "nav-jni", "nav-sim", "nav-search", "nav-routing"]
 resolver = "3"
 
 [workspace.package]

@@ -13,14 +13,14 @@ from verify_routing_pack import verify  # noqa: E402
 
 def write_pack(path: Path, native: bool = False, **overrides) -> None:
     """A minimal flat archive with a valid pack.json; [overrides] replace pack.json fields."""
-    files = {"properties": b"graph", "search.db": b"SQLite format 3\x00" + b"index"}
+    files = {"car.routing": b"IMURT001", "foot.routing": b"IMURT001", "search.db": b"SQLite format 3\x00" + b"index"}
     if native:
-        files = {"properties": b"graph", "search.tantivy/search-format": b"imu-nav-tantivy-1\n", "search.tantivy/meta.json": b'{"segments": [], "schema": []}'}
+        files = {"car.routing": b"IMURT001", "foot.routing": b"IMURT001", "search.tantivy/search-format": b"imu-nav-tantivy-1\n", "search.tantivy/meta.json": b'{"segments": [], "schema": []}'}
     info = {
         "name": "Test",
         "builtAt": "2026-10-24T00:00:00Z",
         "source": "test.osm.pbf",
-        "graphhopper": "11.0",
+        "routingFormat": "rust-ch-1",
         "bounds": [44.0, 52.0, 22.0, 40.0],
         "sizeBytes": sum(len(data) for data in files.values()),
         "profiles": ["car", "foot"],
@@ -59,6 +59,13 @@ class VerifyRoutingPackTests(unittest.TestCase):
                 write_pack(archive, native=native, searchFormat=search_format)
                 with self.assertRaisesRegex(ValueError, "searchFormat"):
                     verify(archive)
+
+    def test_legacy_routing_format_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            archive = Path(temporary) / "routing.zip"
+            write_pack(archive, routingFormat=None)
+            with self.assertRaisesRegex(ValueError, "Rust routing format"):
+                verify(archive)
 
     def test_pack_without_turn_costs_is_rejected(self):
         for value in (False, None):

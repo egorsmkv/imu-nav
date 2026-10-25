@@ -44,14 +44,17 @@ val rustFmtCheck = tasks.register<Exec>("rustFmtCheck") {
 val rustTest = tasks.register<Exec>("rustTest") {
     group = "verification"
     description = "Runs the Rust navigation core tests"
-    commandLine("cargo", "test", "--manifest-path", "native/Cargo.toml")
+    commandLine("cargo", "test", "--manifest-path", "native/Cargo.toml", "--features", "imu-nav-routing/builder")
     inputs.files(fileTree("native") { exclude("target/**") })
 }
 
 val rustClippy = tasks.register<Exec>("rustClippy") {
     group = "verification"
     description = "Runs pedantic Rust static analysis"
-    commandLine("cargo", "clippy", "--manifest-path", "native/Cargo.toml", "--all-targets", "--", "-W", "clippy::pedantic", "-D", "warnings")
+    commandLine(
+        "cargo", "clippy", "--manifest-path", "native/Cargo.toml", "--all-targets",
+        "--features", "imu-nav-routing/builder", "--", "-W", "clippy::pedantic", "-D", "warnings",
+    )
     inputs.files(fileTree("native") { exclude("target/**") })
 }
 

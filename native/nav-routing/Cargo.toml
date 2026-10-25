@@ -1,0 +1,35 @@
+[package]
+name = "imu-nav-routing"
+version = "0.1.0"
+description = "Offline Rust road routing and OSM pack builder"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+builder = ["dep:faster_paths", "dep:osmpbfreader", "dep:quick-xml", "dep:imu-nav-search", "dep:zip", "dep:rayon", "dep:time"]
+
+[dependencies]
+memmap2 = "0.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+jni = { version = "0.21", default-features = false }
+faster_paths = { version = "=0.1.0", optional = true }
+osmpbfreader = { version = "=0.19.1", optional = true }
+quick-xml = { version = "0.38", optional = true }
+imu-nav-search = { path = "../nav-search", features = ["builder"], optional = true }
+zip = { version = "4", default-features = false, features = ["deflate"], optional = true }
+rayon = { version = "1", optional = true }
+
+time = { version = "0.3", features = ["formatting"], optional = true }
+
+[dev-dependencies]
+tempfile = "3"
+
+[[bin]]
+name = "build-routing"
+path = "src/bin/build-routing.rs"
+required-features = ["builder"]

@@ -37,9 +37,10 @@ with open(os.environ['BUILD_TEST_LOG'], 'a', encoding='utf-8') as log:
     log.write(json.dumps({'args': sys.argv[1:], 'linker': os.environ[key]}) + '\\n')
 if os.environ.get('BUILD_TEST_FAIL') == target:
     sys.exit(17)
-library = pathlib.Path(os.environ['CARGO_TARGET_DIR']) / target / 'release/libimu_nav_jni.so'
-library.parent.mkdir(parents=True, exist_ok=True)
-library.write_text(target, encoding='utf-8')
+for name in ('jni', 'search', 'routing'):
+    library = pathlib.Path(os.environ['CARGO_TARGET_DIR']) / target / f'release/libimu_nav_{name}.so'
+    library.parent.mkdir(parents=True, exist_ok=True)
+    library.write_text(target, encoding='utf-8')
 ''', encoding='utf-8')
         (tools / 'cargo.cmd').write_text(
             f'@"{sys.executable}" "{fake_cargo}" %*\r\n', encoding='utf-8')
@@ -80,6 +81,7 @@ library.write_text(target, encoding='utf-8')
                                            '--package', 'imu-nav-jni', '--release', '--target', target])
             self.assertEqual(Path(call['linker']), ndk / f'toolchains/llvm/prebuilt/windows-x86_64/bin/{prefix}26-clang.cmd')
             self.assertEqual((self.output / abi / 'libimu_nav_jni.so').read_text(), target)
+            self.assertEqual((self.output / abi / 'libimu_nav_routing.so').read_text(), target)
 
     def test_sdk_discovery_sorts_ndk_versions_numerically(self):
         self.ndk('9.0.1')

@@ -1,165 +1,79 @@
 package org.imunav.routing
 
-import com.graphhopper.GraphHopper
-import com.graphhopper.reader.dem.ElevationProvider
-import org.imunav.core.search.TantivySearch
+import org.imunav.core.search.SearchIndexJson
 import java.io.File
-import java.time.Instant
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
-/** Metadata written next to the graph as `pack.json`, shown in the app. */
+/** Immutable metadata for the versioned Rust routing and Tantivy search pack. */
 data class PackInfo(
     val name: String,
     val builtAt: String,
     val source: String,
     val bounds: DoubleArray,
     val sizeBytes: Long,
-    /** Routing profiles in the pack; packs from before walking support have only "car". */
-    val profiles: List<String> = listOf(GraphSpec.CAR),
-    /** The graph stores a height for every road point (needed for barometric terrain matching). */
+    val profiles: List<String> = listOf("car"),
     val elevation: Boolean = false,
-    /**
-     * The car obeys turn restrictions and pays turn and U-turn penalties ([GraphSpec.CAR_TURN_PENALTIES]).
-     * Missing in packs built before turn costs; such packs are loaded without them.
-     */
     val turnCosts: Boolean = false,
-    /** Absent on legacy SQLite packs and packs built without address search. */
     val searchFormat: String? = null,
+    val routingFormat: String? = null,
 ) {
-    /** Written as `pack.json` next to the graph; the app reads it to show and compare packs. */
-    fun toJson(): String = "{\"name\":\"$name\",\"builtAt\":\"$builtAt\",\"source\":\"$source\",\"graphhopper\":\"11.0\"," +
-        "\"bounds\":[${bounds.joinToString(",")}],\"sizeBytes\":$sizeBytes," +
-        "\"profiles\":[${profiles.joinToString(",") {
-            "\"$it\""
-        }}],\"elevation\":$elevation,\"turnCosts\":$turnCosts,\"searchFormat\":${searchFormat?.let { "\"$it\"" } ?: "null"}}"
+    fun toJson(): String = SearchIndexJson.encode(
+        mapOf(
+            "name" to name, "builtAt" to builtAt, "source" to source, "bounds" to bounds.toList(), "sizeBytes" to sizeBytes,
+            "profiles" to profiles, "elevation" to elevation, "turnCosts" to turnCosts, "searchFormat" to searchFormat, "routingFormat" to routingFormat,
+        ),
+    )
 
     companion object {
         const val FILE = "pack.json"
+        const val FORMAT = "rust-ch-1"
 
-        /** Read `pack.json`; null if it is missing fields. */
+        /** Parse metadata before native I/O; malformed bounds and unsupported profiles are rejected. */
         fun parse(json: String): PackInfo? = runCatching {
-            // A tiny hand-written reader: pack.json is small and flat, so no JSON library is needed.
-            fun str(key: String) = Regex("\"$key\"\\s*:\\s*\"([^\"]*)\"").find(json)?.groupValues?.get(1).orEmpty()
-            val boundsText = Regex("\"bounds\"\\s*:\\s*\\[([^]]*)]").find(json)?.groupValues?.get(1) ?: error("pack.json has no bounds")
-            val b = boundsText.split(',').map { it.trim().toDouble() }.toDoubleArray()
-            val size = Regex("\"sizeBytes\"\\s*:\\s*(\\d+)").find(json)?.groupValues?.get(1)?.toLong() ?: 0
-            val profiles = Regex("\"profiles\"\\s*:\\s*\\[([^]]*)]").find(json)?.groupValues?.get(1)
-                ?.split(',')?.map { it.trim().trim('"') }?.filter { it.isNotEmpty() }
-                ?: listOf(GraphSpec.CAR)
-            val elevation = Regex("\"elevation\"\\s*:\\s*true").containsMatchIn(json)
-            val turnCosts = Regex("\"turnCosts\"\\s*:\\s*true").containsMatchIn(json)
-            PackInfo(str("name"), str("builtAt"), str("source"), b, size, profiles, elevation, turnCosts, str("searchFormat").takeIf { it.isNotBlank() })
+            require(json.length <= 65_536)
+            val data = SearchIndexJson.decode(json)
+            val bounds = (data["bounds"] as List<*>).map { (it as Number).toDouble() }.toDoubleArray()
+            require(bounds.size == 4 && bounds.all { it.isFinite() })
+            require(bounds[0] in -90.0..90.0 && bounds[1] in bounds[0]..90.0 && bounds[2] in -180.0..180.0 && bounds[3] in bounds[2]..180.0)
+            val profiles = (data["profiles"] as? List<*>)?.map { it as String } ?: listOf("car")
+            require(profiles.isNotEmpty() && profiles.distinct() == profiles && profiles.all { it == "car" || it == "foot" })
+            PackInfo(
+                data["name"] as String, data["builtAt"] as? String ?: "", data["source"] as? String ?: "", bounds,
+                (data["sizeBytes"] as? Number)?.toLong() ?: 0, profiles, data["elevation"] == true, data["turnCosts"] == true,
+                data["searchFormat"] as? String, data["routingFormat"] as? String,
+            )
         }.getOrNull()
     }
 }
 
-/**
- * Where a pack's heights come from.
- * @param provider GraphHopper elevation source: `skadi` (default, AWS terrain tiles, ~30–90 m),
- *   `srtm`, `srtmgl1`, `cgiar`, `gmted` or `multi`. Tiles are downloaded once into [cacheDir].
- * @param custom a ready-made provider instead (tests, or DEM files you prepared yourself)
- */
-class PackElevation(val provider: String = "skadi", val cacheDir: File = File("elevation-cache"), val custom: ElevationProvider? = null)
-
-/**
- * Import an OpenStreetMap extract into a GraphHopper graph with contraction hierarchies for the
- * car and foot profiles, write `pack.json` and return its metadata. Needs a desktop JVM (uses Janino).
- */
-fun buildGraph(
-    osmFile: File,
-    outDir: File,
-    name: String,
-    minNetworkSize: Int = 200,
-    withSearch: Boolean = true,
-    withAddresses: Boolean = true,
-    profiles: List<String> = GraphSpec.ALL_PROFILES,
-    /** Store road heights from a digital elevation model (null = flat 2-D pack, like older packs). */
-    elevation: PackElevation? = null,
-    /** Turn restrictions and turn penalties for the car (off only for tests of older packs). */
-    turnCosts: Boolean = true,
-): PackInfo {
-    require(osmFile.exists()) { "OSM file not found: $osmFile" }
-    outDir.deleteRecursively()
-    outDir.mkdirs()
-    val hopper = GraphHopper()
-    val config = GraphSpec.config(outDir.absolutePath, profiles, turnCosts)
-        .putObject("datareader.file", osmFile.absolutePath)
-        // Drop tiny disconnected road islands (parking lots, private yards) that routes cannot use.
-        .putObject("prepare.min_network_size", minNetworkSize)
-    if (elevation != null) {
-        // Bridges and tunnels get heights interpolated between their ends (not the valley below).
-        config.putObject("graph.elevation.interpolate", "bilinear")
-            // Long straight edges get extra points so hills along them are not lost.
-            .putObject("graph.elevation.long_edge_sampling_distance", GraphSpec.ELEVATION_SAMPLING_M)
-        if (elevation.custom == null) {
-            elevation.cacheDir.mkdirs()
-            config.putObject("graph.elevation.provider", elevation.provider)
-                .putObject("graph.elevation.cache_dir", elevation.cacheDir.absolutePath)
-        }
-    }
-    hopper.init(config)
-    elevation?.custom?.let { hopper.setElevationProvider(it) }
-    hopper.importOrLoad()
-    val b = hopper.baseGraph.bounds
-    if (withSearch) {
-        val staging = File(outDir, SearchIndexBuilder.FILE)
-        try {
-            SearchIndexBuilder.build(osmFile, hopper, staging, withAddresses)
-            TantivyIndexBuilder.build(staging, File(outDir, TantivySearch.DIRECTORY))
-        } finally {
-            staging.delete()
-        }
-    }
-    hopper.close()
-    val size = outDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
-    val info =
-        PackInfo(
-            name, Instant.now().toString(), osmFile.name,
-            doubleArrayOf(
-                b.minLat,
-                b.maxLat,
-                b.minLon,
-                b.maxLon,
-            ),
-            size, profiles, elevation != null, turnCosts, if (withSearch) TantivySearch.FORMAT else null,
-        )
-    File(outDir, PackInfo.FILE).writeText(info.toJson())
-    return info
+/** Host-only convenience entry point, using the exact Rust importer invoked by CI. */
+fun buildGraph(osmFile: File, outDir: File, name: String, minNetworkSize: Int = 200, withSearch: Boolean = true, withAddresses: Boolean = true): PackInfo {
+    RoutingNative.build(osmFile.absolutePath, outDir.absolutePath, name, minNetworkSize, withSearch, withAddresses)
+    return requireNotNull(PackInfo.parse(File(outDir, PackInfo.FILE).readText()))
 }
 
-/** Zip graph files at the archive root and retain the Tantivy search subdirectory. */
+/** Preserve native routing files and the Tantivy subtree at the archive root. */
 fun zipPack(dir: File, zip: File) {
     ZipOutputStream(zip.outputStream().buffered()).use { out ->
-        dir.walkTopDown().filter { it.isFile }.sortedBy { it.relativeTo(dir).invariantSeparatorsPath }.forEach { f ->
-            out.putNextEntry(ZipEntry(f.relativeTo(dir).invariantSeparatorsPath))
-            f.inputStream().use { it.copyTo(out) }
+        dir.walkTopDown().filter { it.isFile }.sortedBy { it.relativeTo(dir).invariantSeparatorsPath }.forEach { file ->
+            out.putNextEntry(ZipEntry(file.relativeTo(dir).invariantSeparatorsPath))
+            file.inputStream().use { it.copyTo(out) }
             out.closeEntry()
         }
     }
 }
 
-/**
- * Build an offline routing pack:
- *   ./gradlew :routing:run --args="--osm ukraine-latest.osm.pbf --out build/graph-ukraine --name Ukraine"
- * Produces the graph folder (with the address search index `search.tantivy/`) and `<out>.zip` to import
- * in the app (Settings → Offline routing). `--no-addresses` skips house numbers, `--no-search` the index.
- * `--elevation skadi` (or srtm, cgiar, gmted…) stores road heights for barometric terrain matching;
- * `--elevation-cache <dir>` keeps the downloaded elevation tiles for the next build.
- */
+/** Compatibility launcher for developers; production CI calls the Rust binary directly. */
 fun main(args: Array<String>) {
-    val flags = args.filter { it == "--no-search" || it == "--no-addresses" }.map { it.removePrefix("--") }.toSet()
-    val opts = (args.toList() - flags.map { "--$it" }.toSet()).windowed(2, 2).associate { (k, v) -> k.removePrefix("--") to v }
-    val osm = File(opts["osm"] ?: error("--osm <file.osm.pbf> is required"))
-    val out = File(opts["out"] ?: "graph-${osm.nameWithoutExtension.substringBefore('.')}")
-    val name = opts["name"] ?: osm.nameWithoutExtension.substringBefore('.')
-    val t0 = System.currentTimeMillis()
-    println("[graph] importing ${osm.name} (${osm.length() / 1_048_576} MB) → $out")
-    val elevation = opts["elevation"]?.let { PackElevation(it, File(opts["elevation-cache"] ?: "elevation-cache")) }
-    if (elevation != null) println("[graph] elevation from ${elevation.provider}, tiles cached in ${elevation.cacheDir}")
-    val info = buildGraph(osm, out, name, withSearch = "no-search" !in flags, withAddresses = "no-addresses" !in flags, elevation = elevation)
-    val zip = File(out.absolutePath + ".zip")
-    zipPack(out, zip)
-    println("[graph] done in ${(System.currentTimeMillis() - t0) / 1000}s: graph ${info.sizeBytes / 1_048_576} MB, pack ${zip.length() / 1_048_576} MB → $zip")
-    println("[graph] bounds lat ${info.bounds[0]}..${info.bounds[1]}, lon ${info.bounds[2]}..${info.bounds[3]}")
+    val flags = args.filter { it == "--no-search" || it == "--no-addresses" }.toSet()
+    val options = (args.toList() - flags).chunked(2).associate {
+        require(it.size == 2)
+        it[0] to it[1]
+    }
+    require(options.keys.all { it in setOf("--osm", "--out", "--name") }) { "Use build-routing for advanced Rust builder options" }
+    val input = File(requireNotNull(options["--osm"]))
+    val output = File(requireNotNull(options["--out"]))
+    buildGraph(input, output, options["--name"] ?: "Region", withSearch = "--no-search" !in flags, withAddresses = "--no-addresses" !in flags)
+    zipPack(output, File(output.absolutePath + ".zip"))
 }

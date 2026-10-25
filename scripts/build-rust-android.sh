@@ -50,10 +50,11 @@ build_target() {
     local cc_var="CC_${rust_target//-/_}"
     local ar_var="AR_${rust_target//-/_}"
     env "$linker_var=$linker" "$cc_var=$linker" "$ar_var=$host_toolchain/bin/llvm-ar" CARGO_TARGET_DIR="$rust_target_dir" \
-        cargo build --manifest-path "$repo_root/native/Cargo.toml" --package imu-nav-jni --package imu-nav-search --lib --release --target "$rust_target"
+        cargo build --manifest-path "$repo_root/native/Cargo.toml" --package imu-nav-jni --package imu-nav-search --package imu-nav-routing --lib --release --target "$rust_target"
     mkdir -p "$output_root/$abi"
     install -m 0644 "$rust_target_dir/$rust_target/release/libimu_nav_jni.so" "$output_root/$abi/libimu_nav_jni.so"
     install -m 0644 "$rust_target_dir/$rust_target/release/libimu_nav_search.so" "$output_root/$abi/libimu_nav_search.so"
+    install -m 0644 "$rust_target_dir/$rust_target/release/libimu_nav_routing.so" "$output_root/$abi/libimu_nav_routing.so"
 }
 
 build_target aarch64-linux-android arm64-v8a aarch64-linux-android

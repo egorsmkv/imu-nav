@@ -31,8 +31,8 @@ dependencies {
     builder(libs.sqlite.jdbc)
     testImplementation(libs.sqlite.jdbc)
     testImplementation(libs.jackson.core)
-    api(libs.graphhopper.core)
-    api(libs.graphhopper.map.matching) {
+    testImplementation(libs.graphhopper.core)
+    testImplementation(libs.graphhopper.map.matching) {
         exclude(group = "ch.qos.logback") // desktop logging backend; not wanted on Android
     }
     testImplementation(kotlin("test"))
@@ -55,15 +55,28 @@ distributions { main { contents { from(builder) { into("lib") } } } }
 val searchNativeTarget = providers.environmentVariable("CARGO_TARGET_DIR").map { rootProject.file(it).absolutePath }.orElse(rootProject.file("native/target").absolutePath)
 val searchNativeDirectory = searchNativeTarget.map { "$it/release" }
 val buildSearchNative = tasks.register<Exec>("buildSearchNative") {
-    commandLine("cargo", "build", "--manifest-path", rootProject.file("native/Cargo.toml"), "-p", "imu-nav-search", "--release", "--features", "builder")
+    commandLine(
+        "cargo", "build", "--manifest-path",
+        rootProject.file(
+            "native/Cargo.toml",
+        ),
+        "-p", "imu-nav-search", "-p", "imu-nav-routing", "--release", "--features", "imu-nav-search/builder,imu-nav-routing/builder",
+    )
     environment("CARGO_TARGET_DIR", searchNativeTarget.get())
-    inputs.files(rootProject.fileTree("native/nav-search"), rootProject.file("native/Cargo.lock"), rootProject.file("native/Cargo.toml"))
+    inputs.files(
+        rootProject.fileTree("native/nav-search"),
+        rootProject.fileTree("native/nav-routing"),
+        rootProject.file("native/Cargo.lock"),
+        rootProject.file("native/Cargo.toml"),
+    )
     outputs.file(searchNativeDirectory.map { "$it/${System.mapLibraryName("imu_nav_search")}" })
+    outputs.file(searchNativeDirectory.map { "$it/${System.mapLibraryName("imu_nav_routing")}" })
 }
 tasks.test {
     dependsOn(buildSearchNative)
     // JNI behavior can change without a Kotlin/JVM class changing; invalidate cached test results too.
     inputs.file(searchNativeDirectory.map { "$it/${System.mapLibraryName("imu_nav_search")}" })
+    inputs.file(searchNativeDirectory.map { "$it/${System.mapLibraryName("imu_nav_routing")}" })
     inputs.property("tantivyDataDir", providers.environmentVariable("TANTIVY_DATA_DIR").orElse(""))
     systemProperty("java.library.path", searchNativeDirectory.get())
 }
@@ -76,7 +89,7 @@ distributions {
     main {
         contents {
             from(searchNativeDirectory) {
-                include(System.mapLibraryName("imu_nav_search"))
+                include(System.mapLibraryName("imu_nav_search"), System.mapLibraryName("imu_nav_routing"))
                 into("lib")
             }
         }

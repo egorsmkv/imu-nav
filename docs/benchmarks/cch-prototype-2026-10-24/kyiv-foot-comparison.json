@@ -1,0 +1,18 @@
+{
+  "matched_rows": 192,
+  "maximum_weight_error": 0.013139999999111751,
+  "graphhopper": {
+    "queries": 32,
+    "warm_samples": 160,
+    "median_query_ms": 1.1760755,
+    "p95_query_medians_ms": 1.929279,
+    "max_query_median_ms": 1.941561
+  },
+  "cch": {
+    "queries": 32,
+    "warm_samples": 160,
+    "median_query_ms": 5.750265000000001,
+    "p95_query_medians_ms": 6.108723,
+    "max_query_median_ms": 6.368005
+  }
+}

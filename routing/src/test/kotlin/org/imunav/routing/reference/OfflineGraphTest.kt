@@ -1,4 +1,4 @@
-package org.imunav.routing
+package org.imunav.routing.reference
 
 import com.graphhopper.GHRequest
 import com.graphhopper.GraphHopper
@@ -157,7 +157,7 @@ class OfflineGraphTest {
             val matched = g.mapMatch(noisy, accuracyM = 15.0)
             assertTrue(matched.lengthM in 1700.0..2000.0, "matched length ${matched.lengthM}")
             // Archives must preserve the native directory and omit relational staging data.
-            assertTrue(!File(dir, SearchIndexBuilder.FILE).exists())
+            assertTrue(!File(dir, "search.db").exists())
             val archive = File(dir.parentFile, "native-pack.zip")
             zipPack(dir, archive)
             val unpacked = File(dir.parentFile, "unpacked").apply { mkdirs() }
@@ -233,6 +233,38 @@ class OfflineGraphTest {
         sb.append("<member type='way' ref='13' role='to'/><tag k='type' v='restriction'/><tag k='restriction' v='no_left_turn'/></relation>\n")
         sb.append("</osm>\n")
         file.writeText(sb.toString())
+    }
+
+    @Test
+    fun parallelPreparationPreservesCarAndFootRoutesWithTurnRestrictions() {
+        val tmp = createTempDirectory()
+        try {
+            val osm = File(tmp, "junction.osm").also { writeRestrictedJunction(it) }
+            val sequential = File(tmp, "sequential")
+            val parallel = File(tmp, "parallel")
+            buildGraph(osm, sequential, "sequential", minNetworkSize = 0, withSearch = false)
+            buildGraph(osm, parallel, "parallel", minNetworkSize = 0, withSearch = false, chThreads = 2)
+            val points = listOf(GeoPoint(50.4510, 30.5000), GeoPoint(50.4550, 30.4960), GeoPoint(50.4595, 30.4955))
+            val journeys = points.flatMap { from -> points.filter { it != from }.map { to -> listOf(from, to) } }
+            OfflineGraph.load(sequential).use { reference ->
+                OfflineGraph.load(parallel).use { concurrent ->
+                    for (mode in TravelMode.entries) {
+                        for (journey in journeys) {
+                            val expected = reference.route(journey, mode)
+                            val actual = concurrent.route(journey, mode)
+                            assertEquals(expected.geometry, actual.geometry)
+                            assertEquals(expected.length, actual.length, 0.001)
+                            assertEquals(expected.durationS, actual.durationS, 0.001)
+                        }
+                    }
+                    val car = concurrent.route(points.take(2), TravelMode.CAR)
+                    val foot = concurrent.route(points.take(2), TravelMode.FOOT)
+                    assertTrue(car.length > foot.length + 500.0, "car must still obey the no-left-turn restriction")
+                }
+            }
+        } finally {
+            tmp.deleteRecursively()
+        }
     }
 
     @Test

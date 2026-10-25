@@ -52,7 +52,7 @@ function Build-AndroidTarget([string] $RustTarget, [string] $Abi, [string] $Link
     [Environment]::SetEnvironmentVariable($linkerVariable, $linker, 'Process')
     [Environment]::SetEnvironmentVariable(('CC_' + $RustTarget.Replace('-', '_')), $linker, 'Process')
     [Environment]::SetEnvironmentVariable(('AR_' + $RustTarget.Replace('-', '_')), (Join-Path $toolchainBin 'llvm-ar.exe'), 'Process')
-    & cargo build --manifest-path (Join-Path $repoRoot 'native/Cargo.toml') --package imu-nav-jni --package imu-nav-search --lib --release --target $RustTarget
+    & cargo build --manifest-path (Join-Path $repoRoot 'native/Cargo.toml') --package imu-nav-jni --package imu-nav-search --package imu-nav-routing --lib --release --target $RustTarget
     if ($LASTEXITCODE -ne 0) {
         throw "Cargo build failed for $RustTarget (exit $LASTEXITCODE). See the Cargo output above."
     }
@@ -60,6 +60,7 @@ function Build-AndroidTarget([string] $RustTarget, [string] $Abi, [string] $Link
     New-Item -ItemType Directory -Path $abiDirectory -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $rustTargetDirectory "$RustTarget/release/libimu_nav_jni.so") -Destination (Join-Path $abiDirectory 'libimu_nav_jni.so') -Force
     Copy-Item -LiteralPath (Join-Path $rustTargetDirectory "$RustTarget/release/libimu_nav_search.so") -Destination (Join-Path $abiDirectory 'libimu_nav_search.so') -Force
+    Copy-Item -LiteralPath (Join-Path $rustTargetDirectory "$RustTarget/release/libimu_nav_routing.so") -Destination (Join-Path $abiDirectory 'libimu_nav_routing.so') -Force
 }
 
 Build-AndroidTarget 'aarch64-linux-android' 'arm64-v8a' 'aarch64-linux-android'

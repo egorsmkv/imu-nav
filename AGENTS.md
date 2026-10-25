@@ -9,7 +9,7 @@ Read [SECURITY.txt](SECURITY.txt) for the security and privacy rules that apply 
 **IMU Nav** — an Android car and walking navigator that keeps working when GPS is jammed or
 spoofed. It classifies every GPS fix (GOOD / SUSPECT / BAD) and, without trusted GPS, dead-reckons
 along the planned route using IMU, cell towers and map knowledge. Routing and address search work
-offline (GraphHopper packs). UI: Jetpack Compose + MapLibre, Ukrainian, English and Russian.
+offline (versioned Rust routing packs). UI: Jetpack Compose + MapLibre, Ukrainian, English and Russian.
 
 ## Modules
 
@@ -17,7 +17,7 @@ offline (GraphHopper packs). UI: Jetpack Compose + MapLibre, Ukrainian, English 
 | ---------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `:core`    | pure Kotlin/JVM | the algorithm: trust classifier, navigation engine, speed fusion, cell positioning, trip recording/replay, search logic, shared OkHttp client (`core/net/Http.kt`). **No Android imports.** |
 | `:app`     | Android app     | Android glue and UI: `AppGraph` (manual DI, wires everything), `SensorHub`, `CellScanner`/`CellManager`, `NavService` (foreground service), `TripManager`, Compose screens in `ui/`         |
-| `:routing` | JVM             | GraphHopper integration used by both the phone (`OfflineGraph`, `PhoneGraphHopper`) and the desktop pack builder (`BuildGraph`, `SearchIndexBuilder`)                                       |
+| `:routing` | JVM             | Rust JNI routing adapter (`OfflineGraph`), pack metadata and search adapters; GraphHopper remains test-only                                       |
 | `server/`  | Rust app        | persistent SQLite cell-sharing server (Axum HTTP/WebSocket, anti-poisoning consensus)                                                                                                       |
 | `:replay`  | JVM app         | CLI that replays recorded trips (`.rec.gz`) through the engine and reports errors                                                                                                           |
 
@@ -36,7 +36,7 @@ Package root: `org.imunav.<module>`. Put new logic in `:core` whenever it does n
 ./gradlew detekt                # static analysis only
 GRAPH_DIR=/path/to/graph-ukraine ./gradlew :routing:test --tests '*PackSmokeTest*'   # needs a real pack
 ./gradlew :replay:run --args="trips/ --hide-gps-after 60 --out replay-out"
-./gradlew :routing:run --args="--osm ukraine-latest.osm.pbf --out graph-ukraine --name Ukraine"  # ~10 GB RAM, ~30–60 min (turn costs)
+cargo run --release --manifest-path native/Cargo.toml -p imu-nav-routing --features builder --bin build-routing -- --osm ukraine-latest.osm.pbf --out graph-ukraine --name Ukraine --threads 2
 ```
 
 Requirements: JDK 17+, Android SDK platform 36, build-tools 36.0.0, NDK 28.2.13676358, CMake 3.22.1 and Rust 1.99+.
@@ -85,8 +85,8 @@ Use the SDK's `platform-tools/adb`; its path depends on the development host.
   `onPressure`; both are recorded (`TripEvent.VehicleSpeed` / `Pressure`, lines `V` / `B`) and replayed.
   Terrain matching must stay conservative: a wrong snap is worse than none. Keep the relief / RMS /
   rival-ratio gates in `ElevationMatcher` and the false-match tests in `TerrainAndVehicleSpeedTest` green.
-  Elevation packs: `PackInfo.elevation` decides `hopper.setElevation(true)` on the phone — builder and
-  loader must agree or GraphHopper refuses to load. `ObdLink` never writes to the car (read-only PIDs).
+  Elevation packs: `PackInfo.elevation` describes native geometry heights; the Rust builder
+  requires local HGT tiles and fails on missing elevation coverage. `ObdLink` never writes to the car (read-only PIDs).
 - **Haptics:** engine events that deserve a vibration go through `NavListener.onAlert(NavAlert)`,
   called next to the matching voice phrase; patterns live in `haptics/Haptics.kt`. UI taps use Compose
   `LocalHapticFeedback`, not the vibrator.
@@ -95,13 +95,11 @@ Use the SDK's `platform-tools/adb`; its path depends on the development host.
   recreating a MapView costs 200–700 ms on the main thread.
 - **HTTP:** always through `org.imunav.core.net.Http` (shared OkHttp client). Do not add
   `HttpURLConnection` or new clients; use `Http.client.newBuilder()` for different timeouts.
-- **Travel mode** (`TravelMode.CAR` / `FOOT`) selects the GraphHopper profile and the engine's motion
-  model. Car-only corrections must stay gated by `mode == CAR` (or `Tuning.forWalking()`); walking uses
-  the `Pedometer` (steps × learned stride). Both profiles live in one pack; `GraphSpec.config(profiles, turnCosts)`
-  must match what `pack.json` says the pack contains (`profiles`, `turnCosts`), and `PhoneGraphHopper` mirrors each
-  custom model in plain code — change both together (`OfflineGraphTest` compares phone and desktop for car and foot).
-  Car turn penalties live in one table, `GraphSpec.CAR_TURN_PENALTIES`, used by both sides; changing it,
-  the U-turn cost or the encoded values requires rebuilding packs (edge-based CH: ~30+ min for Ukraine).
+- **Travel mode** (`TravelMode.CAR` / `FOOT`) selects the Rust profile and engine motion
+  model. Car-only corrections stay gated by `mode == CAR`; walking uses the pedometer.
+  Both profiles live in a versioned `rust-ch-1` pack. `native/nav-routing` owns OSM access,
+  turn restrictions, contraction, geometry and guidance. Changes to its binary layout require
+  a format version change; changes to imported policy require rebuilding packs.
 - **Positioning inputs** go through `PositioningHub` (which also records them for replay). Anything the
   engine consumes must be recorded in `TripEvent`, or replays will diverge from real drives.
 - **Trust:** the fused provider and Android's cached GPS fix are never trusted for navigation
@@ -119,23 +117,20 @@ Use the SDK's `platform-tools/adb`; its path depends on the development host.
 - **minSdk is 26 (Android 8.0).** Lint catches newer API calls; guard them with `Build.VERSION` checks
   and keep fallbacks working on the minimum version. In particular, 5G NR and asynchronous cell scans
   start on Android 10, while MCC/MNC string access starts on Android 9.
-- **GraphHopper on Android:** Janino cannot generate bytecode on ART, so `PhoneGraphHopper` builds the
-  weighting in plain code; `GraphSpec` must stay identical between phone and desktop builder
-  (`OfflineGraphTest` checks both give the same routes). `close()` of memory-mapped graphs throws on
-  Android and is wrapped in `runCatching`. Points are clamped into the pack's bounds.
-- **APK licence hygiene:** `osmosis-osm-binary` (LGPL) and protobuf are excluded from the app in
-  `app/build.gradle.kts` — only GraphHopper's `.osm.pbf` reader needs them (desktop only). Don't add
-  copyleft dependencies to `:app`; update `docs/licences.md` and `docs/reference/licences.md` for any dependency change.
-- **R8:** GraphHopper/Jackson/HPPC/MapLibre are kept wholesale in `app/proguard-rules.pro`
-  (reflection). Broad `-dontwarn com.graphhopper.**` hides missing-class errors — verify with the
-  mapping file (`app/build/outputs/mapping/fdroidRelease/mapping.txt`) when changing dependencies.
+- **Native routing:** `OfflineGraph` loads Rust through opaque JNI handles. Routing is read-only;
+  keep the pack resource lock while a request runs and propagate request-scoped cancellation.
+  Old GraphHopper packs require replacement; never silently load them with the new engine.
+- **APK licence hygiene:** OSM PBF reading and faster_paths contraction are host-only features.
+  Do not enable the routing `builder` feature in Android builds. Update both licence documents
+  when changing dependencies. GraphHopper is a test-only reference dependency.
+- **R8:** retain native bridge names in `app/proguard-rules.pro`. Verify all three native libraries
+  and 16 KiB alignment when changing native build configuration.
 - **Bundled assets** (`assets/routing/pack.zip` ~300 MB, `assets/cells/bundled-cells.csv.gz`) are big;
   `pack.zip` is stored uncompressed (`noCompress += "zip"`) and gitignored.
 - **Trip recordings** are gzip streams that may be truncated by a kill; always read them with
   `TripFormat.read` (salvages the tail) and `TripFormat.repair` before appending.
-- **Debug builds cannot load the offline routing pack:** D8 desugars GraphHopper's Java records and the
-  debug APK then fails with `NoClassDefFoundError: com/android/tools/r8/RecordTag`. Use the `benchmark`
-  build type (R8, debug-signed) for anything involving offline routing or performance measurements.
+- **Runtime testing:** use the R8-enabled `benchmark` build for routing and performance checks;
+  host native tests do not replace Android JNI, packaging and device validation.
 - **In-app language** is applied via `AppLanguage.wrap` in `attachBaseContext` (app + activity); in
   Compose read resources with `LocalResources.current`, not `LocalContext.current.resources`.
 

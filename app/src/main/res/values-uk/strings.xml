@@ -845,4 +845,5 @@
     <string name="correct_position_hint">Посуньте карту, щоб хрестик був там, де ви є, і натисніть «Я тут».</string>
     <string name="action_i_am_here">Я тут</string>
     <string name="routing_search_invalid">Не вдалося прочитати адресний індекс пакета. Перебудуйте пакет поточною версією збирача.</string>
+    <string name="routing_requires_rust_pack">Цей пакет має старий формат маршрутів. Завантажте або створіть новий пакет маршрутів Rust.</string>
 </resources>

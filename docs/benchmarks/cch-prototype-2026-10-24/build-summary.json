@@ -1,0 +1,53 @@
+{
+  "car": {
+    "ch_prepare": {
+      "wall_time": "0:34.23",
+      "peak_rss_kib": 802644,
+      "exit_status": 0
+    },
+    "cch_prepare": {
+      "wall_time": "0:14.85",
+      "peak_rss_kib": 304172,
+      "exit_status": 0
+    },
+    "export": {
+      "wall_time": "0:01.08",
+      "peak_rss_kib": 457068,
+      "exit_status": 0
+    },
+    "ch_index_bytes": 13631688,
+    "cch_index_bytes": 90182408,
+    "export_bytes": 19081776
+  },
+  "foot": {
+    "ch_prepare": {
+      "wall_time": "0:08.39",
+      "peak_rss_kib": 703524,
+      "exit_status": 0
+    },
+    "cch_prepare": {
+      "wall_time": "1:13.77",
+      "peak_rss_kib": 1396084,
+      "exit_status": 0
+    },
+    "export": {
+      "wall_time": "0:01.29",
+      "peak_rss_kib": 535792,
+      "exit_status": 0
+    },
+    "ch_index_bytes": 11534536,
+    "cch_index_bytes": 426240240,
+    "export_bytes": 41988548
+  },
+  "ukraine_attempt": {
+    "wall_time": "10:00.12",
+    "peak_rss_kib": 2673428,
+    "exit_status": 124,
+    "stage_at_timeout": "inertial_order",
+    "timeout_seconds": 600,
+    "address_space_limit_gib": 9,
+    "states": 9089750,
+    "transitions": 25124111,
+    "index_complete": false
+  }
+}

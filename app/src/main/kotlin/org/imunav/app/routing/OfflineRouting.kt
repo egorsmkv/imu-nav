@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import org.imunav.app.R
 import org.imunav.app.packs.PackTasks
@@ -33,9 +34,12 @@ import org.imunav.routing.GraphCoverage
 import org.imunav.routing.MatchedTrack
 import org.imunav.routing.OfflineGraph
 import org.imunav.routing.PackInfo
+import org.imunav.routing.RoutingRequest
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 /** State of the offline routing pack, for the Settings screen. */
 data class OfflineRoutingStatus(
@@ -61,7 +65,7 @@ data class OfflineRoutingStatus(
 )
 
 /**
- * Owns the offline routing pack (a GraphHopper graph built with `:routing:run`): import from a
+ * Owns the offline routing pack (a Rust graph built with `:routing:run`): import from a
  * .zip, streamed download, load (memory-mapped) and routing.
  */
 class OfflineRouting(private val context: Context, private val scope: CoroutineScope, private val log: (String) -> Unit) {
@@ -197,6 +201,11 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
             _status.update { it.copy(pack = null, loaded = false, walking = false, searchAvailable = searchDb != null) }
             return@write
         }
+        if (info.routingFormat != PackInfo.FORMAT) {
+            _status.update { it.copy(pack = info, loaded = false, message = str(R.string.routing_requires_rust_pack), searchAvailable = searchDb != null) }
+            if (strict) throw IOException(str(R.string.routing_requires_rust_pack))
+            return@write
+        }
         val g = runCatching { OfflineGraph.load(current) }
             .onFailure {
                 log("offline_routing_load_failed ${it.message}")
@@ -228,16 +237,31 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
     /** Main-thread availability checks use immutable metadata and never wait for a worker lock. */
     fun covers(points: List<GeoPoint>): Boolean = _status.value.coverage?.let { coverage -> points.all(coverage::covers) } == true
 
-    /** Route holds read ownership throughout GraphHopper access. */
-    suspend fun route(points: List<GeoPoint>, mode: TravelMode = TravelMode.CAR): Route = withContext(Dispatchers.Default) {
-        resources.read { (graph ?: throw IOException("no offline routing pack")).route(points, mode) }
+    /** Route holds read ownership throughout Rust access. */
+    suspend fun route(points: List<GeoPoint>, mode: TravelMode = TravelMode.CAR): Route = nativeRequest { request ->
+        resources.read { (graph ?: throw IOException("no offline routing pack")).route(points, mode, request = request) }
     }
 
     fun supports(mode: TravelMode): Boolean = mode in _status.value.modes
 
     /** Snapping and address search cannot outlive the graph/index they use. */
-    suspend fun mapMatch(points: List<GeoPoint>, mode: TravelMode = TravelMode.CAR): MatchedTrack? = withContext(Dispatchers.Default) {
-        resources.read { graph?.mapMatch(points, mode = mode) }
+    suspend fun mapMatch(points: List<GeoPoint>, mode: TravelMode = TravelMode.CAR): MatchedTrack? = nativeRequest { request ->
+        resources.read { graph?.mapMatch(points, mode = mode, request = request) }
+    }
+
+    /** Cancellation reaches Rust immediately while the worker retains read ownership until it returns. */
+    private suspend fun <T> nativeRequest(work: (RoutingRequest) -> T): T = withContext(Dispatchers.IO) {
+        suspendCancellableCoroutine { continuation ->
+            RoutingRequest().use { request ->
+                continuation.invokeOnCancellation { request.cancel() }
+                try {
+                    continuation.resume(work(request))
+                } catch (@Suppress("TooGenericExceptionCaught") failure: Exception) {
+                    // Forward native I/O and cancellation failures through the suspended request.
+                    continuation.resumeWithException(failure)
+                }
+            }
+        }
     }
 
     /** Called by PlaceSearch on its I/O dispatcher; the database reference never escapes. */
@@ -340,9 +364,13 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
         }
         checkCancellation()
         val info = File(staging, PackInfo.FILE).takeIf { it.exists() }?.let { PackInfo.parse(it.readText()) }
-        if (info == null || !File(staging, "properties").exists()) {
+        if (info == null) {
             staging.deleteRecursively()
             throw IOException(str(R.string.routing_not_a_pack))
+        }
+        if (info.routingFormat != PackInfo.FORMAT) {
+            staging.deleteRecursively()
+            throw IOException(str(R.string.routing_requires_rust_pack))
         }
         // Validate by loading before replacing the working pack.
         OfflineGraph.load(staging).close()
@@ -432,7 +460,7 @@ class SmartRouter(
                 return offline.route(points, mode).also { log("route_via offline len=${it.length.toInt()} mode=$mode") }
             } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
                 if (e is CancellationException) throw e
-                // GraphHopper throws plain RuntimeExceptions (no path, point not found, …).
+                // Rust throws plain RuntimeExceptions (no path, point not found, …).
                 log("offline_route_failed ${e.message}")
                 if (plan != RoutingPlan.OFFLINE_WITH_FALLBACK) throw e
             }

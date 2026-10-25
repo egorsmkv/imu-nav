@@ -1,0 +1,11 @@
+[routing] profile=car directed_roads=9204823
+[routing] profile=car states=9204961 transitions=25741663 preparing=true
+[routing] profile=car staged=true
+[routing] profile=foot directed_roads=11151788
+[routing] profile=foot states=11151788 transitions=11151788 preparing=true
+[routing] profile=foot staged=true
+[routing] profile=car contracting=true
+[routing] profile=car complete=true
+[routing] profile=foot contracting=true
+[routing] profile=foot complete=true
+[routing] seconds=736.582 archive_bytes=2211173591 pack={"bounds":[43.584374,52.3654507,22.1287989,40.217995699999996],"builtAt":"2026-10-25T00:51:23.23638602Z","elevation":false,"name":"Ukraine","profiles":["car","foot"],"routingFormat":"rust-ch-1","searchFormat":"tantivy-1","sizeBytes":5881240932,"source":"ukraine-latest.osm.pbf","turnCosts":true}

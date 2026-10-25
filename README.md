@@ -3,7 +3,8 @@
 IMU Nav is an Android car navigator that estimates progress **along a planned route** when GPS is
 jammed or spoofed. It classifies GPS fixes before using them, then combines the phone's inertial
 measurement unit (IMU), network location and map knowledge when trusted GPS is unavailable.
-The live app uses Kotlin and Rust through the Java Native Interface (JNI).
+The live app uses Kotlin and Rust through the Java Native Interface (JNI). Offline routing and
+OSM pack import use our Rust engine; address search uses Tantivy.
 
 This is a research prototype, not a safety system or a replacement for driver attention.
 Valid fixes are accepted worldwide; offline maps, routes, address search and tower positioning need

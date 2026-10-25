@@ -4,107 +4,107 @@
 
 ## Offline routing
 
-Routes are computed on the phone with **GraphHopper 11** from a _routing pack_: a road graph with
-contraction hierarchies built on a computer from an OpenStreetMap extract. OSRM (online) is only a
-fallback, and can be switched off in **Settings → Maps and routes → Offline routing**. Packs also provide real speed
-limits (OSM `maxspeed`) for the speed sign and the dead-reckoning speed prior.
+See the [Rust migration validation report](../benchmarks/rust-routing-2026-10-25.md) for measured pack builds and validation limits.
 
-Packs contain two profiles, **car** and **foot** (walking: footways, paths, steps, pedestrian
-streets, preferring pleasant ways over busy roads). Choose _Car_ or _Walk_ in the "Where to?" panel
-before starting. Walking routes are offline-only (the public OSRM server drives only). Packs built
-before walking support (`pack.json` without `"profiles"`) still load; _Walk_ is then disabled.
+The app uses `imu-nav-routing`, our Rust runtime, with contraction hierarchies prepared by
+`faster_paths` 0.1.0. OSM import, snapping, route reconstruction, maneuver records and track
+matching are implemented in Rust. GraphHopper remains only in JVM reference tests; it is not
+an app or pack-builder dependency. The navigation engine still receives the existing Kotlin `Route`.
 
-**Turn restrictions and turn penalties (car):** packs obey OSM turn restrictions (`no_left_turn`,
-`only_straight_on`…), charge 60 s of route weight for a U-turn and add a penalty per turn from
-`GraphSpec.CAR_TURN_PENALTIES`: 2 s for a right turn of 25–80°, 5 s for a sharper right, 8 s for a left
-turn of 25–80° and 12 s for a sharper left. Left turns cross oncoming traffic, so they cost more.
-Penalties only change which route is chosen; the estimated travel time stays the road speed. They
-need an edge-based contraction hierarchy: the Ukraine car graph takes ~31 min instead of ~2 min on a
-16-thread desktop, and the graph is ~50 % larger (car-only 712 MB instead of 469 MB; the full car + foot +
-search pack for Ukraine is 1.04 GB unpacked, a 531 MB ZIP). `pack.json` says
-`"turnCosts":true`. Older packs (without the field) still load and route as before, without turn costs;
-**rebuild and re-import a pack** to get restriction-aware routes on the phone.
+**Compatibility:** only packs declaring `"routingFormat":"rust-ch-1"` are accepted. Rebuild or
+download a current pack after upgrading. Existing GraphHopper packs are rejected with a localized
+message and are not rewritten. Import validation completes before replacing the installed pack.
+Display-map archives are unchanged. This remains a research prototype, not a safety system.
 
-Walking routes never have turn costs.
+### Build and install
 
-Build one active routing pack for the region you need (needs a desktop JVM; a full Ukraine pack takes
-about half an hour to an hour with turn costs and ~10 GB RAM). Use an OSM extract for another country in the same command:
+The production builder requires Rust 1.99+, not Java or an Android SDK:
 
 ```bash
-curl -LO https://download.geofabrik.de/europe/ukraine-latest.osm.pbf
-./gradlew :routing:run --args="--osm ukraine-latest.osm.pbf --out graph-ukraine --name Ukraine"
-# → graph-ukraine/ and graph-ukraine.zip
+cargo build --locked --release --manifest-path native/Cargo.toml -p imu-nav-routing --features builder
+native/target/release/build-routing --osm ukraine-latest.osm.pbf --out graph-ukraine --name Ukraine --threads 2
+python3 tools/verify_routing_pack.py graph-ukraine.zip
+native/target/release/check-routing graph-ukraine
 ```
 
-**Road heights (for terrain matching):** add `--elevation skadi` to store a height for every road
-point from a digital elevation model (AWS Terrain Tiles; `srtm`, `srtmgl1`, `cgiar` and `gmted` also work).
-Tiles are downloaded once into `--elevation-cache <dir>` (default `elevation-cache/`; about 150 tiles, several GB
-unpacked, for Ukraine). Bridges and tunnels get heights interpolated between their ends. `pack.json` then says
-`"elevation":true`; older packs and online routes simply have no height profile, and terrain matching stays off.
+Output directories and archives must be new. `--no-search` omits address search, `--no-addresses`
+omits house numbers, and `--min-network-size` controls removal of small disconnected networks
+(default 200 road-junction nodes). The Kotlin `:routing:run` launcher remains a convenience for
+basic builds and calls the same Rust importer through host JNI.
+
+The CI workflow `.github/workflows/routing-pack.yml` builds this Rust binary directly, downloads
+and checks the public extract, builds the pack, verifies the ZIP and runs the actual native loader.
+Its existing `ch_threads` input now selects **Rayon workers within each profile** (1, 2 or 4;
+default 2). Car and foot preparation run sequentially. Import geometry/transitions are staged on
+disk and OSM/search-builder memory is released before contraction. Cargo dependencies and build
+outputs are cached; generated packs are rebuilt. The workflow uploads the ZIP, SHA-256, source
+checksum and process timing/memory artifacts; it does not publish to a server.
+
+A pack contains `pack.json`, `car.routing`, `foot.routing`, and normally `search.tantivy/`.
+The profile files contain road geometry/names, access-specific directed roads, a snap grid and
+an immutable CH. They do not contain OSM PBFs, display-map tiles, GraphHopper files or downloaded DEM
+tiles. Route data is memory-mapped instead of deserializing the benchmark's bincode hierarchy.
+The loader checks offsets, sizes, coordinates, CSR ranges, hierarchy acyclicity and shortcut costs.
+The `IMURT001` header and all numeric records are explicitly little-endian and versioned.
+
+To bundle a pack in Play builds, copy its ZIP to `app/src/play/assets/routing/pack.zip` and its
+metadata to `app/src/play/assets/routing/pack.json`. Both are gitignored. The F-Droid flavor does not
+bundle these assets. Large archives increase APK size accordingly; installable archive limits remain
+20,000 entries and 8 GiB extracted, with a 256 MiB free-space reserve.
+
+### Routing policy
+
+Car uses a directed road-state hierarchy, including restriction history for via-way relations.
+Walking uses a smaller junction-node hierarchy. Both keep complete road geometry for reconstruction.
+Car honors one-way rules, mode-specific access, barriers, `no_*` and `only_*` restrictions,
+including via nodes/ways and motor-vehicle exceptions. Walking ignores car-only one-way/turn rules,
+respects `oneway:foot`, and prefers footways and paths. Incomplete restriction relations whose roads
+are absent from an extract cannot be applied; use relation-complete regional extracts.
+
+Car turn weights remain 60 s for U-turns, 2/5 s for right turns of 25–80°/80°+, and 8/12 s for
+left turns. The route objective includes distance influence (90 s/km car, 70 s/km walking) and
+walking preference. Travel duration comes from road distance and modeled speed, separately from
+turn penalties. Posted speed limits are carried per geometry segment; missing limits remain unknown.
+The importer has an explicit versioned policy in `builder/profile.rs`; it is **not a bit-for-bit
+reimplementation of GraphHopper's OSM parser**. Speeds, access interpretation and chosen alternatives
+can differ from old packs. Review resulting routes.
+
+Time-dependent closures are treated conservatively as closed in this static pack. Conditional
+turn restrictions are applied conservatively without evaluating their time expression. Reversible
+car lanes and technically difficult alpine footways are excluded. This is not a live-traffic or
+vehicle-dimension-aware router. Ferries use a static speed estimate, not timetables.
+
+Snapping searches road segments within 5 km, keeping legal directed candidates on the nearest road.
+Start/end geometry is clipped at the projection, including same-road journeys; vias preserve turn
+history. Guidance carries road names, turn direction, ramp/merge records and roundabout exits in the
+existing OSRM-style vocabulary. Track matching uses Viterbi candidate selection with GPS-distance
+emissions and routed transition lengths. Requests are bounded and cancellable; cancellation does not
+trigger online fallback. Pack replacement waits for active readers. Disk work stays off the main thread.
+OSRM remains an optional car-routing fallback; walking stays offline-only.
+
+### Elevation
+
+The Rust builder accepts **local uncompressed SRTM HGT tiles**, named for example `N50E030.hgt`:
 
 ```bash
-./gradlew :routing:run --args="--osm ukraine-latest.osm.pbf --out graph-ukraine --name Ukraine --elevation skadi --elevation-cache ~/dem-cache"
+native/target/release/build-routing --osm region.osm.pbf --out graph-region --name Region \
+  --elevation srtm --elevation-cache /path/to/hgt-tiles
 ```
 
-**Bundling a pack in a Play APK:** copy the zip and its metadata into the Play-only assets before building —
+It samples long edges every 60 m and interpolates bridges/tunnels between endpoint heights.
+Missing tiles and void samples fail the build. Unlike the former GraphHopper builder, this importer
+does not download DEMs or support its `skadi`, `cgiar`, `gmted` and `multi` provider names. Flat packs
+remain the default. A valid elevation pack carries one height per route point for terrain matching.
 
-```bash
-mkdir -p app/src/play/assets/routing
-cp graph-ukraine.zip app/src/play/assets/routing/pack.zip
-cp graph-ukraine/pack.json app/src/play/assets/routing/pack.json
-```
+### Validation and measurements
 
-On first start the app unpacks it in the background (~20 s for Ukraine) and uses it. It is only
-reinstalled when an update ships a newer pack, and stays removed if the user removes it (Settings
-offers _Install built-in routing pack_).
-
-The APK grows by the zip size (~530 MB for Ukraine with car (turn costs) and
-foot profiles and the search index, making the APK ~580+ MB — over Google Play's 200 MB base-APK limit, fine for
-sideloading); both files are gitignored.
-
-The F-Droid flavor deliberately never bundles this locally
-generated pack: users can import or download the same freely licensed data pack in the app.
-
-Packs can also be installed at runtime with **Import pack** (the `.zip`) or **Download** from any HTTP(S) URL — the
-zip is unpacked while it streams, and interrupted downloads resume. The graph is memory-mapped, so
-large regions do not need a large heap.
-
-**CI archive:** **Actions → Offline routing pack → Run workflow** runs the routing builder on a
-Geofabrik Ukraine extract by default. The workflow accepts a different one-word pack name and HTTPS
-`.osm.pbf` URL, with an optional expected SHA-256. It builds car (with turn costs) and foot profiles
-with `search.tantivy/` and no elevation tiles, validates the graph-root/index-directory layout and metadata (`tools/verify_routing_pack.py`
-rejects a pack without `"turnCosts":true`), extracts it, and opens the graph with `PhoneGraphHopper`.
-Expect roughly an hour for Ukraine on a hosted runner because of the edge-based car hierarchy.
-The workflow caches the native search builder and Cargo dependencies, keyed by runner OS/architecture,
-Rust version, manifests, lockfile and search source. A source-only change can reuse dependency builds;
-a cold cache still compiles everything. Generated graphs and search indexes are rebuilt from the input.
-Compilation uses `:routing:installDist`, then the standalone builder runs after Gradle exits, so
-Gradle's JVM does not remain resident during graph preparation. Both the Monaco fixture and full
-pack job exercise this launch path. The separate `routing-diagnostics-<run-id>` artifact retains
-CPU information and `/usr/bin/time -v` reports for compilation and pack generation, including on
-failure when available. These separate wall time, CPU time, peak memory and I/O; the build report's
-`peak_rss_kb` now measures the standalone builder rather than the Gradle invocation.
-
-In the 2026-10-24 Ukraine runs, the build step rose from 34m 29s
-([SQLite run](https://github.com/egorsmkv/imu-nav/actions/runs/40097041373)) to 36m 48s
-([Tantivy run](https://github.com/egorsmkv/imu-nav/actions/runs/40132906836)). The latter spent
-2m 26s compiling the native builder; pack generation itself was 2,048s versus 2,041s.
-Caching targets that compilation overhead; its net saving needs measurement on a subsequent cache hit.
-
-Pull requests affecting the builder or workflow run the same checks on a
-small Monaco extract. The downloadable GitHub artifact contains `routing-<name>.zip`, its SHA-256
-file and `routing-build.json` with the source URL and checksum, source commit, pack metadata, sizes
-and peak build memory.
-
-Extract the artifact first; import its inner routing ZIP in the app or upload
-that ZIP to an HTTPS host for the app's Download field. The workflow does not deploy it.
-
-Android cannot compile GraphHopper's custom models at runtime (Janino generates JVM bytecode), so
-`PhoneGraphHopper` builds the same weighting from plain code; `GraphSpec` holds everything the
-builder and the phone must agree on, and `OfflineGraphTest` checks both give identical routes.
-For turn costs the phone builds GraphHopper's own `DefaultTurnCostProvider` (turn restrictions,
-U-turn costs) with a turn-penalty function evaluated from the same `CAR_TURN_PENALTIES` table that
-generates the desktop custom-model statements; a test also checks that a forbidden left turn is avoided.
+The [earlier faster_paths benchmark](../benchmarks/faster-paths-2026-10-24.md) used GraphHopper-exported
+road states and tower-node queries. Those numbers are historical algorithm evidence, **not measurements
+of this new importer or complete Android requests**. Walking layout and runtime storage now differ.
+Rust tests cover import, access separation, legal reconstructed paths, forbidden turns, via-way
+history, CH/Dijkstra agreement, elevation failure and malformed data. JNI tests exercise route fields,
+matching, cancellation and legacy-pack rejection. Regional and Android results for the migration are
+recorded separately when measured.
 
 ## Offline display map build and distribution
 
@@ -285,3 +285,6 @@ and on-device SQLite cancellation timing remain unmeasured.
 The [historical Tantivy comparison](tantivy_search_experiment.md) records the measurements
 preceding adoption. Tantivy now handles newly built packs; the SQLite measurements above
 remain relevant only to legacy packs.
+
+The isolated [faster_paths CH benchmark](../benchmarks/faster-paths-2026-10-24.md) compares
+the historical parallel Rust CH experiment against GraphHopper; the current runtime now uses the Rust pack format described above.

@@ -46,3 +46,19 @@ Offline address search uses Tantivy 0.26.1 (MIT), JNI 0.21.1 and Serde/serde_jso
 (MIT/Apache-2.0). The read-only native library is included in Android APKs for
 ARM64, ARMv7 and x86-64 (emulator builds). The writer JNI entry point is enabled
 only for desktop pack generation. See [Tantivy search](reference/tantivy_search.md).
+
+The separate [CCH prototype](../tools/cch-prototype/README.md) uses the MIT-licensed
+`cch` 0.3.0 library. It is an experiment and is not shipped in the APK.
+
+The same isolated routing benchmark also uses `faster_paths` 0.1.0 (MIT OR Apache-2.0)
+and bincode 1.3.3 (MIT), with dependencies pinned in its own Cargo.lock.
+Bincode remains experiment-only. faster_paths is now also used by the production Rust builder (see below).
+
+
+The production Rust routing builder now uses `faster_paths` 0.1.0 (MIT OR Apache-2.0),
+`osmpbfreader` 0.19.1 (WTFPL), quick-xml 0.38 (MIT), ZIP 4.6 (MIT), Rayon (MIT OR Apache-2.0)
+and time (MIT OR Apache-2.0). These importer/preparation dependencies are host-only optional
+features. Android's `imu-nav-routing` runtime uses memmap2, JNI, Serde and serde_json under
+MIT/Apache-2.0 terms. It implements its own checked memory-mapped query/geometry adapter;
+no GraphHopper, Janino, HPPC, OSM PBF reader or bincode dependency is added to the APK.
+GraphHopper and its legacy importer remain only in independent JVM reference tests.

@@ -13,6 +13,12 @@ on:
         description: HTTPS URL of the regional OSM PBF extract
         required: true
         default: https://download.geofabrik.de/europe/ukraine-latest.osm.pbf
+      ch_threads:
+        description: Rust CH worker threads (profiles are prepared sequentially)
+        type: choice
+        options: ['1', '2', '4']
+        default: '2'
+        required: true
       osm_sha256:
         description: Expected OSM SHA-256; leave blank to record the downloaded file's checksum
         required: false
@@ -40,19 +46,7 @@ jobs:
       - name: Select affected work
         id: changes
         run: python3 tools/ci_changes.py --suite routing
-      - uses: actions/setup-java@v5
-        if: steps.changes.outputs.run == 'true'
-        with:
-          distribution: temurin
-          java-version: '17'
-      - uses: android-actions/setup-android@v3
-        if: steps.changes.outputs.run == 'true'
-        with:
-          packages: platform-tools
-      - name: Install pinned Android tools for project configuration
-        if: steps.changes.outputs.run == 'true'
-        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
-      - name: Cache native search builder
+      - name: Cache native routing builder
         if: steps.changes.outputs.run == 'true'
         uses: actions/cache@v4
         with:
@@ -62,14 +56,12 @@ jobs:
             ~/.cargo/registry/src
             native/target/release
           # Keep compiler/profile/dependency changes separate; Cargo rebuilds changed source on a fallback hit.
-          key: routing-search-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.RUSTUP_TOOLCHAIN }}-${{ hashFiles('native/Cargo.lock', 'native/Cargo.toml', 'native/nav-search/Cargo.toml') }}-${{ hashFiles('native/nav-search/src/**', 'native/nav-search/build.rs') }}
+          key: routing-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.RUSTUP_TOOLCHAIN }}-${{ hashFiles('native/Cargo.lock', 'native/Cargo.toml', 'native/nav-search/Cargo.toml', 'native/nav-routing/Cargo.toml') }}-${{ hashFiles('native/nav-search/src/**', 'native/nav-search/build.rs', 'native/nav-routing/**') }}
           restore-keys: |
-            routing-search-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.RUSTUP_TOOLCHAIN }}-${{ hashFiles('native/Cargo.lock', 'native/Cargo.toml', 'native/nav-search/Cargo.toml') }}-
-      - name: Install native search builder toolchain
+            routing-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.RUSTUP_TOOLCHAIN }}-${{ hashFiles('native/Cargo.lock', 'native/Cargo.toml', 'native/nav-search/Cargo.toml', 'native/nav-routing/Cargo.toml') }}-
+      - name: Install native routing builder toolchain
         if: steps.changes.outputs.run == 'true'
         run: rustup toolchain install 1.99.0 --profile minimal
-      - uses: gradle/actions/setup-gradle@v4
-        if: steps.changes.outputs.run == 'true'
       - name: Test the archive validator
         if: steps.changes.outputs.run == 'true'
         run: python3 -m unittest discover -s tools/tests -p test_verify_routing_pack.py -v
@@ -83,14 +75,13 @@ jobs:
       - name: Build and verify importable archive
         if: steps.changes.outputs.run == 'true'
         run: |
-          ./gradlew --no-daemon :routing:installDist
-          routing/build/install/routing/bin/routing \
-            --osm build/routing-source/monaco.osm.pbf --out build/routing-work/graph --name Monaco
+          cargo build --locked --release --manifest-path native/Cargo.toml -p imu-nav-routing --features builder
+          native/target/release/build-routing \
+            --osm build/routing-source/monaco.osm.pbf --out build/routing-work/graph --name Monaco --threads 2
           python3 tools/verify_routing_pack.py build/routing-work/graph.zip
           mkdir -p build/routing-import
           unzip -q build/routing-work/graph.zip -d build/routing-import
-          GRAPH_DIR="$PWD/build/routing-import" ./gradlew --no-daemon :routing:test \
-            --tests 'org.imunav.routing.PackSmokeTest.packagedGraphLoadsWithPhoneRules' --rerun-tasks
+          native/target/release/check-routing build/routing-import
 
   build:
     if: github.event_name == 'workflow_dispatch'
@@ -100,18 +91,10 @@ jobs:
       PACK_NAME: ${{ inputs.pack_name }}
       OSM_URL: ${{ inputs.osm_url }}
       OSM_SHA256: ${{ inputs.osm_sha256 }}
+      CH_THREADS: ${{ inputs.ch_threads }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '17'
-      - uses: android-actions/setup-android@v3
-        with:
-          packages: platform-tools
-      - name: Install pinned Android tools for project configuration
-        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
-      - name: Cache native search builder
+      - name: Cache native routing builder
         uses: actions/cache@v4
         with:
           path: |
@@ -120,12 +103,11 @@ jobs:
             ~/.cargo/registry/src
             native/target/release
           # Keep compiler/profile/dependency changes separate; Cargo rebuilds changed source on a fallback hit.
-          key: routing-search-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.RUSTUP_TOOLCHAIN }}-${{ hashFiles('native/Cargo.lock', 'native/Cargo.toml', 'native/nav-search/Cargo.toml') }}-${{ hashFiles('native/nav-search/src/**', 'native/nav-search/build.rs') }}
+          key: routing-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.RUSTUP_TOOLCHAIN }}-${{ hashFiles('native/Cargo.lock', 'native/Cargo.toml', 'native/nav-search/Cargo.toml', 'native/nav-routing/Cargo.toml') }}-${{ hashFiles('native/nav-search/src/**', 'native/nav-search/build.rs', 'native/nav-routing/**') }}
           restore-keys: |
-            routing-search-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.RUSTUP_TOOLCHAIN }}-${{ hashFiles('native/Cargo.lock', 'native/Cargo.toml', 'native/nav-search/Cargo.toml') }}-
-      - name: Install native search builder toolchain
+            routing-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.RUSTUP_TOOLCHAIN }}-${{ hashFiles('native/Cargo.lock', 'native/Cargo.toml', 'native/nav-search/Cargo.toml', 'native/nav-routing/Cargo.toml') }}-
+      - name: Install native routing builder toolchain
         run: rustup toolchain install 1.99.0 --profile minimal
-      - uses: gradle/actions/setup-gradle@v4
       - name: Validate inputs and report runner capacity
         run: |
           if [[ ! "$PACK_NAME" =~ ^[A-Za-z][A-Za-z0-9_-]{0,31}$ ]]; then
@@ -134,6 +116,10 @@ jobs:
           fi
           if [[ -n "$OSM_SHA256" && ! "$OSM_SHA256" =~ ^[0-9a-fA-F]{64}$ ]]; then
             echo 'Expected OSM SHA-256 must contain 64 hexadecimal digits.' >&2
+            exit 1
+          fi
+          if [[ "$CH_THREADS" != 1 && "$CH_THREADS" != 2 && "$CH_THREADS" != 4 ]]; then
+            echo 'CH threads must be 1, 2 or 4.' >&2
             exit 1
           fi
           echo "PACK_SLUG=${PACK_NAME,,}" >> "$GITHUB_ENV"
@@ -155,14 +141,13 @@ jobs:
       - name: Compile standalone routing builder
         run: |
           /usr/bin/time -v -o build/routing-compile-time.txt \
-            ./gradlew --no-daemon :routing:installDist
-      # Car turn restrictions and penalties need an edge-based contraction hierarchy: on a desktop the
-      # Ukraine car graph took ~31 min instead of ~2 min, so expect roughly an hour on a hosted runner.
+            cargo build --locked --release --manifest-path native/Cargo.toml -p imu-nav-routing --features builder
+      # Profiles run sequentially to bound peak memory; each CH preparation uses Rayon workers.
       - name: Build car (with turn costs), foot and address-search pack
         run: |
-          # The Gradle process has exited: reserve the runner for the graph builder JVM.
-          /usr/bin/time -v -o build/routing-build-time.txt routing/build/install/routing/bin/routing \
-            --osm "build/routing-source/$PACK_SLUG.osm.pbf" --out build/routing-work/graph --name "$PACK_NAME"
+          # Compile has finished; reserve runner memory for native graph preparation.
+          /usr/bin/time -v -o build/routing-build-time.txt native/target/release/build-routing \
+            --osm "build/routing-source/$PACK_SLUG.osm.pbf" --out build/routing-work/graph --name "$PACK_NAME" --threads "$CH_THREADS"
           mkdir -p dist
           mv build/routing-work/graph.zip "dist/routing-$PACK_SLUG.zip"
       - name: Check archive and phone graph loader
@@ -171,8 +156,7 @@ jobs:
           rm -rf build/routing-work/graph
           mkdir -p build/routing-import
           unzip -q "dist/routing-$PACK_SLUG.zip" -d build/routing-import
-          GRAPH_DIR="$PWD/build/routing-import" ./gradlew --no-daemon :routing:test \
-            --tests 'org.imunav.routing.PackSmokeTest.packagedGraphLoadsWithPhoneRules' --rerun-tasks
+          native/target/release/check-routing build/routing-import
       - name: Record checksums and build details
         run: |
           (cd dist && sha256sum "routing-$PACK_SLUG.zip" > "routing-$PACK_SLUG.zip.sha256")
@@ -199,6 +183,7 @@ jobs:
               'archive_bytes': archive.stat().st_size,
               'peak_rss_kb': int(peak.group(1)) if peak else None,
               'source_commit': os.environ['GITHUB_SHA'],
+              'ch_threads': int(os.environ['CH_THREADS']),
               'pack': info,
           }
           Path('dist/routing-build.json').write_text(json.dumps(report, indent=2) + '\n')

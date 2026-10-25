@@ -113,7 +113,7 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-        // GraphHopper is a Java 17 library; desugaring rewrites its newer JDK calls for old Android versions.
+        // Shared Java APIs still need desugaring on supported older Android versions.
         isCoreLibraryDesugaringEnabled = true
     }
 
@@ -126,8 +126,14 @@ android {
         unitTests.all {
             it.jvmArgs("--add-opens=java.base/java.io=ALL-UNNAMED", "--add-exports=java.base/jdk.internal.access=ALL-UNNAMED")
             // The same host JNI build the replay tests use, so tests can create the app graph with its native estimators.
-            it.dependsOn(":replay:buildHostNative")
-            it.systemProperty("java.library.path", rootProject.file("native/target/debug").absolutePath)
+            it.dependsOn(":replay:buildHostNative", ":routing:buildSearchNative")
+            it.systemProperty(
+                "java.library.path",
+                rootProject.file("native/target/debug").absolutePath + File.pathSeparator +
+                    providers.environmentVariable("CARGO_TARGET_DIR").map {
+                        rootProject.file(it).resolve("release").absolutePath
+                    }.getOrElse(rootProject.file("native/target/release").absolutePath),
+            )
         }
     }
 
@@ -144,7 +150,7 @@ android {
 
     packaging {
         resources {
-            // GraphHopper's dependencies ship overlapping license/manifest files.
+            // Dependencies can ship overlapping license/manifest files.
             excludes += listOf("META-INF/DEPENDENCIES", "META-INF/LICENSE*", "META-INF/NOTICE*", "META-INF/INDEX.LIST", "META-INF/*.md")
         }
     }
@@ -272,38 +278,6 @@ dependencies {
     androidTestImplementation(libs.compose.ui.test.junit4)
 }
 
-/**
- * Removes GraphHopper classes that `:routing` replaces with Android-compatible copies
- * (`routing/src/main/java/com/graphhopper/storage/`, see the README there) from the GraphHopper jar,
- * so the app contains only the patched versions. Other jars pass through unchanged.
- */
-abstract class StripPatchedGraphHopperClasses : TransformAction<TransformParameters.None> {
-    @get:InputArtifact
-    abstract val inputArtifact: Provider<FileSystemLocation>
-
-    override fun transform(outputs: TransformOutputs) {
-        val input = inputArtifact.get().asFile
-        if (!input.name.startsWith("graphhopper-core-")) {
-            outputs.file(input)
-            return
-        }
-        val patched = listOf("com/graphhopper/storage/MMapDataAccess", "com/graphhopper/storage/RAMDataAccess")
-        val output = outputs.file("patched-${input.name}")
-        ZipFile(input).use { zip ->
-            ZipOutputStream(output.outputStream().buffered()).use { out ->
-                for (entry in zip.entries()) {
-                    // The class itself and its inner classes (Name$Inner.class).
-                    if (patched.any { entry.name == "$it.class" || entry.name.startsWith("$it$") }) continue
-                    out.putNextEntry(ZipEntry(entry.name))
-                    zip.getInputStream(entry).use { it.copyTo(out) }
-                    out.closeEntry()
-                }
-            }
-        }
-    }
-}
-
-val graphHopperPatched: Attribute<Boolean> = Attribute.of("org.imunav.graphhopper-patched", Boolean::class.javaObjectType)
 val graphicsPathRebuilt: Attribute<Boolean> = Attribute.of("org.imunav.graphics-path-rebuilt", Boolean::class.javaObjectType)
 
 /** Retains Graphics Path's bytecode and metadata while replacing its incompatible prebuilt JNI. */
@@ -333,32 +307,21 @@ abstract class StripPrebuiltGraphicsPath : TransformAction<TransformParameters.N
 }
 
 dependencies {
-    attributesSchema { attribute(graphHopperPatched) }
     attributesSchema { attribute(graphicsPathRebuilt) }
-    artifactTypes.getByName("jar") { attributes.attribute(graphHopperPatched, false) }
     artifactTypes.maybeCreate("aar").attributes.attribute(graphicsPathRebuilt, false)
-    registerTransform(StripPatchedGraphHopperClasses::class) {
-        from.attribute(graphHopperPatched, false).attribute(ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE, "jar")
-        to.attribute(graphHopperPatched, true).attribute(ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE, "jar")
-    }
     registerTransform(StripPrebuiltGraphicsPath::class) {
         from.attribute(graphicsPathRebuilt, false).attribute(ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE, "aar")
         to.attribute(graphicsPathRebuilt, true).attribute(ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE, "aar")
     }
 }
 
-// GraphHopper brings its OSM import stack, which only the desktop pack builder (`:routing:run`)
-// needs; the phone loads ready-made graphs. Keeping it out of the APK removes the only copyleft
-// component (osmosis-osm-binary, LGPL 3.0) and its Protocol Buffers dependency.
+// Rebuild the graphics-path native dependency for Android page-size compatibility.
 configurations.configureEach {
     if (name.endsWith("RuntimeClasspath")) {
         // Local JVM tests need the app's original compiled classes, not APK artifact transforms.
         if (!name.contains("UnitTest")) {
-            attributes.attribute(graphHopperPatched, true)
             attributes.attribute(graphicsPathRebuilt, true)
         }
-        exclude(group = "org.openstreetmap.osmosis", module = "osmosis-osm-binary")
-        exclude(group = "com.google.protobuf", module = "protobuf-java")
     }
 }
 

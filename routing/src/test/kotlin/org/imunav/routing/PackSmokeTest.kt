@@ -21,14 +21,14 @@ class PackSmokeTest {
         return if (native.exists()) {
             TantivySearch(native).use { search -> TantivyRequest().use { search.search(query, near, it).take(3) } }
         } else {
-            JdbcSearchDb(File(directory, SearchIndexBuilder.FILE)).use { AddressSearch.search(it, query, near, limit = 3) }
+            JdbcSearchDb(File(directory, "search.db")).use { AddressSearch.search(it, query, near, limit = 3) }
         }
     }
 
     @Test
     fun packagedGraphLoadsWithPhoneRules() {
         val dir = System.getenv("GRAPH_DIR")?.let(::File)
-        assumeTrue("GRAPH_DIR not set", dir != null && File(dir, "properties").exists())
+        assumeTrue("GRAPH_DIR not set", dir != null && File(dir, "car.routing").exists())
         OfflineGraph.load(dir!!).use { graph ->
             assertTrue(graph.supports(TravelMode.CAR))
             assertTrue(graph.supports(TravelMode.FOOT))
@@ -39,7 +39,7 @@ class PackSmokeTest {
     @Test
     fun longRoutesOnRealPack() {
         val dir = System.getenv("GRAPH_DIR")?.let(::File)
-        assumeTrue("GRAPH_DIR not set", dir != null && File(dir, "properties").exists())
+        assumeTrue("GRAPH_DIR not set", dir != null && File(dir, "car.routing").exists())
         val t0 = System.nanoTime()
         OfflineGraph.load(dir!!).use { g ->
             println("load ${(System.nanoTime() - t0) / 1_000_000} ms")
@@ -64,7 +64,7 @@ class PackSmokeTest {
     @Test
     fun walkingRoutesOnRealPack() {
         val dir = System.getenv("GRAPH_DIR")?.let(::File)
-        assumeTrue("GRAPH_DIR not set", dir != null && File(dir, "properties").exists())
+        assumeTrue("GRAPH_DIR not set", dir != null && File(dir, "car.routing").exists())
         OfflineGraph.load(dir!!).use { g ->
             assumeTrue("pack has no walking data", g.supports(TravelMode.FOOT))
             // Odesa center: pedestrians cut across Cathedral Square and pedestrian streets; cars must go around.
@@ -91,7 +91,7 @@ class PackSmokeTest {
     @Test
     fun addressSearchOnRealPack() {
         val dir = System.getenv("GRAPH_DIR")?.let(::File)
-        assumeTrue("GRAPH_DIR not set", dir != null && (File(dir, SearchIndexBuilder.FILE).exists() || File(dir, TantivySearch.DIRECTORY).isDirectory))
+        assumeTrue("GRAPH_DIR not set", dir != null && (File(dir, "search.db").exists() || File(dir, TantivySearch.DIRECTORY).isDirectory))
         val kyiv = GeoPoint(50.4501, 30.5234)
         run {
             for ((q, near) in listOf(
