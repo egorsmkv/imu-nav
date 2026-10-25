@@ -49,6 +49,16 @@ class NavigationMapCameraTest {
     }
 
     @Test
+    fun configuredTiltIsUsedOnlyWhileDrivingAndStaysInRange() {
+        assertEquals(55.0, NavigationMapCamera.tilt(TravelMode.CAR, navigating = true, perspective = true, carTiltDeg = 55.0), 0.0)
+        assertEquals(0.0, NavigationMapCamera.tilt(TravelMode.FOOT, navigating = true, perspective = true, carTiltDeg = 55.0), 0.0)
+        assertEquals(0.0, NavigationMapCamera.tilt(TravelMode.CAR, navigating = true, perspective = false, carTiltDeg = 55.0), 0.0)
+        assertEquals(60.0, NavigationMapCamera.tilt(TravelMode.CAR, navigating = true, perspective = true, carTiltDeg = 85.0), 0.0)
+        assertEquals(30.0, NavigationMapCamera.tilt(TravelMode.CAR, navigating = true, perspective = true, carTiltDeg = 5.0), 0.0)
+        assertEquals(45.0, NavigationMapCamera.clampTilt(Double.NaN), 0.0)
+    }
+
+    @Test
     fun mapBrowsingAlwaysRestoresIndependentlyHiddenControls() {
         listOf(false, true).forEach { hideTowers ->
             listOf(false, true).forEach { hideZoom ->

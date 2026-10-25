@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.TripOrigin
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledIconButton
@@ -145,6 +146,8 @@ internal fun IdlePanel(
             onSearchStop = onSearchStop,
             onRemoveStop = onRemoveStop,
         )
+        // Length and time of the planned route, to judge it before starting (also shown on the map pin).
+        ui.previewRoute?.let { route -> IconLine(Icons.Filled.Route, stringResource(R.string.route_summary, formatRouteSummary(res, route))) }
         var more by remember { mutableStateOf(false) }
         if (!compact || more) BookmarkSaveActions(ui, mode, bookmarks)
         if (compact) TextButton(onClick = { more = !more }) { Text(stringResource(R.string.driving_more)) }
@@ -368,8 +371,21 @@ internal fun NavigationPanel(nav: GuidanceState, showActions: Boolean, onStop: (
                     overflow = TextOverflow.Ellipsis,
                 )
                 val arrival = DateFormat.getTimeFormat(context).format(Date(System.currentTimeMillis() + (nav.remainingS * 1000).toLong()))
+                val totalM = nav.route?.length
+                // "12 km of 45 km": distance left against the whole route, plus a thin progress bar.
+                val left = if (totalM != null && totalM > 0) {
+                    stringResource(R.string.nav_remaining_of_total, formatDistance(res, nav.remainingM), formatDistance(res, totalM))
+                } else {
+                    formatDistance(res, nav.remainingM)
+                }
+                if (totalM != null && totalM > 0) {
+                    LinearProgressIndicator(
+                        progress = { (1 - nav.remainingM / totalM).toFloat().coerceIn(0f, 1f) },
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                    )
+                }
                 Text(
-                    formatDistance(res, nav.remainingM) + " · " + stringResource(R.string.nav_arrival_at, arrival),
+                    left + " · " + stringResource(R.string.nav_arrival_at, arrival),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,

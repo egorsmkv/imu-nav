@@ -19,7 +19,9 @@ import androidx.compose.material.icons.filled.TurnSlightRight
 import androidx.compose.material.icons.filled.UTurnLeft
 import androidx.compose.ui.graphics.vector.ImageVector
 import org.imunav.app.R
+import org.imunav.core.nav.GuidanceState
 import org.imunav.core.nav.PositionSource
+import org.imunav.core.route.Route
 import org.imunav.core.route.Step
 import kotlin.math.roundToInt
 
@@ -103,6 +105,19 @@ private val TRAILING_ZERO = Regex("[.,]0 ")
 fun formatDuration(res: Resources, seconds: Double): String {
     val min = (seconds / 60).roundToInt().coerceAtLeast(1)
     return if (min < 60) res.getString(R.string.unit_min, min) else res.getString(R.string.unit_h_min, min / 60, min % 60)
+}
+
+/** "12 km · 15 min": length and driving time of a planned route. */
+fun formatRouteSummary(res: Resources, route: Route): String = formatDistance(res, route.length) + " · " + formatDuration(res, route.durationS)
+
+/**
+ * Text above the destination pin: while navigating, the distance still to drive; while a route
+ * is only planned, its length and time, to judge it before starting. Null hides the label.
+ */
+fun destinationDistanceLabel(res: Resources, nav: GuidanceState, preview: Route?): String? = when {
+    nav.active && nav.route != null && !nav.arrived -> formatDistance(res, nav.remainingM)
+    !nav.active && preview != null -> formatRouteSummary(res, preview)
+    else -> null
 }
 
 /** "± 30 m". */

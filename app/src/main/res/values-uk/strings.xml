@@ -38,6 +38,8 @@
     <string name="arrived">Ви прибули</string>
     <string name="action_done">Готово</string>
     <string name="nav_arrival_at">Прибуття о %1$s</string>
+    <string name="nav_remaining_of_total">%1$s з %2$s</string>
+    <string name="route_summary">Маршрут: %1$s</string>
     <string name="then">Далі</string>
     <string name="speed_limit_cd">Обмеження швидкості %1$d</string>
 
@@ -792,6 +794,10 @@
     <string name="map_buildings_3d_hint">Показувати об’ємні будівлі, якщо вони є у стилі карти.</string>
     <string name="map_car_perspective">Перспектива за кермом</string>
     <string name="map_car_perspective_hint">Нахиляти карту в напрямку руху під час автомобільної навігації.</string>
+    <string name="map_car_tilt">Кут нахилу мапи: %1$d°</string>
+    <string name="map_car_tilt_hint">Більший нахил показує більше дороги попереду, менший — легше читати назви вулиць.</string>
+    <string name="map_direction_arrow">Стрілка позиції</string>
+    <string name="map_direction_arrow_hint">Показувати позицію пласкою стрілкою, що повертається за напрямком руху або компасом телефона. Вимкнено: крапка з променем напрямку.</string>
     <string name="map_automatic_zoom">Автоматичний масштаб навігації</string>
     <string name="map_automatic_zoom_hint">На більшій швидкості видно більше дороги. Ручний масштаб призупиняє автомасштаб до натискання кнопки центрування.</string>
     <string name="map_hide_tower_button">Приховати кнопку вишок під час навігації</string>

@@ -278,12 +278,14 @@ fun MapScreen(
             initialCenter = startView.point,
             initialZoom = startView.zoom,
             followZoomDefault = NavigationMapCamera.zoom(nav.travelMode, nav.speedKmh, mapOptions.automaticZoom),
-            cameraTilt = NavigationMapCamera.tilt(nav.travelMode, nav.active, mapOptions.carPerspective),
+            cameraTilt = NavigationMapCamera.tilt(nav.travelMode, nav.active, mapOptions.carPerspective, mapOptions.carTiltDeg),
             offlineStyleJson = if (offlineMapStatus.offlineInUse) app.offlineMap.styleJson(dark, mapCenter ?: startView.point) else null,
             active = mapActive && (searchTarget == null || landscape),
             passedM = nav.s.takeIf { nav.active },
             waypoints = if (nav.active) nav.waypoints else ui.waypoints.map { it.point },
             headingDeg = if (nav.active) nav.bearingDeg else ui.compassDeg,
+            directionArrow = mapOptions.directionArrow,
+            destinationLabel = destinationDistanceLabel(res, nav, ui.previewRoute),
         )
 
         if (showControls) {

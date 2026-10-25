@@ -12,7 +12,7 @@ The app tries to use trusted GPS first. When GPS is unreliable, it estimates pro
    If Android Location is switched off (for example when you navigate by cell towers and OBD-II only), a hand-placed start is enough to begin a trip.
    The "Location is off" warning offers **Don’t show again**; to see it again, turn off **Settings → General → Map display → Hide the “Location is off” warning**.
 4. To pass through other places on the way, tap **Add stop** in the route panel (up to five stops), or long-press the map once a destination is set and choose **Add as stop**. Stops appear in driving order between **From** and **To**; tap a stop to replace it, or its × to remove it. Reroutes keep the stops that are still ahead.
-5. Review the proposed route, then tap **Start**. Tap the status pill to see positioning details, including why a GPS fix was rejected.
+5. Review the proposed route, then tap **Start**. Its length and driving time appear on a label above the destination pin and as **Route: …** in the panel. Tap the status pill to see positioning details, including why a GPS fix was rejected.
 6. Tap **Stop** (the red ✕ in the bottom panel) when the trip ends. The ride is saved in **History**, even if it was short. The fork button next to it is **Reroute**.
 
 ## Map display while navigating
@@ -23,7 +23,9 @@ device and apply immediately, including after changing the map theme or offline 
 | Setting | Behaviour | Default |
 | --- | --- | --- |
 | 3D buildings | Show the style's buildings in 3D. Turning this off draws the same buildings flat (height zero) instead of hiding them. Styles without 3D geometry are unchanged. | On |
-| Perspective while driving | Tilt the map 45° while navigating by car, with the travel direction at the top while following. Walking and stopping navigation restore a flat map. | On |
+| Position arrow | Draw your position as a flat blue arrow lying on the (tilted) map and turned to the heading: the route direction while navigating, the phone's compass (gyroscope-fused rotation sensor) otherwise. Without a known heading a dot is shown. Off: a dot with a direction beam. | On |
+| Perspective while driving | Tilt the map while navigating by car, with the travel direction at the top while following. Walking and stopping navigation restore a flat map. | On |
+| Map tilt | Shown while the perspective is on: 30–60° in 5° steps. More tilt shows more road ahead; less keeps street names easier to read. | 45° |
 | Automatic navigation zoom | Zoom out continuously as the engine's estimated speed increases: zoom 17 at 0–10 km/h, 15.75 at 70 km/h, and 14.5 at 130 km/h or above. | On |
 | Hide tower button during navigation | Hide only the tower toggle while a route is active; show it again when browsing. Tower positioning and the selected tower overlay are unchanged. | Off |
 | Hide zoom buttons during navigation | Hide +/− while a route is active; show them again when browsing. Pinch zoom remains available. | Off |
@@ -35,13 +37,15 @@ still following your position. Panning pauses position following; Recenter resum
 the automatic scale. Walking keeps zoom 17.5; disabling automatic zoom uses zoom 16 for driving,
 unless you choose a manual scale. These options currently configure the phone map, not Android Auto.
 
-While navigating, the next-turn banner and the bottom panel (time, distance, speed, Reroute, Stop)
+While navigating, the destination label shows the distance still to drive, and the bottom panel shows time left,
+"12 km of 45 km" with a thin progress bar, the arrival time, speed, Reroute and Stop. The next-turn banner and that panel
 each take a single row so most of the screen stays map, even with large fonts. When the map area is
 too short for one column of map buttons, they wrap into a second column instead of scrolling.
 
-While navigating, the part of the route already driven is drawn grey. A translucent beam around the
-blue position dot shows the direction you face: the road direction during navigation, the phone's
-compass heading otherwise (hidden on phones without a rotation sensor).
+While navigating, the part of the route already driven is drawn grey. Your position is a flat blue
+arrow pointing the direction you face: the road direction during navigation, the phone's compass
+heading otherwise. Without a heading (phones without a rotation sensor) it is a dot. With
+**Position arrow** off, a translucent beam around the blue dot shows the direction instead.
 
 The app follows the phone's light/dark theme unless you choose **Light** or **Dark** in
 **Settings → General → Theme**. The map style follows the same choice.

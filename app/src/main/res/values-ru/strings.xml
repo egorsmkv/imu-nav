@@ -38,6 +38,8 @@
     <string name="arrived">Вы прибыли</string>
     <string name="action_done">Готово</string>
     <string name="nav_arrival_at">Прибытие в %1$s</string>
+    <string name="nav_remaining_of_total">%1$s из %2$s</string>
+    <string name="route_summary">Маршрут: %1$s</string>
     <string name="then">Затем</string>
     <string name="speed_limit_cd">Ограничение скорости %1$d</string>
 
@@ -792,6 +794,10 @@
     <string name="map_buildings_3d_hint">Показывать объёмные здания, если они есть в стиле карты.</string>
     <string name="map_car_perspective">Перспектива за рулём</string>
     <string name="map_car_perspective_hint">Наклонять карту по направлению движения во время автомобильной навигации.</string>
+    <string name="map_car_tilt">Угол наклона карты: %1$d°</string>
+    <string name="map_car_tilt_hint">Больший наклон показывает больше дороги впереди, меньший — легче читать названия улиц.</string>
+    <string name="map_direction_arrow">Стрелка позиции</string>
+    <string name="map_direction_arrow_hint">Показывать позицию плоской стрелкой, которая поворачивается по направлению движения или компасу телефона. Выключено: точка с лучом направления.</string>
     <string name="map_automatic_zoom">Автоматический масштаб навигации</string>
     <string name="map_automatic_zoom_hint">На большей скорости видно больше дороги. Ручной масштаб приостанавливает автомасштаб до нажатия кнопки центрирования.</string>
     <string name="map_hide_tower_button">Скрыть кнопку вышек при навигации</string>

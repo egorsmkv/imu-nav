@@ -7,6 +7,10 @@ object NavigationMapCamera {
     const val CAR_ZOOM = 16.0
     const val WALK_ZOOM = 17.5
     const val CAR_TILT_DEG = 45.0
+
+    /** Settings range for the driving tilt; MapLibre's default maximum pitch is 60°. */
+    const val MIN_CAR_TILT_DEG = 30.0
+    const val MAX_CAR_TILT_DEG = 60.0
     private const val CLOSE_ZOOM = 17.0
     private const val WIDE_ZOOM = 14.5
     private const val CLOSE_SPEED_KMH = 10.0
@@ -21,6 +25,16 @@ object NavigationMapCamera {
         return CLOSE_ZOOM + (WIDE_ZOOM - CLOSE_ZOOM) * fraction
     }
 
-    /** Walking and route browsing always return to a flat map. */
-    fun tilt(mode: TravelMode, navigating: Boolean, perspective: Boolean): Double = if (navigating && mode == TravelMode.CAR && perspective) CAR_TILT_DEG else 0.0
+    /**
+     * Walking and route browsing always return to a flat map. A larger [carTiltDeg] shows more
+     * road ahead; invalid or out-of-range values are clamped to the supported range.
+     */
+    fun tilt(mode: TravelMode, navigating: Boolean, perspective: Boolean, carTiltDeg: Double = CAR_TILT_DEG): Double = if (navigating && mode == TravelMode.CAR && perspective) {
+        clampTilt(carTiltDeg)
+    } else {
+        0.0
+    }
+
+    /** Keep a stored or synced tilt within what the map supports. */
+    fun clampTilt(degrees: Double): Double = if (degrees.isFinite()) degrees.coerceIn(MIN_CAR_TILT_DEG, MAX_CAR_TILT_DEG) else CAR_TILT_DEG
 }

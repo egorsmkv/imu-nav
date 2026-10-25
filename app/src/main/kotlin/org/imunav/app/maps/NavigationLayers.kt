@@ -2,12 +2,17 @@ package org.imunav.app.maps
 
 import android.content.res.Resources
 import android.graphics.Bitmap
+import android.graphics.BlurMaskFilter
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.RadialGradient
+import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Shader
+import android.graphics.Typeface
+import android.util.TypedValue
 import androidx.core.graphics.createBitmap
 import androidx.core.graphics.toColorInt
 import kotlinx.coroutines.currentCoroutineContext
@@ -33,6 +38,21 @@ private const val ROUTE_BLUE = "#1A73E8"
 private const val PASSED_LINE = "#9AA0A6"
 private const val PASSED_CASING = "#5F6368"
 private const val HEADING_IMAGE = "heading-cone"
+private const val DEST_RED = "#D93025"
+private const val ARROW_IMAGE = "nav-arrow"
+private const val ARROW_LAYER = "marker-arrow"
+private const val DEST_LABEL_IMAGE = "dest-label"
+private const val DEST_LABEL_LAYER = "dest-label"
+
+/** Size of the position arrow image (dp), its white outline width (dp) and shadow opacity. */
+private const val ARROW_SIZE_DP = 40f
+private const val ARROW_OUTLINE_DP = 2.5f
+private const val ARROW_SHADOW_ALPHA = 0x55
+
+/** Destination label: text size (sp), inner padding and gap above the pin (dp). */
+private const val DEST_LABEL_TEXT_SP = 14f
+private const val DEST_LABEL_PADDING_DP = 8f
+private const val DEST_LABEL_GAP_DP = 12f
 
 /** Size of the heading beam image (it is drawn around the position dot), dp. */
 private const val HEADING_SIZE_DP = 80f
@@ -86,7 +106,7 @@ fun addNavigationLayers(s: Style) {
     )
     s.addLayer(
         CircleLayer("dest-dot", "dest").withProperties(
-            PropertyFactory.circleColor("#D93025".toColorInt()),
+            PropertyFactory.circleColor(DEST_RED.toColorInt()),
             PropertyFactory.circleRadius(9f),
             PropertyFactory.circleStrokeColor(Color.WHITE),
             PropertyFactory.circleStrokeWidth(3f),
@@ -122,6 +142,112 @@ fun addNavigationLayers(s: Style) {
             PropertyFactory.circleStrokeWidth(3f),
         ),
     )
+    // Navigation arrow: lies flat on the (tilted) map and turns with the heading, like the
+    // MapLibre/GraphHopper navigation puck. Shown instead of the dot when a heading is known.
+    s.addImage(ARROW_IMAGE, navigationArrow())
+    s.addLayer(
+        SymbolLayer(ARROW_LAYER, "heading").withProperties(
+            PropertyFactory.iconImage(ARROW_IMAGE),
+            PropertyFactory.iconRotate(Expression.get("bearing")),
+            PropertyFactory.iconRotationAlignment(Property.ICON_ROTATION_ALIGNMENT_MAP),
+            PropertyFactory.iconPitchAlignment(Property.ICON_PITCH_ALIGNMENT_MAP),
+            PropertyFactory.iconAllowOverlap(true),
+            PropertyFactory.iconIgnorePlacement(true),
+            PropertyFactory.visibility(Property.NONE),
+        ),
+    )
+    // Route length / distance left, above the destination pin; the image is redrawn when the text changes.
+    s.addLayer(
+        SymbolLayer(DEST_LABEL_LAYER, "dest").withProperties(
+            PropertyFactory.iconImage(DEST_LABEL_IMAGE),
+            PropertyFactory.iconAnchor(Property.ICON_ANCHOR_BOTTOM),
+            PropertyFactory.iconOffset(arrayOf(0f, -DEST_LABEL_GAP_DP)),
+            PropertyFactory.iconAllowOverlap(true),
+            PropertyFactory.iconIgnorePlacement(true),
+            PropertyFactory.visibility(Property.NONE),
+        ),
+    )
+}
+
+/**
+ * The position arrow: a chevron pointing up (north) with a notch at its base, blue with a white
+ * outline and a soft shadow so it stays visible on light and dark maps. The map rotates it.
+ */
+private fun navigationArrow(): Bitmap {
+    val density = Resources.getSystem().displayMetrics.density
+    val sizePx = (ARROW_SIZE_DP * density).toInt().coerceAtLeast(1)
+    val bitmap = createBitmap(sizePx, sizePx)
+    val size = sizePx.toFloat()
+    // Tip, right corner, notch, left corner; the shape's centroid is near the image center.
+    val path = Path().apply {
+        moveTo(size * 0.5f, size * 0.12f)
+        lineTo(size * 0.82f, size * 0.86f)
+        lineTo(size * 0.5f, size * 0.68f)
+        lineTo(size * 0.18f, size * 0.86f)
+        close()
+    }
+    val canvas = Canvas(bitmap)
+    val shadow = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(ARROW_SHADOW_ALPHA, 0, 0, 0)
+        maskFilter = BlurMaskFilter(2f * density, BlurMaskFilter.Blur.NORMAL)
+    }
+    canvas.drawPath(path, shadow)
+    canvas.drawPath(path, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = ROUTE_BLUE.toColorInt() })
+    canvas.drawPath(
+        path,
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.STROKE
+            strokeWidth = ARROW_OUTLINE_DP * density
+            strokeJoin = Paint.Join.ROUND
+        },
+    )
+    return bitmap
+}
+
+/** A rounded label with [text], dark or light to match the map. */
+private fun destinationLabel(text: String, dark: Boolean): Bitmap {
+    val metrics = Resources.getSystem().displayMetrics
+    val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = if (dark) Color.WHITE else "#202124".toColorInt()
+        textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, DEST_LABEL_TEXT_SP, metrics)
+        typeface = Typeface.DEFAULT_BOLD
+    }
+    val padding = DEST_LABEL_PADDING_DP * metrics.density
+    val bounds = Rect().also { textPaint.getTextBounds(text, 0, text.length, it) }
+    val width = (textPaint.measureText(text) + 2 * padding).toInt().coerceAtLeast(1)
+    val height = (textPaint.fontMetrics.let { it.descent - it.ascent } + padding).toInt().coerceAtLeast(1)
+    val bitmap = createBitmap(width, height)
+    val canvas = Canvas(bitmap)
+    val box = RectF(0f, 0f, width.toFloat(), height.toFloat())
+    val radius = height / 2f
+    canvas.drawRoundRect(box, radius, radius, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = if (dark) "#303134".toColorInt() else Color.WHITE })
+    canvas.drawRoundRect(
+        RectF(box).apply { inset(1f, 1f) },
+        radius,
+        radius,
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = DEST_RED.toColorInt()
+            style = Paint.Style.STROKE
+            strokeWidth = metrics.density
+        },
+    )
+    canvas.drawText(text, padding, height / 2f - bounds.exactCenterY(), textPaint)
+    return bitmap
+}
+
+/**
+ * Show [text] (route length or distance left) above the destination, or hide the label when null.
+ * Call it only when the text changes: it redraws a small bitmap.
+ */
+fun updateDestinationLabel(style: Style, text: String?, dark: Boolean) {
+    val layer = style.getLayer(DEST_LABEL_LAYER) ?: return
+    if (text.isNullOrBlank()) {
+        layer.setProperties(PropertyFactory.visibility(Property.NONE))
+        return
+    }
+    style.addImage(DEST_LABEL_IMAGE, destinationLabel(text, dark))
+    layer.setProperties(PropertyFactory.visibility(Property.VISIBLE))
 }
 
 /** One of the route lines: the wide [casing] below or the narrower colored line on top. */
@@ -203,19 +329,27 @@ fun updateMapPoints(style: Style, source: String, points: List<GeoPoint>) {
 
 /**
  * The same uncertainty radius is shown on the phone and car, in meters at every zoom level.
- * [headingDeg] turns the beam (compass bearing, clockwise from north); null hides it.
+ * [headingDeg] turns the beam or arrow (compass bearing, clockwise from north); null hides it.
+ * With [arrow], a known heading draws the flat navigation arrow instead of the dot and beam;
+ * without a heading the dot stays, since an arrow would claim a direction nobody measured.
  */
-fun updateMapPosition(style: Style, position: GeoPoint?, accuracyM: Double?, headingDeg: Float? = null) {
+fun updateMapPosition(style: Style, position: GeoPoint?, accuracyM: Double?, headingDeg: Float? = null, arrow: Boolean = false) {
     updateMapPoint(style, "marker", position)
+    val hasHeading = position != null && headingDeg != null && headingDeg.isFinite()
     style.getSourceAs<GeoJsonSource>("heading")?.setGeoJson(
         FeatureCollection.fromFeatures(
-            if (position == null || headingDeg == null || !headingDeg.isFinite()) {
+            if (position == null || headingDeg == null || !hasHeading) {
                 emptyList()
             } else {
                 listOf(Feature.fromGeometry(Point.fromLngLat(position.lon, position.lat)).also { it.addNumberProperty("bearing", headingDeg) })
             },
         ),
     )
+    val showArrow = arrow && hasHeading
+    fun visible(show: Boolean) = PropertyFactory.visibility(if (show) Property.VISIBLE else Property.NONE)
+    style.getLayer(ARROW_LAYER)?.setProperties(visible(showArrow))
+    style.getLayer("marker-dot")?.setProperties(visible(!showArrow))
+    style.getLayer("heading-beam")?.setProperties(visible(!showArrow))
     if (position == null) return
     val meters = (accuracyM ?: 0.0).coerceAtLeast(0.0)
     val mPerPx0 = 156_543.03 * cos(Math.toRadians(position.lat))

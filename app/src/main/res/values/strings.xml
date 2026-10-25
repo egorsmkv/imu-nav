@@ -39,6 +39,8 @@
     <string name="arrived">You have arrived</string>
     <string name="action_done">Done</string>
     <string name="nav_arrival_at">Arrive %1$s</string>
+    <string name="nav_remaining_of_total">%1$s of %2$s</string>
+    <string name="route_summary">Route: %1$s</string>
     <string name="then">Then</string>
     <string name="speed_limit_cd">Speed limit %1$d</string>
 
@@ -778,6 +780,10 @@
     <string name="map_buildings_3d_hint">Show 3D buildings where the map style provides them.</string>
     <string name="map_car_perspective">Perspective while driving</string>
     <string name="map_car_perspective_hint">Tilt the map in the direction of travel during car navigation.</string>
+    <string name="map_car_tilt">Map tilt: %1$d°</string>
+    <string name="map_car_tilt_hint">More tilt shows more of the road ahead; less keeps street names easier to read.</string>
+    <string name="map_direction_arrow">Position arrow</string>
+    <string name="map_direction_arrow_hint">Show your position as a flat arrow that turns with the direction of travel or the phone\'s compass. Off: a dot with a direction beam.</string>
     <string name="map_automatic_zoom">Automatic navigation zoom</string>
     <string name="map_automatic_zoom_hint">Show more road at higher speeds. Manual zoom pauses this until you tap Recenter.</string>
     <string name="map_hide_tower_button">Hide tower button during navigation</string>

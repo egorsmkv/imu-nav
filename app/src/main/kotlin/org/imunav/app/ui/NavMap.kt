@@ -28,6 +28,7 @@ import org.imunav.app.maps.addNavigationLayers
 import org.imunav.app.maps.mapStyle
 import org.imunav.app.maps.passedRouteFeatures
 import org.imunav.app.maps.routeFeatures
+import org.imunav.app.maps.updateDestinationLabel
 import org.imunav.app.maps.updateMapPoint
 import org.imunav.app.maps.updateMapPoints
 import org.imunav.app.maps.updateMapPosition
@@ -125,6 +126,10 @@ fun NavMap(
     waypoints: List<GeoPoint> = emptyList(),
     /** Direction the user faces (compass bearing) for the beam around the dot; null hides it. */
     headingDeg: Float? = null,
+    /** Draw the position as a flat arrow turned to [headingDeg] (Settings → map display). */
+    directionArrow: Boolean = true,
+    /** Route length or distance left, shown above [destination]; null hides it. */
+    destinationLabel: String? = null,
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current.density
@@ -286,6 +291,7 @@ fun NavMap(
     }
 
     LaunchedEffect(renderable, readyStyle, destination) { if (renderable) readyStyle?.let { updateMapPoint(it, "dest", destination) } }
+    LaunchedEffect(renderable, readyStyle, destinationLabel, dark) { if (renderable) readyStyle?.let { updateDestinationLabel(it, destinationLabel, dark) } }
     LaunchedEffect(renderable, readyStyle, waypoints) { if (renderable) readyStyle?.let { updateMapPoints(it, "via", waypoints) } }
 
     // The grey "already driven" line follows the marker in steps, so a long route is not rebuilt for every centimetre.
@@ -321,7 +327,9 @@ fun NavMap(
         }
     }
 
-    LaunchedEffect(renderable, readyStyle, position, accuracyM, headingDeg) { if (renderable) readyStyle?.let { updateMapPosition(it, position, accuracyM, headingDeg) } }
+    LaunchedEffect(renderable, readyStyle, position, accuracyM, headingDeg, directionArrow) {
+        if (renderable) readyStyle?.let { updateMapPosition(it, position, accuracyM, headingDeg, directionArrow) }
+    }
 
     LaunchedEffect(renderable, loadedMap, maxFps, prefetchZoomDelta) {
         if (renderable) {
