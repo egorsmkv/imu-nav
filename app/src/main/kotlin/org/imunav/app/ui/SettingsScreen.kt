@@ -255,16 +255,6 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
 
                 EverydaySettings(app, ui, context, ::save)
 
-                SettingsGroup(
-                    title = stringResource(R.string.proxy_title),
-                    summary = stringResource(R.string.proxy_summary),
-                    icon = Icons.Filled.Settings,
-                ) {
-                    ProxySettingsSection(app.proxySettings)
-                }
-
-                DataUsageSettings()
-
                 MapsSettings(app, routing, offlineMap, packUrl, onPackUrlChange = { packUrl = it }, onPickPack = {
                     pickPack.launch(arrayOf("application/zip", "application/octet-stream", "*/*"))
                 })
@@ -598,6 +588,16 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
                         supportingContent = { Text(stringResource(R.string.about_credits)) },
                     )
                 }
+
+                SettingsGroup(
+                    title = stringResource(R.string.proxy_title),
+                    summary = stringResource(R.string.proxy_summary),
+                    icon = Icons.Filled.Settings,
+                ) {
+                    ProxySettingsSection(app.proxySettings)
+                }
+
+                DataUsageSettings()
 
                 SettingsGroup(
                     title = stringResource(R.string.settings_group_links),
