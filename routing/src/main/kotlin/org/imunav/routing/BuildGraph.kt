@@ -27,7 +27,7 @@ data class PackInfo(
 
     companion object {
         const val FILE = "pack.json"
-        const val FORMAT = "rust-ch-1"
+        const val FORMAT = "rust-ch-2"
 
         /** Parse metadata before native I/O; malformed bounds and unsupported profiles are rejected. */
         fun parse(json: String): PackInfo? = runCatching {

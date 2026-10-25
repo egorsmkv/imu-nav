@@ -16,7 +16,7 @@ The app accepts locations worldwide. Install packs for the region you will use; 
 1. Install the built-in pack during setup if your build offers one. Otherwise open **Settings → Maps and routes → Offline routing** and import or download a routing-pack ZIP.
    The app rejects archives with more than 20,000 entries or 8 GiB of extracted data. It budgets
    256 MiB of free storage when extraction starts.
-2. In **Where to?**, choose **Car** or **Walk**. Install a current Rust pack; old GraphHopper packs must be replaced.
+2. In **Where to?**, choose **Car** or **Walk**. Install a current Rust pack; old GraphHopper and v1 Rust packs must be replaced.
 3. Search for a destination and, if needed, a starting address. Review the route before tapping **Start**.
 
 Walking routes require an offline pack with a foot profile. If you allow online routing, the app can use an online fallback for car routes when offline routing is unavailable.
@@ -42,7 +42,7 @@ native/target/release/build-routing --osm ukraine-latest.osm.pbf --out graph-ukr
 Import the resulting ZIP in the app. Java and the Android SDK are not needed for this builder.
 Country-scale graphs still need several GB of RAM and temporary disk space. For local HGT road
 heights, pack bundling and routing policy, see the [detailed reference](reference/routing_and_search.md).
-The new app requires newly built Rust packs; previous GraphHopper archives cannot be imported.
+The new app requires newly built Rust packs; previous GraphHopper and v1 Rust archives cannot be imported.
 
 ## Build an offline routing pack in CI
 

@@ -161,9 +161,9 @@ pub(crate) fn append(
             }
         } else {
             let previous = network.state(path[position - 1]);
-            let a = network.point(previous.point_start + previous.point_count - 2);
-            let junction = network.point(state.point_start);
-            let b = network.point(state.point_start + 1);
+            let a = network.point(previous, previous.point_count - 2);
+            let junction = network.point(state, 0);
+            let b = network.point(state, 1);
             let angle = geo::longitude(geo::bearing(junction, b) - geo::bearing(a, junction));
             if state.flags & 1 != 0 && previous.flags & 1 == 0 {
                 route.step(
@@ -211,8 +211,8 @@ pub(crate) fn append(
         }
         let mut along = 0.;
         for index in 1..state.point_count {
-            let a = network.point(state.point_start + index - 1);
-            let b = network.point(state.point_start + index);
+            let a = network.point(state, index - 1);
+            let b = network.point(state, index);
             let length = geo::distance(a, b);
             let next = along + length;
             if next > start && along < end {

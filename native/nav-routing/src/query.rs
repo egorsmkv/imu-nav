@@ -63,8 +63,8 @@ pub fn candidates(
                 let mut traversed = 0.;
                 let mut candidate = None;
                 for offset in 1..state.point_count {
-                    let a = network.point(state.point_start + offset - 1);
-                    let b = network.point(state.point_start + offset);
+                    let a = network.point(state, offset - 1);
+                    let b = network.point(state, offset);
                     let (projected, t) = geo::project(point, a, b);
                     let distance = geo::distance(point, projected);
                     let length = geo::distance(a, b);

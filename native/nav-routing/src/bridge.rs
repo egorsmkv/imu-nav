@@ -1,5 +1,5 @@
 //! Routing-pack JNI surface. Handles own Arcs, so close/cancel cannot free an active search.
-use crate::{route::Request, storage::Network};
+use crate::{pack::Pack, route::Request};
 use jni::JNIEnv;
 use jni::objects::{JClass, JString};
 use jni::sys::{jlong, jstring};
@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 type Registry<T> = OnceLock<Mutex<HashMap<i64, Arc<T>>>>;
-static INDEXES: Registry<Network> = OnceLock::new();
+static INDEXES: Registry<Pack> = OnceLock::new();
 static REQUESTS: Registry<AtomicBool> = OnceLock::new();
 static NEXT: AtomicI64 = AtomicI64::new(1);
 fn registry<T>(value: &Registry<T>) -> &Mutex<HashMap<i64, Arc<T>>> {
@@ -47,7 +47,7 @@ extern "system" fn Java_org_imunav_routing_RoutingNative_open(
 ) -> jlong {
     guarded(&mut env, |env| {
         let path: String = env.get_string(&path)?.into();
-        let index = Arc::new(Network::open(std::path::Path::new(&path))?);
+        let index = Arc::new(Pack::open(std::path::Path::new(&path))?);
         let handle = NEXT.fetch_add(1, Ordering::Relaxed);
         registry(&INDEXES)
             .lock()
@@ -121,6 +121,7 @@ extern "system" fn Java_org_imunav_routing_RoutingNative_route(
     _: JClass,
     index: jlong,
     request: jlong,
+    profile: JString,
     json: JString,
 ) -> jstring {
     guarded(&mut env, |env| {
@@ -137,12 +138,14 @@ extern "system" fn Java_org_imunav_routing_RoutingNative_route(
             .cloned()
             .ok_or("closed request")?;
         crate::check(&flag)?;
+        let profile: String = env.get_string(&profile)?.into();
+        let index = index.profile(&profile)?;
         let json: String = env.get_string(&json)?.into();
         if json.len() > 128 * 1024 {
             return Err("request too large".into());
         }
         let request: Request = serde_json::from_str(&json)?;
-        let result = serde_json::to_string(&crate::route::route(&index, &request, &flag)?)?;
+        let result = serde_json::to_string(&crate::route::route(index, &request, &flag)?)?;
         crate::check(&flag)?;
         Ok(env.new_string(result)?.into_raw())
     })
@@ -154,6 +157,7 @@ extern "system" fn Java_org_imunav_routing_RoutingNative_mapMatch(
     _: JClass,
     index: jlong,
     request: jlong,
+    profile: JString,
     json: JString,
 ) -> jstring {
     guarded(&mut env, |env| {
@@ -170,13 +174,14 @@ extern "system" fn Java_org_imunav_routing_RoutingNative_mapMatch(
             .cloned()
             .ok_or("closed request")?;
         crate::check(&flag)?;
+        let profile: String = env.get_string(&profile)?.into();
+        let index = index.profile(&profile)?;
         let json: String = env.get_string(&json)?.into();
         if json.len() > 1024 * 1024 {
             return Err("request too large".into());
         }
         let request: crate::matching::Request = serde_json::from_str(&json)?;
-        let result =
-            serde_json::to_string(&crate::matching::match_track(&index, &request, &flag)?)?;
+        let result = serde_json::to_string(&crate::matching::match_track(index, &request, &flag)?)?;
         crate::check(&flag)?;
         Ok(env.new_string(result)?.into_raw())
     })

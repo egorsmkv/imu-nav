@@ -20,7 +20,7 @@ def verify(archive_path: Path) -> dict:
         if len(names) != len(set(names)) or any(entry.is_dir() or not valid_name(entry.filename) for entry in entries):
             raise ValueError("routing archive must contain unique graph files and a search.tantivy subtree")
         native = any(name.startswith("search.tantivy/") for name in names)
-        required = {"pack.json", "car.routing", "foot.routing"} | (
+        required = {"pack.json", "car.routing", "foot.routing", "shared.routing"} | (
             {"search.tantivy/search-format", "search.tantivy/meta.json"} if native else {"search.db"}
         )
         if not required.issubset(names):
@@ -43,12 +43,15 @@ def verify(archive_path: Path) -> dict:
             raise ValueError("routing metadata exceeds size limit")
         for profile in ("car", "foot"):
             with archive.open(f"{profile}.routing") as graph:
-                if graph.read(8) != b"IMURT001":
+                if graph.read(8) != b"IMURT002":
                     raise ValueError("unsupported Rust routing data")
         info = json.loads(archive.read("pack.json"))
         if isinstance(info, dict) and (info.get("searchFormat") not in (None, "tantivy-1") or (native and info.get("searchFormat") != "tantivy-1") or (not native and info.get("searchFormat") is not None)):
             raise ValueError("pack.json searchFormat does not match the search index")
-        if not isinstance(info, dict) or not info.get("name") or info.get("routingFormat") != "rust-ch-1":
+        with archive.open("shared.routing") as shared:
+            if shared.read(8) != b"IMUGEO02":
+                raise ValueError("unsupported shared routing data")
+        if not isinstance(info, dict) or not info.get("name") or info.get("routingFormat") != "rust-ch-2":
             raise ValueError("pack.json has invalid name or Rust routing format")
         if info.get("profiles") != ["car", "foot"] or not isinstance(info.get("elevation"), bool):
             raise ValueError("pack.json must describe the car and foot profiles and elevation flag")

@@ -33,3 +33,8 @@ tempfile = "3"
 name = "build-routing"
 path = "src/bin/build-routing.rs"
 required-features = ["builder"]
+
+[[bin]]
+name = "archive-routing"
+path = "src/bin/archive-routing.rs"
+required-features = ["builder"]

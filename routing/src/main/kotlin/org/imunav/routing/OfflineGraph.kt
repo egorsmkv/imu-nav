@@ -22,8 +22,8 @@ object RoutingNative {
     external fun begin(): Long
     external fun cancel(request: Long)
     external fun finish(request: Long)
-    external fun route(handle: Long, request: Long, json: String): String
-    external fun mapMatch(handle: Long, request: Long, json: String): String
+    external fun route(handle: Long, request: Long, profile: String, json: String): String
+    external fun mapMatch(handle: Long, request: Long, profile: String, json: String): String
 
     /** Available in host libraries only. */
     external fun build(input: String, output: String, name: String, minNetwork: Int, search: Boolean, addresses: Boolean)
@@ -48,7 +48,7 @@ data class GraphCoverage(val minLat: Double, val maxLat: Double, val minLon: Dou
 }
 
 /** Read-only Rust routing pack; each profile memory-maps its independently prepared hierarchy. */
-class OfflineGraph private constructor(val dir: File, private val info: PackInfo, private val handles: Map<String, Long>) : AutoCloseable {
+class OfflineGraph private constructor(val dir: File, private val info: PackInfo, private val handle: Long) : AutoCloseable {
     private val lock = ReentrantReadWriteLock()
     private var closed = false
     val profiles = info.profiles
@@ -64,24 +64,36 @@ class OfflineGraph private constructor(val dir: File, private val info: PackInfo
         locale.toLanguageTag()
         check(!closed) { "Routing pack closed" }
         if (points.any { !covers(it) }) throw OfflineRoutingException("point outside offline map")
-        val handle = handles[mode.profile] ?: throw OfflineRoutingException("profile unavailable")
+        if (!supports(mode)) throw OfflineRoutingException("profile unavailable")
         val payload = SearchIndexJson.encode(mapOf("points" to points.map { listOf(it.lat, it.lon) }))
-        val json = if (request != null) RoutingNative.route(handle, request.handle, payload) else RoutingRequest().use { RoutingNative.route(handle, it.handle, payload) }
+        val json = if (request !=
+            null
+        ) {
+            RoutingNative.route(handle, request.handle, mode.profile, payload)
+        } else {
+            RoutingRequest().use { RoutingNative.route(handle, it.handle, mode.profile, payload) }
+        }
         decodeRoute(SearchIndexJson.decode(json))
     }
 
     /** Viterbi road matching uses the native graph and retains request-scoped cancellation. */
     fun mapMatch(points: List<GeoPoint>, accuracyM: Double = 20.0, mode: TravelMode = TravelMode.CAR, request: RoutingRequest? = null): MatchedTrack = lock.read {
         check(!closed) { "Routing pack closed" }
-        val handle = handles[mode.profile] ?: throw OfflineRoutingException("profile unavailable")
+        if (!supports(mode)) throw OfflineRoutingException("profile unavailable")
         val payload = SearchIndexJson.encode(mapOf("points" to points.map { listOf(it.lat, it.lon) }, "accuracy" to accuracyM))
-        val json = if (request != null) RoutingNative.mapMatch(handle, request.handle, payload) else RoutingRequest().use { RoutingNative.mapMatch(handle, it.handle, payload) }
+        val json = if (request !=
+            null
+        ) {
+            RoutingNative.mapMatch(handle, request.handle, mode.profile, payload)
+        } else {
+            RoutingRequest().use { RoutingNative.mapMatch(handle, it.handle, mode.profile, payload) }
+        }
         val route = decodeRoute(SearchIndexJson.decode(json))
         MatchedTrack(route.geometry, route.length, points.zipWithNext().sumOf { (a, b) -> Geo.distance(a, b) })
     }
 
     override fun close() = lock.write {
-        if (!closed) handles.values.forEach(RoutingNative::close)
+        if (!closed) RoutingNative.close(handle)
         closed = true
     }
 
@@ -92,15 +104,7 @@ class OfflineGraph private constructor(val dir: File, private val info: PackInfo
             require(metadata.length() <= 65_536) { "Routing metadata too large" }
             val info = PackInfo.parse(metadata.readText()) ?: throw OfflineRoutingException("invalid routing metadata")
             if (info.routingFormat != PackInfo.FORMAT) throw OfflineRoutingException("New Rust routing pack required; rebuild or download a current pack")
-            val handles = mutableMapOf<String, Long>()
-            try {
-                info.profiles.forEach { handles[it] = RoutingNative.open(File(dir, "$it.routing").absolutePath) }
-                return OfflineGraph(dir, info, handles)
-            } catch (@Suppress("TooGenericExceptionCaught") failure: Throwable) {
-                // A partially opened native pack must not leak mappings, including on linkage failures.
-                handles.values.forEach(RoutingNative::close)
-                throw failure
-            }
+            return OfflineGraph(dir, info, RoutingNative.open(dir.absolutePath))
         }
 
         private fun decodeRoute(data: Map<String, Any?>): Route {

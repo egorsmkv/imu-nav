@@ -29,6 +29,7 @@ class RustOfflineGraphTest {
             val pack = File(temporary, "pack")
             val info = buildGraph(input, pack, "Test", minNetworkSize = 0, withSearch = false)
             assertEquals(PackInfo.FORMAT, info.routingFormat)
+            assertTrue(File(pack, "shared.routing").isFile)
             OfflineGraph.load(pack).use { graph ->
                 val points = listOf(GeoPoint(50.4502, 30.5001), GeoPoint(50.4601, 30.5099))
                 val route = graph.route(points)
@@ -55,8 +56,10 @@ class RustOfflineGraphTest {
     fun oldPacksAreRejectedBeforeOpeningNativeFiles() {
         val temporary = createTempDirectory().toFile()
         try {
-            File(temporary, PackInfo.FILE).writeText(PackInfo("old", "", "", doubleArrayOf(50.0, 51.0, 30.0, 31.0), 0).toJson())
-            assertFailsWith<OfflineRoutingException> { OfflineGraph.load(temporary) }
+            for (format in listOf(null, "rust-ch-1")) {
+                File(temporary, PackInfo.FILE).writeText(PackInfo("old", "", "", doubleArrayOf(50.0, 51.0, 30.0, 31.0), 0, routingFormat = format).toJson())
+                assertFailsWith<OfflineRoutingException> { OfflineGraph.load(temporary) }
+            }
         } finally {
             temporary.deleteRecursively()
         }

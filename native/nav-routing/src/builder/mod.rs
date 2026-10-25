@@ -6,6 +6,8 @@
     clippy::cast_sign_loss,
     clippy::cast_precision_loss
 )]
+pub mod archive;
+mod compact;
 mod elevation;
 pub mod osm;
 pub mod profile;
@@ -158,6 +160,7 @@ pub fn build_with_elevation(
         write::contract(&output.join(format!("{profile}.routing")))?;
         println!("[routing] profile={profile} complete=true");
     }
+    compact::finish(output, &profiles, terrain_directory.is_some())?;
     let size = directory_size(output)?;
     let info = serde_json::json!({"name":name,"builtAt":time::OffsetDateTime::now_utc().format(&time::format_description::well_known::Rfc3339)?,"source":input.file_name().unwrap_or_default().to_string_lossy(),"routingFormat":crate::FORMAT,"profiles":profiles,"bounds":bounds,"sizeBytes":size,"elevation":terrain_directory.is_some(),"turnCosts":true,"searchFormat":if with_search{Some("tantivy-1")}else{None}});
     std::fs::write(output.join("pack.json"), serde_json::to_vec_pretty(&info)?)?;

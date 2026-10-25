@@ -309,3 +309,114 @@ fn one_way_direction_and_barriers_are_profile_specific() {
         .is_ok()
     );
 }
+
+#[test]
+fn compact_pack_shares_geometry_and_preserves_point_order_and_precision() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("rounded.osm");
+    std::fs::write(&input, r#"<osm version="0.6"><node id="1" lat="-50.000000049" lon="-30.000000049"/><node id="2" lat="-50.000000051" lon="-30.000000051"/><node id="3" lat="-50.001" lon="-30.001"/><way id="1"><nd ref="1"/><nd ref="2"/><nd ref="3"/><tag k="highway" v="residential"/><tag k="name" v="Спільна"/></way></osm>"#).unwrap();
+    let output = tmp.path().join("pack");
+    builder::build(&input, &output, "Test", 0, false, false).unwrap();
+    let shared = std::fs::read(output.join("shared.routing")).unwrap();
+    let read = |at| u64::from_le_bytes(shared[at..at + 8].try_into().unwrap());
+    assert_eq!(&shared[..8], b"IMUGEO02");
+    assert_eq!(read(8), 1); // Both profiles and both directions reference the same polyline.
+    assert_eq!(read(24), 3); // No point simplification.
+    assert_eq!(read(40), 0); // No absent-elevation array.
+    let pack = imu_nav_routing::pack::Pack::open(&output).unwrap();
+    for profile in ["car", "foot"] {
+        let network = pack.profile(profile).unwrap();
+        assert_eq!(network.count, 2);
+        let a = network.state(0);
+        let b = network.state(1);
+        assert_eq!(a.geometry, b.geometry);
+        assert_eq!(a.point_count, 3);
+        for index in 0..3 {
+            assert_eq!(network.point(a, index).lat, network.point(b, 2 - index).lat);
+        }
+        assert_eq!(network.name(a), "Спільна");
+        assert!((network.point(a, 0).lat + 50.000_000_049).abs() <= 0.000_000_05);
+    }
+    drop(pack);
+    let path = output.join("car.routing");
+    let bytes = std::fs::read(&path).unwrap();
+    let mut bad_reference = bytes.clone();
+    bad_reference[80..84].copy_from_slice(&u32::MAX.to_le_bytes());
+    std::fs::write(&path, bad_reference).unwrap();
+    assert!(Network::open(&path).is_err());
+    let mut legacy = bytes;
+    legacy[..8].copy_from_slice(b"IMURT001");
+    std::fs::write(&path, legacy).unwrap();
+    assert!(Network::open(&path).is_err());
+}
+
+#[test]
+fn wide_hierarchy_sections_and_corrupt_grid_are_checked() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("test.osm");
+    std::fs::write(&input, fixture()).unwrap();
+    let output = tmp.path().join("pack");
+    builder::build(&input, &output, "Test", 0, false, false).unwrap();
+    let path = output.join("car.routing");
+    let bytes = std::fs::read(&path).unwrap();
+    let read =
+        |at| usize::try_from(u64::from_le_bytes(bytes[at..at + 8].try_into().unwrap())).unwrap();
+    let count = read(8);
+    let nodes = read(16);
+    let arcs = [read(32), read(40)];
+    assert_eq!(read(48), 0);
+    let prefix = 72 + count * 40;
+    let mut wide = bytes[..prefix].to_vec();
+    wide[48..56].copy_from_slice(&15u64.to_le_bytes());
+    let mut cursor = prefix;
+    for _ in 0..2 * (nodes + 1) {
+        let offset = u32::from_le_bytes(bytes[cursor..cursor + 4].try_into().unwrap());
+        wide.extend_from_slice(&u64::from(offset).to_le_bytes());
+        cursor += 4;
+    }
+    for _ in 0..arcs.iter().sum::<usize>() {
+        wide.extend_from_slice(&bytes[cursor..cursor + 8]);
+        let weight = u32::from_le_bytes(bytes[cursor + 8..cursor + 12].try_into().unwrap());
+        wide.extend_from_slice(&u64::from(weight).to_le_bytes());
+        cursor += 12;
+    }
+    let grid = wide.len();
+    wide.extend_from_slice(&bytes[cursor..]);
+    std::fs::write(&path, &wide).unwrap();
+    let network = Network::open(&path).unwrap();
+    let request = Request {
+        points: vec![[50.4502, 30.5001], [50.4601, 30.5099]],
+    };
+    assert!(route(&network, &request, &AtomicBool::new(false)).is_ok());
+    drop(network);
+    wide[grid..grid + 4].copy_from_slice(&u32::MAX.to_le_bytes());
+    std::fs::write(&path, wide).unwrap();
+    assert!(Network::open(&path).is_err());
+}
+
+#[test]
+fn malformed_shared_ranges_and_coordinates_are_rejected() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("test.osm");
+    std::fs::write(&input, fixture()).unwrap();
+    let output = tmp.path().join("pack");
+    builder::build(&input, &output, "Test", 0, false, false).unwrap();
+    let path = output.join("shared.routing");
+    let original = std::fs::read(&path).unwrap();
+    for offset in [8, 24, 64] {
+        let mut invalid = original.clone();
+        invalid[offset..offset + 8].copy_from_slice(&u64::MAX.to_le_bytes());
+        std::fs::write(&path, invalid).unwrap();
+        assert!(imu_nav_routing::pack::Pack::open(&output).is_err());
+    }
+    let geometries =
+        usize::try_from(u64::from_le_bytes(original[8..16].try_into().unwrap())).unwrap();
+    let names = usize::try_from(u64::from_le_bytes(original[16..24].try_into().unwrap())).unwrap();
+    let points = 64 + (geometries + names) * 16;
+    let mut invalid = original.clone();
+    invalid[points..points + 4].copy_from_slice(&i32::MAX.to_le_bytes());
+    std::fs::write(&path, invalid).unwrap();
+    assert!(imu_nav_routing::pack::Pack::open(&output).is_err());
+    std::fs::write(&path, &original[..63]).unwrap();
+    assert!(imu_nav_routing::pack::Pack::open(&output).is_err());
+}

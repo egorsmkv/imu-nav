@@ -4,6 +4,8 @@
 
 ## Offline routing
 
+The [v2 binary format](routing-pack-format.md) shares compact geometry between profiles. Both v1 Rust packs and GraphHopper packs require rebuilding; Tantivy is unchanged.
+
 See the [Rust migration validation report](../benchmarks/rust-routing-2026-10-25.md) for measured pack builds and validation limits.
 
 The app uses `imu-nav-routing`, our Rust runtime, with contraction hierarchies prepared by
@@ -11,7 +13,7 @@ The app uses `imu-nav-routing`, our Rust runtime, with contraction hierarchies p
 matching are implemented in Rust. GraphHopper remains only in JVM reference tests; it is not
 an app or pack-builder dependency. The navigation engine still receives the existing Kotlin `Route`.
 
-**Compatibility:** only packs declaring `"routingFormat":"rust-ch-1"` are accepted. Rebuild or
+**Compatibility:** only packs declaring `"routingFormat":"rust-ch-2"` are accepted. Rebuild or
 download a current pack after upgrading. Existing GraphHopper packs are rejected with a localized
 message and are not rewritten. Import validation completes before replacing the installed pack.
 Display-map archives are unchanged. This remains a research prototype, not a safety system.
@@ -40,7 +42,7 @@ disk and OSM/search-builder memory is released before contraction. Cargo depende
 outputs are cached; generated packs are rebuilt. The workflow uploads the ZIP, SHA-256, source
 checksum and process timing/memory artifacts; it does not publish to a server.
 
-A pack contains `pack.json`, `car.routing`, `foot.routing`, and normally `search.tantivy/`.
+A pack contains `pack.json`, `car.routing`, `foot.routing`, `shared.routing`, and normally `search.tantivy/`.
 The profile files contain road geometry/names, access-specific directed roads, a snap grid and
 an immutable CH. They do not contain OSM PBFs, display-map tiles, GraphHopper files or downloaded DEM
 tiles. Route data is memory-mapped instead of deserializing the benchmark's bincode hierarchy.

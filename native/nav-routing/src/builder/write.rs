@@ -9,7 +9,7 @@
 use super::Road;
 use crate::{
     Result, geo,
-    storage::{MAGIC, NONE, cell_key, cell_of},
+    storage::{NONE, cell_key, cell_of},
 };
 use faster_paths::{
     contraction_hierarchy::ContractionHierarchy,
@@ -56,7 +56,7 @@ pub fn stage(
         })
         .collect();
     let mut out = BufWriter::new(File::create(path)?);
-    out.write_all(MAGIC)?;
+    out.write_all(b"IMUST001")?;
     let graph_count = if node_based { nodes.len() } else { order.len() };
     for count in [
         order.len() as u64,

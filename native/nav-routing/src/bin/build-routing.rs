@@ -1,9 +1,5 @@
 //! Standalone Rust OSM-to-routing-pack command; no JVM or Android SDK is required.
-use std::{
-    collections::HashMap,
-    io::Write,
-    path::{Path, PathBuf},
-};
+use std::{collections::HashMap, path::PathBuf};
 fn main() -> imu_nav_routing::Result<()> {
     let mut opts = HashMap::new();
     let mut args = std::env::args().skip(1);
@@ -68,40 +64,16 @@ fn main() -> imu_nav_routing::Result<()> {
         terrain.as_deref(),
     )?;
     let zip_path = PathBuf::from(format!("{}.zip", output.display()));
-    if zip_path.exists() {
-        return Err("archive already exists".into());
-    }
-    let mut archive = zip::ZipWriter::new(std::fs::File::create_new(&zip_path)?);
-    archive_directory(&output, &output, &mut archive)?;
-    archive.finish()?.flush()?;
+    let archive_started = std::time::Instant::now();
+    imu_nav_routing::builder::archive::write(&output, &zip_path, 6)?;
+    println!(
+        "[routing] archive_seconds={:.3}",
+        archive_started.elapsed().as_secs_f64()
+    );
     println!(
         "[routing] seconds={:.3} archive_bytes={} pack={info}",
         started.elapsed().as_secs_f64(),
         zip_path.metadata()?.len()
     );
-    Ok(())
-}
-fn archive_directory(
-    root: &Path,
-    directory: &Path,
-    archive: &mut zip::ZipWriter<std::fs::File>,
-) -> imu_nav_routing::Result<()> {
-    let mut entries = std::fs::read_dir(directory)?.collect::<std::io::Result<Vec<_>>>()?;
-    entries.sort_by_key(std::fs::DirEntry::file_name);
-    for entry in entries {
-        let path = entry.path();
-        if path.is_dir() {
-            archive_directory(root, &path, archive)?;
-        } else {
-            archive.start_file(
-                path.strip_prefix(root)?
-                    .to_string_lossy()
-                    .replace('\\', "/"),
-                zip::write::SimpleFileOptions::default()
-                    .compression_method(zip::CompressionMethod::Deflated),
-            )?;
-            std::io::copy(&mut std::fs::File::open(path)?, archive)?;
-        }
-    }
     Ok(())
 }

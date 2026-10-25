@@ -1,8 +1,8 @@
 //! Host smoke test for the exact runtime used on Android, without a JVM or emulator.
 use imu_nav_routing::{
     Result,
+    pack::Pack,
     route::{Request, route},
-    storage::Network,
 };
 use std::{path::PathBuf, sync::atomic::AtomicBool, time::Instant};
 fn main() -> Result<()> {
@@ -16,13 +16,11 @@ fn main() -> Result<()> {
         return Err("unsupported pack".into());
     }
     let queries = std::env::args().nth(2).map(std::fs::read).transpose()?;
+    let opened = Instant::now();
+    let pack = Pack::open(&dir)?;
+    println!("pack_open_ms={:.3}", opened.elapsed().as_secs_f64() * 1000.);
     for profile in ["car", "foot"] {
-        let opened = Instant::now();
-        let network = Network::open(&dir.join(format!("{profile}.routing")))?;
-        println!(
-            "profile={profile} open_ms={:.3}",
-            opened.elapsed().as_secs_f64() * 1000.
-        );
+        let network = pack.profile(profile)?;
         if let Some(data) = &queries {
             let requests: Vec<Request> = serde_json::from_slice(data)?;
             for (index, request) in requests.iter().enumerate() {
@@ -30,7 +28,7 @@ fn main() -> Result<()> {
                 let mut geometry_points = 0;
                 for _ in 0..11 {
                     let started = Instant::now();
-                    let result = route(&network, request, &AtomicBool::new(false))?;
+                    let result = route(network, request, &AtomicBool::new(false))?;
                     timings.push(started.elapsed().as_secs_f64() * 1000.);
                     geometry_points = result.geometry.len();
                 }
@@ -46,12 +44,12 @@ fn main() -> Result<()> {
         for index in 0..32 {
             let id = (index * 7919) % network.count;
             let road = network.state(u32::try_from(id)?);
-            let from = network.point(road.point_start);
-            let to = network.point(road.point_start + road.point_count - 1);
+            let from = network.point(road, 0);
+            let to = network.point(road, road.point_count - 1);
             let request = Request {
                 points: vec![[from.lat, from.lon], [to.lat, to.lon]],
             };
-            let result = route(&network, &request, &AtomicBool::new(false))?;
+            let result = route(network, &request, &AtomicBool::new(false))?;
             if result.geometry.is_empty() {
                 return Err("empty route".into());
             }
