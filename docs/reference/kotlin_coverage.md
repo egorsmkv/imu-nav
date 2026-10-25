@@ -22,7 +22,11 @@ App unit tests run under **Robolectric** (`robolectric.properties` replaces the 
 real SQLite and SharedPreferences, the host JNI library (the same build the replay
 tests use), `MockWebServer` for HTTP, a tiny routing pack built with the real pack
 builder (`TestPacks`), and an in-memory stand-in for the Android Keystore
-(`FakeAndroidKeyStore`). A few assertions about replacing files by renaming are
+(`FakeAndroidKeyStore`). Components that reach the app graph through `context.graph`,
+such as `NavService`, run under `@Config(application = TestGraphApp::class)`: it builds
+a real `AppGraph` without starting MapLibre's native renderer. Keep JNI-backed tests on
+the default Robolectric SDK, because the host JNI library can load into only one
+Robolectric sandbox per test run. A few assertions about replacing files by renaming are
 skipped on Windows hosts, where `File.renameTo` does not replace an existing file;
 Android and CI run them.
 

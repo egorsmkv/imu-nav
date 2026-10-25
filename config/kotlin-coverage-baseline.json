@@ -3,20 +3,20 @@
   "jacoco": "0.8.14",
   "modules": {
     "core": {
-      "covered": 4290,
-      "lines": 4572
+      "covered": 4440,
+      "lines": 4732
     },
     "routing": {
-      "covered": 437,
-      "lines": 470
+      "covered": 186,
+      "lines": 193
     },
     "replay": {
       "covered": 310,
       "lines": 364
     },
     "app": {
-      "covered": 4380,
-      "lines": 6431
+      "covered": 4845,
+      "lines": 6508
     }
   }
 }

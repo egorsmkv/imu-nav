@@ -8,9 +8,19 @@ import org.imunav.core.net.Http
 import org.maplibre.android.MapLibre
 import org.maplibre.android.module.http.HttpRequestUtil
 
+/**
+ * The Application that owns the process-wide [AppGraph]. [ImuNavApp] is the only one in the app;
+ * host tests provide their own, without MapLibre's native renderer.
+ */
+interface GraphOwner {
+    val graph: AppGraph
+}
+
 /** IMU Nav's Application object: created once per process, before any screen. It builds the [AppGraph]. */
-class ImuNavApp : Application() {
-    lateinit var graph: AppGraph
+class ImuNavApp :
+    Application(),
+    GraphOwner {
+    override lateinit var graph: AppGraph
         private set
 
     override fun attachBaseContext(base: Context) = super.attachBaseContext(AppLanguage.wrap(base))
@@ -39,4 +49,4 @@ private fun enableStrictMode() {
 }
 
 /** Shortcut to the process-wide [AppGraph] from any Context (`context.graph`). */
-val Context.graph: AppGraph get() = (applicationContext as ImuNavApp).graph
+val Context.graph: AppGraph get() = (applicationContext as GraphOwner).graph
