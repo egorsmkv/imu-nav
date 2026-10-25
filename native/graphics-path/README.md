@@ -25,6 +25,14 @@ reads or writes out of bounds: a malformed path ends with `Done`; `internalConic
 never writes more floats than the array holds (the C++ compared the quadratic count with the
 float count) and returns the count so the Kotlin caller grows its array and retries.
 
+AndroidX 1.0.1's `calculateSize(true)` primes the iterator's conic converter. Reusing that
+instance for traversal can prepend the last conic's converted quadratics before the first
+Move. This is present in both the upstream C++ and the Kotlin API 34+ implementation, and
+the Rust port preserves it for parity. Use separate fresh iterators for sizing and traversal;
+the device circle test compares the calculated size with a fresh walk and checks its Move/Close
+boundaries, quadratic continuity and circle endpoints. No dependency upgrade or fixture rewrite
+is needed for this workaround.
+
 ## Verification
 
 `tests/cpp_reference.rs` compares bit patterns with `tests/fixtures/cpp-reference.jsonl`:
@@ -37,6 +45,13 @@ regenerate it, check out those files from that commit and build the harness the 
 
 `app/src/androidTest/.../GraphicsPathNativeTest.kt` runs on devices: on Android 8–13 it
 exercises this library against real Skia data.
+
+The separate sizing/walking circle regression passes all three Graphics Path device tests on
+API 28 and API 35, and its host counterpart covers both Skia verb layouts and conic modes.
+The unchanged C++ bit-pattern fixtures and Clippy also pass. A full local GPS runner attempt
+on API 28 stopped earlier in `SearchRestorationTest` with a MapLibre render-thread SIGSEGV;
+that attempt is not counted as a passing full device suite. These focused results do not
+replace rerunning the complete CI matrix after publishing a change.
 
 ## Licence
 

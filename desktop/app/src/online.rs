@@ -149,14 +149,14 @@ fn cache_policy(
         .get(CACHE_CONTROL)
         .and_then(|header| header.to_str().ok())
         .unwrap_or_default();
-    let directives: Vec<_> = control.split(',').map(str::trim).collect();
+    let directives = control.split(',').map(str::trim);
     if directives
-        .iter()
+        .clone()
         .any(|value| value.eq_ignore_ascii_case("no-store"))
     {
         return None;
     }
-    let max_age = directives.iter().find_map(|directive| {
+    let max_age = directives.clone().find_map(|directive| {
         let (key, value) = directive.split_once('=')?;
         key.eq_ignore_ascii_case("max-age")
             .then(|| value.trim_matches('"').parse::<u64>().ok())
@@ -184,7 +184,7 @@ fn cache_policy(
         .or_else(|| previous.map(|entry| entry.lifetime_s))
         .unwrap_or(DEFAULT_CACHE_SECONDS);
     let expiration = if directives
-        .iter()
+        .clone()
         .any(|value| value.eq_ignore_ascii_case("no-cache"))
     {
         now
@@ -252,5 +252,22 @@ mod tests {
             cache_policy(&HeaderMap::new(), 1000, None).unwrap().expires,
             1000 + DEFAULT_CACHE_SECONDS
         );
+    }
+
+    #[test]
+    fn cache_directive_scans_preserve_case_whitespace_and_precedence() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            CACHE_CONTROL,
+            " public, MAX-AGE=\"600\", max-age=5 ".parse().unwrap(),
+        );
+        assert_eq!(cache_policy(&headers, 1000, None).unwrap().expires, 1600);
+        headers.insert(CACHE_CONTROL, " max-age=600, No-Cache ".parse().unwrap());
+        assert_eq!(cache_policy(&headers, 1000, None).unwrap().expires, 1000);
+        headers.insert(
+            CACHE_CONTROL,
+            " max-age=600, No-Store, no-cache ".parse().unwrap(),
+        );
+        assert!(cache_policy(&headers, 1000, None).is_none());
     }
 }

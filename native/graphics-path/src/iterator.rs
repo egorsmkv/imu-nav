@@ -104,8 +104,9 @@ impl<'a> PathIterator<'a> {
         }
     }
 
-    /// Number of segments `next` will return. Like the C++, converting conics here reuses the
-    /// iterator's converter, so the reference behaviour (including its state) is preserved.
+    /// Calculated segment count. Like the C++, this primes the iterator's conic converter;
+    /// use a separate instance for sizing and walking so pending quadratics cannot be prepended.
+    /// This side effect also exists in `AndroidX` 1.0.1's Kotlin implementation on API 34+.
     pub fn count(&mut self) -> usize {
         if self.evaluation == ConicEvaluation::AsConic {
             return self.verbs.len();

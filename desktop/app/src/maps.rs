@@ -275,14 +275,19 @@ fn read_tile(
         return Ok(None);
     }
     let row = tms_row(tile.zoom, tile.y).ok_or(())?;
-    let data: Option<Vec<u8>> = database.query_row(
-        "SELECT tile_data FROM tiles WHERE zoom_level=?1 AND tile_column=?2 AND tile_row=?3 AND length(tile_data)<=?4 LIMIT 1",
-        rusqlite::params![tile.zoom, tile.x, row, MAX_TILE_BYTES], |row| row.get(0),
-    ).optional().map_err(|_| ())?;
-    let Some(data) = data else {
-        return Ok(None);
-    };
-    decode_raster(&data).map(Some)
+    // Decode while SQLite still owns the row: no temporary copy of the compressed BLOB.
+    let image = database
+        .query_row(
+            "SELECT tile_data FROM tiles WHERE zoom_level=?1 AND tile_column=?2 AND tile_row=?3 AND length(tile_data)<=?4 LIMIT 1",
+            rusqlite::params![tile.zoom, tile.x, row, MAX_TILE_BYTES],
+            |row| {
+                let data = row.get_ref(0)?;
+                Ok(data.as_blob().map_err(|_| ()).and_then(decode_raster))
+            },
+        )
+        .optional()
+        .map_err(|_| ())?;
+    image.transpose()
 }
 
 pub fn decode_raster(data: &[u8]) -> Result<ColorImage, ()> {
@@ -300,7 +305,7 @@ pub fn decode_raster(data: &[u8]) -> Result<ColorImage, ()> {
     limits.max_image_height = Some(512);
     limits.max_alloc = Some(8 * 1024 * 1024);
     reader.limits(limits);
-    let image = reader.decode().map_err(|_| ())?.to_rgba8();
+    let image = reader.decode().map_err(|_| ())?.into_rgba8();
     if image.width() != image.height() || !matches!(image.width(), 256 | 512) {
         return Err(());
     }
@@ -384,6 +389,18 @@ mod tests {
                 [encoded.into_inner()],
             )
             .unwrap();
+        database
+            .execute_batch(
+                "INSERT INTO tiles VALUES (2,1,3,'not a BLOB');
+             INSERT INTO tiles VALUES (2,2,3,X'000102');",
+            )
+            .unwrap();
+        database
+            .execute(
+                "INSERT INTO tiles VALUES (2,3,3,zeroblob(?1))",
+                [MAX_TILE_BYTES + 1],
+            )
+            .unwrap();
         drop(database);
         let (database, info) = open_database(file.path()).unwrap();
         let decoded = read_tile(
@@ -399,6 +416,22 @@ mod tests {
         .unwrap();
         assert_eq!(decoded.size, [256, 256]);
         assert_eq!(decoded.pixels[0], egui::Color32::from_rgb(20, 40, 80));
+        for x in [1, 2] {
+            assert!(read_tile(&database, TileId { zoom: 2, x, y: 0 }, &info).is_err());
+        }
+        assert!(
+            read_tile(
+                &database,
+                TileId {
+                    zoom: 2,
+                    x: 3,
+                    y: 0
+                },
+                &info
+            )
+            .unwrap()
+            .is_none()
+        );
         assert!(
             read_tile(
                 &database,

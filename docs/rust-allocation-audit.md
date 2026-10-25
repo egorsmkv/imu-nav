@@ -1,5 +1,8 @@
 # Rust copy and allocation audit
 
+The separate [desktop audit](desktop-rust-allocation-audit.md) covers `desktop/app` and
+`desktop/protocol`, including network snapshots, NMEA parsing, rendering and raster tiles.
+
 Scope: repository-owned Rust in `native/` and `server/`, reviewed on 2026-10-25 with
 Rust/Clippy 1.99.0 on Windows x86-64. This is a source audit plus regression tests and
 Clippy checks, not an allocator trace or a throughput benchmark. Dependency internals,

@@ -175,6 +175,18 @@ fdroid checkupdates --allow-dirty org.imunav.app
 fdroid build org.imunav.app
 ```
 
+CI runs the same build in the **F-Droid recipe build** workflow (`.github/workflows/fdroidserver.yml`).
+It uses fdroiddata's `buildserver-trixie` image and the fdroidserver commit fdroiddata's own CI pins
+(`FDROIDSERVER_COMMIT`), takes `fdroid/metadata.yml` with only `Repo` (the checkout) and the latest
+entry's `commit` (the commit under test) replaced, and runs
+`fdroid build --verbose --test --refresh-scanner --on-server --no-tarball org.imunav.app:<versionCode>`
+as the `vagrant` user. The recipe's `sudo`, `prebuild` and `ndk` steps, Gradle and the source
+scanner therefore run exactly as on F-Droid's servers. It fails if `app/build.gradle.kts` and the
+recipe disagree on the version, uploads the unsigned APK and build logs, and runs on tags, manual
+dispatch, and pull requests or merge-queue entries that change the recipe, Gradle build files,
+Cargo manifests or build scripts, or the Rust build scripts (source changes are covered by the
+F-Droid workflow). When fdroiddata moves its pin, update `FDROIDSERVER_COMMIT`/`FDROIDSERVER_SINCE`.
+
 Review the source scanner output instead of suppressing findings. In particular, explain that the
 cell database is freely licensed non-executable data and MapLibre is a freely licensed dependency
 from a trusted Maven repository. Verify the built manifest and compare the fdroidserver APK with a

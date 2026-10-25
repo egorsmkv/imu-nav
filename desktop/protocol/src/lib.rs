@@ -345,12 +345,13 @@ pub fn parse_rmc(sentence: &str) -> Result<Fix, ProtocolError> {
     {
         return Err(ProtocolError::Invalid);
     }
-    let fields: Vec<_> = body.split(',').collect();
-    if fields.len() < 12
-        || !matches!(fields[0], "GPRMC" | "GNRMC")
-        || fields[2] != "A"
-        || fields.get(12) == Some(&"N")
-    {
+    // RMC needs twelve fields plus an optional mode. Borrow them without a heap table.
+    let mut parts = body.split(',');
+    let mut fields = [""; 12];
+    for field in &mut fields {
+        *field = parts.next().ok_or(ProtocolError::Invalid)?;
+    }
+    if !matches!(fields[0], "GPRMC" | "GNRMC") || fields[2] != "A" || parts.next() == Some("N") {
         return Err(ProtocolError::Invalid);
     }
     validate_utc(fields[1], fields[9])?;

@@ -62,10 +62,13 @@ class GraphicsPathNativeTest {
             assertOnCircle(conic.points.last().x, conic.points.last().y, radius)
         }
 
-        val iterator = PathIterator(circle, PathIterator.ConicEvaluation.AsQuadratics, 0.25f)
-        val expectedSize = iterator.calculateSize(true)
-        val segments = iterator.asSequence().toList()
+        // AndroidX 1.0.1 sizing primes the iterator's conic converter on both JNI and API 34+.
+        // Size and walk separate instances so sizing cannot prepend the final arc's quadratics.
+        val expectedSize = PathIterator(circle, PathIterator.ConicEvaluation.AsQuadratics, 0.25f).calculateSize(true)
+        val segments = PathIterator(circle, PathIterator.ConicEvaluation.AsQuadratics, 0.25f).asSequence().toList()
         assertEquals(expectedSize, segments.size)
+        assertEquals(PathSegment.Type.Move, segments.first().type)
+        assertEquals(PathSegment.Type.Close, segments.last().type)
         val quadratics = segments.filter { it.type == PathSegment.Type.Quadratic }
         assertTrue("a 100 px circle needs several quadratics per quarter, got ${quadratics.size}", quadratics.size >= 8)
         quadratics.zipWithNext().forEach { (a, b) -> assertEquals(a.points.last(), b.points.first()) }

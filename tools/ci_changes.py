@@ -44,12 +44,19 @@ SUITES = {
                'tools/tests/test_kotlin_coverage.py', 'config/kotlin-coverage-baseline.json') + ANDROID_RUST_BUILD + CORE + ROUTING + REPLAY + NATIVE + SERVER + RUST,
     'native': ('.github/workflows/rust-coverage.yml', 'app/src/main/kotlin/org/imunav/app/nativecore/') + ANDROID_RUST_BUILD + CORE + REPLAY + NATIVE + COVERAGE + RUST,
     'server': ('.github/workflows/rust-coverage.yml', 'server/tests/', 'server/tools/') + SERVER + COVERAGE + RUST,
+    # Inputs that change how F-Droid builds the app; source changes are covered by the F-Droid workflow.
+    'fdroidserver': ('.github/workflows/fdroidserver.yml', 'fdroid/metadata.yml', 'app/build.gradle.kts',
+                     'app/proguard-rules.pro', 'native/Cargo.toml',
+                     'native/Cargo.lock', 'native/graphics-path/Cargo.toml', 'native/nav-jni/Cargo.toml',
+                     'native/nav-search/Cargo.toml', 'native/nav-routing/Cargo.toml', 'native/nav-core/Cargo.toml',
+                     'native/graphics-path/build.rs', 'native/nav-jni/build.rs', 'native/nav-search/build.rs',
+                     'native/nav-routing/build.rs') + ANDROID_RUST_BUILD + RUST,
     'map': ('.github/workflows/map-pack.yml', 'tools/make_map_pack.py',
             'tools/verify_map_pack.py', 'tools/tests/test_map_pack.py'),
     'routing': ('.github/workflows/routing-pack.yml', 'tools/verify_routing_pack.py',
                 'tools/tests/test_verify_routing_pack.py', 'native/nav-search/', 'native/nav-routing/', 'native/Cargo.toml', 'native/Cargo.lock') + CORE + ROUTING,
 }
-GRADLE_SUITES = {'fdroid', 'kotlin', 'native', 'routing', 'android'}
+GRADLE_SUITES = {'fdroid', 'kotlin', 'native', 'routing', 'android', 'fdroidserver'}
 
 
 def matches(path, rules):

@@ -37,16 +37,17 @@ class SelectionTests(unittest.TestCase):
 
     def test_shared_build_inputs_and_included_assets_are_selected(self):
         for script in ci.ANDROID_RUST_BUILD:
-            self.assertEqual(self.selected(script), {'native', 'kotlin', 'fdroid', 'android'})
+            self.assertEqual(self.selected(script), {'native', 'kotlin', 'fdroid', 'android', 'fdroidserver'})
         self.assertEqual(self.selected('gradle/libs.versions.toml'), ci.GRADLE_SUITES)
         self.assertEqual(self.selected('links.properties'), ci.GRADLE_SUITES)
-        self.assertEqual(self.selected('core/src/test/resources/fixture.json'), ci.GRADLE_SUITES)
+        # Source and fixtures are built by the F-Droid workflow; the recipe build follows build configuration only.
+        self.assertEqual(self.selected('core/src/test/resources/fixture.json'), ci.GRADLE_SUITES - {'fdroidserver'})
         self.assertEqual(self.selected('server/static/maplibre/license.txt'), {'server', 'kotlin'})
         self.assertEqual(self.selected('server/templates/trips.html'), {'server', 'kotlin'})
         self.assertEqual(self.selected('server/Cargo.lock'), {'server', 'kotlin'})
         self.assertIn('routing', self.selected('native/nav-search/src/lib.rs'))
-        self.assertEqual(self.selected('native/Cargo.lock'), {'native', 'kotlin', 'fdroid', 'android', 'routing'})
-        self.assertEqual(self.selected('.cargo/config.toml'), {'native', 'server', 'kotlin', 'fdroid', 'android', 'desktop'})
+        self.assertEqual(self.selected('native/Cargo.lock'), {'native', 'kotlin', 'fdroid', 'android', 'routing', 'fdroidserver'})
+        self.assertEqual(self.selected('.cargo/config.toml'), {'native', 'server', 'kotlin', 'fdroid', 'android', 'desktop', 'fdroidserver'})
 
     def test_desktop_protocol_selects_its_relay_consumers(self):
         self.assertEqual(self.selected('desktop/app/src/viewer.rs'), {'desktop'})
@@ -71,6 +72,14 @@ class SelectionTests(unittest.TestCase):
                      'tools/generate_benchmark_signing_env.py', 'tools/tests/test_generate_benchmark_signing_env.py',
                      'tools/release_signing.py', 'tools/tests/test_release_signing.py'):
             self.assertEqual(self.selected(path), {'fdroid', 'tools'})
+
+    def test_fdroid_recipe_build_follows_build_configuration_not_sources(self):
+        for path in ('fdroid/metadata.yml', '.github/workflows/fdroidserver.yml'):
+            self.assertEqual(self.selected(path), {'fdroidserver'})
+        self.assertIn('fdroidserver', self.selected('app/build.gradle.kts'))
+        self.assertIn('fdroidserver', self.selected('native/graphics-path/build.rs'))
+        self.assertNotIn('fdroidserver', self.selected('native/graphics-path/src/conic.rs'))
+        self.assertNotIn('fdroidserver', self.selected('app/src/main/kotlin/org/imunav/app/ui/NavMap.kt'))
 
     def test_graphics_path_port_builds_every_android_package(self):
         self.assertEqual(self.selected('native/graphics-path/src/conic.rs'), {'native', 'kotlin', 'fdroid', 'android'})

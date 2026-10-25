@@ -82,7 +82,7 @@ preserve the same protocol bytes on every host.
 
 ```powershell
 cargo fmt --manifest-path desktop/Cargo.toml --all --check
-cargo clippy --manifest-path desktop/Cargo.toml --workspace --all-targets --locked -- -W clippy::pedantic -D warnings
+cargo clippy --manifest-path desktop/Cargo.toml --workspace --all-targets --all-features --locked -- -W clippy::pedantic -W clippy::redundant_clone -W clippy::needless_collect -W clippy::unnecessary_to_owned -D warnings
 cargo test --manifest-path desktop/Cargo.toml --workspace --locked
 desktop/target/release/imu-nav-desktop.exe --smoke-test captures/desktop.png
 ```
@@ -92,6 +92,10 @@ saved connection preferences, makes no network requests and does not save prefer
 rendering check, not proof of a real phone or VPN deployment. Run Android's
 `PositionSharingLifecycleTest` on a disposable emulator for screen-off service checks. Test your
 actual private network/VPN receiver, map coverage, rerouting and GPS-loss transitions before use.
+
+Both Rust crates use the repository-root `rustfmt.toml`. The separate
+[desktop copy/allocation audit](desktop-rust-allocation-audit.md) records borrowing boundaries,
+removed buffers, remaining allocation sites and verification limits.
 
 ## Mirror protocol version 1
 

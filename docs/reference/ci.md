@@ -21,7 +21,8 @@ Update it whenever a module starts consuming another module, fixture, generator 
 | Server implementation / templates / embedded static assets | Server Rust coverage and Kotlin client/server integration + coverage |
 | Server tests / traffic simulator | Server Rust coverage |
 | Core source or fixtures | F-Droid, Kotlin/native coverage and routing fixture |
-| Shared Gradle configuration | F-Droid, Kotlin/native coverage and routing fixture |
+| Shared Gradle configuration | F-Droid, Kotlin/native coverage, routing fixture and F-Droid recipe build |
+| `fdroid/metadata.yml`, `app/build.gradle.kts`, Cargo manifests / build scripts, Rust build scripts | F-Droid recipe build (`fdroid build` in fdroiddata's buildserver image) |
 | Map pack tools | Python tooling tests and map fixture |
 | Coverage script | Python tooling tests and its corresponding coverage suite(s) |
 | Selector or its tests | All selected suites, so changes to the dependency map are exercised |
@@ -35,7 +36,8 @@ It selects app, core, routing, native, runner and Gradle changes and always repo
 
 Server Docker smoke builds retain their `main` path filters and manual dispatch. Native
 formal verification and full regional pack generation remain manual. No release is published
-by these workflows. F-Droid tags continue to build regardless of path selection.
+by these workflows. F-Droid tags continue to build regardless of path selection, and tags also
+run the F-Droid recipe build (see [F-Droid](fdroid.md#testing-with-fdroidserver)).
 
 ## Diff and failure semantics
 

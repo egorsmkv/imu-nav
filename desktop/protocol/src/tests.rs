@@ -70,6 +70,20 @@ fn coordinate_boundaries_zero_and_rounded_course_are_validated() {
 }
 
 #[test]
+fn rmc_required_fields_optional_mode_and_trailing_fields_keep_their_contract() {
+    let sentence = |body: &str| {
+        let checksum = body.bytes().fold(0, |sum, byte| sum ^ byte);
+        format!("${body}*{checksum:02X}\r\n")
+    };
+    let required = "GPRMC,000000,A,0000.0,N,00000.0,E,0,0,010126,,";
+    for suffix in ["", ",E", ",A", ",E,extra"] {
+        assert!(parse_rmc(&sentence(&format!("{required}{suffix}"))).is_ok());
+    }
+    assert!(parse_rmc(&sentence(&format!("{required},N"))).is_err());
+    assert!(parse_rmc(&sentence(required.strip_suffix(',').unwrap())).is_err());
+}
+
+#[test]
 fn routes_replace_only_on_complete_matching_transfers() {
     let route = Route {
         revision: 1,

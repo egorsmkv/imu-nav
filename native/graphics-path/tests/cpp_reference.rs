@@ -165,3 +165,64 @@ fn malformed_paths_end_instead_of_reading_outside_the_arrays() {
         "unknown verbs stop the walk"
     );
 }
+
+#[test]
+fn circle_size_matches_a_separate_fresh_walk_in_both_skia_layouts() {
+    let path_points = [
+        Point { x: 100.0, y: 0.0 },
+        Point { x: 100.0, y: 100.0 },
+        Point { x: 0.0, y: 100.0 },
+        Point {
+            x: -100.0,
+            y: 100.0,
+        },
+        Point { x: -100.0, y: 0.0 },
+        Point {
+            x: -100.0,
+            y: -100.0,
+        },
+        Point { x: 0.0, y: -100.0 },
+        Point {
+            x: 100.0,
+            y: -100.0,
+        },
+        Point { x: 100.0, y: 0.0 },
+    ];
+    let weights = [std::f32::consts::FRAC_1_SQRT_2; 4];
+    for direction in [VerbDirection::Forward, VerbDirection::Backward] {
+        let mut verbs = [0, 3, 3, 3, 3, 5];
+        if direction == VerbDirection::Backward {
+            verbs.reverse();
+        }
+        for evaluation in [ConicEvaluation::AsConic, ConicEvaluation::AsQuadratics] {
+            let new_iterator =
+                || PathIterator::new(&path_points, &verbs, &weights, direction, evaluation, 0.25);
+            let expected_size = new_iterator().count();
+            let mut walk = new_iterator();
+            let mut segments = Vec::new();
+            loop {
+                let mut out = [Point::default(); 4];
+                let verb = walk.next(&mut out);
+                if verb == Verb::Done {
+                    break;
+                }
+                segments.push(verb);
+                assert!(
+                    segments.len() <= expected_size,
+                    "walk exceeded calculated size"
+                );
+            }
+            assert_eq!(segments.len(), expected_size);
+            assert_eq!(segments.first(), Some(&Verb::Move));
+            assert_eq!(segments.last(), Some(&Verb::Close));
+            assert_eq!(
+                expected_size,
+                if evaluation == ConicEvaluation::AsConic {
+                    6
+                } else {
+                    34
+                }
+            );
+        }
+    }
+}

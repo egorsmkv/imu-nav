@@ -41,7 +41,7 @@ jobs:
         run: cargo +1.99.0 fmt --manifest-path desktop/Cargo.toml --all --check
       - name: Check code
         if: steps.changes.outputs.run == 'true'
-        run: cargo +1.99.0 clippy --manifest-path desktop/Cargo.toml --workspace --all-targets --locked -- -W clippy::pedantic -D warnings
+        run: cargo +1.99.0 clippy --manifest-path desktop/Cargo.toml --workspace --all-targets --all-features --locked -- -W clippy::pedantic -W clippy::redundant_clone -W clippy::needless_collect -W clippy::unnecessary_to_owned -D warnings
       - name: Test desktop and protocol
         if: steps.changes.outputs.run == 'true'
         run: cargo +1.99.0 test --manifest-path desktop/Cargo.toml --workspace --locked

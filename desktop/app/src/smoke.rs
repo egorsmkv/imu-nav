@@ -15,12 +15,16 @@ pub struct Smoke {
 
 impl Smoke {
     pub fn from_arguments() -> Option<Self> {
-        let arguments: Vec<_> = std::env::args_os().collect();
-        if arguments.len() != 3 || arguments[1] != "--smoke-test" {
+        let mut arguments = std::env::args_os().skip(1);
+        if arguments.next()? != "--smoke-test" {
+            return None;
+        }
+        let path = PathBuf::from(arguments.next()?);
+        if arguments.next().is_some() {
             return None;
         }
         Some(Self {
-            path: PathBuf::from(&arguments[2]),
+            path,
             started: Instant::now(),
             requested: false,
             saved: None,

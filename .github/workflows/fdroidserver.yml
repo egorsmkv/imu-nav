@@ -1,0 +1,118 @@
+name: F-Droid recipe build
+
+# Builds the app the way F-Droid's servers do: fdroiddata's buildserver image, the pinned
+# fdroidserver and `fdroid build --on-server`, so the recipe's sudo/prebuild/ndk steps and the
+# source scanner run for real. The recipe is fdroid/metadata.yml with only Repo (this checkout)
+# and the latest entry's commit (the commit under test) replaced.
+on:
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+# Manual builds and tags keep independent runs; only superseded validation is canceled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
+
+permissions:
+  contents: read
+
+env:
+  APP_ID: org.imunav.app
+  # Same fdroidserver commit fdroiddata's CI uses; update both together.
+  FDROIDSERVER_COMMIT: a35fdfddd9c66823987a410566a6101186e39c84
+  FDROIDSERVER_SINCE: '2026-07-13'
+
+jobs:
+  fdroid-build:
+    name: fdroid build org.imunav.app
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    container:
+      image: registry.gitlab.com/fdroid/fdroidserver:buildserver-trixie
+    env:
+      ANDROID_HOME: /opt/android-sdk
+    steps:
+      # actions/checkout needs git in the container, or it downloads a tarball without history.
+      - name: Install git
+        run: |
+          apt-get update
+          apt-get install -y git
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          path: source
+          persist-credentials: false
+      - name: Select affected work
+        id: changes
+        working-directory: source
+        run: python3 tools/ci_changes.py --suite fdroidserver
+
+      - name: Prepare buildserver
+        if: steps.changes.outputs.run == 'true'
+        run: |
+          set -e
+          apt-get dist-upgrade -y
+          apt-get install -y sudo openjdk-21-jdk-headless
+          update-alternatives --set java "$(update-alternatives --list java | grep java-21)"
+          # Defines $home_vagrant and $fdroidserver (not under `set -u`: the profile uses unset variables).
+          . /etc/profile.d/bsenv.sh
+          set -u
+          rm -rf "$fdroidserver"
+          git clone --shallow-since="$FDROIDSERVER_SINCE" https://gitlab.com/fdroid/fdroidserver.git "$fdroidserver"
+          git -C "$fdroidserver" config transfer.fsckObjects true
+          git -C "$fdroidserver" checkout -B master "$FDROIDSERVER_COMMIT"
+          # The vagrant user clones this checkout; it is owned by the container's root.
+          git config --system --add safe.directory '*'
+          echo "home_vagrant=$home_vagrant" >> "$GITHUB_ENV"
+          echo "fdroidserver=$fdroidserver" >> "$GITHUB_ENV"
+
+      - name: Write the recipe for this commit
+        if: steps.changes.outputs.run == 'true'
+        working-directory: source
+        run: |
+          set -eu
+          # Strip CR first so the anchors also hold for a CRLF checkout.
+          code=$(tr -d '\r' < app/build.gradle.kts | sed -n 's/^ *versionCode = \([0-9][0-9]*\)$/\1/p')
+          name=$(tr -d '\r' < app/build.gradle.kts | sed -n 's/^ *versionName = "\([^"]*\)"$/\1/p')
+          current=$(tr -d '\r' < fdroid/metadata.yml | sed -n 's/^CurrentVersionCode: //p')
+          if [ "$code" != "$current" ]; then
+            echo "app/build.gradle.kts versionCode $code but fdroid/metadata.yml CurrentVersionCode $current; run tools/update_app_version.py" >&2
+            exit 1
+          fi
+          mkdir -p "$home_vagrant/metadata"
+          # Build this checkout at the commit under test instead of the published tag.
+          tr -d '\r' < fdroid/metadata.yml | sed -e "s|^Repo: .*|Repo: $GITHUB_WORKSPACE/source|" \
+              -e "s|^    commit: v$name\$|    commit: $GITHUB_SHA|" > "$home_vagrant/metadata/$APP_ID.yml"
+          grep -q "commit: $GITHUB_SHA" "$home_vagrant/metadata/$APP_ID.yml" || {
+            echo "No build entry with commit v$name in fdroid/metadata.yml" >&2; exit 1; }
+          echo "VERSION_CODE=$code" >> "$GITHUB_ENV"
+
+      - name: fdroid build
+        if: steps.changes.outputs.run == 'true'
+        run: |
+          set -eu
+          cd "$home_vagrant"
+          for d in build logs tmp unsigned .android .gradle metadata; do
+            mkdir -p "$d"
+          done
+          chown -R vagrant "$home_vagrant"
+          sysctl fs.inotify.max_user_watches=524288 || true
+          sudo --preserve-env --user vagrant \
+            env PATH="$fdroidserver:$PATH" PYTHONPATH="$fdroidserver:$fdroidserver/examples" \
+            PYTHONUNBUFFERED=true HOME="$home_vagrant" GRADLE_USER_HOME="$home_vagrant/.gradle" \
+            fdroid build --verbose --test --refresh-scanner --on-server --no-tarball "$APP_ID:$VERSION_CODE"
+
+      - name: Upload unsigned APK and build logs
+        if: always() && steps.changes.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fdroidserver-build-${{ github.sha }}
+          path: |
+            ${{ env.home_vagrant }}/unsigned/
+            ${{ env.home_vagrant }}/logs/
+            ${{ env.home_vagrant }}/tmp/*.log
+          if-no-files-found: warn
+          retention-days: 14
