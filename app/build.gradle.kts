@@ -48,9 +48,6 @@ android {
         buildConfigField("String", "PRIVATBANK_DONATION_URL", buildConfigString(configuredLink("privatbankDonationUrl")))
         // Main-thread diagnostics (StrictMode + MainThreadWatchdog); on in debug and benchmark builds only.
         buildConfigField("boolean", "DIAGNOSTICS", "false")
-        externalNativeBuild {
-            cmake { arguments += "-DANDROID_STL=c++_static" }
-        }
     }
 
     // Release signing: create keystore.properties (see README) — it and the keystore are gitignored.
@@ -176,13 +173,6 @@ android {
             assets.directories.add("$experiment/assets")
         }
     }
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
-        }
-    }
-
     // The in-app language switcher needs every language in every install (App Bundles would split them).
     bundle {
         language {
@@ -261,7 +251,7 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.material.icons.extended)
-    // The vendored native implementation must match the Maven JNI callers exactly.
+    // native/graphics-path (Rust port) implements this version's JNI callers exactly.
     implementation("androidx.graphics:graphics-path") { version { strictly("1.0.1") } }
 
     implementation(libs.maplibre.android)
@@ -280,7 +270,7 @@ dependencies {
 
 val graphicsPathRebuilt: Attribute<Boolean> = Attribute.of("org.imunav.graphics-path-rebuilt", Boolean::class.javaObjectType)
 
-/** Retains Graphics Path's bytecode and metadata while replacing its incompatible prebuilt JNI. */
+/** Retains Graphics Path's bytecode and metadata; its prebuilt JNI is replaced by native/graphics-path (16 KB RELRO). */
 abstract class StripPrebuiltGraphicsPath : TransformAction<TransformParameters.None> {
     @get:InputArtifact
     abstract val inputArtifact: Provider<FileSystemLocation>
@@ -291,7 +281,7 @@ abstract class StripPrebuiltGraphicsPath : TransformAction<TransformParameters.N
             outputs.file(input)
             return
         }
-        check(input.name == "graphics-path-1.0.1.aar") { "Update the vendored Graphics Path JNI source before changing its version" }
+        check(input.name == "graphics-path-1.0.1.aar") { "Update native/graphics-path (Rust port of the JNI) before changing the Graphics Path version" }
         val output = outputs.file("rebuilt-${input.name}")
         ZipFile(input).use { zip ->
             ZipOutputStream(output.outputStream().buffered()).use { out ->
@@ -315,7 +305,7 @@ dependencies {
     }
 }
 
-// Rebuild the graphics-path native dependency for Android page-size compatibility.
+// Use the Rust graphics-path library instead of the prebuilt one, for 16 KB page compatibility.
 configurations.configureEach {
     if (name.endsWith("RuntimeClasspath")) {
         // Local JVM tests need the app's original compiled classes, not APK artifact transforms.

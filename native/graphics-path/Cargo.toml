@@ -1,0 +1,19 @@
+[package]
+name = "androidx-graphics-path"
+version = "1.0.1"
+description = "Rust port of the AndroidX Graphics Path 1.0.1 JNI library (path iteration before Android 14)"
+edition.workspace = true
+# Derived from AndroidX sources; see LICENSE and README.md.
+license = "Apache-2.0"
+rust-version.workspace = true
+
+[lib]
+# The Android build renames libandroidx_graphics_path.so to libandroidx.graphics.path.so,
+# the name AndroidX loads. rlib lets host tests use the algorithms.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+jni = { version = "0.21", default-features = false }
+
+[dev-dependencies]
+serde_json = "1"
