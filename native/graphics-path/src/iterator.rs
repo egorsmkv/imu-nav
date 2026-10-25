@@ -1,4 +1,4 @@
-//! Walks a path's verbs and points, ported from AndroidX `PathIterator.cpp`.
+//! Walks a path's verbs and points, ported from `AndroidX` `PathIterator.cpp`.
 //!
 //! The data comes from Skia's `SkPathRef`. Unlike the C++, which follows raw pointers, this
 //! version works on slices with their real lengths, so a malformed path ends the iteration
@@ -22,8 +22,13 @@ pub enum ConicEvaluation {
 }
 
 impl ConicEvaluation {
+    #[must_use]
     pub fn from_raw(value: i32) -> Self {
-        if value == 0 { Self::AsConic } else { Self::AsQuadratics }
+        if value == 0 {
+            Self::AsConic
+        } else {
+            Self::AsQuadratics
+        }
     }
 }
 
@@ -47,7 +52,15 @@ pub struct PathIterator<'a> {
 }
 
 impl<'a> PathIterator<'a> {
-    pub fn new(points: &'a [Point], verbs: &'a [u8], weights: &'a [f32], direction: VerbDirection, evaluation: ConicEvaluation, tolerance: f32) -> Self {
+    #[must_use]
+    pub fn new(
+        points: &'a [Point],
+        verbs: &'a [u8],
+        weights: &'a [f32],
+        direction: VerbDirection,
+        evaluation: ConicEvaluation,
+        tolerance: f32,
+    ) -> Self {
         Self {
             points,
             verbs,
@@ -72,16 +85,23 @@ impl<'a> PathIterator<'a> {
         self.verbs.get(index).map(|&raw| Verb::from_raw(raw))
     }
 
+    #[must_use]
     pub fn raw_count(&self) -> usize {
         self.verbs.len()
     }
 
+    #[must_use]
     pub fn has_next(&self) -> bool {
         self.remaining > 0
     }
 
+    #[must_use]
     pub fn peek(&self) -> Verb {
-        if self.remaining > 0 { self.verb_at(self.verb_cursor).unwrap_or(Verb::Done) } else { Verb::Done }
+        if self.remaining > 0 {
+            self.verb_at(self.verb_cursor).unwrap_or(Verb::Done)
+        } else {
+            Verb::Done
+        }
     }
 
     /// Number of segments `next` will return. Like the C++, converting conics here reuses the
@@ -105,7 +125,9 @@ impl<'a> PathIterator<'a> {
                     count += 1;
                 }
                 Some(Verb::Conic) => {
-                    let (Some(points), Some(&w)) = (self.conic_points(point), self.weights.get(weight)) else {
+                    let (Some(points), Some(&w)) =
+                        (self.conic_points(point), self.weights.get(weight))
+                    else {
                         return count;
                     };
                     self.converter.to_quadratics(points, w, self.tolerance);
@@ -152,9 +174,18 @@ impl<'a> PathIterator<'a> {
         let at = self.point_cursor;
         let segment = match verb {
             Verb::Move => self.take(at, 1).map(|p| (p, 1)),
-            Verb::Line => at.checked_sub(1).and_then(|start| self.take(start, 2)).map(|p| (p, 1)),
-            Verb::Quadratic | Verb::Conic => at.checked_sub(1).and_then(|start| self.take(start, 3)).map(|p| (p, 2)),
-            Verb::Cubic => at.checked_sub(1).and_then(|start| self.take(start, 4)).map(|p| (p, 3)),
+            Verb::Line => at
+                .checked_sub(1)
+                .and_then(|start| self.take(start, 2))
+                .map(|p| (p, 1)),
+            Verb::Quadratic | Verb::Conic => at
+                .checked_sub(1)
+                .and_then(|start| self.take(start, 3))
+                .map(|p| (p, 2)),
+            Verb::Cubic => at
+                .checked_sub(1)
+                .and_then(|start| self.take(start, 4))
+                .map(|p| (p, 3)),
             Verb::Close | Verb::Done => return verb,
         };
         let Some((points, advance)) = segment else {
@@ -170,9 +201,13 @@ impl<'a> PathIterator<'a> {
                 return Verb::Done;
             };
             self.weight_cursor += 1;
-            out[3] = Point { x: weight, y: weight };
+            out[3] = Point {
+                x: weight,
+                y: weight,
+            };
             if self.evaluation == ConicEvaluation::AsQuadratics {
-                self.converter.to_quadratics([out[0], out[1], out[2]], weight, self.tolerance);
+                self.converter
+                    .to_quadratics([out[0], out[1], out[2]], weight, self.tolerance);
                 self.current_quadratic = 0;
                 // The C++ jumps back to emit the first quadratic; an empty conversion falls through.
                 if let Some(quadratic) = self.next_quadratic(out) {
@@ -199,6 +234,10 @@ impl<'a> PathIterator<'a> {
 
     /// Conversions always produce at least one quadratic, so this is only a safety net.
     fn next_after_empty_conversion(&mut self, out: &mut [Point; 4]) -> Verb {
-        if self.remaining == 0 { Verb::Done } else { self.next(out) }
+        if self.remaining == 0 {
+            Verb::Done
+        } else {
+            self.next(out)
+        }
     }
 }

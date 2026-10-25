@@ -29,7 +29,7 @@ Update it whenever a module starts consuming another module, fixture, generator 
 The [Android GPS instrumentation](../mock_location_testing.md) workflow builds APKs once and
 runs real platform tests on API 28, 31, 35 and 36, plus API 35 with 16 KB pages, with per-API
 JUnit/logcat/location/page-size evidence. Saved-trip validation and actual search recreation/
-rotation and explicit rebuilt Graphics Path JNI loading run with the GPS suite. APK ELF/ZIP alignment gates inspect debug, release and benchmark
+rotation and explicit Graphics Path JNI (Rust port) loading and iteration run with the GPS suite. APK ELF/ZIP alignment gates inspect debug, release and benchmark
 outputs; changing the verifier selects both Android and F-Droid jobs.
 It selects app, core, routing, native, runner and Gradle changes and always reports its build gate.
 

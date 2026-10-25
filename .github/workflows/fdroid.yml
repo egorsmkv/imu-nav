@@ -64,7 +64,7 @@ jobs:
           packages: platform-tools
       - name: Install pinned Android toolchain
         if: steps.changes.outputs.run == 'true'
-        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358'
 
       - name: Build and lint F-Droid release
         if: steps.changes.outputs.run == 'true'

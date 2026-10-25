@@ -48,7 +48,7 @@ provider and worker through the emulator's real `LocationManager`, AppOps and Bi
   TripManager restoration, remembered opt-in, fresh GPS after foreground relaunch and cleanup.
   The two stages are deliberately excluded from the ordinary package suite.
 
-The same runner also requires a rebuilt Graphics Path JNI load/iteration test, three saved-snapshot validation tests and one production search
+The same runner also requires a Graphics Path JNI (Rust port) load/iteration test, three saved-snapshot validation tests and one production search
 restoration test across Activity recreation and rotation/window resize. The ordinary suite therefore
 contains fourteen tests, followed by the two whole-app recovery stages. Foreground relaunch must
 activate the saved trip only after the location service has been promoted; background application

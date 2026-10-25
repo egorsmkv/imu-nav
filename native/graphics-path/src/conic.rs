@@ -1,4 +1,4 @@
-//! Conic → quadratic Bézier approximation, ported from AndroidX `Conic.cpp` (itself from Skia).
+//! Conic → quadratic Bézier approximation, ported from `AndroidX` `Conic.cpp` (itself from Skia).
 //!
 //! A conic is a rational quadratic curve with a weight (circles and ellipse arcs are conics).
 //! Compose wants plain quadratics, so each conic is split in halves `2^count` times until the
@@ -73,18 +73,24 @@ impl Conic {
     }
 
     /// Split at t = 0.5 into two conics with a shared middle point.
+    #[allow(clippy::cast_possible_truncation)] // intended f64 → f32 narrowing, see the overflow retry below
     fn split(&self) -> [Conic; 2] {
         let weight = self.weight;
         let scale = 1.0 / (1.0 + weight);
         let new_weight = (0.5 + weight * 0.5).sqrt();
         let [p0, p1, p2] = self.points;
-        let wp1 = Point { x: weight * p1.x, y: weight * p1.y };
+        let wp1 = Point {
+            x: weight * p1.x,
+            y: weight * p1.y,
+        };
         let mut middle = Point {
             x: (p0.x + (wp1.x + wp1.x) + p2.x) * scale * 0.5,
             y: (p0.y + (wp1.y + wp1.y) + p2.y) * scale * 0.5,
         };
         if !point_finite(middle) {
-            // Retry in double precision when the float sum overflows.
+            // Retry in double precision when the float sum overflows. Narrowing back to f32 is
+            // intended (as the C++ `float(...)` casts): an out-of-range value becomes infinite
+            // and the caller's finiteness check then falls back to the control point.
             let w = f64::from(weight);
             let w2 = w * 2.0;
             let half = 1.0 / (1.0 + w) * 0.5;
@@ -92,23 +98,43 @@ impl Conic {
             middle.y = ((f64::from(p0.y) + w2 * f64::from(p1.y) + f64::from(p2.y)) * half) as f32;
         }
         let first = Conic {
-            points: [p0, Point { x: (p0.x + wp1.x) * scale, y: (p0.y + wp1.y) * scale }, middle],
+            points: [
+                p0,
+                Point {
+                    x: (p0.x + wp1.x) * scale,
+                    y: (p0.y + wp1.y) * scale,
+                },
+                middle,
+            ],
             weight: new_weight,
         };
         let second = Conic {
-            points: [middle, Point { x: (wp1.x + p2.x) * scale, y: (wp1.y + p2.y) * scale }, p2],
+            points: [
+                middle,
+                Point {
+                    x: (wp1.x + p2.x) * scale,
+                    y: (wp1.y + p2.y) * scale,
+                },
+                p2,
+            ],
             weight: new_weight,
         };
         [first, second]
     }
 
     /// Write `2^count` quadratics as `1 + 2 * 2^count` points and return the quadratic count.
-    fn split_into_quadratics(&self, out: &mut [Point; MAX_QUADRATIC_POINTS], mut count: u32) -> usize {
+    fn split_into_quadratics(
+        &self,
+        out: &mut [Point; MAX_QUADRATIC_POINTS],
+        mut count: u32,
+    ) -> usize {
         out[0] = self.points[0];
         let mut done = false;
         if count >= MAX_CONIC_TO_QUAD_COUNT {
             let halves = self.split();
-            if equals(halves[0].points[1], halves[0].points[2]) && equals(halves[1].points[0], halves[1].points[1]) {
+            if equals(halves[0].points[1], halves[0].points[2])
+                && equals(halves[1].points[0], halves[1].points[1])
+            {
                 // Both halves are straight: one quadratic is enough.
                 out[1] = halves[0].points[1];
                 out[2] = halves[0].points[1];
@@ -145,7 +171,11 @@ fn subdivide(src: &Conic, out: &mut [Point; MAX_QUADRATIC_POINTS], at: usize, le
     if between(start_y, src.points[1].y, end_y) {
         let mid_y = halves[0].points[2].y;
         if !between(start_y, mid_y, end_y) {
-            let closer = if (mid_y - start_y).abs() < (mid_y - end_y).abs() { start_y } else { end_y };
+            let closer = if (mid_y - start_y).abs() < (mid_y - end_y).abs() {
+                start_y
+            } else {
+                end_y
+            };
             halves[0].points[2].y = closer;
             halves[1].points[0].y = closer;
         }
@@ -168,7 +198,10 @@ pub struct ConicConverter {
 
 impl Default for ConicConverter {
     fn default() -> Self {
-        Self { count: 0, storage: [Point::default(); MAX_QUADRATIC_POINTS] }
+        Self {
+            count: 0,
+            storage: [Point::default(); MAX_QUADRATIC_POINTS],
+        }
     }
 }
 
@@ -179,20 +212,27 @@ impl ConicConverter {
         self.count = conic.split_into_quadratics(&mut self.storage, count);
     }
 
+    #[must_use]
     pub fn quadratic_count(&self) -> usize {
         self.count
     }
 
     /// The first point followed by two points per quadratic.
+    #[must_use]
     pub fn quadratics(&self) -> &[Point] {
-        &self.storage[..2 * self.count + 1]
+        &self.storage[..=2 * self.count]
     }
 }
 
 /// `ConicConverter.internalConicToQuadratics`: returns the number of quadratics. The Kotlin
 /// caller grows its array to `4 * n + 2` floats and calls again when the result does not fit.
 /// Unlike the C++ (which only compared `n` with the float count), nothing is written then.
-pub fn conic_to_quadratics(points: [Point; 3], out: &mut [f32], weight: f32, tolerance: f32) -> usize {
+pub fn conic_to_quadratics(
+    points: [Point; 3],
+    out: &mut [f32],
+    weight: f32,
+    tolerance: f32,
+) -> usize {
     let conic = Conic { points, weight };
     let count = conic.quadratic_count(tolerance);
     let quadratics = 1usize << count;
@@ -203,7 +243,12 @@ pub fn conic_to_quadratics(points: [Point; 3], out: &mut [f32], weight: f32, tol
     let quadratics = conic.split_into_quadratics(&mut storage, count);
     let floats = 2 * (2 * quadratics + 1);
     if floats <= out.len() {
-        for (pair, point) in out.chunks_exact_mut(2).zip(&storage[..2 * quadratics + 1]) {
+        for (pair, point) in out
+            .as_chunks_mut::<2>()
+            .0
+            .iter_mut()
+            .zip(&storage[..=2 * quadratics])
+        {
             pair[0] = point.x;
             pair[1] = point.y;
         }

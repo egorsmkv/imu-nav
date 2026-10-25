@@ -83,9 +83,9 @@ unzip -l app/build/outputs/apk/fdroid/release/app-fdroid-release-unsigned.apk
 ```
 
 The manifest must not contain analytics, advertising, billing, Firebase, Play Services, push, or
-Play-only components. Expected native files are MapLibre's `libmaplibre.so` and AndroidX Compose's
-`libandroidx.graphics.path.so` for `arm64-v8a` and `armeabi-v7a` only. Both come from freely
-licensed artifacts in trusted Maven repositories.
+Play-only components. Expected native files are MapLibre's `libmaplibre.so`, the IMU Nav Rust libraries and
+`libandroidx.graphics.path.so` (Rust port in `native/graphics-path`) for `arm64-v8a` and `armeabi-v7a`. MapLibre comes from freely
+licensed artifacts in trusted Maven repositories; the others are built from this repository.
 
 ## Deterministic release inputs
 

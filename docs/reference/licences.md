@@ -22,7 +22,7 @@ etc.) and its licence from the published POM. All are compatible with this proje
 | AndroidX Car App (`app`, `app-projected`)                                                 | 1.7.0              | Android Auto templates, navigation and surface lifecycle               | Apache 2.0               |
 | AndroidX Core KTX, Activity Compose, Lifecycle (runtime-compose, service)                 | 1.18 / 1.13 / 2.10 | Android integration                                                    | Apache 2.0               |
 | Jetpack Compose (BOM 2026.06.01: UI 1.11, Material 3 1.4) + Material Icons Extended 1.7.8 | —                  | user interface                                                         | Apache 2.0               |
-| AndroidX Graphics Path (unchanged vendored JNI source, rebuilt for 16 KB pages) | 1.0.1 | Compose path queries; provenance and licence in `app/src/main/cpp/graphics-path/` | Apache 2.0 |
+| AndroidX Graphics Path (Kotlin API; JNI ported to Rust for 16 KB pages) | 1.0.1 | Compose path queries; provenance and licence in `native/graphics-path/` | Apache 2.0 |
 | MapLibre Native for Android (+ GeoJSON, Turf, Gestures)                                   | 13.6.1             | map rendering                                                          | BSD 2-Clause             |
 | OkHttp / Okio                                                                             | 5.4.0 / 3.17.0     | all HTTP (sync, downloads, OSRM, Photon; also MapLibre's tile loading) | Apache 2.0               |
 | Jackson Core | 2.19.2 | streaming JSON for native adapters and recording | Apache 2.0 |

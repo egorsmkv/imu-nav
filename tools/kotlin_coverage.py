@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Collect Kotlin host coverage and enforce reviewed per-module line baselines.
 
-Requires JDK 17, Android SDK 36, NDK 28.2.13676358, CMake 3.22.1 and a Rust
+Requires JDK 17, Android SDK 36, NDK 28.2.13676358 and a Rust
 toolchain supported by native/Cargo.toml for Gradle project configuration.
 The default run verifies config/kotlin-coverage-baseline.json. --update-baseline
 explicitly replaces that file after a complete, successful measurement.

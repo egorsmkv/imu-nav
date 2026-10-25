@@ -1,11 +1,11 @@
-//! Rust port of the AndroidX Graphics Path 1.0.1 native library.
+//! Rust port of the `AndroidX` Graphics Path 1.0.1 native library.
 //!
 //! Compose iterates `android.graphics.Path` segments through `androidx.graphics.path`. From
-//! Android 14 the platform `PathIterator` does that; on older versions AndroidX reads Skia's
+//! Android 14 the platform `PathIterator` does that; on older versions `AndroidX` reads Skia's
 //! private path data through this JNI library. The Java/Kotlin side stays the unchanged
-//! AndroidX artifact, so this library registers exactly the same native methods.
+//! `AndroidX` artifact, so this library registers exactly the same native methods.
 //!
-//! Derived from AndroidX (Apache-2.0); see `LICENSE` and `README.md`.
+//! Derived from `AndroidX` (Apache-2.0); see `LICENSE` and `README.md`.
 
 pub mod conic;
 pub mod iterator;
@@ -21,7 +21,7 @@ pub struct Point {
     pub y: f32,
 }
 
-/// Skia path verbs; the numbers are part of the JNI contract with AndroidX.
+/// Skia path verbs; the numbers are part of the JNI contract with `AndroidX`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(u8)]
 pub enum Verb {
@@ -36,6 +36,7 @@ pub enum Verb {
 
 impl Verb {
     /// Unknown values end the iteration instead of being misread.
+    #[must_use]
     pub fn from_raw(raw: u8) -> Self {
         match raw {
             0 => Self::Move,

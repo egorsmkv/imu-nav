@@ -39,7 +39,7 @@ GRAPH_DIR=/path/to/graph-ukraine ./gradlew :routing:test --tests '*PackSmokeTest
 cargo run --release --manifest-path native/Cargo.toml -p imu-nav-routing --features builder --bin build-routing -- --osm ukraine-latest.osm.pbf --out graph-ukraine --name Ukraine --threads 2
 ```
 
-Requirements: JDK 17+, Android SDK platform 36, build-tools 36.0.0, NDK 28.2.13676358, CMake 3.22.1 and Rust 1.99+.
+Requirements: JDK 17+, Android SDK platform 36, build-tools 36.0.0, NDK 28.2.13676358 and Rust 1.99+.
 Use the SDK's `platform-tools/adb`; its path depends on the development host.
 
 ## Definition of done
@@ -123,8 +123,12 @@ Use the SDK's `platform-tools/adb`; its path depends on the development host.
 - **APK licence hygiene:** OSM PBF reading and faster_paths contraction are host-only features.
   Do not enable the routing `builder` feature in Android builds. Update both licence documents
   when changing dependencies.
-- **R8:** retain native bridge names in `app/proguard-rules.pro`. Verify all three native libraries
+- **R8:** retain native bridge names in `app/proguard-rules.pro`. Verify all four Rust native libraries
   and 16 KiB alignment when changing native build configuration.
+- **Graphics Path JNI:** `native/graphics-path` is a Rust port of AndroidX Graphics Path 1.0.1's native
+  library (renamed to `libandroidx.graphics.path.so` by `scripts/build-rust-android.*`); it replaces the
+  prebuilt one, whose RELRO end is not 16 KB aligned. Keep the Maven version pinned; upgrading it means
+  re-porting and regenerating `tests/fixtures/cpp-reference.jsonl` (see its README). There is no C++/CMake.
 - **Bundled assets** (`assets/routing/pack.zip` ~300 MB, `assets/cells/bundled-cells.csv.gz`) are big;
   `pack.zip` is stored uncompressed (`noCompress += "zip"`) and gitignored.
 - **Trip recordings** are gzip streams that may be truncated by a kill; always read them with

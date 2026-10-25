@@ -9,27 +9,27 @@ For the three native Rust crates and host replay commands, start with the [Rust 
 ## Prepare the tools
 
 Gradle configures the Android app even for JVM-only `:core`, `:routing` and `:replay` tasks.
-Install SDK platform 36, build-tools 36.0.0, NDK 28.2.13676358 and CMake 3.22.1 before
-running Gradle; AndroidX Graphics Path's native build model needs the pinned NDK during
-project configuration. The host algorithms and host JNI still execute without Android.
+Install SDK platform 36, build-tools 36.0.0 and NDK 28.2.13676358 before running Gradle;
+the Rust JNI libraries link with the pinned NDK. CMake is no longer needed. The host algorithms and host JNI still execute without Android.
 
 | Work | Required tools |
 | --- | --- |
 | Rust host tests and simulator | Rust 1.99+ and Cargo |
 | Kotlin core tests and JVM replay | JDK 17+ and the checked-in Gradle wrapper; Rust is also needed for JNI replay tests |
-| Android APK, lint and device tests | JDK 17+, Android SDK platform 36, build-tools 36.0.0, NDK 28.2.13676358, CMake 3.22.1 and Rust 1.99+ with the targets below |
+| Android APK, lint and device tests | JDK 17+, Android SDK platform 36, build-tools 36.0.0, NDK 28.2.13676358 and Rust 1.99+ with the targets below |
 | Android host unit tests and full `./gradlew check` | JDK 21+ and the Android toolchain above; `check` also builds and tests the local Rust cell server |
 
 Robolectric tests targeting Android SDK 36 require Java 21. Set `JAVA_HOME` to a JDK 21+
 installation before running app unit tests, Kotlin coverage or `check`. Java/Kotlin compilation
 still targets Java 17; this does not change the app's minimum Android version.
 
-Install the SDK platform, build tools, NDK and CMake through Android Studio's SDK Manager or your SDK
+Install the SDK platform, build tools and NDK through Android Studio's SDK Manager or your SDK
 command-line tools. Gradle pins NDK 28.2.13676358, whose linker defaults to 16 KB alignment.
 The Rust JNI build script explicitly sets both maximum and common page sizes to 16 KB,
 including for direct Cargo builds, so Rust compiler defaults cannot misalign the RELRO end.
-CMake rebuilds the vendored AndroidX Graphics Path 1.0.1 JNI; its original AAR has a
-misaligned RELRO end. The Java dependency is pinned to match the unchanged native source.
+AndroidX Graphics Path 1.0.1's JNI is built from its Rust port in `native/graphics-path`
+(the prebuilt library in the AAR has a misaligned RELRO end). The Java dependency is pinned
+to the version the port implements; its host tests compare it bit for bit with the C++.
 Set these variables to the actual
 installed directories; the paths below are examples for a Linux host:
 

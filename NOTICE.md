@@ -13,9 +13,10 @@ uses or bundles keep their own licences:
 | OkHttp, Okio                                             | HTTP client                                                   | Apache License 2.0                                                                                                                                       |
 | AndroidX, Jetpack Compose, Kotlin, kotlinx.coroutines    | app                                                           | Apache License 2.0                                                                                                                                       |
 
-AndroidX Graphics Path 1.0.1 native sources are copyright The Android Open Source Project
-under Apache-2.0 (including its Filament vector helpers). Original notices and the licence are retained in
-`app/src/main/cpp/graphics-path/`; only the native linker layout is changed.
+`native/graphics-path/` is a Rust port of the AndroidX Graphics Path 1.0.1 native library,
+copyright The Android Open Source Project, under Apache-2.0. It is a derivative work: the
+upstream licence is in `native/graphics-path/LICENSE`, and its README records the source
+commit and the changes (a Rust translation with bounds-checked arrays and 16 KB page layout).
 
 The [full licence list](docs/reference/licences.md) includes versions, build tools, and online services.
 

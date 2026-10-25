@@ -181,7 +181,7 @@ jobs:
         with:
           packages: platform-tools
       - name: Install Android build tools
-        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358'
       - name: Install Rust Android targets
         run: rustup toolchain install nightly-2026-09-25 --profile minimal --target aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
       - uses: gradle/actions/setup-gradle@v4
