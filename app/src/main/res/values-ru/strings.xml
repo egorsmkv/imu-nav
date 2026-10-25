@@ -442,6 +442,9 @@
     <string name="routing_pack">%1$s · %2$d МБ · создано %3$s</string>
     <string name="routing_coverage">Охватывает %1$.2f–%2$.2f° с. ш., %3$.2f–%4$.2f° в. д.</string>
     <string name="routing_load_failed">Установлено, но пакет не удалось загрузить</string>
+    <string name="routing_loading">Открываем пакет… для целой страны это несколько секунд</string>
+    <string name="routing_verifying">Проверяем пакет…</string>
+    <string name="pack_installing_percent">Установка пакета… %1$d%% (распаковано %2$d МБ)</string>
     <string name="routing_import">Импорт пакета</string>
     <string name="routing_url">Адрес пакета (.zip)</string>
     <string name="routing_url_help">Вставьте ссылку на пакет маршрутов или импортируйте загруженный файл .zip.</string>

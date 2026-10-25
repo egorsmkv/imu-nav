@@ -444,6 +444,9 @@
     <string name="routing_pack">%1$s · %2$d MB · built %3$s</string>
     <string name="routing_coverage">Covers %1$.2f–%2$.2f° N, %3$.2f–%4$.2f° E</string>
     <string name="routing_load_failed">Installed, but the pack could not be loaded</string>
+    <string name="routing_loading">Opening the pack… this takes a few seconds for a whole country</string>
+    <string name="routing_verifying">Checking the pack…</string>
+    <string name="pack_installing_percent">Installing pack… %1$d%% (%2$d MB unpacked)</string>
     <string name="routing_import">Import pack</string>
     <string name="routing_url">Pack URL (.zip)</string>
     <string name="routing_url_help">Paste a routing-pack link, or import a downloaded .zip file.</string>

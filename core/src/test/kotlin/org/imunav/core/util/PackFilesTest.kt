@@ -10,6 +10,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -72,6 +73,36 @@ class PackFilesTest {
         assertFailsWith<IOException> {
             PackFiles.extract(attack.inputStream(), staging, true, PackFiles.Limits(100, 10), {}, setOf("search.tantivy")) {}
         }
+    }
+
+    @Test
+    fun githubArtifactWrapperIsUnpackedInPlace() {
+        val staging = temporary.newFolder("artifact")
+        val pack = archive("pack.json" to byteArrayOf(1), "search.tantivy/meta.json" to byteArrayOf(2))
+        val artifact = archive("routing-ukraine-car-walk.zip" to pack, "routing-build.json" to byteArrayOf(3))
+        PackFiles.extract(artifact.inputStream(), staging, true, PackFiles.Limits(100_000, 10), {}, setOf("search.tantivy"), expandNested = true) {}
+        assertEquals(1, File(staging, "pack.json").readBytes().single().toInt())
+        assertEquals(2, File(staging, "search.tantivy/meta.json").readBytes().single().toInt())
+        assertFalse(File(staging, "routing-ukraine-car-walk.zip").exists())
+        // Without the option the inner archive stays an ordinary file.
+        val plain = temporary.newFolder("plain")
+        PackFiles.extract(artifact.inputStream(), plain, true, PackFiles.Limits(100_000, 10), {}) {}
+        assertTrue(File(plain, "routing-ukraine-car-walk.zip").isFile)
+    }
+
+    @Test
+    fun progressReachesTheWholeArchive() {
+        val staging = temporary.newFolder("progress")
+        // Incompressible data, so the archive is read in many buffer-sized steps.
+        val random = Random(1)
+        val archive = archive("one" to random.nextBytes(300_000), "two" to random.nextBytes(300_000))
+        val steps = mutableListOf<PackFiles.Progress>()
+        PackFiles.extract(archive.inputStream(), staging, false, PackFiles.Limits(1_000_000, 10), {}) { steps += it }
+        assertEquals(600_000, steps.last().extractedBytes)
+        assertEquals(steps.map { it.archiveBytes }.sorted(), steps.map { it.archiveBytes })
+        val percents = steps.mapNotNull { it.percent(archive.size.toLong()) }
+        assertTrue(percents.first() < 50 && percents.last() >= 95, "percent $percents")
+        assertEquals(null, steps.last().percent(0))
     }
 
     private fun archive(vararg entries: Pair<String, ByteArray>): ByteArray = ByteArrayOutputStream().also { bytes ->

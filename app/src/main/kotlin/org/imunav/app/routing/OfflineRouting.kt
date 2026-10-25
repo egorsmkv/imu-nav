@@ -50,6 +50,11 @@ data class OfflineRoutingStatus(
     val bundled: PackInfo? = null,
     /** The installed pack was loaded successfully and can route. */
     val loaded: Boolean = false,
+    /**
+     * The installed pack is being opened. Opening validates every routing record, which takes
+     * seconds for a country pack; until it ends `loaded == false` means "not yet", not "failed".
+     */
+    val loading: Boolean = false,
     val searchAvailable: Boolean = false,
     val coverage: GraphCoverage? = null,
     val modes: Set<TravelMode> = emptySet(),
@@ -61,6 +66,8 @@ data class OfflineRoutingStatus(
     val packUrl: String = "",
     /** Progress text of a running install / download, null when idle. */
     val busy: String? = null,
+    /** 0..1 share of [busy] work done, or null when it cannot be measured (indeterminate bar). */
+    val busyFraction: Float? = null,
     val message: String? = null,
 )
 
@@ -174,7 +181,7 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
         _status.update { it.copy(preparation = Preparation.PREPARING) }
         runTask(str(R.string.routing_preparing_builtin, 0, (bundled.sizeBytes / 1_048_576).toInt()), bundled = true) {
             withContext(Dispatchers.IO) {
-                context.assets.open(BUNDLED_ZIP).use { install(it, totalBytes = bundled.sizeBytes) }
+                context.assets.open(BUNDLED_ZIP).use { install(it, bundledBytes = bundled.sizeBytes) }
             }
         }
     }
@@ -189,26 +196,41 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
         throw IOException(str(R.string.routing_search_invalid), failure)
     }
 
-    /** Open the installed pack (graph + search index); runs in the background. */
-    private fun load(strict: Boolean = false) = resources.write {
+    /**
+     * Open the installed pack (graph + search index); runs in the background. [prepared] is a graph
+     * already validated from the same files (before they were moved into place), so an install
+     * does not pay for validating a country pack twice.
+     */
+    private fun load(strict: Boolean = false, prepared: OfflineGraph? = null) = resources.write {
         closeResources()
+        val info = File(current, PackInfo.FILE).takeIf { it.exists() }?.let { PackInfo.parse(it.readText()) }
+        // Show the installed pack at once; Settings must not call it broken while it is still opening.
+        _status.update { it.copy(pack = info ?: it.pack, loading = info != null) }
+        try {
+            open(info, strict, prepared)
+        } finally {
+            _status.update { it.copy(loading = false) }
+        }
+    }
+
+    private fun open(info: PackInfo?, strict: Boolean, prepared: OfflineGraph?) {
+        val started = System.nanoTime()
         searchDb = runCatching { openSearch(current) }.onFailure {
             log("search_db_open_failed type=${it.javaClass.simpleName}")
             if (strict) throw it
         }.getOrNull()
-        val info = File(current, PackInfo.FILE).takeIf { it.exists() }?.let { PackInfo.parse(it.readText()) }
         if (info == null) {
             _status.update { it.copy(pack = null, loaded = false, walking = false, searchAvailable = searchDb != null) }
-            return@write
+            return
         }
         if (info.routingFormat != PackInfo.FORMAT) {
             _status.update { it.copy(pack = info, loaded = false, message = str(R.string.routing_requires_rust_pack), searchAvailable = searchDb != null) }
             if (strict) throw IOException(str(R.string.routing_requires_rust_pack))
-            return@write
+            return
         }
-        val g = runCatching { OfflineGraph.load(current) }
+        val g = prepared ?: runCatching { OfflineGraph.load(current) }
             .onFailure {
-                log("offline_routing_load_failed ${it.message}")
+                log("offline_routing_load_failed type=${it.javaClass.simpleName} ${it.message}")
                 if (strict) throw it
             }.getOrNull()
         graph = g
@@ -222,7 +244,7 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
                 modes = TravelMode.entries.filter { mode -> g?.supports(mode) == true }.toSet(),
             )
         }
-        if (g != null) log("offline_routing_loaded ${info.name}")
+        if (g != null) log("offline_routing_loaded ${info.name} ms=${(System.nanoTime() - started) / 1_000_000}")
     }
 
     /** Close only under exclusive worker ownership, after every route/search reader has finished. */
@@ -287,9 +309,15 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
         tasks.cancel()
     }
 
-    /** Import a pack .zip picked by the user. */
-    fun importZip(open: () -> InputStream?) = runTask(str(R.string.routing_installing, 0)) {
-        withContext(Dispatchers.IO) { (open() ?: throw IOException("cannot open file")).use { install(it) } }
+    /**
+     * Import a pack .zip picked by the user. [size] (asked on the I/O thread, 0 when unknown) turns
+     * the progress into a percentage. A GitHub Actions artifact that wraps the pack's .zip works too.
+     */
+    fun importZip(size: () -> Long = { 0 }, open: () -> InputStream?) = runTask(str(R.string.routing_installing, 0)) {
+        withContext(Dispatchers.IO) {
+            val archiveSize = size()
+            (open() ?: throw IOException("cannot open file")).use { install(it, archiveSize = archiveSize) }
+        }
     }
 
     /** Download and install a pack .zip, unpacking while streaming (resumes after network drops). */
@@ -302,9 +330,12 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
                     if (bytes - last >= 2L * 1024 * 1024) {
                         last = bytes
                         val pct = if (total > 0) (bytes * 100 / total).toInt() else 0
-                        progress(str(R.string.routing_downloading, (bytes / 1_048_576).toInt(), (total / 1_048_576).toInt().coerceAtLeast(0), pct))
+                        progress(
+                            str(R.string.routing_downloading, (bytes / 1_048_576).toInt(), (total / 1_048_576).toInt().coerceAtLeast(0), pct),
+                            fraction = if (total > 0) bytes.toFloat() / total else null,
+                        )
                     }
-                }).use { install(it) }
+                }).use { install(it, streamed = true) }
             }
         }
     }
@@ -328,8 +359,12 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
         str(R.string.routing_removed)
     }
 
-    /** Unzip into a staging folder, validate, then atomically replace the current pack. */
-    private suspend fun install(input: InputStream, totalBytes: Long = 0): String {
+    /**
+     * Unzip into a staging folder, validate, then atomically replace the current pack.
+     * Progress: [bundledBytes] is the extracted size of the built-in pack, [archiveSize] the size of
+     * a picked file; a [streamed] download already reports its own percentage.
+     */
+    private suspend fun install(input: InputStream, bundledBytes: Long = 0, archiveSize: Long = 0, streamed: Boolean = false): String {
         val job = currentCoroutineContext() // to notice cancellation inside the blocking loop
         val staging = File(root, "staging").apply {
             deleteRecursively()
@@ -347,19 +382,24 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
             staging,
             flat = true,
             preserveDirectories = setOf(TantivySearch.DIRECTORY),
+            expandNested = true,
             limits = PackFiles.limitsFor(staging, MAX_ROUTING_PACK_BYTES, MAX_ROUTING_PACK_ENTRIES),
             check = ::checkCancellation,
-        ) { copied ->
-            bytes = copied
-            if (bytes - lastReport >= 4L * 1_048_576) {
+        ) { step ->
+            bytes = step.extractedBytes
+            if (bytes - lastReport >= 4L * 1_048_576 && !streamed) {
                 lastReport = bytes
-                progress(
-                    if (totalBytes > 0) {
-                        str(R.string.routing_preparing_builtin, (bytes / 1_048_576).toInt(), (totalBytes / 1_048_576).toInt())
-                    } else {
-                        str(R.string.routing_installing, (bytes / 1_048_576).toInt())
-                    },
-                )
+                val percent = step.percent(archiveSize)
+                when {
+                    bundledBytes > 0 -> progress(
+                        str(R.string.routing_preparing_builtin, (bytes / 1_048_576).toInt(), (bundledBytes / 1_048_576).toInt()),
+                        fraction = (bytes.toFloat() / bundledBytes).coerceAtMost(1f),
+                    )
+
+                    percent != null -> progress(str(R.string.pack_installing_percent, percent, (bytes / 1_048_576).toInt()), fraction = percent / 100f)
+
+                    else -> progress(str(R.string.routing_installing, (bytes / 1_048_576).toInt()))
+                }
             }
         }
         checkCancellation()
@@ -372,32 +412,46 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
             staging.deleteRecursively()
             throw IOException(str(R.string.routing_requires_rust_pack))
         }
-        // Validate by loading before replacing the working pack.
-        OfflineGraph.load(staging).close()
-        checkCancellation()
-        openSearch(staging)?.use { /* Validate native or legacy search before replacing the working pack. */ }
-        withContext(NonCancellable + Dispatchers.IO) {
-            resources.write {
-                checkCancellation()
-                operation.beginCommit()
-                PackFiles.replace(staging, current, ::closeResources) { load(strict = true) }
-                operation.result = str(R.string.routing_installed, info.name)
+        // Validate by loading before replacing the working pack. Validation reads every record of a
+        // country pack, so the graph is kept and handed over instead of being validated again:
+        // the memory mappings stay valid when the staging folder is renamed into place.
+        progress(str(R.string.routing_verifying))
+        val validated = OfflineGraph.load(staging)
+        try {
+            checkCancellation()
+            openSearch(staging)?.use { /* Validate native or legacy search before replacing the working pack. */ }
+            var handedOver = false
+            withContext(NonCancellable + Dispatchers.IO) {
+                resources.write {
+                    checkCancellation()
+                    operation.beginCommit()
+                    // Hand over only right after staging became current. A failed backup or a rollback
+                    // activates the previous pack, which must be opened from disk.
+                    PackFiles.replace(staging, current, ::closeResources) {
+                        val prepared = validated.takeUnless { handedOver || staging.exists() }
+                        handedOver = true
+                        load(strict = true, prepared = prepared)
+                    }
+                    operation.result = str(R.string.routing_installed, info.name)
+                }
             }
+        } finally {
+            withContext(NonCancellable + Dispatchers.IO) { resources.write { if (graph !== validated) validated.close() } }
         }
         log("offline_routing_installed ${info.name} ${bytes / 1_048_576}MB")
         return str(R.string.routing_installed, info.name)
     }
 
-    /** Update the progress text (any thread). */
-    private fun progress(text: String) {
-        _status.update { it.copy(busy = text) }
+    /** Update the progress text and, when measurable, the bar (any thread). */
+    private fun progress(text: String, fraction: Float? = null) {
+        _status.update { it.copy(busy = text, busyFraction = fraction) }
     }
 
     /** Run one install / download at a time; the returned text is shown when it finishes. */
     private fun runTask(start: String, bundled: Boolean = false, block: suspend () -> String) {
         if (tasks.running) return
         tasks.launch { operation ->
-            _status.update { it.copy(busy = start, message = null) }
+            _status.update { it.copy(busy = start, busyFraction = null, message = null) }
             var succeeded = false
             val msg = try {
                 block().also { succeeded = true }
@@ -420,6 +474,7 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
                 _status.update {
                     it.copy(
                         busy = null,
+                        busyFraction = null,
                         message = msg,
                         preparation = if (bundled) {
                             if (succeeded && it.loaded) Preparation.READY else Preparation.FAILED

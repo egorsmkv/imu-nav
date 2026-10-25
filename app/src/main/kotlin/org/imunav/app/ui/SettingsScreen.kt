@@ -81,6 +81,7 @@ import org.imunav.app.cells.CellPrivacyNotice
 import org.imunav.app.cells.CellSource
 import org.imunav.app.diagnostics.DiagnosticPhase
 import org.imunav.app.diagnostics.ProfilePhase
+import org.imunav.app.packs.documentSize
 import org.imunav.core.cells.Radio
 import org.imunav.core.privacy.ConsentNoticeRequest
 import java.text.NumberFormat
@@ -213,7 +214,7 @@ fun SettingsScreen(ui: UiState, app: AppGraph, onBack: () -> Unit, onOpenLog: ()
     val profileStatus by app.profileCapture.status.collectAsStateWithLifecycle()
     var packUrl by remember { mutableStateOf(routing.packUrl) }
     val pickPack = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) app.offlineRouting.importZip { context.contentResolver.openInputStream(uri) }
+        if (uri != null) app.offlineRouting.importZip(size = { context.contentResolver.documentSize(uri) }) { context.contentResolver.openInputStream(uri) }
     }
     LaunchedEffect(c.message) { c.message?.let { snackbar.showSnackbar(it) } }
     LaunchedEffect(routing.message) { routing.message?.let { snackbar.showSnackbar(it) } }

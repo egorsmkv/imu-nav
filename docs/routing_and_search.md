@@ -16,7 +16,12 @@ The app accepts locations worldwide. Install packs for the region you will use; 
 
 1. Install the built-in pack during setup if your build offers one. Otherwise open **Settings → Maps and routes → Offline routing** and import or download a routing-pack ZIP.
    The app rejects archives with more than 20,000 entries or 8 GiB of extracted data. It budgets
-   256 MiB of free storage when extraction starts.
+   256 MiB of free storage when extraction starts. For a picked file the progress shows the percentage of
+   the archive already read (a streamed ZIP lists its files only at its end, so a file count is unknown until then).
+   After unpacking, the pack is validated once and activated without a second check.
+   On every app start the installed pack is opened and validated again; Settings shows **Opening the pack…**
+   meanwhile, which takes a few seconds for a whole country. Only a pack that really fails to open is
+   reported as **Installed, but the pack could not be loaded**.
 2. In **Where to?**, choose **Car** or **Walk**. Install a current Rust pack; old GraphHopper and v1 Rust packs must be replaced.
 3. Search for a destination and, if needed, a starting address. Review the route before tapping **Start**.
 
@@ -57,8 +62,9 @@ After the workflow succeeds, choose one GitHub artifact:
 - `routing-pack-walk-...`: walking routes only, with address search.
 - `routing-pack-car-walk-...`: both modes, with address search.
 
-Unzip that GitHub artifact, then import its `routing-<region>-<mode>.zip` through
-**Settings → Maps and routes → Offline routing → Import pack**. Each download includes a
+Import the downloaded GitHub artifact ZIP as it is, or the `routing-<region>-<mode>.zip` unzipped from it,
+through **Settings → Maps and routes → Offline routing → Import pack**; the app unpacks the pack ZIP nested
+in the artifact. Each download includes a
 checksum and a report listing the sizes of all three choices. You can also upload a ZIP to
 your own HTTPS server and enter its URL in the app's **Download** field. CI does not publish
 archives to a server. Only one routing pack is installed at a time: choose the combined pack

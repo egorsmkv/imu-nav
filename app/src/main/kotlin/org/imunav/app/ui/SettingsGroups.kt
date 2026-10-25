@@ -15,7 +15,6 @@ import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -255,7 +254,8 @@ internal fun MapsSettings(app: AppGraph, routing: OfflineRoutingStatus, offlineM
             },
             supportingContent = {
                 when {
-                    pack != null && !routing.loaded -> Text(stringResource(R.string.routing_load_failed), color = MaterialTheme.colorScheme.error)
+                    pack != null && routing.loading -> Text(stringResource(R.string.routing_loading))
+                    pack != null && !routing.loaded && routing.busy == null -> Text(stringResource(R.string.routing_load_failed), color = MaterialTheme.colorScheme.error)
                     pack != null -> Text(stringResource(R.string.routing_coverage, pack.bounds[0], pack.bounds[1], pack.bounds[2], pack.bounds[3]))
                     else -> {}
                 }
@@ -264,7 +264,7 @@ internal fun MapsSettings(app: AppGraph, routing: OfflineRoutingStatus, offlineM
         )
         routing.busy?.let {
             Column(Modifier.padding(horizontal = 16.dp)) {
-                LinearProgressIndicator(Modifier.fillMaxWidth())
+                PackProgressBar(routing.busyFraction)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(it, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                     TextButton(onClick = { app.offlineRouting.cancel() }) { Text(stringResource(R.string.action_cancel)) }

@@ -93,6 +93,8 @@ data class OfflineMapStatus(
     val packUrl: String = "",
     /** Progress of a running pack install, null when idle. */
     val busy: String? = null,
+    /** 0..1 share of [busy] work done, or null when it cannot be measured (indeterminate bar). */
+    val busyFraction: Float? = null,
     /** Result of the last install / removal. */
     val message: String? = null,
 ) {
@@ -210,16 +212,22 @@ class OfflineMap(private val context: Context, private val scope: CoroutineScope
                     if (bytes - lastReport >= PROGRESS_STEP_BYTES) {
                         lastReport = bytes
                         val percent = if (total > 0) (bytes * 100 / total).toInt() else 0
-                        progress(str(R.string.routing_downloading, (bytes / MB).toInt(), (total / MB).toInt().coerceAtLeast(0), percent))
+                        progress(
+                            str(R.string.routing_downloading, (bytes / MB).toInt(), (total / MB).toInt().coerceAtLeast(0), percent),
+                            fraction = if (total > 0) bytes.toFloat() / total else null,
+                        )
                     }
-                }).use { install(it) }
+                }).use { install(it, streamed = true) }
             }
         }
     }
 
-    /** Install a pack .zip the user picked. */
-    fun importZip(open: () -> InputStream?) = runTask(str(R.string.routing_installing, 0)) {
-        withContext(Dispatchers.IO) { (open() ?: throw IOException("cannot open file")).use { install(it) } }
+    /** Install a pack .zip the user picked; [size] (asked on the I/O thread, 0 when unknown) gives a percentage. */
+    fun importZip(size: () -> Long = { 0 }, open: () -> InputStream?) = runTask(str(R.string.routing_installing, 0)) {
+        withContext(Dispatchers.IO) {
+            val archiveSize = size()
+            (open() ?: throw IOException("cannot open file")).use { install(it, archiveSize = archiveSize) }
+        }
     }
 
     /** Delete a user-installed pack; a bundled pack becomes active again if present. */
@@ -242,7 +250,7 @@ class OfflineMap(private val context: Context, private val scope: CoroutineScope
      * Unpack into a staging folder, check it really is a map pack, then swap it in. Paths inside
      * the zip are kept (sprites/, fonts/…) but may not escape the folder ("zip slip").
      */
-    private suspend fun install(input: InputStream): String {
+    private suspend fun install(input: InputStream, archiveSize: Long = 0, streamed: Boolean = false): String {
         val job = currentCoroutineContext()
         val staging = File(root, "staging").apply {
             deleteRecursively()
@@ -255,11 +263,16 @@ class OfflineMap(private val context: Context, private val scope: CoroutineScope
         }
         var bytes = 0L
         var lastReport = 0L
-        PackFiles.extract(input, staging, flat = false, limits = PackFiles.limitsFor(staging, MAX_MAP_PACK_BYTES, MAX_MAP_PACK_ENTRIES), check = ::checkCancellation) { copied ->
-            bytes = copied
-            if (bytes - lastReport >= PROGRESS_STEP_BYTES) {
+        PackFiles.extract(input, staging, flat = false, limits = PackFiles.limitsFor(staging, MAX_MAP_PACK_BYTES, MAX_MAP_PACK_ENTRIES), check = ::checkCancellation) { step ->
+            bytes = step.extractedBytes
+            if (bytes - lastReport >= PROGRESS_STEP_BYTES && !streamed) {
                 lastReport = bytes
-                progress(str(R.string.routing_installing, (bytes / MB).toInt()))
+                val percent = step.percent(archiveSize)
+                if (percent != null) {
+                    progress(str(R.string.pack_installing_percent, percent, (bytes / MB).toInt()), fraction = percent / 100f)
+                } else {
+                    progress(str(R.string.routing_installing, (bytes / MB).toInt()))
+                }
             }
         }
         checkCancellation()
@@ -284,15 +297,16 @@ class OfflineMap(private val context: Context, private val scope: CoroutineScope
         return str(R.string.offline_map_installed, info.name)
     }
 
-    private fun progress(text: String) {
-        _status.update { it.copy(busy = text) }
+    /** Update the progress text and, when measurable, the bar (any thread). */
+    private fun progress(text: String, fraction: Float? = null) {
+        _status.update { it.copy(busy = text, busyFraction = fraction) }
     }
 
     /** One install / download at a time; the returned text is shown when it finishes. */
     private fun runTask(start: String, block: suspend () -> String) {
         if (tasks.running) return
         tasks.launch { operation ->
-            _status.update { it.copy(busy = start, message = null) }
+            _status.update { it.copy(busy = start, busyFraction = null, message = null) }
             var message: String? = null
             try {
                 message = try {
@@ -309,7 +323,7 @@ class OfflineMap(private val context: Context, private val scope: CoroutineScope
             } finally {
                 withContext(NonCancellable) {
                     withContext(Dispatchers.IO) { File(root, "staging").takeIf { it.exists() }?.deleteRecursively() }
-                    _status.update { it.copy(busy = null, message = message) }
+                    _status.update { it.copy(busy = null, busyFraction = null, message = message) }
                 }
             }
         }

@@ -17,7 +17,6 @@ import androidx.compose.material.icons.filled.TravelExplore
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -49,6 +48,7 @@ import org.imunav.app.R
 import org.imunav.app.UiState
 import org.imunav.app.maps.OfflineMapStatus
 import org.imunav.app.obd.ObdStatus
+import org.imunav.app.packs.documentSize
 import org.imunav.core.geo.GeoPoint
 import org.imunav.core.search.PhotonServer
 import java.util.Locale
@@ -61,7 +61,7 @@ import java.util.Locale
 internal fun OfflineMapSection(app: AppGraph, state: OfflineMapStatus) {
     val context = LocalContext.current
     val pickZip = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) app.offlineMap.importZip { context.contentResolver.openInputStream(uri) }
+        if (uri != null) app.offlineMap.importZip(size = { context.contentResolver.documentSize(uri) }) { context.contentResolver.openInputStream(uri) }
     }
     var url by remember(state.packUrl) { mutableStateOf(state.packUrl) }
     val pack = state.pack
@@ -87,7 +87,7 @@ internal fun OfflineMapSection(app: AppGraph, state: OfflineMapStatus) {
     )
     state.busy?.let { busy ->
         Column(Modifier.padding(horizontal = 16.dp)) {
-            LinearProgressIndicator(Modifier.fillMaxWidth())
+            PackProgressBar(state.busyFraction)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(busy, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                 TextButton(onClick = { app.offlineMap.cancel() }) { Text(stringResource(R.string.action_cancel)) }
