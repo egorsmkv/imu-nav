@@ -72,8 +72,12 @@ class SelectionTests(unittest.TestCase):
                      'tools/release_signing.py', 'tools/tests/test_release_signing.py'):
             self.assertEqual(self.selected(path), {'fdroid', 'tools'})
 
-    def test_unknown_history_manual_tags_and_merge_queues_run_all(self):
+    def test_graphics_path_port_builds_every_android_package(self):
+        self.assertEqual(self.selected('native/graphics-path/src/conic.rs'), {'native', 'kotlin', 'fdroid', 'android'})
+
+    def test_unknown_history_manual_tags_and_malformed_merge_queues_run_all(self):
         for name, event in [('workflow_dispatch', {}), ('merge_group', {}),
+                            ('merge_group', {'merge_group': {'base_sha': 'x', 'head_sha': 'a' * 40}}),
                             ('push', {'ref': 'refs/tags/v1.0'}), ('push', {}),
                             ('push', {'before': '0' * 40, 'after': 'a' * 40})]:
             with self.subTest(name=name, event=event):
@@ -118,7 +122,19 @@ class GitHistoryTests(unittest.TestCase):
         payload = {'before': before, 'after': after}
         if event == 'pull_request':
             payload = {'pull_request': {'base': {'sha': before}, 'head': {'sha': after}}}
+        if event == 'merge_group':
+            payload = {'merge_group': {'base_sha': before, 'head_sha': after}}
         return ci.changed_paths(event, payload)
+
+    def test_merge_queue_selects_from_every_queued_change(self):
+        self.write('server/src/first_pr.rs', 'first queued PR')
+        self.commit()
+        self.write('docs/second_pr.md', 'second queued PR')
+        head = self.commit()
+        paths = self.paths(self.base, head, 'merge_group')
+        self.assertEqual(set(paths), {'server/src/first_pr.rs', 'docs/second_pr.md'})
+        self.assertTrue(ci.affected('server', paths))
+        self.assertFalse(ci.affected('desktop', paths))
 
     def test_entire_multicommit_pr_and_push(self):
         self.write('server/src/api.rs', 'changed')

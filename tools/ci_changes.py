@@ -16,8 +16,8 @@ SHARED = ('tools/ci_changes.py', 'tools/tests/test_ci_changes.py')
 GRADLE = ('gradle/', 'gradlew', 'gradlew.bat', 'gradle.properties', '.editorconfig',
           'links.properties', 'config/detekt.yml')
 RUST = ('.cargo/', 'rust-toolchain', 'rust-toolchain.toml', 'rustfmt.toml', '.rustfmt.toml')
-NATIVE = ('native/nav-search/', 'native/nav-routing/', 'native/nav-core/', 'native/nav-jni/', 'native/nav-sim/', 'native/Cargo.toml',
-          'native/Cargo.lock', 'native/.cargo/', 'native/rust-toolchain.toml', 'native/rust-toolchain')
+NATIVE = ('native/nav-search/', 'native/nav-routing/', 'native/nav-core/', 'native/nav-jni/', 'native/nav-sim/', 'native/graphics-path/',
+          'native/Cargo.toml', 'native/Cargo.lock', 'native/.cargo/', 'native/rust-toolchain.toml', 'native/rust-toolchain')
 SERVER = ('server/src/', 'server/templates/', 'server/static/', 'server/Cargo.toml',
           'server/Cargo.lock', 'server/build.rs', 'server/.cargo/', 'server/rust-toolchain.toml',
           'server/rust-toolchain', 'desktop/protocol/', 'desktop/Cargo.toml')
@@ -74,13 +74,19 @@ def git(*args):
 
 
 def changed_paths(event_name, event):
-    """PRs use the whole branch diff; pushes use before..after, including force pushes."""
-    if event_name not in ('pull_request', 'push') or event.get('ref', '').startswith('refs/tags/'):
+    """
+    PRs use the whole branch diff; pushes use before..after, including force pushes. A merge
+    queue entry compares its base with the queued head, which contains every PR ahead of it.
+    """
+    if event_name not in ('pull_request', 'push', 'merge_group') or event.get('ref', '').startswith('refs/tags/'):
         return None
     try:
         if event_name == 'pull_request':
             before = event['pull_request']['base']['sha']
             after = event['pull_request']['head']['sha']
+        elif event_name == 'merge_group':
+            before = event['merge_group']['base_sha']
+            after = event['merge_group']['head_sha']
         else:
             before, after = event['before'], event['after']
         if any(not re.fullmatch(r'[0-9a-fA-F]{40}', sha) or set(sha) == {'0'} for sha in (before, after)):

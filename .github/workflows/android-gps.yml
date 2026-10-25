@@ -53,6 +53,15 @@ jobs:
             ~/.cargo/git
           key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('native/Cargo.lock', 'server/Cargo.lock') }}
           restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
+      # Dependencies (Tantivy, JNI…) dominate the Rust build; only main pushes save, PRs restore.
+      - name: Restore Android Rust build
+        id: rust-cache
+        if: steps.changes.outputs.run == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: native/target/android
+          key: rust-android-x86_64-1.99.0-beta-${{ runner.os }}-${{ hashFiles('native/Cargo.lock') }}-${{ hashFiles('native/**/*.rs', 'native/**/Cargo.toml', 'native/**/build.rs', '!native/target/**') }}
+          restore-keys: rust-android-x86_64-1.99.0-beta-${{ runner.os }}-${{ hashFiles('native/Cargo.lock') }}-
       - uses: gradle/actions/setup-gradle@v4
         if: steps.changes.outputs.run == 'true'
       - name: Compile fixtures, check style and lint
@@ -64,12 +73,20 @@ jobs:
           git diff --exit-code
           CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android26-clang" \
             CARGO_TARGET_DIR="$PWD/native/target/android" \
-            cargo build --locked --manifest-path native/Cargo.toml --package imu-nav-jni --release --target x86_64-linux-android
+            cargo build --locked --manifest-path native/Cargo.toml --package imu-nav-jni --package androidx-graphics-path --lib --release --target x86_64-linux-android
           mkdir -p app/build/generated/rustJniLibs/x86_64
           install -m 0644 native/target/android/x86_64-linux-android/release/libimu_nav_jni.so app/build/generated/rustJniLibs/x86_64/
+          # The prebuilt AndroidX library is removed from the AAR; Compose needs this port below API 34.
+          install -m 0644 native/target/android/x86_64-linux-android/release/libandroidx_graphics_path.so app/build/generated/rustJniLibs/x86_64/libandroidx.graphics.path.so
           # Emulator APKs need only x86_64; the existing F-Droid workflow builds the ARM release ABIs.
           ./gradlew --no-daemon -x :app:buildRustAndroid detekt :app:assembleFdroidDebug :app:assembleFdroidDebugAndroidTest :app:lintFdroidDebug
           python3 tools/verify_android_pages.py --zipalign "$ANDROID_HOME/build-tools/36.0.0/zipalign" --report build/android-pages.json app/build/outputs/apk/fdroid/debug/*.apk
+      - name: Save Android Rust build
+        if: steps.changes.outputs.run == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.rust-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: native/target/android
+          key: ${{ steps.rust-cache.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@v4
         if: steps.changes.outputs.run == 'true'
         with:

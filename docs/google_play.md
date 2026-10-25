@@ -8,8 +8,8 @@ Play Console account/listing state and the registered upload certificate have no
 
 ## Build modes and trust boundary
 
-**Google Play bundle** (`.github/workflows/play-bundle.yml`) runs unsigned validation on PRs,
-merge queues, main pushes and manual `mode=test` runs. It builds the actual R8 release with
+**Google Play bundle** (`.github/workflows/play-bundle.yml`) runs only when started manually
+(Actions → Google Play bundle → Run workflow); `mode=test` runs unsigned validation. It builds the actual R8 release with
 `:app:bundlePlayRelease`, runs `check` and `:app:lintPlayRelease`, and passes `-PunsignedPlay`
 so even an existing local `keystore.properties` cannot sign that CI build. No private signing
 variables are referenced by this job. Its `imu-nav-play-unsigned-<sha>` artifact is not an upload release.

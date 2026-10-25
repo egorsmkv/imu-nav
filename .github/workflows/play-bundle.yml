@@ -1,10 +1,8 @@
 name: Google Play bundle
 
+# Started only by a person (Actions → Google Play bundle → Run workflow); PR and main checks
+# are covered by the F-Droid, Kotlin, Rust and Android GPS workflows.
 on:
-  pull_request:
-  merge_group:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       mode:
@@ -20,9 +18,10 @@ on:
 permissions:
   contents: read
 
+# Every manual run is independent; a started release is never cancelled by another run.
 concurrency:
-  group: play-bundle-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'validation' }}
-  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+  group: play-bundle-${{ github.run_id }}
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -57,9 +56,15 @@ jobs:
           toolchain: 1.99.0-beta
           components: rustfmt, clippy
           targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
-      - uses: gradle/actions/setup-gradle@v4
+      - name: Cache Cargo downloads
+        uses: actions/cache@v4
         with:
-          cache-read-only: ${{ github.event_name == 'pull_request' }}
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('native/Cargo.lock', 'server/Cargo.lock') }}
+          restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
+      - uses: gradle/actions/setup-gradle@v4
       - name: Test bundle and signing tooling
         run: python3 -m unittest discover -s tools/tests -v
       - name: Build release AAB and run project checks without credentials

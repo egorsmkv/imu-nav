@@ -17,7 +17,7 @@ Update it whenever a module starts consuming another module, fixture, generator 
 | App AndroidTest / Debug fixtures | Android GPS emulator matrix |
 | App unit tests | Kotlin coverage |
 | JNI wrappers | F-Droid, Kotlin coverage and native Rust coverage |
-| Native Rust implementation / lockfile | F-Droid, Kotlin coverage and native Rust coverage |
+| Native Rust implementation (including `native/graphics-path`) / lockfile | F-Droid, Android GPS, Kotlin coverage and native Rust coverage |
 | Server implementation / templates / embedded static assets | Server Rust coverage and Kotlin client/server integration + coverage |
 | Server tests / traffic simulator | Server Rust coverage |
 | Core source or fixtures | F-Droid, Kotlin/native coverage and routing fixture |
@@ -44,7 +44,9 @@ by these workflows. F-Droid tags continue to build regardless of path selection.
 - Main pushes compare the event's `before` and `after` commits, including force pushes.
 - Renames are represented as deletion plus addition, so both dependency paths are considered.
   Filenames are NUL-separated and there is no 300-file API/native-filter cutoff.
-- Missing history, new-branch zero SHAs, manual runs, tags and merge queues select all work
+- Merge-queue entries compare the queue base with the queued head, which contains every PR
+  ahead of it in the queue; a malformed merge-group payload selects all work.
+- Missing history, new-branch zero SHAs, manual runs and tags select all work
   conservatively. Malformed event JSON or a script error fails the selector step.
 - Selected compilation/test failures remain failures; no `continue-on-error` is used.
 
@@ -56,6 +58,17 @@ Native and server coverage have independent selection, and PostgreSQL starts onl
 server coverage. Cargo registry/git downloads are cached by OS, architecture and lockfiles;
 instrumented build targets are not shared. Existing Gradle caches remain enabled. F-Droid no
 longer runs `clean` before every build and has a 60-minute timeout.
+
+The Android GPS job caches its x86_64 Rust release build (`native/target/android`), because
+dependencies such as Tantivy dominate its compile time. The key combines the Rust toolchain,
+`native/Cargo.lock` and a hash of the native sources; a source change restores the newest build
+for the same lockfile and Cargo rebuilds only what changed. Only `main` pushes save it; pull
+requests and the merge queue only restore. Release builds (F-Droid tags/manual runs, Play) do
+not use it.
+
+The **Google Play bundle** workflow runs only when started manually (Actions → Run workflow),
+in `test` or `release` mode; it has no pull-request, merge-queue or `main` trigger. Pull requests
+are still covered by the F-Droid release build, Kotlin/Rust coverage and the Android GPS suite.
 
 Python tooling tests run in the Kotlin workflow without installing Android/Java/Rust when
 only tooling changes. Their previous duplicate executions in both Rust matrix entries were
