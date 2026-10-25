@@ -41,7 +41,8 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 /**
- * Read-only access to a routing pack's `search.db` (built by `SearchIndexBuilder` on a computer).
+ * Read-only access to the `search.db` of legacy routing packs, built before Tantivy search
+ * (current packs ship `search.tantivy`; the old JVM `SearchIndexBuilder` has been removed).
  * Implements the storage-independent [SearchDb] interface that [AddressSearch] queries.
  */
 class AndroidSearchDb private constructor(private val db: SQLiteDatabase, private val signal: CancellationSignal?) :

@@ -37,8 +37,8 @@ with open(os.environ['BUILD_TEST_LOG'], 'a', encoding='utf-8') as log:
     log.write(json.dumps({'args': sys.argv[1:], 'linker': os.environ[key]}) + '\\n')
 if os.environ.get('BUILD_TEST_FAIL') == target:
     sys.exit(17)
-for name in ('jni', 'search', 'routing'):
-    library = pathlib.Path(os.environ['CARGO_TARGET_DIR']) / target / f'release/libimu_nav_{name}.so'
+for name in ('imu_nav_jni', 'imu_nav_search', 'imu_nav_routing', 'androidx_graphics_path'):
+    library = pathlib.Path(os.environ['CARGO_TARGET_DIR']) / target / f'release/lib{name}.so'
     library.parent.mkdir(parents=True, exist_ok=True)
     library.write_text(target, encoding='utf-8')
 ''', encoding='utf-8')
@@ -78,10 +78,14 @@ for name in ('jni', 'search', 'routing'):
         self.assertEqual(len(calls), 3)
         for call, (target, abi, prefix) in zip(calls, TARGETS):
             self.assertEqual(call['args'], ['build', '--manifest-path', str(self.root / 'native/Cargo.toml'),
-                                           '--package', 'imu-nav-jni', '--release', '--target', target])
+                                           '--package', 'imu-nav-jni', '--package', 'imu-nav-search',
+                                           '--package', 'imu-nav-routing', '--package', 'androidx-graphics-path',
+                                           '--lib', '--release', '--target', target])
             self.assertEqual(Path(call['linker']), ndk / f'toolchains/llvm/prebuilt/windows-x86_64/bin/{prefix}26-clang.cmd')
-            self.assertEqual((self.output / abi / 'libimu_nav_jni.so').read_text(), target)
-            self.assertEqual((self.output / abi / 'libimu_nav_routing.so').read_text(), target)
+            for library in ('libimu_nav_jni.so', 'libimu_nav_search.so', 'libimu_nav_routing.so'):
+                self.assertEqual((self.output / abi / library).read_text(), target)
+            # Cargo cannot name a library with dots; the script renames it to what AndroidX loads.
+            self.assertEqual((self.output / abi / 'libandroidx.graphics.path.so').read_text(), target)
 
     def test_sdk_discovery_sorts_ndk_versions_numerically(self):
         self.ndk('9.0.1')

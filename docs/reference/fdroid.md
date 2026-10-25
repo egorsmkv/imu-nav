@@ -128,8 +128,14 @@ its verified URL as `IssueTracker` in the metadata template.
 
 Copy `fdroid/metadata.yml` to a current `fdroiddata` checkout as
 `metadata/org.imunav.app.yml`. Replace the template's TODO tag with the real release tag if a
-different naming scheme was used. No `sudo`, `prebuild`, `scanignore`, `scandelete`, NDK, secret, or
-custom binary download step should be necessary. The important build fields are:
+different naming scheme was used. No `scanignore`, `scandelete`, secret or prebuilt binary is
+needed, but the build **does** need NDK 28.2.13676358 (`ndk: r28c`) and a Rust 1.99 toolchain
+with the `aarch64-linux-android`, `armv7-linux-androideabi` and `x86_64-linux-android` targets (the
+build script compiles all three even though release APKs ship only the ARM ABIs): Gradle's
+`buildRustAndroid` compiles the JNI libraries from `native/` (see the F-Droid workflow). The
+template below does not declare them yet; add the NDK field and a Rust setup step (`sudo` or
+`prebuild`) that fdroidserver accepts, and test with `fdroid build` before submitting.
+The important build fields are:
 
 ```yaml
 Builds:

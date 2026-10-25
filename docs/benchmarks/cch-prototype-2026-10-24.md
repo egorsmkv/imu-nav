@@ -8,7 +8,7 @@ acceleration files are much larger, and the current walking adapter is slower. F
 ordering did not finish within this experiment's ten-minute budget. This does not establish its
 complete build time or prove it cannot finish.
 
-The prototype lives in [tools/cch-prototype](../../tools/cch-prototype/README.md), with a separate
+The prototype lived in `tools/cch-prototype` (removed with GraphHopper; see commit `b3d1bd9`), with a separate
 Cargo workspace and lockfile. It uses `cch` 0.3.0 from crates.io, checksum
 `15568834f8c95df9da186c4088b4b201e924dc051e87806be0968b6a0eec363b`.
 It adds no APK dependency and changes neither production routing nor the pack format.
@@ -138,5 +138,5 @@ index footprint, complete the country-sized benchmark, then validate snapping/vi
 via-way and conditional restrictions, geometry, guidance, cancellation, JNI lifetime and R8/16 KB
 Android behavior. The current experiment does not justify migrating the app from GraphHopper.
 
-[Reproduction commands](../../tools/cch-prototype/README.md) ·
+Reproduction commands: `tools/cch-prototype/README.md` at commit `b3d1bd9` ·
 [Raw CSVs, comparison JSON and build metadata](cch-prototype-2026-10-24/)

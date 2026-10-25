@@ -51,7 +51,7 @@ jobs:
         if: steps.changes.outputs.run == 'true'
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.99.0-beta
+          toolchain: 1.99.0
           targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
 
       - name: Set up Gradle

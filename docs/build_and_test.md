@@ -4,7 +4,7 @@
 
 Use this guide from a complete source checkout, with commands run at the project root.
 The [glossary](glossary.md) explains the tools below.
-For the three native Rust crates and host replay commands, start with the [Rust core guide](core/readme.md).
+For the native Rust workspace and host replay commands, start with the [Rust core guide](core/readme.md).
 
 ## Prepare the tools
 

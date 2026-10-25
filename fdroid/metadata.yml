@@ -9,6 +9,8 @@ AutoName: IMU Nav
 RepoType: git
 Repo: https://github.com/egorsmkv/imu-nav.git
 
+# TODO: builds compile Rust JNI libraries through the NDK; add `ndk: r28c` and a Rust 1.99 setup
+# step (aarch64, armv7 and x86_64 Android targets) per docs/reference/fdroid.md, and verify with `fdroid build`.
 Builds:
   - versionName: 0.6.0
     versionCode: 7

@@ -53,7 +53,7 @@ jobs:
         run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358'
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.99.0-beta
+          toolchain: 1.99.0
           components: rustfmt, clippy
           targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
       - name: Cache Cargo downloads

@@ -3,7 +3,11 @@
 [Documentation index](../../README.md) · [Newcomer glossary](glossary.md)
 
 The `native/` workspace contains the Rust code used by Android navigation and by repeatable host
-experiments. It has three Cargo packages, each building one main Rust crate with a separate job:
+experiments. The navigation core described here is three Cargo packages, each building one main
+Rust crate with a separate job. The same workspace also holds `imu-nav-search` (Tantivy address
+search), `imu-nav-routing` (offline routing runtime and pack builder, see
+[routing](../reference/routing_and_search.md)) and `androidx-graphics-path` (the Rust port of
+AndroidX Graphics Path's JNI library, see [its README](../../native/graphics-path/README.md)).
 
 | Crate | In plain English | Where it runs |
 | --- | --- | --- |

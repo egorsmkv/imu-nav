@@ -9,7 +9,7 @@ Production routing, Android dependencies and pack formats are unchanged.
 
 ## Method
 
-The isolated [prototype](../../tools/cch-prototype/README.md) uses the same graph exports,
+The isolated prototype (`tools/cch-prototype`, removed; see commit `b3d1bd9`) used the same graph exports,
 production weights, legal turn transitions and endpoint pairs as the
 [earlier CCH experiment](cch-prototype-2026-10-24.md). That report records source checksums,
 extraction bounds and graph counts. Host: i9-9900K, 32 GiB RAM, Linux; Rust 1.99.0 release
