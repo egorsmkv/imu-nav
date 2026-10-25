@@ -15,7 +15,7 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 import kotlin.math.pow
 
-/** Something that computes routes: the offline GraphHopper pack, the online OSRM server, or both ([SmartRouter]). */
+/** Something that computes routes: the offline Rust routing pack, the online OSRM server, or both ([SmartRouter]). */
 interface Router {
     /** A route from [from] to [to] through [via] for [mode]; throws an IOException when there is none. */
     suspend fun route(from: GeoPoint, to: GeoPoint, via: List<GeoPoint> = emptyList(), mode: TravelMode = TravelMode.CAR): Route

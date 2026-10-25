@@ -317,7 +317,7 @@
 
     <string name="sec_about">О приложении</string>
     <string name="about_version">Версия %1$s</string>
-    <string name="about_credits">Данные вышек: участники OpenCellID (CC BY-SA 4.0) и Mozilla Location Service (общественное достояние). Карты и данные маршрутов © участники OpenStreetMap (ODbL), OpenFreeMap. Маршрутизация: GraphHopper, OSRM. Исходный код: лицензия MIT.</string>
+    <string name="about_credits">Данные вышек: участники OpenCellID (CC BY-SA 4.0) и Mozilla Location Service (общественное достояние). Карты и данные маршрутов © участники OpenStreetMap (ODbL), OpenFreeMap. Маршрутизация: собственный офлайн-движок, OSRM онлайн. Исходный код: лицензия MIT.</string>
     <string name="telegram_group">Группа в Telegram</string>
     <string name="telegram_group_url">https://t.me/imu_nav</string>
     <string name="proxy_title">Сетевой прокси</string>
@@ -442,7 +442,7 @@
     <string name="routing_pack">%1$s · %2$d МБ · создано %3$s</string>
     <string name="routing_coverage">Охватывает %1$.2f–%2$.2f° с. ш., %3$.2f–%4$.2f° в. д.</string>
     <string name="routing_load_failed">Установлено, но пакет не удалось загрузить</string>
-    <string name="routing_loading">Открываем пакет… для целой страны это несколько секунд</string>
+    <string name="routing_loading">Открываем пакет… для целой страны это может занять минуту-две</string>
     <string name="routing_verifying">Проверяем пакет…</string>
     <string name="pack_installing_percent">Установка пакета… %1$d%% (распаковано %2$d МБ)</string>
     <string name="routing_import">Импорт пакета</string>

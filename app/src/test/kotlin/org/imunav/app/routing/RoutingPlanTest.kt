@@ -17,7 +17,7 @@ class RoutingPlanTest {
 
     @Test
     fun carTriesCoveredPackBeforeFallbackEvenWhenItsProfileIsMissing() {
-        // Keep GraphHopper's existing failure/logging path instead of bypassing the offline attempt.
+        // Keep the offline engine's failure/logging path instead of bypassing the offline attempt.
         for (supported in listOf(false, true)) {
             assertEquals(RoutingPlan.OFFLINE_ONLY, routingPlan(TravelMode.CAR, covered = true, supported = supported, onlineAllowed = false))
             assertEquals(RoutingPlan.OFFLINE_WITH_FALLBACK, routingPlan(TravelMode.CAR, covered = true, supported = supported, onlineAllowed = true))

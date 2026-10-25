@@ -76,7 +76,7 @@ There is no separate Kotlin installation step: Gradle resolves the version pinne
    `org.imunav.app.bench` and enables responsiveness diagnostics. A successful build does not
    supply regional packs; follow [getting started](getting_started.md) to import them.
 3. Use `:app:assemblePlayDebug` for UI development that does not load offline routing packs.
-   Debug APKs cannot load those packs because of GraphHopper record desugaring.
+   Use the R8-enabled benchmark APK for routing and performance checks with real packs.
 4. For a release build, use `:app:assemblePlayRelease` or `:app:assembleFdroidRelease`.
    Play signing needs your own ignored `keystore.properties`; without it the Play release is
    unsigned. The F-Droid release is always unsigned so F-Droid can sign it. See the

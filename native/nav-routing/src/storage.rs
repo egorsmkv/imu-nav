@@ -57,9 +57,10 @@ impl Network {
     /// Returns malformed input, unavailable graph data, I/O, or request cancellation errors.
     pub fn open(path: &Path) -> Result<Self> {
         let shared = Owner::new(Shared::open(&path.with_file_name(crate::shared::FILE))?);
-        Self::with_shared(path, shared)
+        Self::with_shared(path, shared, true)
     }
-    pub(crate) fn with_shared(path: &Path, shared: Owner<Shared>) -> Result<Self> {
+    /// `full == false` skips the record and hierarchy scans; see `Shared::open_checked`.
+    pub(crate) fn with_shared(path: &Path, shared: Owner<Shared>, full: bool) -> Result<Self> {
         let data = FileData::open(path)?;
         if data.len() < 72 || &data.bytes::<8>(0) != MAGIC {
             return Err("unsupported routing data".into());
@@ -126,7 +127,9 @@ impl Network {
             postings,
             posting_count,
         };
-        network.validate()?;
+        if full {
+            network.validate()?;
+        }
         Ok(network)
     }
     #[must_use]

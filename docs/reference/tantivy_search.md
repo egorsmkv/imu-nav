@@ -54,7 +54,7 @@ Its rows are streamed through a temporary JSONL file into a new native staging
 index, validated, and moved into the pack. Staging files are removed before ZIP
 creation. `--no-addresses` and `--no-search` retain their previous meaning.
 
-The archive keeps GraphHopper files and `pack.json` at the root, plus
+The archive keeps the routing files and `pack.json` at the root, plus
 `search.tantivy/` with its segment files, `meta.json`, and `search-format` marker.
 Metadata adds `searchFormat: "tantivy-1"`; absent/null still supports legacy packs
 or packs without search. The marker is `imu-nav-tantivy-1` followed by a newline.

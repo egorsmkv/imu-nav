@@ -33,7 +33,7 @@ Android Auto host auto-drive mode simulates a reviewed route in the car session 
 A real trip started on the phone supersedes the demo. Release builds validate hosts; debug and
 benchmark builds permit development hosts.
 
-For device validation, use a benchmark build (debug GraphHopper cannot load routing packs) with
+For device validation, use a benchmark build (R8-enabled, as for all routing checks) with
 Android Auto's Desktop Head Unit. Exercise phone-visible/hidden, connect/disconnect/reconnect,
 GPS loss/manual origin, saved fixed-origin routes, reroute/arrival, surface resize/day-night changes,
 missing location permission, and host auto-drive mode. Rotate the phone and test split-screen,

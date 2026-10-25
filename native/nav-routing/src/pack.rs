@@ -10,6 +10,17 @@ impl Pack {
     /// # Errors
     /// Rejects malformed metadata, incompatible packs and invalid routing files.
     pub fn open(directory: &Path) -> Result<Self> {
+        Self::open_checked(directory, true)
+    }
+    /// Open a pack whose files already passed [`Pack::open`] and have not changed since (the app
+    /// records that after installing). Metadata, headers and section bounds are still checked;
+    /// the full record scan, which reads every byte of a country pack, is skipped.
+    /// # Errors
+    /// Rejects malformed metadata, incompatible packs and inconsistent file layouts.
+    pub fn open_trusted(directory: &Path) -> Result<Self> {
+        Self::open_checked(directory, false)
+    }
+    fn open_checked(directory: &Path, full: bool) -> Result<Self> {
         let file = std::fs::File::open(directory.join("pack.json"))?;
         if file.metadata()?.len() > 65_536 {
             return Err("routing metadata too large".into());
@@ -22,7 +33,10 @@ impl Pack {
         if profiles.is_empty() || profiles.len() > 2 {
             return Err("invalid profile count".into());
         }
-        let shared = Arc::new(Shared::open(&directory.join(crate::shared::FILE))?);
+        let shared = Arc::new(Shared::open_checked(
+            &directory.join(crate::shared::FILE),
+            full,
+        )?);
         if metadata["elevation"].as_bool() != Some(shared.has_elevation()) {
             return Err("elevation metadata does not match shared geometry".into());
         }
@@ -37,6 +51,7 @@ impl Pack {
                 Network::with_shared(
                     &directory.join(format!("{name}.routing")),
                     Arc::clone(&shared),
+                    full,
                 )?,
             );
         }

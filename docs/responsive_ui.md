@@ -19,7 +19,7 @@ the window. The map, search overlay and bookmark overlay use the same decision a
 
 These unit tests verify the layout decision, not rendered Compose bounds. Run the following
 device checks before treating the UI as visually verified. Use the benchmark APK for route
-packs: debug builds cannot load GraphHopper's desugared records (see `AGENTS.md`).
+packs, as `AGENTS.md` requires for routing checks.
 
 `SearchRestorationTest` opens the production route-origin search, types a synthetic one-letter
 query, recreates the Activity, then rotates the emulator (resizing the available window).

@@ -34,6 +34,12 @@ pub(crate) fn section(
 }
 impl Shared {
     pub fn open(path: &Path) -> Result<Self> {
+        Self::open_checked(path, true)
+    }
+    /// `full == false` keeps the header and section bounds checks but skips the per-record scan.
+    /// Only for files that already passed a full check; every read stays bounds-checked, so bad
+    /// data can only panic (reported as a failed request), never read outside the mapping.
+    pub(crate) fn open_checked(path: &Path, full: bool) -> Result<Self> {
         let data = FileData::open(path)?;
         if data.len() < 64 || &data.bytes::<8>(0) != MAGIC {
             return Err("unsupported shared routing data".into());
@@ -72,7 +78,9 @@ impl Shared {
             name_bytes,
             point_width,
         };
-        shared.validate(point_count, name_length)?;
+        if full {
+            shared.validate(point_count, name_length)?;
+        }
         Ok(shared)
     }
     fn validate(&self, point_count: usize, name_length: usize) -> Result<()> {

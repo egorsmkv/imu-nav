@@ -46,6 +46,14 @@ The Rust pack owner retains one shared mapping and both profile readers. JNI ope
 a declared profile using the pack handle; closing the handle cannot invalidate active requests.
 ARMv7 continues to use bounded mapping windows, with no whole-file decompression into RAM.
 
+`Pack::open` performs the full record, reference and hierarchy validation. `Pack::open_trusted`
+(JNI `open(path, validate = false)`) keeps metadata, header and section-bound checks but skips the
+record scan, which reads every byte of a country pack. The app uses it only when `PackStamp`
+(`validated.stamp`: stamp version, pack format, and name/size/mtime of `pack.json` and every
+`*.routing` file) shows the files are unchanged since a full validation in app-private storage.
+Every record read remains bounds-checked against the mapping, so corrupt data fails a request
+instead of reading outside the file. Bump `PackStamp.VERSION` when validation gains checks.
+
 The host builder stages its original full-precision routing output, contracts both profiles,
 and compacts that staged data before publishing metadata and creating the ZIP. Geometry
 payloads stay in a temporary disk file during deduplication; in-memory tables hold descriptors

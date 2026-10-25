@@ -4,7 +4,7 @@ Every GPS fix is classified as good, suspect, or bad. When trusted GPS is unavai
 
 Features include:
 
-* offline car and walking routes using user-installed GraphHopper packs
+* offline car and walking routes using user-installed offline routing packs
 * offline address search when the installed pack contains a search index
 * MapLibre maps with downloadable or importable offline map data
 * cell-tower positioning from a bundled database or user-imported data

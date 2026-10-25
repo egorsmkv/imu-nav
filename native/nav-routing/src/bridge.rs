@@ -2,7 +2,7 @@
 use crate::{pack::Pack, route::Request};
 use jni::JNIEnv;
 use jni::objects::{JClass, JString};
-use jni::sys::{jlong, jstring};
+use jni::sys::{jboolean, jlong, jstring};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -44,10 +44,18 @@ extern "system" fn Java_org_imunav_routing_RoutingNative_open(
     mut env: JNIEnv,
     _: JClass,
     path: JString,
+    validate: jboolean,
 ) -> jlong {
     guarded(&mut env, |env| {
         let path: String = env.get_string(&path)?.into();
-        let index = Arc::new(Pack::open(std::path::Path::new(&path))?);
+        let directory = std::path::Path::new(&path);
+        // The app skips the full scan only for an installed pack it validated and that is unchanged.
+        let pack = if validate == 0 {
+            Pack::open_trusted(directory)?
+        } else {
+            Pack::open(directory)?
+        };
+        let index = Arc::new(pack);
         let handle = NEXT.fetch_add(1, Ordering::Relaxed);
         registry(&INDEXES)
             .lock()

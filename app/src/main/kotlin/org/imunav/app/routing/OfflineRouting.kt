@@ -34,6 +34,7 @@ import org.imunav.routing.GraphCoverage
 import org.imunav.routing.MatchedTrack
 import org.imunav.routing.OfflineGraph
 import org.imunav.routing.PackInfo
+import org.imunav.routing.PackStamp
 import org.imunav.routing.RoutingRequest
 import java.io.File
 import java.io.IOException
@@ -228,7 +229,10 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
             if (strict) throw IOException(str(R.string.routing_requires_rust_pack))
             return
         }
-        val g = prepared ?: runCatching { OfflineGraph.load(current) }
+        // A pack validated at install (or on an earlier start) opens without the full record scan.
+        val trusted = prepared == null && PackStamp.matches(current)
+        val g = prepared ?: runCatching { OfflineGraph.load(current, validate = !trusted) }
+            .onSuccess { if (!trusted) runCatching { PackStamp.write(current) } }
             .onFailure {
                 log("offline_routing_load_failed type=${it.javaClass.simpleName} ${it.message}")
                 if (strict) throw it
@@ -244,7 +248,7 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
                 modes = TravelMode.entries.filter { mode -> g?.supports(mode) == true }.toSet(),
             )
         }
-        if (g != null) log("offline_routing_loaded ${info.name} ms=${(System.nanoTime() - started) / 1_000_000}")
+        if (g != null) log("offline_routing_loaded ${info.name} ms=${(System.nanoTime() - started) / 1_000_000} full_check=${prepared == null && !trusted}")
     }
 
     /** Close only under exclusive worker ownership, after every route/search reader has finished. */
@@ -417,20 +421,23 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
         // the memory mappings stay valid when the staging folder is renamed into place.
         progress(str(R.string.routing_verifying))
         val validated = OfflineGraph.load(staging)
+        // Renaming keeps sizes and modification times, so the stamp stays valid in `current`.
+        PackStamp.write(staging)
         try {
             checkCancellation()
             openSearch(staging)?.use { /* Validate native or legacy search before replacing the working pack. */ }
-            var handedOver = false
             withContext(NonCancellable + Dispatchers.IO) {
                 resources.write {
                     checkCancellation()
                     operation.beginCommit()
-                    // Hand over only right after staging became current. A failed backup or a rollback
-                    // activates the previous pack, which must be opened from disk.
-                    PackFiles.replace(staging, current, ::closeResources) {
-                        val prepared = validated.takeUnless { handedOver || staging.exists() }
-                        handedOver = true
-                        load(strict = true, prepared = prepared)
+                    try {
+                        commit(staging, validated)
+                    } catch (failure: IOException) {
+                        // Windows (host tests) cannot rename a folder with mapped files; Android can.
+                        // The previous pack is back in place, so retry once and validate from disk.
+                        if (!staging.exists()) throw failure
+                        validated.close()
+                        commit(staging, null)
                     }
                     operation.result = str(R.string.routing_installed, info.name)
                 }
@@ -440,6 +447,18 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
         }
         log("offline_routing_installed ${info.name} ${bytes / 1_048_576}MB")
         return str(R.string.routing_installed, info.name)
+    }
+
+    /** Move [staging] into place under exclusive ownership and activate it, adopting [validated] if given. */
+    private fun commit(staging: File, validated: OfflineGraph?) {
+        var handedOver = false
+        // Hand over only right after staging became current. A failed backup or a rollback
+        // activates the previous pack, which must be opened from disk.
+        PackFiles.replace(staging, current, ::closeResources) {
+            val prepared = validated.takeUnless { handedOver || staging.exists() }
+            handedOver = true
+            load(strict = true, prepared = prepared)
+        }
     }
 
     /** Update the progress text and, when measurable, the bar (any thread). */

@@ -40,6 +40,8 @@ class RustOfflineGraphTest {
                 assertEquals(route.geometry.size - 1, route.segmentSpeedMps.size)
                 assertTrue(route.maxspeedKmh.containsAll(listOf(50, 30)))
                 assertTrue(graph.route(points, TravelMode.FOOT).durationS > route.durationS)
+                // The JNI path without the full scan answers identically.
+                OfflineGraph.load(pack, validate = false).use { trusted -> assertEquals(route.geometry, trusted.route(points).geometry) }
                 RoutingRequest().use { request ->
                     request.cancel()
                     assertFailsWith<CancellationException> { graph.route(points, request = request) }

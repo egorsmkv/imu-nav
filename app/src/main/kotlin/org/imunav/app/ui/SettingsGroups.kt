@@ -213,7 +213,14 @@ internal fun MapsSettings(app: AppGraph, routing: OfflineRoutingStatus, offlineM
     }
     SettingsGroup(
         title = stringResource(R.string.settings_group_maps),
-        summary = stringResource(if (routing.pack == null) R.string.settings_group_maps_setup else R.string.settings_group_maps_ready),
+        summary = stringResource(
+            when {
+                routing.pack == null -> R.string.settings_group_maps_setup
+                routing.loading -> R.string.routing_loading
+                routing.loaded -> R.string.settings_group_maps_ready
+                else -> R.string.routing_load_failed
+            },
+        ),
         icon = Icons.Filled.Route,
     ) {
         SettingsHelp(stringResource(R.string.settings_help_maps))

@@ -2,7 +2,7 @@
 """
 Find calls in a built APK to Android/Java platform methods newer than the app's minSdk.
 
-Android Lint checks our own sources, but not the bytecode of libraries (GraphHopper, OkHttp…).
+Android Lint checks our own sources, but not the bytecode of libraries (OkHttp, MapLibre…).
 A library call to a method the phone does not have crashes with NoSuchMethodError, and only on
 older Android versions, so it is easy to miss when testing on a new phone. This script reads every
 method call in the APK's dex files and looks each one up in the SDK's api-versions.xml.
@@ -35,11 +35,8 @@ GUARDED_PREFIXES = (
     "org.imunav.app.",
 )
 
-# Library code that never runs on the phone (desktop pack builder / elevation download).
-DESKTOP_ONLY = (
-    "com.graphhopper.reader.dem.", "com.graphhopper.reader.osm.", "com.graphhopper.util.Downloader",
-    "com.graphhopper.routing.util.parsers.",
-)
+# Library code that never runs on the phone. Empty since the GraphHopper engine was removed.
+DESKTOP_ONLY = ()
 
 
 def sdk_dir():

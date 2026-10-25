@@ -10,7 +10,7 @@ See the [Rust migration validation report](../benchmarks/rust-routing-2026-10-25
 
 The app uses `imu-nav-routing`, our Rust runtime, with contraction hierarchies prepared by
 `faster_paths` 0.1.0. OSM import, snapping, route reconstruction, maneuver records and track
-matching are implemented in Rust. GraphHopper remains only in JVM reference tests; it is not
+matching are implemented in Rust. GraphHopper has been removed from the project; it is not
 an app or pack-builder dependency. The navigation engine still receives the existing Kotlin `Route`.
 
 **Compatibility:** only packs declaring `"routingFormat":"rust-ch-2"` are accepted. Rebuild or

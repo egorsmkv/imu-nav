@@ -28,32 +28,16 @@ etc.) and its licence from the published POM. All are compatible with this proje
 | Jackson Core | 2.19.2 | streaming JSON for native adapters and recording | Apache 2.0 |
 | ↳ Gson, Timber, JSpecify, JetBrains annotations, Guava listenablefuture                   | —                  | pulled in by MapLibre / AndroidX                                       | Apache 2.0               |
 
-The production app and pack builder no longer depend on GraphHopper. Its dependencies below
-are retained only for independent legacy-reference JVM tests, not APK packaging.
-
-### GraphHopper reference tests only
-
-| Library | Version | Purpose | Licence |
-| --- | --- | --- | --- |
-| GraphHopper core + map matching                                                           | 11.0               | offline routing, snapping trips to roads                               | Apache 2.0               |
-| ↳ HPPC                                                                                    | 0.8.1              | GraphHopper's primitive collections                                    | Apache 2.0               |
-| ↳ Jackson (core, databind, XML) + Woodstox 7.1                                            | 2.19.2             | GraphHopper's config / JSON                                            | Apache 2.0               |
-| ↳ Stax2 API                                                                               | 4.2.2              | XML parsing (Jackson XML)                                              | BSD 2-Clause             |
-| ↳ JTS Topology Suite                                                                      | 1.20.0             | geometry in GraphHopper                                                | EPL 2.0 / EDL 1.0 (dual) |
-| ↳ Janino + commons-compiler                                                               | 3.1.9              | GraphHopper custom models (desktop only; the phone uses plain code)    | BSD 3-Clause             |
-| ↳ osm-legal-default-speeds                                                                | 1.4                | default speed limits per road type                                     | BSD 3-Clause             |
-| ↳ Apache XML Graphics Commons, Commons IO                                                 | 2.7 / 1.3.1        | GraphHopper utilities                                                  | Apache 2.0               |
-| ↳ SLF4J API                                                                               | 2.0.17             | logging facade (no backend on Android)                                 | MIT                      |
+GraphHopper and its Java dependencies (HPPC, JTS, Janino, osmosis-osm-binary, Protocol Buffers…)
+have been removed from the project, including its former JVM reference tests.
 
 ### Desktop tools only
 
-The `:routing` pack builder, Rust `server/`, and `:replay` use the same GraphHopper stack plus
-the libraries below. These are not in the APK.
+The `:routing` pack builder, Rust `server/`, and `:replay` use the libraries below.
+These are not in the APK.
 
 | Library                      | Version          | Used for                                                      | Licence                                       |
 | ---------------------------- | ---------------- | ------------------------------------------------------------- | --------------------------------------------- |
-| osmosis-osm-binary           | 0.48.3           | reading `.osm.pbf` extracts                                   | LGPL 3.0 (used unmodified, as a separate jar) |
-| Protocol Buffers (Java)      | 3.12.2           | `.osm.pbf` decoding                                           | BSD 3-Clause                                  |
 | SQLite JDBC                  | 3.53.4.0         | writing the search index                                      | Apache 2.0                                    |
 | Axum + Tokio                 | 0.8 / 1.x        | cell server HTTP/WebSocket runtime                            | MIT                                           |
 | Tokio Util, Tempfile         | 0.7 / 3.x        | streamed administrator exports and temporary imports          | MIT                                           |
@@ -137,7 +121,7 @@ The desktop HTTPS tile worker directly uses reqwest 0.13.5 (MIT/Apache 2.0), sha
 versions are already part of the desktop's resolved dependency graph.
 
 The Kotlin core declares Jackson Core 2.19.2 (Apache 2.0) directly for streaming mirror JSON.
-This is the same Jackson version already included through GraphHopper, not an APK version upgrade.
+It is a direct dependency, not an APK version upgrade.
 Online desktop maps use OpenStreetMap attribution and its public raster tile policy; offline map
 owners supply attribution through MBTiles metadata.
 
@@ -153,14 +137,9 @@ uses the existing Jackson Core 2.19.2 (Apache-2.0). SQLite JDBC remains a deskto
 staging/build dependency and is not packaged in Android APKs; legacy pack reading
 uses the Android platform SQLite implementation.
 
-The isolated `tools/cch-prototype` routing experiment uses `cch` 0.3.0 (MIT), with
-Rayon, Crossbeam, memmap2 and libc dependencies recorded in its separate Cargo.lock.
-It is not linked into the app or production pack builder. See the
-[prototype documentation](../../tools/cch-prototype/README.md).
-
-The same isolated routing benchmark also uses `faster_paths` 0.1.0 (MIT OR Apache-2.0)
-and bincode 1.3.3 (MIT), with dependencies pinned in its own Cargo.lock.
-Bincode remains experiment-only. faster_paths is now also used by the production Rust builder (see below).
+The former `tools/cch-prototype` routing experiment (CCH and faster_paths compared with
+GraphHopper) has been removed; its results remain in `docs/benchmarks`.
+faster_paths is used by the production Rust builder (see below).
 
 
 The production Rust routing builder now uses `faster_paths` 0.1.0 (MIT OR Apache-2.0),
@@ -168,5 +147,4 @@ The production Rust routing builder now uses `faster_paths` 0.1.0 (MIT OR Apache
 and time (MIT OR Apache-2.0). These importer/preparation dependencies are host-only optional
 features. Android's `imu-nav-routing` runtime uses memmap2, JNI, Serde and serde_json under
 MIT/Apache-2.0 terms. It implements its own checked memory-mapped query/geometry adapter;
-no GraphHopper, Janino, HPPC, OSM PBF reader or bincode dependency is added to the APK.
-GraphHopper and its legacy importer remain only in independent JVM reference tests.
+no Janino, HPPC, OSM PBF reader or bincode dependency is added to the APK.

@@ -163,4 +163,4 @@ Bookmark database instrumentation tests (requires an Android SDK/NDK and an emul
 ```
 
 These tests use an isolated database and do not load routing packs. Use a benchmark APK for manual
-bookmark-to-routing checks with a real pack, as with all GraphHopper device testing.
+bookmark-to-routing checks with a real pack, as with all routing device testing.

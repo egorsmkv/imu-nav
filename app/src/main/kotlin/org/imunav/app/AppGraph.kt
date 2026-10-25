@@ -161,7 +161,7 @@ class AppGraph(private val context: Context) {
         else -> EnglishPhrases
     }
 
-    /** Offline GraphHopper pack first; OSRM online only as an allowed fallback. */
+    /** Offline Rust routing pack first; OSRM online only as an allowed fallback. */
     val offlineRouting = OfflineRouting(context, scope, tripLog::write)
 
     /** Offline map display: a downloaded map pack, and maps saved along planned routes. */

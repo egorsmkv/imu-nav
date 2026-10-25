@@ -31,10 +31,6 @@ dependencies {
     builder(libs.sqlite.jdbc)
     testImplementation(libs.sqlite.jdbc)
     testImplementation(libs.jackson.core)
-    testImplementation(libs.graphhopper.core)
-    testImplementation(libs.graphhopper.map.matching) {
-        exclude(group = "ch.qos.logback") // desktop logging backend; not wanted on Android
-    }
     testImplementation(kotlin("test"))
     testImplementation(libs.junit)
 }

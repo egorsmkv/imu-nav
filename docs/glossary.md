@@ -46,7 +46,6 @@ Jump to: [A to D](#a-to-d) · [E to K](#e-to-k) · [L to R](#l-to-r) · [S to Z]
   checks each fix before using it. [Navigation guide](navigation.md).
 - **Gradle** — The build tool started with `./gradlew`. It builds APKs and runs Kotlin tests.
   [Build guide](build_and_test.md).
-- **GraphHopper** — The routing library that calculates routes from an offline routing pack.
   [Routing guide](routing_and_search.md).
 - **IMU** — Inertial measurement unit: phone motion sensors such as the gyroscope and accelerometer.
   [Navigation guide](navigation.md).

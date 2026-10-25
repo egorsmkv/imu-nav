@@ -16,7 +16,6 @@ robolectric = "4.17"
 androidxTestCore = "1.6.1"
 androidTestRunner = "1.6.2"
 androidTestJunit = "1.2.1"
-graphhopper = "11.0"
 sqliteJdbc = "3.53.4.0"
 detekt = "2.0.0-alpha.6"
 okhttp = "5.4.0" # 5.5.0 needs compileSdk 37 (the pinned AndroidX set is on 36)
@@ -28,7 +27,7 @@ desugarJdkLibs = "2.1.5"
 androidx-car-app = { module = "androidx.car.app:app", version.ref = "carApp" }
 androidx-car-projected = { module = "androidx.car.app:app-projected", version.ref = "carApp" }
 androidx-car-testing = { module = "androidx.car.app:app-testing", version.ref = "carApp" }
-# Newer JDK APIs (e.g. Stream.toList used by GraphHopper) for Android versions that lack them.
+# Newer JDK APIs (java.time, streams) for Android versions that lack them.
 desugar-jdk-libs = { module = "com.android.tools:desugar_jdk_libs", version.ref = "desugarJdkLibs" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
@@ -48,12 +47,10 @@ robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectr
 androidx-test-core = { module = "androidx.test:core", version.ref = "androidxTestCore" }
 androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidTestRunner" }
 androidx-test-junit = { module = "androidx.test.ext:junit", version.ref = "androidTestJunit" }
-graphhopper-core = { module = "com.graphhopper:graphhopper-core", version.ref = "graphhopper" }
 okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
 okhttp-mockwebserver = { module = "com.squareup.okhttp3:mockwebserver3", version.ref = "okhttp" }
 jackson-core = { module = "com.fasterxml.jackson.core:jackson-core", version = "2.19.2" }
 sqlite-jdbc = { module = "org.xerial:sqlite-jdbc", version.ref = "sqliteJdbc" }
-graphhopper-map-matching = { module = "com.graphhopper:graphhopper-map-matching", version.ref = "graphhopper" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

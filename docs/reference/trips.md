@@ -56,7 +56,7 @@ diagnostics retains the existing explicit unsent-data deletion behavior.
 
 - **History** (clock icon on the map) lists trips with totals; a trip shows its trusted-GPS track and
   the engine's estimate on a map, distance, duration, moving time, time/distance without GPS and the
-  largest uncertainty. _Snap to roads_ map-matches the drive with GraphHopper.
+  largest uncertainty. _Snap to roads_ map-matches the drive with the offline Rust routing pack.
 - **Share a trip:** open it in History and tap the share icon. Android's share menu sends a separate
   `.zip` archive containing a plain `.rec` file with the route, positions and recorded sensor events.
   Extract the `.rec` file to use it with the replay tool. A truncated gzip tail in the app's recording

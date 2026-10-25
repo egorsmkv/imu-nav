@@ -17,7 +17,9 @@ object RoutingNative {
     init {
         System.loadLibrary("imu_nav_routing")
     }
-    external fun open(path: String): Long
+
+    /** [validate] false skips the full record scan; only for packs [PackStamp] confirms. */
+    external fun open(path: String, validate: Boolean): Long
     external fun close(handle: Long)
     external fun begin(): Long
     external fun cancel(request: Long)
@@ -98,13 +100,17 @@ class OfflineGraph private constructor(val dir: File, private val info: PackInfo
     }
 
     companion object {
-        /** Legacy GraphHopper packs are explicitly rejected; no legacy engine is shipped. */
-        fun load(dir: File): OfflineGraph {
+        /**
+         * Legacy GraphHopper packs are explicitly rejected; no legacy engine is shipped.
+         * [validate] false skips the full record scan (seconds to minutes for a country); pass it
+         * only when [PackStamp.matches] says these exact files were validated before.
+         */
+        fun load(dir: File, validate: Boolean = true): OfflineGraph {
             val metadata = File(dir, PackInfo.FILE)
             require(metadata.length() <= 65_536) { "Routing metadata too large" }
             val info = PackInfo.parse(metadata.readText()) ?: throw OfflineRoutingException("invalid routing metadata")
             if (info.routingFormat != PackInfo.FORMAT) throw OfflineRoutingException("New Rust routing pack required; rebuild or download a current pack")
-            return OfflineGraph(dir, info, RoutingNative.open(dir.absolutePath))
+            return OfflineGraph(dir, info, RoutingNative.open(dir.absolutePath, validate))
         }
 
         private fun decodeRoute(data: Map<String, Any?>): Route {

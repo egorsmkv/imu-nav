@@ -9,7 +9,7 @@ this repository and trusted Maven repositories.
 ## Architecture and flavor boundary
 
 The Android application is `:app`; `:core` contains platform-independent navigation logic and
-`:routing` contains GraphHopper integration shared with the desktop pack builder. The `play` and
+`:routing` contains the Rust routing JNI adapter and pack metadata. The `play` and
 `fdroid` flavors use the same application code today. Common dependencies are all FOSS.
 
 The flavor boundary exists so a future Play-only integration must be added with
@@ -45,8 +45,8 @@ contains its upstream `libmaplibre.so` binaries. Maven Central is an F-Droid tru
 and MapLibre publishes the corresponding source. Call this out in the inclusion merge request so
 the scanner result is reviewed rather than hidden with `scanignore`.
 
-GraphHopper's desktop-only OSM reader pulls LGPL `osmosis-osm-binary` and Protocol Buffers. The app
-excludes both from every Android runtime classpath. They are not present in the APK.
+The Rust pack builder reads OSM PBF only on the host (`builder` feature); the old Java OSM reader with
+LGPL `osmosis-osm-binary` and Protocol Buffers has been removed. Neither is in the APK.
 
 ## Prerequisites and local build
 

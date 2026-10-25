@@ -422,6 +422,43 @@ fn malformed_shared_ranges_and_coordinates_are_rejected() {
 }
 
 #[test]
+fn trusted_open_skips_record_scan_but_keeps_layout_checks_and_routes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("test.osm");
+    std::fs::write(&input, fixture()).unwrap();
+    let output = tmp.path().join("pack");
+    builder::build(&input, &output, "Test", 0, false, false).unwrap();
+    let request = Request {
+        points: vec![[50.4502, 30.5001], [50.4601, 30.5099]],
+    };
+    let flag = AtomicBool::new(false);
+    let full = imu_nav_routing::pack::Pack::open(&output).unwrap();
+    let trusted = imu_nav_routing::pack::Pack::open_trusted(&output).unwrap();
+    for profile in ["car", "foot"] {
+        let expected = route(full.profile(profile).unwrap(), &request, &flag).unwrap();
+        let actual = route(trusted.profile(profile).unwrap(), &request, &flag).unwrap();
+        assert_eq!(expected.geometry, actual.geometry);
+        assert_eq!(expected.duration_s, actual.duration_s);
+    }
+    drop((full, trusted));
+    let path = output.join("shared.routing");
+    let original = std::fs::read(&path).unwrap();
+    // A bad coordinate is only found by the full scan.
+    let geometries =
+        usize::try_from(u64::from_le_bytes(original[8..16].try_into().unwrap())).unwrap();
+    let names = usize::try_from(u64::from_le_bytes(original[16..24].try_into().unwrap())).unwrap();
+    let points = 64 + (geometries + names) * 16;
+    let mut invalid = original.clone();
+    invalid[points..points + 4].copy_from_slice(&i32::MAX.to_le_bytes());
+    std::fs::write(&path, invalid).unwrap();
+    assert!(imu_nav_routing::pack::Pack::open(&output).is_err());
+    assert!(imu_nav_routing::pack::Pack::open_trusted(&output).is_ok());
+    // Truncation still fails the cheap section checks.
+    std::fs::write(&path, &original[..original.len() - 1]).unwrap();
+    assert!(imu_nav_routing::pack::Pack::open_trusted(&output).is_err());
+}
+
+#[test]
 fn single_mode_packs_trim_shared_data_and_preserve_routes_and_search() {
     let tmp = tempfile::tempdir().unwrap();
     let input = tmp.path().join("test.osm");

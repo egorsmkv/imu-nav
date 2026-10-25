@@ -17,7 +17,7 @@ offline (versioned Rust routing packs). UI: Jetpack Compose + MapLibre, Ukrainia
 | ---------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `:core`    | pure Kotlin/JVM | the algorithm: trust classifier, navigation engine, speed fusion, cell positioning, trip recording/replay, search logic, shared OkHttp client (`core/net/Http.kt`). **No Android imports.** |
 | `:app`     | Android app     | Android glue and UI: `AppGraph` (manual DI, wires everything), `SensorHub`, `CellScanner`/`CellManager`, `NavService` (foreground service), `TripManager`, Compose screens in `ui/`         |
-| `:routing` | JVM             | Rust JNI routing adapter (`OfflineGraph`), pack metadata and search adapters; GraphHopper remains test-only                                       |
+| `:routing` | JVM             | Rust JNI routing adapter (`OfflineGraph`), pack metadata and search adapters                                                                  |
 | `server/`  | Rust app        | persistent SQLite cell-sharing server (Axum HTTP/WebSocket, anti-poisoning consensus)                                                                                                       |
 | `:replay`  | JVM app         | CLI that replays recorded trips (`.rec.gz`) through the engine and reports errors                                                                                                           |
 
@@ -122,7 +122,7 @@ Use the SDK's `platform-tools/adb`; its path depends on the development host.
   Old GraphHopper packs require replacement; never silently load them with the new engine.
 - **APK licence hygiene:** OSM PBF reading and faster_paths contraction are host-only features.
   Do not enable the routing `builder` feature in Android builds. Update both licence documents
-  when changing dependencies. GraphHopper is a test-only reference dependency.
+  when changing dependencies.
 - **R8:** retain native bridge names in `app/proguard-rules.pro`. Verify all three native libraries
   and 16 KiB alignment when changing native build configuration.
 - **Bundled assets** (`assets/routing/pack.zip` ~300 MB, `assets/cells/bundled-cells.csv.gz`) are big;
