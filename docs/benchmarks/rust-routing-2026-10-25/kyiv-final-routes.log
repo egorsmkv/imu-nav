@@ -1,6 +1,0 @@
-profile=car open_ms=345.605
-profile=car query=0 first_ms=65.769 warm_p50_ms=64.898 warm_p95_ms=67.398 geometry_points=123
-profile=car states=393054 routes=32 validated=true
-profile=foot open_ms=721.181
-profile=foot query=0 first_ms=137.691 warm_p50_ms=141.732 warm_p95_ms=143.098 geometry_points=168
-profile=foot states=763770 routes=32 validated=true

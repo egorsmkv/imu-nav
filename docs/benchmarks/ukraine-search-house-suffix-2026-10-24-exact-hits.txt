@@ -1,6 +1,0 @@
-exact_first_hit=true city=Львів title=Топольна вулиця, 4 в
-exact_first_hit=true city=Херсон title=Університетська вулиця, 181 а
-exact_first_hit=true city=Дніпро title=вулиця Леоніда Каденюка, 1 а
-exact_first_hit=true city=Львів title=вулиця Григорія Смольського, 1 а
-exact_first_hit=true city=Запоріжжя title=вулиця Стародніпровська, 12 а
-exact_first_hit=true city=Миколаїв title=Прорізний провулок, 11 а

@@ -1,1 +1,0 @@
-mode=walk seconds=45.280 archive_bytes=667225081 pack={"bounds":[43.584374,52.3654507,22.1287989,40.217995699999996],"builtAt":"2026-10-25T10:28:18.281285166Z","elevation":false,"name":"Ukraine","profiles":["foot"],"routingFormat":"rust-ch-2","searchFormat":"tantivy-1","sizeBytes":1218464841,"source":"ukraine-latest.osm.pbf","turnCosts":true}
