@@ -9,8 +9,6 @@ AutoName: IMU Nav
 RepoType: git
 Repo: https://github.com/egorsmkv/imu-nav.git
 
-# TODO: builds compile Rust JNI libraries through the NDK; add `ndk: r28c` and a Rust 1.99 setup
-# step (aarch64, armv7 and x86_64 Android targets) per docs/reference/fdroid.md, and verify with `fdroid build`.
 Builds:
   - versionName: 0.6.0
     versionCode: 7
@@ -25,32 +23,60 @@ Builds:
     # TODO: create and push this tag on the exact release commit before fdroiddata submission.
     commit: v0.8.0
     subdir: app
+    sudo:
+      - apt-get update
+      - apt-get install -y gcc libc-dev make rustup
     gradle:
       - fdroid
+    prebuild:
+      - rustup default 1.99.0
+      - rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+    ndk: r28c
 
   - versionName: 0.9.0
     versionCode: 9
     # TODO: create and push this tag on the exact release commit before fdroiddata submission.
     commit: v0.9.0
     subdir: app
+    sudo:
+      - apt-get update
+      - apt-get install -y gcc libc-dev make rustup
     gradle:
       - fdroid
+    prebuild:
+      - rustup default 1.99.0
+      - rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+    ndk: r28c
 
   - versionName: 0.10.0
     versionCode: 10
     # TODO: create and push this tag on the exact release commit before fdroiddata submission.
     commit: v0.10.0
     subdir: app
+    sudo:
+      - apt-get update
+      - apt-get install -y gcc libc-dev make rustup
     gradle:
       - fdroid
+    prebuild:
+      - rustup default 1.99.0
+      - rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+    ndk: r28c
 
   - versionName: 0.11.0
     versionCode: 11
     # TODO: create and push this tag on the exact release commit before fdroiddata submission.
     commit: v0.11.0
     subdir: app
+    sudo:
+      - apt-get update
+      - apt-get install -y gcc libc-dev make rustup
     gradle:
       - fdroid
+    prebuild:
+      - rustup default 1.99.0
+      - rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+    ndk: r28c
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags

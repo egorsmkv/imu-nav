@@ -129,26 +129,38 @@ its verified URL as `IssueTracker` in the metadata template.
 Copy `fdroid/metadata.yml` to a current `fdroiddata` checkout as
 `metadata/org.imunav.app.yml`. Replace the template's TODO tag with the real release tag if a
 different naming scheme was used. No `scanignore`, `scandelete`, secret or prebuilt binary is
-needed, but the build **does** need NDK 28.2.13676358 (`ndk: r28c`) and a Rust 1.99 toolchain
-with the `aarch64-linux-android`, `armv7-linux-androideabi` and `x86_64-linux-android` targets (the
-build script compiles all three even though release APKs ship only the ARM ABIs): Gradle's
-`buildRustAndroid` compiles the JNI libraries from `native/` (see the F-Droid workflow). The
-template below does not declare them yet; add the NDK field and a Rust setup step (`sudo` or
-`prebuild`) that fdroidserver accepts, and test with `fdroid build` before submitting.
-The important build fields are:
+needed. From 0.8.0 the app compiles its JNI libraries from `native/` with Rust during the Gradle
+build (`buildRustAndroid`), so those recipes install a Rust toolchain and the NDK. The 0.6.0
+recipe predates the Rust core and keeps only the plain Gradle fields. A current build entry:
 
 ```yaml
 Builds:
-  - versionName: 0.6.0
-    versionCode: 7
-    commit: v0.6.0
+  - versionName: 0.11.0
+    versionCode: 11
+    commit: v0.11.0
     subdir: app
+    sudo:
+      - apt-get update
+      - apt-get install -y gcc libc-dev make rustup
     gradle:
       - fdroid
+    prebuild:
+      - rustup default 1.99.0
+      - rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+    ndk: r28c
 ```
 
-`subdir: app` lets fdroidserver find the Android module output; `gradle: fdroid` selects
-`assembleFdroidRelease`.
+- `subdir: app` lets fdroidserver find the Android module output; `gradle: fdroid` selects
+  `assembleFdroidRelease`.
+- `sudo` installs Debian's `rustup` package and a host C toolchain for Rust build scripts;
+  `prebuild` selects Rust 1.99.0 (`native/Cargo.toml` requires 1.99) and adds the three Android
+  targets. The build script compiles all three, even though release APKs ship only the ARM ABIs.
+- `ndk: r28c` is NDK 28.2.13676358, the `ndkVersion` pinned in `app/build.gradle.kts`; the Rust
+  libraries link with its API 26 clang.
+- This follows the form current fdroiddata recipes with Rust use (Debian `rustup` plus `rustup
+  default` in `prebuild`), which replaced the older `rustup` srclib and `rustup-init.sh`.
+- `tools/update_app_version.py` copies the latest entry, so new releases keep these fields.
+  Update the toolchain and `ndk` here whenever `native/Cargo.toml` or `ndkVersion` changes.
 
 ## Testing with fdroidserver
 
