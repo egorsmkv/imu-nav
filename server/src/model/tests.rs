@@ -1,6 +1,23 @@
 use super::*;
 
 #[test]
+fn radio_parsing_is_ascii_case_insensitive_and_does_not_trim_input() {
+    for (name, expected) in [
+        ("gSm", Radio::Gsm),
+        ("uMtS", Radio::Umts),
+        ("lTe", Radio::Lte),
+        ("nR", Radio::Nr),
+        ("cDmA", Radio::Cdma),
+    ] {
+        assert_eq!(name.parse::<Radio>().unwrap(), expected);
+        assert_eq!(expected.to_string(), name.to_ascii_uppercase());
+    }
+    for name in ["", " LTE", "LTE ", "ＬＴＥ", "unknown"] {
+        assert_eq!(name.parse::<Radio>().unwrap_err().0, name);
+    }
+}
+
+#[test]
 fn antipodal_distance_remains_finite() {
     for latitude in -890..=890 {
         let latitude = f64::from(latitude) / 10.0;

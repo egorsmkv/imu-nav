@@ -1,0 +1,9 @@
+# Shared by the native workspace, server and other Rust crates in this repository.
+# Stable rustfmt options only: no nightly formatter is required.
+edition = "2024"
+style_edition = "2024"
+max_width = 100
+use_small_heuristics = "Default"
+newline_style = "Unix"
+reorder_imports = true
+reorder_modules = true

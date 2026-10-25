@@ -184,7 +184,7 @@ async fn api_auth_upload_and_private_diagnostics_use_postgres() -> Result<()> {
             let store = CellStore::open_postgres(&url)?;
             create_admin(&store, "admin@example.org", "correct horse battery staple")?;
             let state = AppState::new(
-                store.clone(),
+                store,
                 ServerConfig {
                     trip_archive: imu_nav_cell_server::TripArchiveLimits::default(),
                     mail: None,

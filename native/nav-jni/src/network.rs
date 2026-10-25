@@ -200,25 +200,25 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNetworkTracker_nativ
     history: jint,
 ) -> jdoubleArray {
     catch_unwind(AssertUnwindSafe(|| {
-        let samples = with_network_tracker(handle, |tracker| {
-            if history == 0 {
-                tracker.recent().to_vec()
+        let values: Vec<f64> = with_network_tracker(handle, |tracker| {
+            let samples = if history == 0 {
+                tracker.recent()
             } else {
-                tracker.history().to_vec()
-            }
+                tracker.history()
+            };
+            samples
+                .iter()
+                .flat_map(|sample| {
+                    [
+                        elapsed_milliseconds_as_f64(sample.elapsed_ms),
+                        sample.position_m,
+                        sample.accuracy_m,
+                        sample.offset_m,
+                    ]
+                })
+                .collect()
         })
         .ok()?;
-        let values: Vec<f64> = samples
-            .iter()
-            .flat_map(|sample| {
-                [
-                    elapsed_milliseconds_as_f64(sample.elapsed_ms),
-                    sample.position_m,
-                    sample.accuracy_m,
-                    sample.offset_m,
-                ]
-            })
-            .collect();
         new_double_array(&env, &values)
     }))
     .ok()

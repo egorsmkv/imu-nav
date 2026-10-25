@@ -21,7 +21,8 @@ pub use trust::*;
 
 use imu_nav_core::estimator::{
     GpsObservation, InitialEstimate, MotionObservation, NavigationEstimator, NetworkObservation,
-    ObservationTrust, TravelMode as EstimatorTravelMode, TurnObservation, WalkingObservation,
+    ObservationTrust, TickOutcome, TravelMode as EstimatorTravelMode, TurnObservation,
+    WalkingObservation,
 };
 use imu_nav_core::network::{GateResult as NetworkGateResult, NetworkSample, NetworkTracker};
 use imu_nav_core::route::{GeoPoint, RouteGeometry};
@@ -174,6 +175,16 @@ fn estimate_values(estimate: Estimate) -> Option<[f64; 7]> {
         estimate.systematic_drift_m,
         estimate.safety_radius_m(2.0).ok()?,
     ])
+}
+
+/// Fixed stack storage preserves the Kotlin wire order without a temporary Rust heap buffer.
+fn tick_values(outcome: TickOutcome) -> Option<[f64; 9]> {
+    let estimate = estimate_values(outcome.estimate)?;
+    let mut result = [0.0; 9];
+    result[..estimate.len()].copy_from_slice(&estimate);
+    result[7] = f64::from(outcome.position_accepted);
+    result[8] = f64::from(outcome.speed_accepted);
+    Some(result)
 }
 
 /// Copies Rust doubles into a newly allocated Java array and returns its JNI-owned reference.

@@ -16,6 +16,11 @@ The package is separate from the [native navigation workspace](../core/readme.md
 PostgreSQL are deployment services, not Rust crates: Caddy handles public HTTPS, while SQLite or
 PostgreSQL stores persistent server data.
 
+Rust formatting is shared with the native workspace through the repository-root
+[`rustfmt.toml`](../../rustfmt.toml). Use `cargo fmt --manifest-path server/Cargo.toml --all`.
+The separate [copy/allocation audit](../rust-allocation-audit.md) covers server CSV buffers,
+streamed downloads, async ownership and reproducible Clippy checks.
+
 ## Where to find the code
 
 | Files | Responsibility |

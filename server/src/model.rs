@@ -127,14 +127,16 @@ impl FromStr for Radio {
     type Err = RadioParseError;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        match value.to_ascii_uppercase().as_str() {
-            "GSM" => Ok(Self::Gsm),
-            "UMTS" => Ok(Self::Umts),
-            "LTE" => Ok(Self::Lte),
-            "NR" => Ok(Self::Nr),
-            "CDMA" => Ok(Self::Cdma),
-            _ => Err(RadioParseError(value.to_owned())),
-        }
+        [
+            ("GSM", Self::Gsm),
+            ("UMTS", Self::Umts),
+            ("LTE", Self::Lte),
+            ("NR", Self::Nr),
+            ("CDMA", Self::Cdma),
+        ]
+        .into_iter()
+        .find_map(|(name, radio)| value.eq_ignore_ascii_case(name).then_some(radio))
+        .ok_or_else(|| RadioParseError(value.to_owned()))
     }
 }
 

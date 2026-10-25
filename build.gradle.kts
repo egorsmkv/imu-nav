@@ -38,6 +38,7 @@ val rustFmtCheck = tasks.register<Exec>("rustFmtCheck") {
     group = "verification"
     description = "Checks formatting of the Rust navigation core"
     commandLine("cargo", "fmt", "--manifest-path", "native/Cargo.toml", "--all", "--check")
+    inputs.file("rustfmt.toml")
     inputs.files(fileTree("native") { exclude("target/**") })
 }
 
@@ -53,7 +54,8 @@ val rustClippy = tasks.register<Exec>("rustClippy") {
     description = "Runs pedantic Rust static analysis"
     commandLine(
         "cargo", "clippy", "--manifest-path", "native/Cargo.toml", "--all-targets",
-        "--features", "imu-nav-routing/builder", "--", "-W", "clippy::pedantic", "-D", "warnings",
+        "--features", "imu-nav-routing/builder", "--", "-W", "clippy::pedantic",
+        "-W", "clippy::redundant_clone", "-W", "clippy::needless_collect", "-W", "clippy::unnecessary_to_owned", "-D", "warnings",
     )
     inputs.files(fileTree("native") { exclude("target/**") })
 }
@@ -66,6 +68,7 @@ val serverRustFmtCheck = tasks.register<Exec>("serverRustFmtCheck") {
     group = "verification"
     description = "Checks formatting of the Rust cell-sharing server"
     commandLine("cargo", "fmt", "--manifest-path", "server/Cargo.toml", "--all", "--check")
+    inputs.file("rustfmt.toml")
     inputs.files(fileTree("server") { exclude("target/**") })
 }
 
@@ -88,7 +91,10 @@ val buildCellServerForKotlinTest = tasks.register<Exec>("buildCellServerForKotli
 val serverRustClippy = tasks.register<Exec>("serverRustClippy") {
     group = "verification"
     description = "Runs pedantic static analysis for the Rust cell-sharing server"
-    commandLine("cargo", "clippy", "--manifest-path", "server/Cargo.toml", "--all-targets", "--", "-W", "clippy::pedantic", "-D", "warnings")
+    commandLine(
+        "cargo", "clippy", "--manifest-path", "server/Cargo.toml", "--all-targets", "--", "-W", "clippy::pedantic",
+        "-W", "clippy::redundant_clone", "-W", "clippy::needless_collect", "-W", "clippy::unnecessary_to_owned", "-D", "warnings",
+    )
     inputs.files(fileTree("server") { exclude("target/**") })
 }
 

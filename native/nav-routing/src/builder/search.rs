@@ -71,7 +71,7 @@ impl Search {
             ]
             .iter()
             .filter_map(|k| tags.get(*k))
-            .cloned()
+            .map(String::as_str)
             .collect::<Vec<_>>()
             .join(" ");
             let population = tags
@@ -85,7 +85,20 @@ impl Search {
                         .ok()
                 })
                 .unwrap_or(0);
-            self.places.push((point,reach,json!({"kind":"place","id":id+1,"name":name,"text":normalize(&aliases).replace('\'',""),"place_kind":kind,"population":population,"lat":point.lat,"lon":point.lon})));
+            self.places.push((
+                point,
+                reach,
+                json!({
+                    "kind": "place",
+                    "id": id + 1,
+                    "name": name,
+                    "text": normalize(&aliases).replace('\'', ""),
+                    "place_kind": kind,
+                    "population": population,
+                    "lat": point.lat,
+                    "lon": point.lon,
+                }),
+            ));
             if reach > 0. {
                 self.place_grid.entry(grid(point)).or_default().push(id);
             }
@@ -155,7 +168,16 @@ impl Search {
                 .min_by(|a, b| geo::distance(**a, center).total_cmp(&geo::distance(**b, center)))
                 .unwrap();
             let id = index as u64 + 1;
-            let row = json!({"kind":"street","id":id,"name":name,"text":normalize(&name).replace('\'',""),"place_id":place.map(|p|p+1),"place_name":place.map(|p|self.places[p].2["name"].clone()),"lat":point.lat,"lon":point.lon});
+            let row = json!({
+                "kind": "street",
+                "id": id,
+                "name": name,
+                "text": normalize(&name).replace('\'', ""),
+                "place_id": place.map(|id| id + 1),
+                "place_name": place.map(|id| &self.places[id].2["name"]),
+                "lat": point.lat,
+                "lon": point.lon,
+            });
             serde_json::to_writer(&mut writer, &row)?;
             writeln!(writer)?;
             by_name

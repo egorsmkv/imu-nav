@@ -4,8 +4,8 @@ use super::{
     Arc, AssertUnwindSafe, ERROR_INTERNAL, ERROR_INVALID_HANDLE, EstimatorTravelMode, GeoPoint,
     GpsObservation, InitialEstimate, JClass, JDoubleArray, JLongArray, JNIEnv, MotionObservation,
     NEXT_HANDLE, NavigationEstimator, NetworkObservation, OK, ObservationTrust, Ordering, REJECTED,
-    TurnObservation, WalkingObservation, catch_unwind, error_code, estimate_values, estimators,
-    guarded_code, jdouble, jdoubleArray, jint, jlong, new_double_array, optional, ptr, routes,
+    TurnObservation, WalkingObservation, catch_unwind, error_code, estimators, guarded_code,
+    jdouble, jdoubleArray, jint, jlong, new_double_array, optional, ptr, routes, tick_values,
     with_estimator,
 };
 
@@ -242,9 +242,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNavigationEstimator_
         })
         .ok()?
         .ok()?;
-        let mut result = estimate_values(outcome.estimate)?.to_vec();
-        result.push(if outcome.position_accepted { 1.0 } else { 0.0 });
-        result.push(if outcome.speed_accepted { 1.0 } else { 0.0 });
+        let result = tick_values(outcome)?;
         new_double_array(&env, &result)
     }))
     .ok()

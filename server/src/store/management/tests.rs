@@ -112,7 +112,7 @@ fn cancelled_jobs_roll_back_and_policy_persists() -> Result<()> {
     store.seed(&[tower(1, 50.4)], 1, &policy)?;
     let modified = Policy {
         min_devices: 4,
-        ..policy.clone()
+        ..policy
     };
     let visibility = tokio::sync::RwLock::new(());
     let active = std::sync::RwLock::new(policy);
@@ -138,7 +138,7 @@ async fn policy_and_results_activate_after_readers_finish() -> Result<()> {
     store.seed(&[tower(1, 50.4)], 1, &original)?;
     let changed = Policy {
         min_devices: 4,
-        ..original.clone()
+        ..original
     };
     let gate = std::sync::Arc::new(tokio::sync::RwLock::new(()));
     let active = std::sync::Arc::new(std::sync::RwLock::new(original));
@@ -200,7 +200,7 @@ fn recalculation_reweights_existing_device_samples() -> Result<()> {
     let before = store.consensus(&tower(1, 50.4).key)?.unwrap().tower.lat;
     let changed = Policy {
         max_samples_per_device: 1,
-        ..original.clone()
+        ..original
     };
     let gate = tokio::sync::RwLock::new(());
     let active = std::sync::RwLock::new(original);
@@ -310,7 +310,7 @@ fn policy_filters_historical_rows_and_recovers_when_relaxed() -> Result<()> {
     let restricted = Policy {
         ukraine_only: true,
         max_range_m: 1_000.0,
-        ..original.clone()
+        ..original
     };
     let gate = tokio::sync::RwLock::new(());
     let active = std::sync::RwLock::new(original.clone());

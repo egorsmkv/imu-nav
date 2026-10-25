@@ -1,2 +1,6 @@
 # NMEA fixtures contain protocol CRLF bytes; preserve them in Git and source archives.
 desktop/protocol/fixtures/*.nmea -text whitespace=cr-at-eol
+
+# Keep Rust sources consistent with rustfmt's Unix newline style on every host.
+*.rs text eol=lf
+rustfmt.toml text eol=lf

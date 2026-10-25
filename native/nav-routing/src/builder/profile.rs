@@ -17,7 +17,28 @@ impl Mode {
     pub fn name(self) -> &'static str {
         if self == Self::Car { "car" } else { "foot" }
     }
+
+    /// Most specific access first; static directional keys avoid allocations for every OSM way.
+    fn access_keys(self) -> &'static [AccessKey] {
+        match self {
+            Self::Car => &[
+                ("motorcar", ["motorcar:forward", "motorcar:backward"]),
+                (
+                    "motor_vehicle",
+                    ["motor_vehicle:forward", "motor_vehicle:backward"],
+                ),
+                ("vehicle", ["vehicle:forward", "vehicle:backward"]),
+                ("access", ["access:forward", "access:backward"]),
+            ],
+            Self::Foot => &[
+                ("foot", ["foot:forward", "foot:backward"]),
+                ("access", ["access:forward", "access:backward"]),
+            ],
+        }
+    }
 }
+
+type AccessKey = (&'static str, [&'static str; 2]);
 fn tag<'a>(tags: &'a Tags, key: &str) -> &'a str {
     tags.get(key).map_or("", String::as_str)
 }
@@ -59,15 +80,10 @@ pub fn access(tags: &Tags, mode: Mode, reverse: bool) -> Option<(f32, u16, f64)>
     }) {
         return None;
     }
-    let direction = if reverse { "backward" } else { "forward" };
-    let keys: &[&str] = if mode == Mode::Car {
-        &["motorcar", "motor_vehicle", "vehicle", "access"]
-    } else {
-        &["foot", "access"]
-    };
-    let explicit = access_value(tags, keys, direction);
+    let keys = mode.access_keys();
+    let explicit = access_value(tags, keys, reverse);
     // General access=yes does not authorize cars on footways or pedestrians on motorroads.
-    let mode_access = access_value(tags, &keys[..keys.len() - 1], direction);
+    let mode_access = access_value(tags, &keys[..keys.len() - 1], reverse);
     if mode == Mode::Foot && tag(tags, "motorroad") == "yes" && !allowed(mode_access) {
         return None;
     }
@@ -86,11 +102,15 @@ pub fn access(tags: &Tags, mode: Mode, reverse: bool) -> Option<(f32, u16, f64)>
     {
         return None;
     }
-    if !direction_allowed(tags, mode, reverse, direction, highway) {
+    if !direction_allowed(tags, mode, reverse, highway) {
         return None;
     }
     let limit = tags
-        .get(&format!("maxspeed:{direction}"))
+        .get(if reverse {
+            "maxspeed:backward"
+        } else {
+            "maxspeed:forward"
+        })
         .or_else(|| tags.get("maxspeed"))
         .and_then(|value| speed(value));
     let mut speed = base;
@@ -130,11 +150,11 @@ pub fn access(tags: &Tags, mode: Mode, reverse: bool) -> Option<(f32, u16, f64)>
     ))
 }
 /// Resolve the most specific vehicle tag before falling back to its general access tag.
-fn access_value<'a>(tags: &'a Tags, keys: &[&str], direction: &str) -> &'a str {
+fn access_value<'a>(tags: &'a Tags, keys: &[AccessKey], reverse: bool) -> &'a str {
     keys.iter()
-        .find_map(|key| {
-            tags.get(&format!("{key}:{direction}"))
-                .or_else(|| tags.get(*key))
+        .find_map(|(general, directional)| {
+            tags.get(directional[usize::from(reverse)])
+                .or_else(|| tags.get(*general))
         })
         .map_or("", String::as_str)
 }
@@ -153,13 +173,10 @@ fn speed(value: &str) -> Option<f64> {
 }
 #[must_use]
 pub fn barrier(tags: &Tags, mode: Mode) -> bool {
-    let restriction = if mode == Mode::Car {
-        ["motorcar", "motor_vehicle", "vehicle", "access"]
-    } else {
-        ["foot", "foot", "foot", "access"]
-    }
-    .into_iter()
-    .find_map(|key| tags.get(key));
+    let restriction = mode
+        .access_keys()
+        .iter()
+        .find_map(|(key, _)| tags.get(*key));
     if let Some(value) = restriction {
         if allowed(value) {
             return false;
@@ -219,27 +236,11 @@ fn default_speed(highway: &str, ferry: bool, explicit: &str, mode: Mode) -> Opti
     })
 }
 
-fn direction_allowed(
-    tags: &Tags,
-    mode: Mode,
-    reverse: bool,
-    direction: &str,
-    highway: &str,
-) -> bool {
-    let specific = if mode == Mode::Car {
-        [
-            format!("motorcar:{direction}"),
-            format!("motor_vehicle:{direction}"),
-            format!("vehicle:{direction}"),
-        ]
-    } else {
-        [
-            format!("foot:{direction}"),
-            format!("foot:{direction}"),
-            format!("foot:{direction}"),
-        ]
-    };
-    let directional = specific.iter().find_map(|key| tags.get(key));
+fn direction_allowed(tags: &Tags, mode: Mode, reverse: bool, highway: &str) -> bool {
+    let keys = mode.access_keys();
+    let directional = keys[..keys.len() - 1]
+        .iter()
+        .find_map(|(_, directional)| tags.get(directional[usize::from(reverse)]));
     if directional.is_some_and(|value| denied(value)) {
         return false;
     }
@@ -272,6 +273,58 @@ fn direction_allowed(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn access_precedence_and_directional_overrides_are_preserved_for_both_modes() {
+        for (mode, keys) in [
+            (
+                Mode::Car,
+                &["motorcar", "motor_vehicle", "vehicle", "access"][..],
+            ),
+            (Mode::Foot, &["foot", "access"][..]),
+        ] {
+            for &key in keys {
+                for reverse in [false, true] {
+                    let direction = if reverse { "backward" } else { "forward" };
+                    let mut tags = Tags::from([
+                        ("highway".into(), "residential".into()),
+                        (key.into(), "no".into()),
+                        (format!("{key}:{direction}"), "yes".into()),
+                    ]);
+                    assert!(access(&tags, mode, reverse).is_some(), "{key}:{direction}");
+                    assert!(access(&tags, mode, !reverse).is_none(), "{key}:{direction}");
+                    tags.insert(key.into(), "yes".into());
+                    tags.insert(format!("{key}:{direction}"), "no".into());
+                    assert!(access(&tags, mode, reverse).is_none(), "{key}:{direction}");
+                    assert!(access(&tags, mode, !reverse).is_some(), "{key}:{direction}");
+                }
+            }
+            for pair in keys.windows(2) {
+                let tags = Tags::from([
+                    ("highway".into(), "residential".into()),
+                    (pair[0].into(), "yes".into()),
+                    (pair[1].into(), "no".into()),
+                ]);
+                for reverse in [false, true] {
+                    assert!(access(&tags, mode, reverse).is_some());
+                }
+                assert!(!barrier(&tags, mode));
+            }
+        }
+    }
+
+    #[test]
+    fn directional_speed_limits_override_general_limits() {
+        let tags = Tags::from([
+            ("highway".into(), "residential".into()),
+            ("maxspeed".into(), "50".into()),
+            ("maxspeed:forward".into(), "20".into()),
+            ("maxspeed:backward".into(), "10 mph".into()),
+        ]);
+        assert_eq!(access(&tags, Mode::Car, false).unwrap().1, 20);
+        assert_eq!(access(&tags, Mode::Car, true).unwrap().1, 16);
+    }
+
     #[test]
     fn general_access_does_not_override_mode_defaults() {
         let mut tags = Tags::from([

@@ -2,6 +2,7 @@ use crate::{CellKey, CellTower, Radio};
 use flate2::Compression;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
+use std::borrow::Cow;
 use std::io::{Cursor, Read};
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -75,18 +76,19 @@ pub fn decode_towers(bytes: &[u8], limit: usize) -> Result<Vec<CellTower>, CsvDe
         if u64::try_from(decoded.len()).unwrap_or(u64::MAX) > MAX_DECOMPRESSED_BYTES {
             return Err(CsvDecodeError::DecompressedBodyTooLarge);
         }
-        decoded
+        Cow::Owned(decoded)
     } else {
-        bytes.to_vec()
+        Cow::Borrowed(bytes)
     };
 
     let mut towers = Vec::new();
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(false)
         .flexible(true)
-        .from_reader(decoded.as_slice());
-    for row in reader.records() {
-        let row = row?;
+        .from_reader(decoded.as_ref());
+    // Reuse the record's storage across rows; parsed towers contain only owned scalar values.
+    let mut row = csv::StringRecord::new();
+    while reader.read_record(&mut row)? {
         if row
             .get(0)
             .is_some_and(|value| value.eq_ignore_ascii_case("radio"))
@@ -179,4 +181,60 @@ pub fn read_import(path: &std::path::Path, limit: usize) -> Result<Vec<CellTower
         source,
     })?;
     Ok(decode_towers(&bytes, limit)?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    const CSV: &[u8] = b"radio,mcc,net,area,cell,unit,lon,lat,range,samples\n\
+        lTe,255,1,10,1,,30.5,50.4,500,5\n\
+        malformed\n\
+        NR,255,2,20,2,,30.6,50.5,600,6,extra\n";
+
+    fn gzip(bytes: &[u8]) -> Vec<u8> {
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(bytes).unwrap();
+        encoder.finish().unwrap()
+    }
+
+    #[test]
+    fn plain_and_gzip_decoding_preserve_rows_when_record_storage_is_reused() {
+        let compressed = gzip(CSV);
+        for bytes in [CSV, compressed.as_slice()] {
+            let towers = decode_towers(bytes, 2).unwrap();
+            assert_eq!(towers.len(), 2);
+            assert_eq!(towers[0].key.radio, Radio::Lte);
+            assert_eq!(towers[0].key.cid, 1);
+            assert_eq!(towers[0].samples, 5);
+            assert_eq!(towers[1].key.radio, Radio::Nr);
+            assert_eq!(towers[1].key.cid, 2);
+            assert_eq!(towers[1].samples, 6);
+            assert!(matches!(
+                decode_towers(bytes, 1),
+                Err(CsvDecodeError::TooManyRows { limit: 1 })
+            ));
+            assert!(matches!(
+                decode_towers(bytes, 0),
+                Err(CsvDecodeError::TooManyRows { limit: 0 })
+            ));
+        }
+        assert!(decode_towers(b"radio\nmalformed\n", 0).unwrap().is_empty());
+    }
+
+    #[test]
+    fn corrupt_gzip_and_invalid_csv_utf8_are_still_rejected() {
+        let mut compressed = gzip(CSV);
+        let checksum = compressed.len() - 8;
+        compressed[checksum] ^= 1;
+        assert!(matches!(
+            decode_towers(&compressed, 2),
+            Err(CsvDecodeError::InvalidGzip(_))
+        ));
+        assert!(matches!(
+            decode_towers(b"\xff\n", 2),
+            Err(CsvDecodeError::InvalidCsv(_))
+        ));
+    }
 }

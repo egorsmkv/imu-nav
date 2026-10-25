@@ -6,6 +6,15 @@ Run these commands from the repository root. The host checks exercise Rust witho
 
 ## Building and testing
 
+Rust sources use the repository-root [`rustfmt.toml`](../../rustfmt.toml): Rust 2024 style,
+100-column layout and LF newlines, with stable formatter options. The same configuration applies
+to `native/` and `server/`; `.gitattributes` preserves Rust LF newlines on Windows too.
+Format with `cargo fmt --manifest-path native/Cargo.toml --all` and
+`cargo fmt --manifest-path server/Cargo.toml --all` before running the checks.
+Long JSON macro bodies should be written with one field per line because rustfmt does not
+reliably expand macro token bodies. See the separate [copy/allocation audit](../rust-allocation-audit.md)
+for borrowing boundaries, remaining allocation sites and the additional Clippy commands.
+
 With Rust 1.99+ installed, run the host-side Rust workspace checks from the repository root.
 These checks do not need a JDK, Android SDK or NDK:
 

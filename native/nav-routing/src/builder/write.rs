@@ -17,7 +17,7 @@ use faster_paths::{
     types::Vertex,
 };
 use std::{
-    collections::HashMap,
+    collections::{HashMap, hash_map::Entry},
     fs::File,
     io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write},
     path::Path,
@@ -37,9 +37,9 @@ pub fn stage(
     for &old in order {
         let road = &roads[variants[old].0 as usize];
         point_count += road.geometry.len() as u64;
-        if !name_offsets.contains_key(&road.name) {
+        if let Entry::Vacant(entry) = name_offsets.entry(road.name.as_str()) {
             let offset = u32::try_from(names.len())?;
-            name_offsets.insert(road.name.clone(), offset);
+            entry.insert(offset);
             names.extend_from_slice(road.name.as_bytes());
         }
     }
@@ -81,7 +81,7 @@ pub fn stage(
                 .unwrap_or(NONE),
             point_offset,
             road.geometry.len() as u32,
-            name_offsets[&road.name],
+            name_offsets[road.name.as_str()],
             road.name.len() as u32,
             road.speed.to_bits(),
         ] {

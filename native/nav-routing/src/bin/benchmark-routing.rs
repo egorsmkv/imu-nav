@@ -54,7 +54,14 @@ fn main() -> Result<()> {
             let result = query::path(&network, source, target, &cancel)?;
             paths.push(serde_json::json!({"source":source,"target":target,"result":result}));
         }
-        output.push(serde_json::json!({"profile":profile,"openMs":open_ms,"states":network.count,"vertices":network.graph_count,"queries":measurements,"paths":paths}));
+        output.push(serde_json::json!({
+            "profile": profile,
+            "openMs": open_ms,
+            "states": network.count,
+            "vertices": network.graph_count,
+            "queries": measurements,
+            "paths": paths,
+        }));
     }
     std::fs::write(&args[2], serde_json::to_vec(&output)?)?;
     Ok(())
