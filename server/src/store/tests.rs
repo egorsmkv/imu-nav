@@ -18,16 +18,16 @@ fn privacy_withdrawal_erases_only_its_purpose_and_exports_receipts() -> Result<(
         &policy,
     )?;
     store.connection()?.execute("INSERT INTO debug_sessions(id,account_id,client_id,context_json,created_s,updated_s) VALUES ('trip',1,'phone','{}',?1,?1)", [current_time_s()?])?;
-    assert!(!store.has_privacy_consent(1, "tower_upload", "v1")?);
-    store.grant_privacy_consent(1, "tower_upload", "v1")?;
-    store.grant_privacy_consent(1, "diagnostics", "v1")?;
-    assert!(store.has_privacy_consent(1, "tower_upload", "v1")?);
-    assert!(!store.has_privacy_consent(1, "tower_upload", "v2")?);
-    assert!(!store.air_alerts_enabled(1)?);
-    store.set_air_alerts_enabled(1, true)?;
-    assert!(store.air_alerts_enabled(1)?);
+    assert!(!store.has_privacy_consent(crate::AccountId::new(1).unwrap(), "tower_upload", "v1")?);
+    store.grant_privacy_consent(crate::AccountId::new(1).unwrap(), "tower_upload", "v1")?;
+    store.grant_privacy_consent(crate::AccountId::new(1).unwrap(), "diagnostics", "v1")?;
+    assert!(store.has_privacy_consent(crate::AccountId::new(1).unwrap(), "tower_upload", "v1")?);
+    assert!(!store.has_privacy_consent(crate::AccountId::new(1).unwrap(), "tower_upload", "v2")?);
+    assert!(!store.air_alerts_enabled(crate::AccountId::new(1).unwrap())?);
+    store.set_air_alerts_enabled(crate::AccountId::new(1).unwrap(), true)?;
+    assert!(store.air_alerts_enabled(crate::AccountId::new(1).unwrap())?);
     let archive = NamedTempFile::new()?;
-    store.export_account_to_path(1, archive.path())?;
+    store.export_account_to_path(crate::AccountId::new(1).unwrap(), archive.path())?;
     let mut contents = String::new();
     std::io::Read::read_to_string(
         &mut flate2::read::GzDecoder::new(std::fs::File::open(archive.path())?),
@@ -42,11 +42,11 @@ fn privacy_withdrawal_erases_only_its_purpose_and_exports_receipts() -> Result<(
         })
     }));
     assert!(!contents.contains("secret-hash"));
-    store.withdraw_privacy_consent(1, "tower_upload", &policy)?;
-    assert!(!store.has_privacy_consent(1, "tower_upload", "v1")?);
+    store.withdraw_privacy_consent(crate::AccountId::new(1).unwrap(), "tower_upload", &policy)?;
+    assert!(!store.has_privacy_consent(crate::AccountId::new(1).unwrap(), "tower_upload", "v1")?);
     assert_eq!(store.counts(&policy)?.1, 0);
-    assert!(store.has_privacy_consent(1, "diagnostics", "v1")?);
-    store.withdraw_privacy_consent(1, "diagnostics", &policy)?;
+    assert!(store.has_privacy_consent(crate::AccountId::new(1).unwrap(), "diagnostics", "v1")?);
+    store.withdraw_privacy_consent(crate::AccountId::new(1).unwrap(), "diagnostics", &policy)?;
     let sessions: i64 =
         store
             .connection()?
@@ -54,10 +54,10 @@ fn privacy_withdrawal_erases_only_its_purpose_and_exports_receipts() -> Result<(
                 row.get(0)
             })?;
     assert_eq!(sessions, 0);
-    store.replay_withdrawal(1, "tower_upload", &policy)?;
-    store.replay_account_closure(1, &policy)?;
-    store.replay_withdrawal(1, "diagnostics", &policy)?;
-    store.replay_account_closure(1, &policy)?;
+    store.replay_withdrawal(crate::AccountId::new(1).unwrap(), "tower_upload", &policy)?;
+    store.replay_account_closure(crate::AccountId::new(1).unwrap(), &policy)?;
+    store.replay_withdrawal(crate::AccountId::new(1).unwrap(), "diagnostics", &policy)?;
+    store.replay_account_closure(crate::AccountId::new(1).unwrap(), &policy)?;
     let accounts: i64 = store.connection()?.query_row(
         "SELECT COUNT(*) FROM users WHERE id=1",
         params![],
@@ -106,10 +106,10 @@ fn tower(cid: i64, lat: f64, lon: f64, samples: i64) -> CellTower {
     CellTower {
         key: CellKey {
             radio: Radio::Lte,
-            mcc: 255,
-            mnc: 1,
-            area: 1864,
-            cid,
+            mcc: crate::Mcc::new(255).unwrap(),
+            mnc: crate::Mnc::new(1).unwrap(),
+            area: crate::CellArea::new(1864).unwrap(),
+            cid: crate::CellId::new(cid).unwrap(),
         },
         lat,
         lon,
@@ -251,7 +251,12 @@ fn deleting_an_observation_updates_incremental_sync() -> Result<()> {
     store.contribute("account:1:phone", std::slice::from_ref(&item), 10, &policy)?;
     store.contribute("account:2:phone", std::slice::from_ref(&item), 11, &policy)?;
     assert_eq!(store.query(None, 0, None, &policy)?.len(), 1);
-    store.delete_own_contribution(2, &item.key, "account:2:phone", &policy)?;
+    store.delete_own_contribution(
+        crate::AccountId::new(2).unwrap(),
+        &item.key,
+        "account:2:phone",
+        &policy,
+    )?;
     assert!(store.query(None, 0, None, &policy)?.is_empty());
     assert_eq!(store.removals(None, 0)?, vec![item.key.clone()]);
     store.contribute(
@@ -262,7 +267,12 @@ fn deleting_an_observation_updates_incremental_sync() -> Result<()> {
     )?;
     assert_eq!(store.query(None, 0, None, &policy)?.len(), 1);
     assert_eq!(store.removals(None, 0)?, []);
-    store.delete_own_contribution(1, &item.key, "account:1:phone", &policy)?;
+    store.delete_own_contribution(
+        crate::AccountId::new(1).unwrap(),
+        &item.key,
+        "account:1:phone",
+        &policy,
+    )?;
     assert_eq!(store.removals(None, 0)?, vec![item.key]);
     Ok(())
 }

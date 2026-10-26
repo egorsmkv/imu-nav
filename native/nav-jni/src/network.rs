@@ -1,10 +1,12 @@
 //! JNI exports for network.
 
+use imu_nav_types::handles::{self, RawHandleMap};
+
 use super::{
     AssertUnwindSafe, ERROR_INTERNAL, ERROR_INVALID_HANDLE, ERROR_INVALID_INPUT, JClass,
     JDoubleArray, JNIEnv, NEXT_HANDLE, NetworkGateResult, NetworkSample, NetworkTracker, OK,
-    Ordering, catch_unwind, elapsed_milliseconds_as_f64, guarded_code, jdouble, jdoubleArray, jint,
-    jlong, network_trackers, new_double_array, ptr, usize_as_f64, with_network_tracker,
+    catch_unwind, elapsed_milliseconds_as_f64, guarded_code, jdouble, jdoubleArray, jint, jlong,
+    network_trackers, new_double_array, ptr, usize_as_f64, with_network_tracker,
 };
 
 #[unsafe(no_mangle)]
@@ -13,15 +15,12 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNetworkTracker_nativ
     _class: JClass,
 ) -> jlong {
     catch_unwind(AssertUnwindSafe(|| {
-        let handle = NEXT_HANDLE.fetch_add(1, Ordering::Relaxed);
-        if handle <= 0 {
-            return None;
-        }
+        let handle = NEXT_HANDLE.next::<handles::Network>().ok()?;
         network_trackers()
             .lock()
             .ok()?
             .insert(handle, NetworkTracker::default());
-        Some(handle)
+        Some(handle.raw())
     }))
     .ok()
     .flatten()
@@ -38,7 +37,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNetworkTracker_nativ
         let Ok(mut registry) = network_trackers().lock() else {
             return ERROR_INTERNAL;
         };
-        if registry.remove(&handle).is_some() {
+        if registry.remove_raw(&handle).is_some() {
             OK
         } else {
             ERROR_INVALID_HANDLE

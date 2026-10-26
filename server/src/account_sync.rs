@@ -34,7 +34,7 @@ struct Update {
 #[derive(Serialize)]
 struct Snapshot {
     version: u32,
-    account_id: i64,
+    account_id: crate::AccountId,
     generation: i64,
     enabled: bool,
     notice_version: String,
@@ -58,7 +58,7 @@ pub(crate) fn notice_version(state: &AppState) -> String {
 
 impl CellStore {
     /// A permanent opaque identity prevents SQLite row-ID reuse from exposing a retired local cache.
-    pub(crate) fn sync_identity(&self, account: i64) -> anyhow::Result<String> {
+    pub(crate) fn sync_identity(&self, account: crate::AccountId) -> anyhow::Result<String> {
         let connection = self.connection()?;
         let identity = format!("{:032x}", rand::random::<u128>());
         connection.execute("INSERT INTO account_sync_identity(account_id,identity) VALUES (?1,?2) ON CONFLICT(account_id) DO NOTHING", params![account,identity])?;
@@ -70,21 +70,25 @@ impl CellStore {
     }
 
     #[cfg(test)]
-    pub(crate) fn sync_generation(&self, account: i64) -> anyhow::Result<i64> {
+    pub(crate) fn sync_generation(&self, account: crate::AccountId) -> anyhow::Result<i64> {
         sync_generation_on(&self.connection()?, account)
     }
 
-    pub(crate) fn sync_entries(&self, account: i64) -> anyhow::Result<Vec<Entry>> {
+    pub(crate) fn sync_entries(&self, account: crate::AccountId) -> anyhow::Result<Vec<Entry>> {
         sync_entries_on(&self.connection()?, account)
     }
 
     #[cfg(test)]
-    fn update_sync(&self, account: i64, changes: &[Entry]) -> anyhow::Result<Option<Vec<String>>> {
+    fn update_sync(
+        &self,
+        account: crate::AccountId,
+        changes: &[Entry],
+    ) -> anyhow::Result<Option<Vec<String>>> {
         update_sync_on(&mut self.connection()?, account, changes)
     }
 }
 
-fn sync_generation_on(connection: &Connection, account: i64) -> anyhow::Result<i64> {
+fn sync_generation_on(connection: &Connection, account: crate::AccountId) -> anyhow::Result<i64> {
     Ok(connection
         .query_row(
             "SELECT generation FROM account_sync_state WHERE account_id=?1",
@@ -95,7 +99,10 @@ fn sync_generation_on(connection: &Connection, account: i64) -> anyhow::Result<i
         .unwrap_or(0))
 }
 
-fn sync_entries_on(connection: &Connection, account: i64) -> anyhow::Result<Vec<Entry>> {
+fn sync_entries_on(
+    connection: &Connection,
+    account: crate::AccountId,
+) -> anyhow::Result<Vec<Entry>> {
     let mut statement = connection.prepare("SELECT kind,key,revision,value_json FROM account_sync_entries WHERE account_id=?1 ORDER BY kind,key")?;
     let rows = statement.query_map([account], |row| {
         Ok((
@@ -121,7 +128,7 @@ fn sync_entries_on(connection: &Connection, account: i64) -> anyhow::Result<Vec<
 #[cfg_attr(feature = "profiling", hotpath::measure)]
 fn update_sync_on(
     connection: &mut Connection,
-    account: i64,
+    account: crate::AccountId,
     changes: &[Entry],
 ) -> anyhow::Result<Option<Vec<String>>> {
     let encoded = changes
@@ -172,7 +179,7 @@ fn update_sync_on(
 #[cfg_attr(feature = "profiling", hotpath::measure)]
 fn snapshot_on(
     connection: &Connection,
-    account: i64,
+    account: crate::AccountId,
     notice_version: String,
     conflicts: Vec<String>,
 ) -> anyhow::Result<Snapshot> {
@@ -357,6 +364,10 @@ mod tests {
     use serde_json::json;
     use tempfile::NamedTempFile;
 
+    fn test_account(value: i64) -> crate::AccountId {
+        crate::AccountId::new(value).expect("synthetic positive account ID")
+    }
+
     fn entry(key: &str, revision: i64, value: Option<Value>) -> Entry {
         Entry {
             kind: "bookmark".into(),
@@ -374,25 +385,25 @@ mod tests {
         let file = NamedTempFile::new()?;
         let store = CellStore::open(file.path())?;
         store.connection()?.execute("INSERT INTO users(id,email,password_hash) VALUES (1,'one@example.org','hash'),(2,'two@example.org','hash')",params![])?;
-        let identity = store.sync_identity(1)?;
-        assert_eq!(identity, store.sync_identity(1)?);
-        let deleted_identity = store.sync_identity(2)?;
+        let identity = store.sync_identity(test_account(1))?;
+        assert_eq!(identity, store.sync_identity(test_account(1))?);
+        let deleted_identity = store.sync_identity(test_account(2))?;
         assert_ne!(identity, deleted_identity);
-        store.grant_privacy_consent(1, "account_sync", "local")?;
+        store.grant_privacy_consent(test_account(1), "account_sync", "local")?;
         let first = entry("home", 0, Some(place("Home")));
         assert_eq!(
-            store.update_sync(1, std::slice::from_ref(&first))?,
+            store.update_sync(test_account(1), std::slice::from_ref(&first))?,
             Some(vec![])
         );
         assert_eq!(
-            store.update_sync(1, std::slice::from_ref(&first))?,
+            store.update_sync(test_account(1), std::slice::from_ref(&first))?,
             Some(vec![])
         );
-        assert_eq!(store.sync_entries(1)?[0].revision, 1);
-        assert!(store.sync_entries(2)?.is_empty());
+        assert_eq!(store.sync_entries(test_account(1))?[0].revision, 1);
+        assert!(store.sync_entries(test_account(2))?.is_empty());
         assert_eq!(
             store.update_sync(
-                1,
+                test_account(1),
                 &[
                     entry("home", 0, Some(place("Stale"))),
                     entry("work", 0, Some(place("Work")))
@@ -400,15 +411,15 @@ mod tests {
             )?,
             Some(vec!["bookmark:home".into()])
         );
-        assert_eq!(store.sync_entries(1)?.len(), 2);
-        store.update_sync(1, &[entry("home", 1, None)])?;
+        assert_eq!(store.sync_entries(test_account(1))?.len(), 2);
+        store.update_sync(test_account(1), &[entry("home", 1, None)])?;
         assert_eq!(
-            store.update_sync(1, &[first])?,
+            store.update_sync(test_account(1), &[first])?,
             Some(vec!["bookmark:home".into()])
         );
-        assert!(store.sync_entries(1)?[0].value.is_none());
+        assert!(store.sync_entries(test_account(1))?[0].value.is_none());
         let archive = NamedTempFile::new()?;
-        store.export_account_to_path(1, archive.path())?;
+        store.export_account_to_path(test_account(1), archive.path())?;
         let mut exported = String::new();
         std::io::Read::read_to_string(
             &mut flate2::read::GzDecoder::new(std::fs::File::open(archive.path())?),
@@ -416,19 +427,19 @@ mod tests {
         )?;
         assert!(exported.contains("account_sync"));
         assert!(!exported.contains("password_hash"));
-        assert_eq!(store.sync_generation(1)?, 0);
-        store.replay_withdrawal(1, "account_sync", &crate::Policy::default())?;
-        assert!(store.sync_entries(1)?.is_empty());
-        assert_eq!(store.sync_generation(1)?, 1);
-        assert!(!store.has_privacy_consent(1, "account_sync", "local")?);
-        store.update_sync(2, &[entry("other", 0, Some(place("Other")))])?;
-        store.close_own_account(2, &crate::Policy::default())?;
-        assert!(store.sync_entries(2)?.is_empty());
+        assert_eq!(store.sync_generation(test_account(1))?, 0);
+        store.replay_withdrawal(test_account(1), "account_sync", &crate::Policy::default())?;
+        assert!(store.sync_entries(test_account(1))?.is_empty());
+        assert_eq!(store.sync_generation(test_account(1))?, 1);
+        assert!(!store.has_privacy_consent(test_account(1), "account_sync", "local")?);
+        store.update_sync(test_account(2), &[entry("other", 0, Some(place("Other")))])?;
+        store.close_own_account(test_account(2), &crate::Policy::default())?;
+        assert!(store.sync_entries(test_account(2))?.is_empty());
         store.connection()?.execute(
             "INSERT INTO users(id,email,password_hash) VALUES (2,'replacement@example.org','hash')",
             params![],
         )?;
-        assert_ne!(deleted_identity, store.sync_identity(2)?);
+        assert_ne!(deleted_identity, store.sync_identity(test_account(2))?);
         Ok(())
     }
 
@@ -489,11 +500,11 @@ mod tests {
         let entries = (0..MAX_ENTRIES)
             .map(|i| entry(&format!("b{i}"), 0, None))
             .collect::<Vec<_>>();
-        assert!(store.update_sync(1, &entries)?.is_some());
+        assert!(store.update_sync(test_account(1), &entries)?.is_some());
         assert!(
             store
                 .update_sync(
-                    1,
+                    test_account(1),
                     &[
                         entry("b0", 1, Some(place("Changed"))),
                         entry("overflow", 0, None)
@@ -501,7 +512,12 @@ mod tests {
                 )?
                 .is_none()
         );
-        assert!(store.sync_entries(1)?.iter().all(|e| e.value.is_none()));
+        assert!(
+            store
+                .sync_entries(test_account(1))?
+                .iter()
+                .all(|e| e.value.is_none())
+        );
         Ok(())
     }
 }

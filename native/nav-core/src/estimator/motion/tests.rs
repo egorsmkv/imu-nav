@@ -15,7 +15,7 @@ fn hint(now_ms: i64, factor: f64) -> MotionObservation {
 /// A quiet IMU can falsely stop a highway-speed car; independent speed must recover it.
 fn highway_false_stop() -> NavigationEstimator {
     let mut navigation = estimator(20.0);
-    navigation.state.filter = crate::RouteFilter::new(0.0, 35.0, 20.0, 2.0, 0.0).unwrap();
+    navigation.state.filter = crate::RouteFilter::from_raw(0.0, 35.0, 20.0, 2.0, 0.0).unwrap();
     navigation.history.clear();
     navigation.remember(None);
     navigation
@@ -59,7 +59,7 @@ fn highway_recovery_still_rejects_outliers_and_suspect_gps() {
         predicted.state.predict_to(time, predicted.mode).unwrap();
         assert!(!navigation.on_vehicle_speed(250.0, time).unwrap());
         assert_eq!(navigation.estimate(), predicted.estimate());
-        assert_eq!(navigation.state.last_vehicle_speed_ms, -1);
+        assert_eq!(navigation.state.last_vehicle_speed_ms, None);
         assert!(navigation.state.motion_control.is_some());
     }
     let mut observation = gps(1_400, 50.000_35);

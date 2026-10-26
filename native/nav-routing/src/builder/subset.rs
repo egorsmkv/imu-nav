@@ -75,7 +75,7 @@ fn rewrite(
     let mut geometry_ids = HashMap::new();
     let mut name_ids = HashMap::new();
     for id in 0..network.count {
-        let state = network.state(u32::try_from(id)?);
+        let state = network.state(crate::ids::StateId::new(u32::try_from(id)?));
         let geometry = if let Some(&id) = geometry_ids.get(&state.geometry) {
             id
         } else {
@@ -90,7 +90,13 @@ fn rewrite(
             name_ids.insert(state.name_id, id);
             id
         };
-        for value in [state.from, state.to, geometry, name, state.speed.to_bits()] {
+        for value in [
+            state.from.get(),
+            state.to.get(),
+            geometry,
+            name,
+            state.speed.to_bits(),
+        ] {
             destination.write_all(&value.to_le_bytes())?;
         }
         destination.write_all(&state.maxspeed.to_le_bytes())?;

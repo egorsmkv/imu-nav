@@ -219,8 +219,8 @@ fn coherent_relearning_is_bounded_and_does_not_correct_position_or_reset_drift()
         predicted.estimate().systematic_drift_m
     );
     assert!(navigation.estimate().speed_sigma_mps() >= 2.0);
-    assert_eq!(navigation.state.last_gps_speed_ms, -1);
-    assert_eq!(navigation.state.last_vehicle_speed_ms, -1);
+    assert_eq!(navigation.state.last_gps_speed_ms, None);
+    assert_eq!(navigation.state.last_vehicle_speed_ms, None);
 }
 
 #[test]

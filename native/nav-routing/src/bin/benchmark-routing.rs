@@ -51,7 +51,12 @@ fn main() -> Result<()> {
             let source = u32::try_from(index * 7919 % network.graph_count)?;
             let target =
                 u32::try_from((index * 104_729 + network.graph_count / 2) % network.graph_count)?;
-            let result = query::path(&network, source, target, &cancel)?;
+            let result = query::path(
+                &network,
+                imu_nav_routing::ids::VertexId::new(source),
+                imu_nav_routing::ids::VertexId::new(target),
+                &cancel,
+            )?;
             paths.push(serde_json::json!({"source":source,"target":target,"result":result}));
         }
         output.push(serde_json::json!({

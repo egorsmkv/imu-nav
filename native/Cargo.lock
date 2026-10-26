@@ -58,6 +58,7 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 name = "androidx-graphics-path"
 version = "1.0.1"
 dependencies = [
+ "imu-nav-types",
  "jni",
  "serde_json",
 ]
@@ -872,6 +873,7 @@ name = "imu-nav-core"
 version = "0.1.0"
 dependencies = [
  "hotpath",
+ "imu-nav-types",
  "tracing",
 ]
 
@@ -880,6 +882,7 @@ name = "imu-nav-jni"
 version = "0.1.0"
 dependencies = [
  "imu-nav-core",
+ "imu-nav-types",
  "jemalloc_pprof",
  "jni",
  "tikv-jemallocator",
@@ -893,6 +896,7 @@ version = "0.1.0"
 dependencies = [
  "faster_paths",
  "imu-nav-search",
+ "imu-nav-types",
  "jni",
  "memmap2",
  "osmpbfreader",
@@ -909,6 +913,7 @@ dependencies = [
 name = "imu-nav-search"
 version = "0.1.0"
 dependencies = [
+ "imu-nav-types",
  "jni",
  "serde",
  "serde_json",
@@ -933,6 +938,13 @@ dependencies = [
  "tikv-jemallocator",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "imu-nav-types"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

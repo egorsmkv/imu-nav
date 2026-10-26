@@ -1,8 +1,10 @@
 //! JNI exports for trust.
 
+use imu_nav_types::handles::{self, RawHandleMap};
+
 use super::{
     AssertUnwindSafe, ERROR_INTERNAL, ERROR_INVALID_HANDLE, JClass, JDoubleArray, JLongArray,
-    JNIEnv, JamDetector, LocationFix, NEXT_HANDLE, NativeTrustState, OK, Ordering, ReceiverHealth,
+    JNIEnv, JamDetector, LocationFix, NEXT_HANDLE, NativeTrustState, OK, ReceiverHealth,
     TrustClassifier, TrustConfig, TrustInput, catch_unwind, guarded_code, jdouble, jint, jintArray,
     jlong, new_int_array, optional, ptr, reason_code, trust_classifiers, trust_level_code,
 };
@@ -13,10 +15,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeTrustEvaluator_nativ
     _class: JClass,
 ) -> jlong {
     catch_unwind(AssertUnwindSafe(|| {
-        let handle = NEXT_HANDLE.fetch_add(1, Ordering::Relaxed);
-        if handle <= 0 {
-            return None;
-        }
+        let handle = NEXT_HANDLE.next::<handles::Trust>().ok()?;
         trust_classifiers().lock().ok()?.insert(
             handle,
             NativeTrustState {
@@ -24,7 +23,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeTrustEvaluator_nativ
                 jam_detector: JamDetector::default(),
             },
         );
-        Some(handle)
+        Some(handle.raw())
     }))
     .ok()
     .flatten()
@@ -41,7 +40,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeTrustEvaluator_nativ
         let Ok(mut registry) = trust_classifiers().lock() else {
             return ERROR_INTERNAL;
         };
-        if registry.remove(&handle).is_some() {
+        if registry.remove_raw(&handle).is_some() {
             OK
         } else {
             ERROR_INVALID_HANDLE
@@ -59,7 +58,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeTrustEvaluator_nativ
         let Ok(mut registry) = trust_classifiers().lock() else {
             return ERROR_INTERNAL;
         };
-        let Some(state) = registry.get_mut(&handle) else {
+        let Some(state) = registry.get_mut_raw(&handle) else {
             return ERROR_INVALID_HANDLE;
         };
         state.classifier.reset();
@@ -81,7 +80,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeTrustEvaluator_nativ
         let Ok(mut registry) = trust_classifiers().lock() else {
             return ERROR_INTERNAL;
         };
-        let Some(state) = registry.get_mut(&handle) else {
+        let Some(state) = registry.get_mut_raw(&handle) else {
             return ERROR_INVALID_HANDLE;
         };
         let changed = state.jam_detector.update(optional(agc_db), now_ms);
@@ -155,7 +154,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeTrustEvaluator_nativ
         };
         let verdict = {
             let mut registry = trust_classifiers().lock().ok()?;
-            let state = registry.get_mut(&handle)?;
+            let state = registry.get_mut_raw(&handle)?;
             input.jammed = state.jam_detector.jammed();
             state.classifier.evaluate(input)
         };

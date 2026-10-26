@@ -4,9 +4,9 @@ use super::*;
 
 fn tracker() -> NetworkTracker {
     let anchor = Anchor {
-        time_s: 1.0,
-        position_m: 10.0,
-        accuracy_m: 20.0,
+        time_s: Seconds::new(1.0).unwrap(),
+        position_m: RoutePosition::new(10.0).unwrap(),
+        accuracy_m: PositionSigma::new(20.0).unwrap(),
     };
     let sample = NetworkSample {
         elapsed_ms: 1000,
@@ -140,7 +140,7 @@ fn reanchoring_requires_span_reachability_and_direction() {
     assert_eq!(tracker.gate(0, 0.0, 30.0), GateResult::Accepted);
     assert_eq!(tracker.gate(1000, 2000.0, 30.0), GateResult::Rejected);
     assert_eq!(tracker.candidates.len(), 1);
-    assert_eq!(tracker.anchor.unwrap().position_m, 0.0);
+    assert_eq!(tracker.anchor.unwrap().position_m.get(), 0.0);
     let elapsed_ms = match kani::any::<u8>() % 4 {
         0 => 3000,
         1 => 12_999,
@@ -161,10 +161,10 @@ fn reanchoring_requires_span_reachability_and_direction() {
     assert_eq!(result == GateResult::Reanchored, eligible);
     assert_ne!(result, GateResult::Accepted);
     if eligible {
-        assert_eq!(tracker.anchor.unwrap().position_m, 2000.0 + delta);
+        assert_eq!(tracker.anchor.unwrap().position_m.get(), 2000.0 + delta);
         assert!(tracker.candidates.is_empty());
     } else {
-        assert_eq!(tracker.anchor.unwrap().position_m, 0.0);
+        assert_eq!(tracker.anchor.unwrap().position_m.get(), 0.0);
         assert_eq!(
             tracker.candidates.len(),
             if delta == 10_000.0 { 1 } else { 2 }
@@ -190,8 +190,8 @@ fn a_broken_candidate_chain_restarts_its_confirmation_span() {
     assert_eq!(tracker.gate(1000, 2000.0, 30.0), GateResult::Rejected);
     assert_eq!(tracker.gate(2000, 10_000.0, 30.0), GateResult::Rejected);
     assert_eq!(tracker.candidates.len(), 1);
-    assert_eq!(tracker.candidates[0].time_s, 2.0);
-    assert_eq!(tracker.candidates[0].position_m, 10_000.0);
+    assert_eq!(tracker.candidates[0].time_s.get(), 2.0);
+    assert_eq!(tracker.candidates[0].position_m.get(), 10_000.0);
     let boundary: bool = kani::any();
     let result = tracker.gate(if boundary { 14_000 } else { 13_999 }, 10_100.0, 30.0);
     assert_eq!(
@@ -203,7 +203,7 @@ fn a_broken_candidate_chain_restarts_its_confirmation_span() {
         }
     );
     assert_eq!(
-        tracker.anchor.unwrap().position_m,
+        tracker.anchor.unwrap().position_m.get(),
         if boundary { 10_100.0 } else { 0.0 }
     );
     assert_eq!(tracker.candidates.len(), if boundary { 0 } else { 2 });
@@ -220,7 +220,7 @@ fn reachable_precise_fixes_clear_abandoned_candidates() {
     let position = f64::from(kani::any::<u8>());
     kani::assume(position <= 100.0);
     assert_eq!(tracker.gate(2000, position, 30.0), GateResult::Accepted);
-    assert_eq!(tracker.anchor.unwrap().position_m, position);
+    assert_eq!(tracker.anchor.unwrap().position_m.get(), position);
     assert!(tracker.candidates.is_empty());
     kani::cover!(position == 100.0, "recovered");
 }

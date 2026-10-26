@@ -1,3 +1,4 @@
+use crate::{CellArea, CellId, Mcc, Mnc};
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
@@ -95,6 +96,25 @@ impl Policy {
     }
 }
 
+/// Active policy is immutable after validation; replacements are validated before publication.
+#[derive(Clone, Debug)]
+pub struct ValidatedPolicy(Policy);
+
+impl TryFrom<Policy> for ValidatedPolicy {
+    type Error = PolicyError;
+    fn try_from(policy: Policy) -> Result<Self, Self::Error> {
+        policy.validate()?;
+        Ok(Self(policy))
+    }
+}
+
+impl std::ops::Deref for ValidatedPolicy {
+    type Target = Policy;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 /// Radio technology, matching the `OpenCellID` `radio` field.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "UPPERCASE")]
@@ -144,10 +164,10 @@ impl FromStr for Radio {
 #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct CellKey {
     pub radio: Radio,
-    pub mcc: i64,
-    pub mnc: i64,
-    pub area: i64,
-    pub cid: i64,
+    pub mcc: Mcc,
+    pub mnc: Mnc,
+    pub area: CellArea,
+    pub cid: CellId,
 }
 
 /// Published tower position and observation strength.
@@ -159,6 +179,27 @@ pub struct CellTower {
     pub lon: f64,
     pub range_m: f64,
     pub samples: i64,
+}
+
+/// Intrinsically valid tower fields; publication limits are a separate policy decision.
+pub(crate) struct ValidatedTower {
+    coordinate: imu_nav_types::Coordinate,
+    range: imu_nav_types::Distance,
+}
+
+impl CellTower {
+    /// Check physical fields independently of the operator's anti-poisoning policy.
+    /// # Errors
+    /// Rejects non-finite/out-of-range coordinates, non-positive range and sample counts.
+    pub(crate) fn validated(&self) -> Result<ValidatedTower, imu_nav_types::ValueError> {
+        if self.samples <= 0 || self.range_m <= 0.0 {
+            return Err(imu_nav_types::ValueError::Invalid("tower strength"));
+        }
+        Ok(ValidatedTower {
+            coordinate: imu_nav_types::Coordinate::new(self.lat, self.lon)?,
+            range: imu_nav_types::Distance::new(self.range_m)?,
+        })
+    }
 }
 
 /// Robust consensus and its publication metadata.
@@ -201,18 +242,15 @@ pub(crate) fn distance_m(a_lat: f64, a_lon: f64, b_lat: f64, b_lon: f64) -> f64 
 }
 
 pub(crate) fn plausible(tower: &CellTower, policy: &Policy) -> bool {
+    let Ok(validated) = tower.validated() else {
+        return false;
+    };
+    let latitude = validated.coordinate.latitude.get();
+    let longitude = validated.coordinate.longitude.get();
     let in_ukraine = !policy.ukraine_only
-        || (43.0..=53.5).contains(&tower.lat) && (20.0..=41.0).contains(&tower.lon);
-    tower.range_m > 0.0
-        && tower.range_m <= policy.max_range_m
-        && tower.samples > 0
-        && (1..=999).contains(&tower.key.mcc)
-        && (0..=999).contains(&tower.key.mnc)
-        && tower.key.area >= 0
-        && tower.key.cid >= 0
-        && (-90.0..=90.0).contains(&tower.lat)
-        && (-180.0..=180.0).contains(&tower.lon)
-        && !(tower.lat == 0.0 && tower.lon == 0.0)
+        || (43.0..=53.5).contains(&latitude) && (20.0..=41.0).contains(&longitude);
+    validated.range.get() <= policy.max_range_m
+        && !(latitude == 0.0 && longitude == 0.0)
         && in_ukraine
 }
 

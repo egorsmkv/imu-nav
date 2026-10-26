@@ -16,18 +16,19 @@ SHARED = ('tools/ci_changes.py', 'tools/tests/test_ci_changes.py')
 GRADLE = ('gradle/', 'gradlew', 'gradlew.bat', 'gradle.properties', '.editorconfig',
           'links.properties', 'config/detekt.yml')
 RUST = ('.cargo/', 'rust-toolchain', 'rust-toolchain.toml', 'rustfmt.toml', '.rustfmt.toml')
-NATIVE = ('native/nav-search/', 'native/nav-routing/', 'native/nav-core/', 'native/nav-jni/', 'native/nav-sim/', 'native/graphics-path/',
+DOMAIN_TYPES = ('native/nav-types/', 'native/Cargo.toml')
+NATIVE = ('native/nav-types/', 'native/nav-search/', 'native/nav-routing/', 'native/nav-core/', 'native/nav-jni/', 'native/nav-sim/', 'native/graphics-path/',
           'native/Cargo.toml', 'native/Cargo.lock', 'native/.cargo/', 'native/rust-toolchain.toml', 'native/rust-toolchain')
 SERVER = ('server/src/', 'server/templates/', 'server/static/', 'server/Cargo.toml',
           'server/Cargo.lock', 'server/build.rs', 'server/.cargo/', 'server/rust-toolchain.toml',
-          'server/rust-toolchain', 'desktop/protocol/', 'desktop/Cargo.toml')
+          'server/rust-toolchain', 'desktop/protocol/', 'desktop/Cargo.toml') + DOMAIN_TYPES
 CORE = ('core/src/',)
 ROUTING = ('routing/src/',)
 REPLAY = ('replay/src/',)
 COVERAGE = ('tools/rust_coverage.py', 'tools/rust_coverage_rustc.py', 'tools/tests/test_rust_coverage.py')
 ANDROID_RUST_BUILD = ('scripts/build-rust-android.sh', 'scripts/build-rust-android.ps1')
 SUITES = {
-    'desktop': ('.github/workflows/desktop.yml', 'desktop/') + RUST,
+    'desktop': ('.github/workflows/desktop.yml', 'desktop/') + RUST + DOMAIN_TYPES,
     'tools': ('tools/', '.github/workflows/kotlin-coverage.yml'),
     'android': ('.github/workflows/android-gps.yml', 'app/src/main/', 'app/src/fdroid/',
                 'app/src/debug/', 'app/src/androidTest/', 'app/lint.xml', 'app/proguard-rules.pro',
@@ -50,11 +51,11 @@ SUITES = {
                      'native/Cargo.lock', 'native/graphics-path/Cargo.toml', 'native/nav-jni/Cargo.toml',
                      'native/nav-search/Cargo.toml', 'native/nav-routing/Cargo.toml', 'native/nav-core/Cargo.toml',
                      'native/graphics-path/build.rs', 'native/nav-jni/build.rs', 'native/nav-search/build.rs',
-                     'native/nav-routing/build.rs') + ANDROID_RUST_BUILD + RUST,
+                     'native/nav-routing/build.rs', 'native/nav-types/Cargo.toml') + ANDROID_RUST_BUILD + RUST,
     'map': ('.github/workflows/map-pack.yml', 'tools/make_map_pack.py',
             'tools/verify_map_pack.py', 'tools/tests/test_map_pack.py'),
     'routing': ('.github/workflows/routing-pack.yml', 'tools/verify_routing_pack.py',
-                'tools/tests/test_verify_routing_pack.py', 'native/nav-search/', 'native/nav-routing/', 'native/Cargo.toml', 'native/Cargo.lock') + CORE + ROUTING,
+                'tools/tests/test_verify_routing_pack.py', 'native/nav-search/', 'native/nav-routing/', 'native/Cargo.toml', 'native/Cargo.lock') + CORE + ROUTING + DOMAIN_TYPES,
 }
 GRADLE_SUITES = {'fdroid', 'kotlin', 'native', 'routing', 'android', 'fdroidserver'}
 

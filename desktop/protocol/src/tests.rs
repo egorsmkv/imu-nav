@@ -1,6 +1,39 @@
 use super::*;
 
 #[test]
+fn both_wire_directions_validate_frames_and_preserve_phone_payloads() {
+    let fixture = include_bytes!("../fixtures/state.ndjson");
+    let frame = decode(fixture).unwrap();
+    let encoded = encode(&frame).unwrap();
+    assert_eq!(decode(&encoded).unwrap(), frame);
+    let original: serde_json::Value = serde_json::from_slice(fixture).unwrap();
+    let written: serde_json::Value = serde_json::from_slice(&encoded).unwrap();
+    for key in ["sequence", "elapsed_ms", "utc_ms", "age_ms"] {
+        assert_eq!(original["state"][key], written["state"][key]);
+    }
+    let Frame::State { mut state, version } = frame else {
+        panic!("state fixture");
+    };
+    state.guidance.as_mut().unwrap().remaining_m = f64::NAN;
+    assert!(encode(&Frame::State { state, version }).is_err());
+    let mut raw: serde_json::Value = serde_json::from_slice(fixture).unwrap();
+    for invalid in [serde_json::json!(0), serde_json::json!(-1)] {
+        raw["state"]["sequence"] = invalid;
+        assert!(decode(&serde_json::to_vec(&raw).unwrap()).is_err());
+    }
+    raw = serde_json::from_slice(fixture).unwrap();
+    raw["state"]["guidance"]["source"] = serde_json::json!("UNKNOWN");
+    assert!(decode(&serde_json::to_vec(&raw).unwrap()).is_err());
+    raw = serde_json::from_slice(fixture).unwrap();
+    raw["state"]["elapsed_ms"] = serde_json::json!(u64::MAX);
+    assert!(decode(&serde_json::to_vec(&raw).unwrap()).is_err());
+    assert!(matches!(
+        decode(br#"{"type":"hello","version":255}"#),
+        Err(ProtocolError::UnsupportedVersion)
+    ));
+}
+
+#[test]
 fn shared_phone_fixture_preserves_estimated_rmc_units_and_geography() {
     let Frame::State { version, state } =
         decode(include_bytes!("../fixtures/state.ndjson")).unwrap()
@@ -86,7 +119,7 @@ fn rmc_required_fields_optional_mode_and_trailing_fields_keep_their_contract() {
 #[test]
 fn routes_replace_only_on_complete_matching_transfers() {
     let route = Route {
-        revision: 1,
+        revision: Revision::new(1).unwrap(),
         geometry: vec![[0.0, 0.0]; 400],
         summary: "Synthetic".into(),
         destination: [0.0, 0.0],
@@ -103,10 +136,16 @@ fn routes_replace_only_on_complete_matching_transfers() {
             .unwrap(),
         Some(route)
     );
-    assert!(assembly.accept(Frame::RouteEnd { revision: 2 }).is_err());
+    assert!(
+        assembly
+            .accept(Frame::RouteEnd {
+                revision: Revision::new(2).unwrap()
+            })
+            .is_err()
+    );
     assembly
         .accept(Frame::RouteStart {
-            revision: 2,
+            revision: Revision::new(2).unwrap(),
             points: 2,
             summary: String::new(),
             destination: [0.0, 0.0],
@@ -115,7 +154,7 @@ fn routes_replace_only_on_complete_matching_transfers() {
     assert!(
         assembly
             .accept(Frame::RouteChunk {
-                revision: 1,
+                revision: Revision::new(1).unwrap(),
                 offset: 0,
                 geometry: vec![[0.0, 0.0]]
             })
@@ -124,7 +163,7 @@ fn routes_replace_only_on_complete_matching_transfers() {
     assert!(
         assembly
             .accept(Frame::RouteStart {
-                revision: 1,
+                revision: Revision::new(1).unwrap(),
                 points: MAX_ROUTE_POINTS + 1,
                 summary: String::new(),
                 destination: [0.0, 0.0]

@@ -193,7 +193,7 @@ fn import_seed_towers(options: &Options, store: &CellStore, policy: &Policy) -> 
     };
     let mut towers = imu_nav_cell_server::read_import(path, usize::MAX)?;
     if !options.mcc.is_empty() {
-        towers.retain(|tower| options.mcc.contains(&tower.key.mcc));
+        towers.retain(|tower| options.mcc.contains(&tower.key.mcc.get()));
     }
     let now = i64::try_from(SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs())?;
     let (result, _) = store.seed(&towers, now, policy)?;
@@ -203,7 +203,7 @@ fn import_seed_towers(options: &Options, store: &CellStore, policy: &Policy) -> 
 
 #[derive(Deserialize)]
 struct ReplayDeletion {
-    account_id: i64,
+    account_id: imu_nav_cell_server::AccountId,
     purpose: String,
 }
 

@@ -43,7 +43,7 @@ impl Smoke {
             fix: Some(parse_rmc(&state.nmea).expect("synthetic RMC")),
             guidance: state.guidance.map(Arc::new),
             route: Some(Arc::new(Route {
-                revision: 1,
+                revision: imu_nav_protocol::Revision::new(1).unwrap(),
                 geometry: vec![
                     [-50.501, -30.25],
                     [-50.5, -30.25],

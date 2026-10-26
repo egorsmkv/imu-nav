@@ -6,10 +6,11 @@
     clippy::cast_sign_loss,
     clippy::cast_precision_loss
 )]
+use crate::ids::{ArcIndex, Direction, NodeId, StateId, VertexId};
 use crate::{
     Result, check,
     geo::{self, Point},
-    storage::{NONE, Network, cell_key, cell_of},
+    storage::{Network, cell_key, cell_of},
 };
 use std::{
     cmp::Reverse,
@@ -18,7 +19,7 @@ use std::{
 };
 #[derive(Clone, Debug)]
 pub struct Snap {
-    pub state: u32,
+    pub state: StateId,
     pub fraction: f64,
     pub point: Point,
     pub distance: f64,
@@ -113,28 +114,29 @@ pub fn candidates(
 #[derive(Clone, Copy)]
 struct Visit {
     cost: u64,
-    parent: Option<(u32, usize)>,
+    parent: Option<(VertexId, ArcIndex)>,
 }
 /// Bidirectional upward search; a request's sparse maps also own shortcut predecessor chains.
 /// # Errors
 /// Returns malformed input, unavailable graph data, I/O, or request cancellation errors.
 pub fn path(
     network: &Network,
-    source: u32,
-    target: u32,
+    source: VertexId,
+    target: VertexId,
     cancel: &AtomicBool,
-) -> Result<Option<(u64, Vec<u32>)>> {
+) -> Result<Option<(u64, Vec<VertexId>)>> {
     check(cancel)?;
-    if source as usize >= network.graph_count || target as usize >= network.graph_count {
+    if source.get() as usize >= network.graph_count || target.get() as usize >= network.graph_count
+    {
         return Err("invalid query vertex".into());
     }
     if source == target {
         return Ok(Some((0, vec![source])));
     }
-    let mut states: [HashMap<u32, Visit>; 2] = [HashMap::new(), HashMap::new()];
+    let mut states: [HashMap<VertexId, Visit>; 2] = [HashMap::new(), HashMap::new()];
     let mut queue = BinaryHeap::new();
-    for (dir, node) in [(0, source), (1, target)] {
-        states[dir].insert(
+    for (dir, node) in [(Direction::Forward, source), (Direction::Backward, target)] {
+        states[dir.index()].insert(
             node,
             Visit {
                 cost: 0,
@@ -156,10 +158,10 @@ pub fn path(
         if best.is_some_and(|(value, _)| cost > value) {
             break;
         }
-        if states[dir][&node].cost != cost {
+        if states[dir.index()][&node].cost != cost {
             continue;
         }
-        if let Some(other) = states[1 - dir].get(&node) {
+        if let Some(other) = states[dir.opposite().index()].get(&node) {
             let total = cost.checked_add(other.cost).ok_or("route cost overflow")?;
             if best.is_none_or(|(value, _)| total < value) {
                 best = Some((total, node));
@@ -168,8 +170,11 @@ pub fn path(
         for index in network.outgoing(dir, node) {
             let arc = network.arc(dir, index);
             let distance = cost.checked_add(arc.weight).ok_or("route cost overflow")?;
-            if states[dir].get(&arc.head).is_none_or(|v| distance < v.cost) {
-                states[dir].insert(
+            if states[dir.index()]
+                .get(&arc.head)
+                .is_none_or(|v| distance < v.cost)
+            {
+                states[dir.index()].insert(
                     arc.head,
                     Visit {
                         cost: distance,
@@ -186,13 +191,13 @@ pub fn path(
     let mut shortcuts = vec![];
     let mut node = meeting;
     while let Some((tail, index)) = states[0][&node].parent {
-        shortcuts.push((0, tail, index));
+        shortcuts.push((Direction::Forward, tail, index));
         node = tail;
     }
     shortcuts.reverse();
     node = meeting;
     while let Some((tail, index)) = states[1][&node].parent {
-        shortcuts.push((1, tail, index));
+        shortcuts.push((Direction::Backward, tail, index));
         node = tail;
     }
     let result = unpack(network, shortcuts, source, target, cancel)?;
@@ -206,8 +211,8 @@ pub fn between(
     starts: &[Snap],
     ends: &[Snap],
     cancel: &AtomicBool,
-) -> Result<(Vec<u32>, Snap, Snap)> {
-    let mut best: Option<(f64, Vec<u32>, Snap, Snap)> = None;
+) -> Result<(Vec<StateId>, Snap, Snap)> {
+    let mut best: Option<(f64, Vec<StateId>, Snap, Snap)> = None;
     for source in starts {
         for target in ends {
             check(cancel)?;
@@ -222,13 +227,13 @@ pub fn between(
                         continue;
                     }
                     if let (Some((left, mut a)), Some((right, b))) = (
-                        path(network, source.state, next, cancel)?,
-                        path(network, next, target.state, cancel)?,
+                        state_path(network, source.state, next, cancel)?,
+                        state_path(network, next, target.state, cancel)?,
                     ) {
                         let cost = left + right;
                         if cycle
                             .as_ref()
-                            .is_none_or(|(old, _): &(u64, Vec<u32>)| cost < *old)
+                            .is_none_or(|(old, _): &(u64, Vec<StateId>)| cost < *old)
                         {
                             a.extend_from_slice(&b[1..]);
                             cycle = Some((cost, a));
@@ -237,7 +242,7 @@ pub fn between(
                 }
                 cycle
             } else {
-                path(network, source.state, target.state, cancel)?
+                state_path(network, source.state, target.state, cancel)?
             };
             if let Some((distance, states)) = answer {
                 let cost = distance as f64
@@ -259,20 +264,26 @@ fn walking_path(
     source: &Snap,
     target: &Snap,
     cancel: &AtomicBool,
-) -> Result<Option<(u64, Vec<u32>)>> {
+) -> Result<Option<(u64, Vec<StateId>)>> {
     if source.state == target.state && source.fraction <= target.fraction {
         return Ok(Some((0, vec![source.state])));
     }
     let source_road = network.state(source.state);
     let target_road = network.state(target.state);
-    let Some((cost, nodes)) = path(network, source_road.to, target_road.from, cancel)? else {
+    let Some((cost, nodes)) = path(
+        network,
+        VertexId::new(source_road.to.get()),
+        VertexId::new(target_road.from.get()),
+        cancel,
+    )?
+    else {
         return Ok(None);
     };
     let mut states = vec![source.state];
     for pair in nodes.windows(2) {
         let road = network
-            .from_node(pair[0])
-            .filter(|&id| network.state(id).to == pair[1])
+            .from_node(NodeId::new(pair[0].get()))
+            .filter(|&id| network.state(id).to.get() == pair[1].get())
             .min_by_key(|&id| network.state(id).weight)
             .ok_or("missing walking geometry")?;
         states.push(road);
@@ -283,11 +294,11 @@ fn walking_path(
 
 fn unpack(
     network: &Network,
-    shortcuts: Vec<(usize, u32, usize)>,
-    source: u32,
-    target: u32,
+    shortcuts: Vec<(Direction, VertexId, ArcIndex)>,
+    source: VertexId,
+    target: VertexId,
     cancel: &AtomicBool,
-) -> Result<Vec<u32>> {
+) -> Result<Vec<VertexId>> {
     let mut result = vec![source];
     let mut stack: Vec<_> = shortcuts.into_iter().rev().collect();
     let mut unpacked = 0;
@@ -300,33 +311,60 @@ fn unpack(
             return Err("route geometry limit exceeded".into());
         }
         let arc = network.arc(dir, index);
-        if arc.skipped == NONE {
-            result.push(if dir == 0 { arc.head } else { tail });
-        } else {
-            let middle = arc.skipped;
+        if let Some(middle) = arc.skipped {
             let left = network
-                .outgoing(1 - dir, middle)
-                .filter(|&i| network.arc(1 - dir, i).head == tail)
-                .min_by_key(|&i| network.arc(1 - dir, i).weight)
+                .outgoing(dir.opposite(), middle)
+                .filter(|&i| network.arc(dir.opposite(), i).head == tail)
+                .min_by_key(|&i| network.arc(dir.opposite(), i).weight)
                 .ok_or("missing shortcut")?;
             let right = network
                 .outgoing(dir, middle)
                 .filter(|&i| network.arc(dir, i).head == arc.head)
                 .min_by_key(|&i| network.arc(dir, i).weight)
                 .ok_or("missing shortcut")?;
-            let a = (1 - dir, middle, left);
+            let a = (dir.opposite(), middle, left);
             let b = (dir, middle, right);
-            if dir == 0 {
+            if dir == Direction::Forward {
                 stack.push(b);
                 stack.push(a);
             } else {
                 stack.push(a);
                 stack.push(b);
             }
+        } else {
+            result.push(if dir == Direction::Forward {
+                arc.head
+            } else {
+                tail
+            });
         }
     }
     if result.last() != Some(&target) {
         return Err("invalid route endpoints".into());
     }
     Ok(result)
+}
+
+/// Edge-based profiles number graph vertices by directed road state.
+fn state_path(
+    network: &Network,
+    source: StateId,
+    target: StateId,
+    cancel: &AtomicBool,
+) -> Result<Option<(u64, Vec<StateId>)>> {
+    Ok(path(
+        network,
+        VertexId::new(source.get()),
+        VertexId::new(target.get()),
+        cancel,
+    )?
+    .map(|(cost, vertices)| {
+        (
+            cost,
+            vertices
+                .into_iter()
+                .map(|vertex| StateId::new(vertex.get()))
+                .collect(),
+        )
+    }))
 }

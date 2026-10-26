@@ -70,6 +70,9 @@ val serverRustFmtCheck = tasks.register<Exec>("serverRustFmtCheck") {
     commandLine("cargo", "fmt", "--manifest-path", "server/Cargo.toml", "--all", "--check")
     inputs.file("rustfmt.toml")
     inputs.files(fileTree("server") { exclude("target/**") })
+    inputs.files(fileTree("desktop/protocol") { exclude("target/**") })
+    inputs.files(fileTree("native/nav-types") { exclude("target/**") })
+    inputs.file("native/Cargo.toml")
 }
 
 val serverRustTest = tasks.register<Exec>("serverRustTest") {
@@ -77,6 +80,9 @@ val serverRustTest = tasks.register<Exec>("serverRustTest") {
     description = "Runs the persistent cell-sharing server tests"
     commandLine("cargo", "test", "--manifest-path", "server/Cargo.toml")
     inputs.files(fileTree("server") { exclude("target/**") })
+    inputs.files(fileTree("desktop/protocol") { exclude("target/**") })
+    inputs.files(fileTree("native/nav-types") { exclude("target/**") })
+    inputs.file("native/Cargo.toml")
 }
 
 val buildCellServerForKotlinTest = tasks.register<Exec>("buildCellServerForKotlinTest") {
@@ -85,6 +91,9 @@ val buildCellServerForKotlinTest = tasks.register<Exec>("buildCellServerForKotli
     commandLine("cargo", "build", "--manifest-path", "server/Cargo.toml", "--bin", "imu-nav-cell-server")
     environment("CARGO_TARGET_DIR", file("server/target").absolutePath)
     inputs.files(fileTree("server") { exclude("target/**") })
+    inputs.files(fileTree("desktop/protocol") { exclude("target/**") })
+    inputs.files(fileTree("native/nav-types") { exclude("target/**") })
+    inputs.file("native/Cargo.toml")
     outputs.file(file("server/target/debug/imu-nav-cell-server"))
 }
 
@@ -96,6 +105,9 @@ val serverRustClippy = tasks.register<Exec>("serverRustClippy") {
         "-W", "clippy::redundant_clone", "-W", "clippy::needless_collect", "-W", "clippy::unnecessary_to_owned", "-D", "warnings",
     )
     inputs.files(fileTree("server") { exclude("target/**") })
+    inputs.files(fileTree("desktop/protocol") { exclude("target/**") })
+    inputs.files(fileTree("native/nav-types") { exclude("target/**") })
+    inputs.file("native/Cargo.toml")
 }
 
 tasks.named("check") {

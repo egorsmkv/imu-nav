@@ -7,6 +7,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+imu-nav-types = { path = "../nav-types" }
 hotpath = { version = "=0.28.4", default-features = false, optional = true }
 tracing = "0.1"
 

@@ -1,6 +1,7 @@
 //! Speed fusion and network-fix regression used while satellite positioning is unavailable.
 
 use crate::milliseconds_to_seconds;
+use imu_nav_types::{MonotonicMs, PositionSigma, RoutePosition};
 
 const MAX_SPEED_MPS: f64 = 150.0 / 3.6;
 const ROUTE_PRIOR_SIGMA_MPS: f64 = 6.0;
@@ -150,8 +151,14 @@ impl NetworkSpeedEstimator {
         self.samples.clear();
     }
 
+    /// Add a dimensionally checked sample on the standalone signed timestamp domain.
+    /// Duplicate/out-of-order samples retain the previous regression unchanged.
+    pub fn add(&mut self, position: RoutePosition, accuracy: PositionSigma, elapsed: MonotonicMs) {
+        self.add_raw(position.get(), accuracy.get(), elapsed.get());
+    }
+
     /// Invalid, duplicate-time and out-of-order samples are ignored.
-    pub fn add(&mut self, position_m: f64, accuracy_m: f64, elapsed_ms: i64) {
+    pub fn add_raw(&mut self, position_m: f64, accuracy_m: f64, elapsed_ms: i64) {
         if !position_m.is_finite()
             || !accuracy_m.is_finite()
             || accuracy_m < 0.0

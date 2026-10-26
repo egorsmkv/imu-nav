@@ -7,6 +7,7 @@
 use crate::conic::conic_to_quadratics;
 use crate::iterator::{ConicEvaluation, PathIterator, VerbDirection};
 use crate::{Point, Verb};
+use imu_nav_types::handles::{Allocator, GraphicsIterator, RawHandleMap, Registry};
 use jni::objects::{JClass, JFieldID, JFloatArray, JObject};
 use jni::sys::{JNI_ERR, JNI_FALSE, JNI_TRUE, JNI_VERSION_1_6, jboolean, jfloat, jint, jlong};
 use jni::{JNIEnv, JavaVM, NativeMethod};
@@ -143,19 +144,40 @@ unsafe fn read_path_ref(path_ref: *const c_void, api: u32) -> RawPath {
 }
 
 /// # Safety
-/// `pointer` must be null or valid for `count` elements while the path is not modified, which
-/// `AndroidX` guarantees for the iterator's lifetime (as with the C++ library).
-unsafe fn slice<T>(pointer: *const T, count: i32) -> &'static [T] {
+/// `pointer` must be null or valid for `count` elements while creating the snapshot. No borrowed memory escapes this function.
+unsafe fn snapshot<T: Copy>(pointer: *const T, count: i32) -> Vec<T> {
     match usize::try_from(count) {
         // SAFETY: see the function contract.
         Ok(length) if length > 0 && !pointer.is_null() => unsafe {
-            std::slice::from_raw_parts(pointer, length)
+            std::slice::from_raw_parts(pointer, length).to_vec()
         },
-        _ => &[],
+        _ => Vec::new(),
     }
 }
 
 type Iterator = PathIterator<'static>;
+static ITERATORS: OnceLock<Registry<GraphicsIterator, Iterator>> = OnceLock::new();
+static NEXT: Allocator = Allocator::new();
+
+fn iterators() -> &'static Registry<GraphicsIterator, Iterator> {
+    ITERATORS.get_or_init(Registry::new)
+}
+
+fn register_iterator(iterator: Iterator) -> jlong {
+    let Ok(handle) = NEXT.next::<GraphicsIterator>() else {
+        return 0;
+    };
+    let Ok(mut registry) = iterators().lock() else {
+        return 0;
+    };
+    registry.insert(handle, iterator);
+    handle.raw()
+}
+
+fn with_iterator<T>(handle: jlong, action: impl FnOnce(&mut Iterator) -> T) -> Option<T> {
+    let mut registry = iterators().lock().ok()?;
+    registry.get_mut_raw(&handle).map(action)
+}
 
 extern "system" fn create(
     mut env: JNIEnv,
@@ -178,14 +200,14 @@ extern "system" fn create(
         return 0;
     };
     let empty = || {
-        Box::into_raw(Box::new(PathIterator::new(
+        register_iterator(PathIterator::new(
             &[],
             &[],
             &[],
             VerbDirection::Forward,
             ConicEvaluation::from_raw(evaluation),
             tolerance,
-        ))) as jlong
+        ))
     };
     if native == 0 {
         return empty();
@@ -197,51 +219,42 @@ extern "system" fn create(
     }
     // SAFETY: the layout is selected by the platform version, as in `AndroidX`.
     let raw = unsafe { read_path_ref(path_ref, device_api_level()) };
-    // SAFETY: Skia keeps these arrays alive and unchanged while the path is being iterated.
+    // SAFETY: the Java call keeps the path alive and unchanged while we copy its buffers.
     let (points, verbs, weights) = unsafe {
         let verbs = match raw.direction {
-            VerbDirection::Forward => slice(raw.verbs, raw.verb_count),
+            VerbDirection::Forward => snapshot(raw.verbs, raw.verb_count),
             // Backward layouts store the verbs just before `verbs`.
             VerbDirection::Backward => match usize::try_from(raw.verb_count) {
                 Ok(count) if count > 0 && !raw.verbs.is_null() => {
-                    slice(raw.verbs.sub(count), raw.verb_count)
+                    snapshot(raw.verbs.sub(count), raw.verb_count)
                 }
-                _ => &[],
+                _ => Vec::new(),
             },
         };
         (
-            slice(raw.points, raw.point_count),
+            snapshot(raw.points, raw.point_count),
             verbs,
-            slice(raw.weights, raw.weight_count),
+            snapshot(raw.weights, raw.weight_count),
         )
     };
-    Box::into_raw(Box::new(PathIterator::new(
+    register_iterator(PathIterator::from_owned(
         points,
         verbs,
         weights,
         raw.direction,
         ConicEvaluation::from_raw(evaluation),
         tolerance,
-    ))) as jlong
-}
-
-/// # Safety
-/// `handle` must come from `create` and not be destroyed yet.
-unsafe fn iterator<'a>(handle: jlong) -> Option<&'a mut Iterator> {
-    // SAFETY: `AndroidX` passes back the handle `create` returned, from one thread at a time.
-    unsafe { (handle as *mut Iterator).as_mut() }
+    ))
 }
 
 extern "system" fn destroy(_: JNIEnv, _: JObject, handle: jlong) {
-    if handle != 0 {
-        // SAFETY: created by Box::into_raw in `create`; `AndroidX` destroys it exactly once.
-        drop(unsafe { Box::from_raw(handle as *mut Iterator) });
+    if let Ok(mut registry) = iterators().lock() {
+        registry.remove_raw(&handle);
     }
 }
 
 extern "system" fn has_next(_: JNIEnv, _: JObject, handle: jlong) -> jboolean {
-    // SAFETY: see `iterator`.
-    if unsafe { iterator(handle) }.is_some_and(|it| it.has_next()) {
+    if with_iterator(handle, |it| it.has_next()).unwrap_or(false) {
         JNI_TRUE
     } else {
         JNI_FALSE
@@ -255,12 +268,8 @@ extern "system" fn next(
     points: JFloatArray,
     offset: jint,
 ) -> jint {
-    // SAFETY: see `iterator`.
-    let Some(it) = (unsafe { iterator(handle) }) else {
-        return Verb::Done as jint;
-    };
     let mut out = [Point::default(); 4];
-    let verb = it.next(&mut out);
+    let verb = with_iterator(handle, |it| it.next(&mut out)).unwrap_or(Verb::Done);
     if verb != Verb::Done && verb != Verb::Close {
         let floats: [f32; 8] = [
             out[0].x, out[0].y, out[1].x, out[1].y, out[2].x, out[2].y, out[3].x, out[3].y,
@@ -272,18 +281,18 @@ extern "system" fn next(
 }
 
 extern "system" fn peek(_: JNIEnv, _: JObject, handle: jlong) -> jint {
-    // SAFETY: see `iterator`.
-    unsafe { iterator(handle) }.map_or(Verb::Done, |it| it.peek()) as jint
+    with_iterator(handle, |it| it.peek()).unwrap_or(Verb::Done) as jint
 }
 
 extern "system" fn raw_size(_: JNIEnv, _: JObject, handle: jlong) -> jint {
-    // SAFETY: see `iterator`.
-    unsafe { iterator(handle) }.map_or(0, |it| jint::try_from(it.raw_count()).unwrap_or(jint::MAX))
+    with_iterator(handle, |it| {
+        jint::try_from(it.raw_count()).unwrap_or(jint::MAX)
+    })
+    .unwrap_or(0)
 }
 
 extern "system" fn size(_: JNIEnv, _: JObject, handle: jlong) -> jint {
-    // SAFETY: see `iterator`.
-    unsafe { iterator(handle) }.map_or(0, |it| jint::try_from(it.count()).unwrap_or(jint::MAX))
+    with_iterator(handle, |it| jint::try_from(it.count()).unwrap_or(jint::MAX)).unwrap_or(0)
 }
 
 extern "system" fn conic_to_quadratics_jni(

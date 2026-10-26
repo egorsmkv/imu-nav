@@ -3,14 +3,15 @@
 [Documentation index](../../README.md) · [Newcomer glossary](glossary.md)
 
 The `native/` workspace contains the Rust code used by Android navigation and by repeatable host
-experiments. The navigation core described here is three Cargo packages, each building one main
-Rust crate with a separate job. The same workspace also holds `imu-nav-search` (Tantivy address
+experiments. The three main navigation packages share checked quantities and native handles from
+`imu-nav-types`. Each package builds a Rust crate with a separate job. The workspace also holds `imu-nav-search` (Tantivy address
 search), `imu-nav-routing` (offline routing runtime and pack builder, see
 [routing](../reference/routing_and_search.md)) and `androidx-graphics-path` (the Rust port of
 AndroidX Graphics Path's JNI library, see [its README](../../native/graphics-path/README.md)).
 
 | Crate | In plain English | Where it runs |
 | --- | --- | --- |
+| [`imu-nav-types`](../../native/nav-types/) | Checked quantities, identities, vocabularies and opaque native handles. | Native libraries, host tests, server and desktop protocol |
 | [`imu-nav-core`](../../native/nav-core/) | Calculates route progress, checks GPS trust and combines uncertain position and speed evidence. It has no Android dependency. | Android through JNI, host tests and simulation |
 | [`imu-nav-jni`](../../native/nav-jni/) | Translates Kotlin calls into Rust calls, manages native objects and returns results Kotlin can read. It builds `libimu_nav_jni.so`. | Android and host JVM replay |
 | [`imu-nav-sim`](../../native/nav-sim/) | Runs controlled, repeatable trips to compare changes in output, memory use and speed. | Desktop host |
@@ -20,6 +21,8 @@ On Android, Kotlin supplies sensor and location observations to `imu-nav-jni`, w
 jamming detector, route projector, network tracker and speed fusion take part in live navigation.
 The native `NavigationEstimator` currently runs beside the Kotlin engine for comparison; it does
 not choose the position shown to the user.
+
+Checked domain types and compatibility rules: [Rust type safety](../reference/rust-type-safety.md).
 
 ## Read by topic
 

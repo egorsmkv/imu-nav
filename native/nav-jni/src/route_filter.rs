@@ -1,10 +1,12 @@
 //! JNI exports for route filter.
 
+use imu_nav_types::handles::{self, RawHandleMap};
+
 use super::{
     Arc, AssertUnwindSafe, ERROR_INTERNAL, ERROR_INVALID_HANDLE, GeoPoint, JClass, JDoubleArray,
-    JNIEnv, NEXT_HANDLE, NativeRouteState, OK, Ordering, REJECTED, RouteFilter, RouteGeometry,
-    catch_unwind, error_code, estimate_values, filters, guarded_code, jdouble, jdoubleArray, jint,
-    jlong, new_double_array, ptr, routes, usize_as_f64, with_filter, with_route_state,
+    JNIEnv, NEXT_HANDLE, NativeRouteState, OK, REJECTED, RouteFilter, RouteGeometry, catch_unwind,
+    error_code, estimate_values, filters, guarded_code, jdouble, jdoubleArray, jint, jlong,
+    new_double_array, ptr, routes, usize_as_f64, with_filter, with_route_state,
 };
 
 #[unsafe(no_mangle)]
@@ -18,7 +20,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteFilter_nativeCr
     systematic_drift_m: jdouble,
 ) -> jlong {
     catch_unwind(AssertUnwindSafe(|| {
-        let filter = RouteFilter::new(
+        let filter = RouteFilter::from_raw(
             position_m,
             speed_mps,
             position_sigma_m,
@@ -26,10 +28,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteFilter_nativeCr
             systematic_drift_m,
         )
         .ok()?;
-        let handle = NEXT_HANDLE.fetch_add(1, Ordering::Relaxed);
-        if handle <= 0 {
-            return None;
-        }
+        let handle = NEXT_HANDLE.next::<handles::Filter>().ok()?;
         filters().lock().ok()?.insert(
             handle,
             NativeRouteState {
@@ -37,7 +36,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteFilter_nativeCr
                 route: None,
             },
         );
-        Some(handle)
+        Some(handle.raw())
     }))
     .ok()
     .flatten()
@@ -54,7 +53,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteFilter_nativeDe
         let Ok(mut registry) = filters().lock() else {
             return ERROR_INTERNAL;
         };
-        if registry.remove(&handle).is_some() {
+        if registry.remove_raw(&handle).is_some() {
             OK
         } else {
             ERROR_INVALID_HANDLE
@@ -196,12 +195,9 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteGeometry_native
             })
             .collect();
         let route = Arc::new(RouteGeometry::new(points).ok()?);
-        let handle = NEXT_HANDLE.fetch_add(1, Ordering::Relaxed);
-        if handle <= 0 {
-            return None;
-        }
+        let handle = NEXT_HANDLE.next::<handles::Route>().ok()?;
         routes().lock().ok()?.insert(handle, route);
-        Some(handle)
+        Some(handle.raw())
     }))
     .ok()
     .flatten()
@@ -218,7 +214,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteGeometry_native
         let Ok(mut registry) = routes().lock() else {
             return ERROR_INTERNAL;
         };
-        if registry.remove(&handle).is_some() {
+        if registry.remove_raw(&handle).is_some() {
             OK
         } else {
             ERROR_INVALID_HANDLE
@@ -242,7 +238,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteGeometry_native
     catch_unwind(AssertUnwindSafe(|| {
         let route = {
             let registry = routes().lock().ok()?;
-            Arc::clone(registry.get(&handle)?)
+            Arc::clone(registry.get_raw(&handle)?)
         };
         let projection = route
             .project(
@@ -257,8 +253,8 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteGeometry_native
             )
             .ok()?;
         let values = [
-            projection.position_m,
-            projection.offset_m,
+            projection.position().get(),
+            projection.offset().get(),
             usize_as_f64(projection.segment)?,
             projection.point.latitude_deg,
             projection.point.longitude_deg,
@@ -282,7 +278,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteFilter_nativeIn
             let Ok(registry) = routes().lock() else {
                 return ERROR_INTERNAL;
             };
-            let Some(route) = registry.get(&route_handle) else {
+            let Some(route) = registry.get_raw(&route_handle) else {
                 return ERROR_INVALID_HANDLE;
             };
             Arc::clone(route)
@@ -326,8 +322,8 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeRouteFilter_nativePr
         .ok()
         .flatten()?;
         let values = [
-            projection.position_m,
-            projection.offset_m,
+            projection.position().get(),
+            projection.offset().get(),
             usize_as_f64(projection.segment)?,
             projection.point.latitude_deg,
             projection.point.longitude_deg,

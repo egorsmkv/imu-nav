@@ -2,6 +2,7 @@
 
 use crate::route::{GeoPoint, Projection, RouteGeometry};
 use crate::{Estimate, FilterError, RouteFilter, validate_sigma};
+use imu_nav_types::ElapsedMs;
 use std::collections::VecDeque;
 use std::sync::Arc;
 
@@ -60,11 +61,7 @@ const SCALE_STABLE_MS: i64 = 3_000;
 const SCALE_MAX_OBD_GAP_MS: i64 = 1_000;
 const SCALE_STABLE_RANGE_MPS: f64 = 0.5;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TravelMode {
-    Car,
-    Foot,
-}
+pub use imu_nav_types::TravelMode;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ObservationTrust {
@@ -105,8 +102,8 @@ pub struct NavigationEstimator {
     state: FilterState,
     route: Arc<RouteGeometry>,
     mode: TravelMode,
-    last_gps_ms: i64,
-    last_vehicle_input_ms: i64,
+    last_gps_ms: Option<ElapsedMs>,
+    last_vehicle_input_ms: Option<ElapsedMs>,
     network_speed_enabled: bool,
     history: VecDeque<HistoryFrame>,
 }
@@ -117,11 +114,11 @@ pub struct NavigationEstimator {
 struct FilterState {
     filter: RouteFilter,
     elapsed_ms: i64,
-    last_vehicle_speed_ms: i64,
+    last_vehicle_speed_ms: Option<ElapsedMs>,
     vehicle_speed_scale: f64,
     stable_vehicle_speed: Option<StableVehicleSpeed>,
-    last_gps_speed_ms: i64,
-    last_gps_position_ms: i64,
+    last_gps_speed_ms: Option<ElapsedMs>,
+    last_gps_position_ms: Option<ElapsedMs>,
     motion_control: Option<MotionControl>,
     walking_valid_until_ms: Option<i64>,
     network_evidence: NetworkEvidence,
@@ -200,18 +197,22 @@ impl NavigationEstimator {
         validate_sigma(initial.position_sigma_m)?;
         let mut state = FilterState {
             filter: RouteFilter::new(
-                initial.position_m,
-                initial.speed_mps,
-                initial.position_sigma_m.max(MIN_POSITION_SIGMA_M),
-                initial.speed_sigma_mps,
-                initial.systematic_drift_m,
+                crate::RoutePosition::new(initial.position_m)
+                    .map_err(|_| FilterError::NonFinite)?,
+                crate::Velocity::new(initial.speed_mps).map_err(|_| FilterError::NonFinite)?,
+                crate::PositionSigma::new(initial.position_sigma_m.max(MIN_POSITION_SIGMA_M))
+                    .map_err(|_| FilterError::InvalidSigma)?,
+                crate::SpeedSigma::new(initial.speed_sigma_mps)
+                    .map_err(|_| FilterError::InvalidSigma)?,
+                crate::Distance::new(initial.systematic_drift_m)
+                    .map_err(|_| FilterError::InvalidSigma)?,
             )?,
             elapsed_ms: now_ms,
-            last_vehicle_speed_ms: -1,
+            last_vehicle_speed_ms: None,
             vehicle_speed_scale: 1.0,
             stable_vehicle_speed: None,
-            last_gps_speed_ms: -1,
-            last_gps_position_ms: -1,
+            last_gps_speed_ms: None,
+            last_gps_position_ms: None,
             motion_control: None,
             walking_valid_until_ms: None,
             network_evidence: NetworkEvidence::new(now_ms),
@@ -226,8 +227,8 @@ impl NavigationEstimator {
             state: state.clone(),
             route,
             mode,
-            last_gps_ms: -1,
-            last_vehicle_input_ms: -1,
+            last_gps_ms: None,
+            last_vehicle_input_ms: None,
             network_speed_enabled: false,
             history: VecDeque::from([HistoryFrame {
                 state,
@@ -291,7 +292,7 @@ impl NavigationEstimator {
             pending.predict_to(elapsed_ms, mode)?;
             pending.apply_vehicle_speed(speed_kmh / 3.6)
         })?;
-        self.last_vehicle_input_ms = elapsed_ms;
+        self.last_vehicle_input_ms = ElapsedMs::new(elapsed_ms).ok();
         self.remember(Some(speed_kmh / 3.6));
         Ok(accepted)
     }
@@ -443,7 +444,7 @@ impl NavigationEstimator {
                 )
             })
         }) {
-            self.last_gps_ms = observation.elapsed_ms;
+            self.last_gps_ms = ElapsedMs::new(observation.elapsed_ms).ok();
             let original_state = self.state.clone();
             let mut later = Vec::new();
             // Replay same-time hints too. OBD must precede GNSS (plateau calibration), then
@@ -552,8 +553,9 @@ impl NavigationEstimator {
             )
             .map_err(|_| FilterError::NonFinite)?;
         if observation.trust == ObservationTrust::Suspect
-            && (projected.offset_m >= SUSPECT_MAX_OFFSET_M
-                || (projected.position_m - self.estimate().position_m).abs() >= SUSPECT_MAX_JUMP_M)
+            && (projected.offset().get() >= SUSPECT_MAX_OFFSET_M
+                || (projected.position().get() - self.estimate().position_m).abs()
+                    >= SUSPECT_MAX_JUMP_M)
         {
             return Ok((Some(projected), false, false));
         }
@@ -569,12 +571,16 @@ impl NavigationEstimator {
         let position_accepted = self
             .state
             .filter
-            .update_position(projected.position_m, position_sigma, POSITION_NIS_GATE)?
+            .update_position(
+                projected.position().get(),
+                position_sigma,
+                POSITION_NIS_GATE,
+            )?
             .accepted;
         if position_accepted && observation.trust == ObservationTrust::Good {
             self.state.network_evidence.clear_speed();
             self.state.filter.reset_systematic_drift();
-            self.state.last_gps_position_ms = observation.elapsed_ms;
+            self.state.last_gps_position_ms = ElapsedMs::new(observation.elapsed_ms).ok();
         }
         let mut speed_accepted = false;
         if let Some(speed_mps) = observation.speed_mps {
@@ -589,7 +595,7 @@ impl NavigationEstimator {
                 observation.trust == ObservationTrust::Good,
             )?;
             if speed_accepted && observation.trust == ObservationTrust::Good {
-                self.state.last_gps_speed_ms = observation.elapsed_ms;
+                self.state.last_gps_speed_ms = ElapsedMs::new(observation.elapsed_ms).ok();
                 if self.mode == TravelMode::Foot {
                     self.state.walking_valid_until_ms = Some(
                         observation
@@ -602,7 +608,7 @@ impl NavigationEstimator {
         self.state.learn_vehicle_speed_scale(
             self.mode,
             observation,
-            projected.offset_m,
+            projected.offset().get(),
             (position_accepted, speed_accepted),
         );
         Ok((Some(projected), position_accepted, speed_accepted))

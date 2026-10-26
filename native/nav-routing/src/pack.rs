@@ -1,9 +1,9 @@
 //! Pack ownership shares one validated geometry mapping between all declared profiles.
-use crate::{Result, shared::Shared, storage::Network};
+use crate::{Result, profile::Profile, shared::Shared, storage::Network};
 use std::{collections::HashMap, path::Path, sync::Arc};
 /// JNI retains this immutable owner until the last in-flight request finishes.
 pub struct Pack {
-    profiles: HashMap<String, Network>,
+    profiles: HashMap<Profile, Network>,
 }
 impl Pack {
     /// Open exactly the profiles declared in bounded metadata, rejecting older formats.
@@ -42,12 +42,13 @@ impl Pack {
         }
         let mut networks = HashMap::new();
         for value in profiles {
-            let name = value.as_str().ok_or("invalid profile")?;
-            if !matches!(name, "car" | "foot") || networks.contains_key(name) {
+            let profile: Profile = value.as_str().ok_or("invalid profile")?.parse()?;
+            let name = profile.name();
+            if networks.contains_key(&profile) {
                 return Err("invalid profile".into());
             }
             networks.insert(
-                name.to_owned(),
+                profile,
                 Network::with_shared(
                     &directory.join(format!("{name}.routing")),
                     Arc::clone(&shared),
@@ -59,9 +60,9 @@ impl Pack {
     }
     /// # Errors
     /// Returns an error if the requested profile was not declared in the pack.
-    pub fn profile(&self, name: &str) -> Result<&Network> {
+    pub fn profile(&self, profile: Profile) -> Result<&Network> {
         self.profiles
-            .get(name)
+            .get(&profile)
             .ok_or_else(|| "profile unavailable".into())
     }
 }

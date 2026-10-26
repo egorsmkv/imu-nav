@@ -141,9 +141,9 @@ plain Gradle fields. A current build entry:
 
 ```yaml
 Builds:
-  - versionName: 0.11.0
-    versionCode: 11
-    commit: v0.11.0
+  - versionName: 0.12.0
+    versionCode: 12
+    commit: v0.12.0
     subdir: app
     # Gzipped CSV tower data, not code; CC BY-SA 4.0 provenance is in app/src/main/assets/cells/LICENSE.txt.
     scanignore:

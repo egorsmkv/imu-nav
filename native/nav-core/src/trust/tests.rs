@@ -1,6 +1,34 @@
 use super::*;
 
 #[test]
+fn classifier_configuration_is_checked_before_installation() {
+    assert_eq!(
+        TrustConfig::try_from(TrustConfigValues::default()).unwrap(),
+        TrustConfig::default()
+    );
+    for invalid in [
+        TrustConfigValues {
+            max_speed_mps: f64::NAN,
+            ..TrustConfigValues::default()
+        },
+        TrustConfigValues {
+            max_clock_skew_ms: -1,
+            ..TrustConfigValues::default()
+        },
+        TrustConfigValues {
+            altitude_min_m: 10_000.0,
+            ..TrustConfigValues::default()
+        },
+        TrustConfigValues {
+            frozen_bad_ms: 1,
+            ..TrustConfigValues::default()
+        },
+    ] {
+        assert!(TrustConfig::try_from(invalid).is_err());
+    }
+}
+
+#[test]
 fn antipodal_jump_cannot_bypass_physical_reachability() {
     for latitude in -89..=89 {
         let mut classifier = TrustClassifier::new(TrustConfig::default());

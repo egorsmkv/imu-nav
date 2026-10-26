@@ -10,8 +10,10 @@ mod auth;
 mod csv_format;
 mod db;
 mod debug;
+mod ids;
 mod live_position;
 mod model;
+pub use ids::{AccountId, CellArea, CellId, DeviceId, Mcc, Mnc};
 mod privacy;
 pub use live_position::{LivePositionConfig, LivePositionReceiver};
 mod store;
@@ -26,7 +28,7 @@ pub use csv_format::{
 };
 pub use model::{
     CellKey, CellTower, Consensus, Policy, PolicyError, Radio, RadioParseError, ServerEvent,
-    UploadResult,
+    UploadResult, ValidatedPolicy,
 };
 pub use privacy::PrivacyNotice;
 pub use store::{CellStore, StoreCounts};

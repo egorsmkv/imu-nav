@@ -7,17 +7,8 @@
     clippy::cast_precision_loss
 )]
 use super::osm::Tags;
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Mode {
-    Car,
-    Foot,
-}
+pub use crate::profile::Profile as Mode;
 impl Mode {
-    #[must_use]
-    pub fn name(self) -> &'static str {
-        if self == Self::Car { "car" } else { "foot" }
-    }
-
     /// Most specific access first; static directional keys avoid allocations for every OSM way.
     fn access_keys(self) -> &'static [AccessKey] {
         match self {

@@ -138,10 +138,10 @@ async fn health_count_is_cached_until_its_short_ttl_expires() {
             &[CellTower {
                 key: CellKey {
                     radio: Radio::Lte,
-                    mcc: 255,
-                    mnc: 1,
-                    area: 100,
-                    cid: 200,
+                    mcc: crate::Mcc::new(255).unwrap(),
+                    mnc: crate::Mnc::new(1).unwrap(),
+                    area: crate::CellArea::new(100).unwrap(),
+                    cid: crate::CellId::new(200).unwrap(),
                 },
                 lat: 50.45,
                 lon: 30.52,

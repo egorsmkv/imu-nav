@@ -1,25 +1,25 @@
 //! Routing-pack JNI surface. Handles own Arcs, so close/cancel cannot free an active search.
 use crate::{Request, SearchIndex};
+use imu_nav_types::handles::{self, Allocator, Kind, RawHandleMap, Registry as HandleRegistry};
 use jni::JNIEnv;
 use jni::objects::{JClass, JString};
 use jni::sys::{jlong, jstring};
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock};
 
-type Registry<T> = OnceLock<Mutex<HashMap<i64, Arc<T>>>>;
-static INDEXES: Registry<SearchIndex> = OnceLock::new();
-static REQUESTS: Registry<AtomicBool> = OnceLock::new();
-static NEXT: AtomicI64 = AtomicI64::new(1);
-fn registry<T>(value: &Registry<T>) -> &Mutex<HashMap<i64, Arc<T>>> {
-    value.get_or_init(|| Mutex::new(HashMap::new()))
+type Registry<K, T> = OnceLock<HandleRegistry<K, Arc<T>>>;
+static INDEXES: Registry<handles::SearchIndex, SearchIndex> = OnceLock::new();
+static REQUESTS: Registry<handles::SearchRequest, AtomicBool> = OnceLock::new();
+static NEXT: Allocator = Allocator::new();
+fn registry<K: Kind, T>(value: &Registry<K, T>) -> &HandleRegistry<K, Arc<T>> {
+    value.get_or_init(HandleRegistry::new)
 }
 
 fn guarded<T: Default>(env: &mut JNIEnv, work: impl FnOnce(&mut JNIEnv) -> crate::Result<T>) -> T {
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| work(env))) {
         Ok(Ok(value)) => value,
         error => {
-            let cancelled = matches!(&error, Ok(Err(e)) if e.to_string() == "search cancelled");
+            let cancelled = matches!(&error, Ok(Err(e)) if e.is::<crate::Cancelled>());
             let class = if cancelled {
                 "java/util/concurrent/CancellationException"
             } else {
@@ -48,12 +48,12 @@ extern "system" fn Java_org_imunav_core_search_TantivyNative_open(
     guarded(&mut env, |env| {
         let path: String = env.get_string(&path)?.into();
         let index = Arc::new(SearchIndex::open(std::path::Path::new(&path))?);
-        let handle = NEXT.fetch_add(1, Ordering::Relaxed);
+        let handle = NEXT.next::<handles::SearchIndex>()?;
         registry(&INDEXES)
             .lock()
             .map_err(|_| "index registry")?
             .insert(handle, index);
-        Ok(handle)
+        Ok(handle.raw())
     })
 }
 #[unsafe(no_mangle)]
@@ -66,7 +66,7 @@ extern "system" fn Java_org_imunav_core_search_TantivyNative_close(
         registry(&INDEXES)
             .lock()
             .map_err(|_| "index registry")?
-            .remove(&handle);
+            .remove_raw(&handle);
         Ok(())
     });
 }
@@ -76,12 +76,12 @@ extern "system" fn Java_org_imunav_core_search_TantivyNative_begin(
     _: JClass,
 ) -> jlong {
     guarded(&mut env, |_| {
-        let handle = NEXT.fetch_add(1, Ordering::Relaxed);
+        let handle = NEXT.next::<handles::SearchRequest>()?;
         registry(&REQUESTS)
             .lock()
             .map_err(|_| "request registry")?
             .insert(handle, Arc::new(AtomicBool::new(false)));
-        Ok(handle)
+        Ok(handle.raw())
     })
 }
 #[unsafe(no_mangle)]
@@ -94,7 +94,7 @@ extern "system" fn Java_org_imunav_core_search_TantivyNative_cancel(
         if let Some(flag) = registry(&REQUESTS)
             .lock()
             .map_err(|_| "request registry")?
-            .get(&handle)
+            .get_raw(&handle)
         {
             flag.store(true, Ordering::Relaxed);
         }
@@ -111,7 +111,7 @@ extern "system" fn Java_org_imunav_core_search_TantivyNative_finish(
         registry(&REQUESTS)
             .lock()
             .map_err(|_| "request registry")?
-            .remove(&handle);
+            .remove_raw(&handle);
         Ok(())
     });
 }
@@ -127,13 +127,13 @@ extern "system" fn Java_org_imunav_core_search_TantivyNative_search(
         let index = registry(&INDEXES)
             .lock()
             .map_err(|_| "index registry")?
-            .get(&index)
+            .get_raw(&index)
             .cloned()
             .ok_or("closed index")?;
         let flag = registry(&REQUESTS)
             .lock()
             .map_err(|_| "request registry")?
-            .get(&request)
+            .get_raw(&request)
             .cloned()
             .ok_or("closed request")?;
         crate::check(&flag)?;

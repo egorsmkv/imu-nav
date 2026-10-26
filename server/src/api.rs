@@ -11,10 +11,7 @@ use crate::admin;
 use crate::auth::{self, AuthRateLimits, MailConfig, SharedAuthLimits};
 use crate::debug;
 use crate::web;
-use crate::{
-    CellKey, CellStore, CellTower, Consensus, CsvDecodeError, Policy, Radio, ServerEvent,
-    decode_towers,
-};
+use crate::{CellKey, CellStore, CellTower, Consensus, CsvDecodeError, Policy, Radio, ServerEvent};
 use axum::body::{Body, Bytes};
 use axum::extract::ws::{Message, WebSocket};
 use axum::extract::{ConnectInfo, MatchedPath, Path, Query, Request, State, WebSocketUpgrade};
@@ -61,7 +58,7 @@ pub struct AppState {
     pub(crate) live_position: Arc<crate::live_position::LivePositionHub>,
     limits: Arc<Mutex<Limits>>,
     pub(crate) auth_limits: SharedAuthLimits,
-    pub(crate) policy: Arc<RwLock<Policy>>,
+    pub(crate) policy: Arc<RwLock<crate::ValidatedPolicy>>,
     pub(crate) write_gate: Arc<tokio::sync::RwLock<()>>,
     pub(crate) activation_gate: Arc<tokio::sync::RwLock<()>>,
     pub(crate) job: Arc<Mutex<admin::JobState>>,
@@ -99,7 +96,7 @@ impl AppState {
             live_position: Arc::new(crate::live_position::LivePositionHub::default()),
             limits: Arc::new(Mutex::new(Limits::default())),
             auth_limits: Arc::new(Mutex::new(AuthRateLimits::default())),
-            policy: Arc::new(RwLock::new(active_policy)),
+            policy: Arc::new(RwLock::new(active_policy.try_into()?)),
             write_gate: Arc::new(tokio::sync::RwLock::new(())),
             activation_gate: Arc::new(tokio::sync::RwLock::new(())),
             job: Arc::new(Mutex::new(admin::JobState::recovered(prior_job))),
@@ -109,7 +106,7 @@ impl AppState {
         })
     }
 
-    pub(crate) fn policy(&self) -> Policy {
+    pub(crate) fn policy(&self) -> crate::ValidatedPolicy {
         self.policy.read().expect("policy lock poisoned").clone()
     }
 
@@ -257,32 +254,35 @@ async fn upload_cells(
     let device = headers
         .get("x-device-id")
         .and_then(|value| value.to_str().ok())
-        .filter(|value| valid_device_id(value))
+        .and_then(|value| crate::DeviceId::new(value.to_owned()).ok())
         .ok_or(ApiError(StatusCode::BAD_REQUEST, "BAD_DEVICE"))?;
-    let device = format!("account:{}:{device}", account.id);
+    let device = format!("account:{}:{}", account.id, device.as_str());
     enforce_limits(&state, &ip, &device)?;
     let row_limit = state.policy().max_rows_per_upload;
-    let towers = tokio::task::spawn_blocking(move || decode_towers(&body, row_limit))
-        .await
-        .map_err(ApiError::from)?
-        .map_err(|error| {
-            if matches!(
-                error,
-                CsvDecodeError::TooManyRows { .. } | CsvDecodeError::DecompressedBodyTooLarge
-            ) {
-                ApiError(StatusCode::PAYLOAD_TOO_LARGE, "UPLOAD_TOO_LARGE")
-            } else {
-                ApiError(StatusCode::BAD_REQUEST, "BAD_BODY")
-            }
-        })?;
+    let batch =
+        tokio::task::spawn_blocking(move || crate::csv_format::decode_batch(&body, row_limit))
+            .await
+            .map_err(ApiError::from)?
+            .map_err(|error| {
+                if matches!(
+                    error,
+                    CsvDecodeError::TooManyRows { .. } | CsvDecodeError::DecompressedBodyTooLarge
+                ) {
+                    ApiError(StatusCode::PAYLOAD_TOO_LARGE, "UPLOAD_TOO_LARGE")
+                } else {
+                    ApiError(StatusCode::BAD_REQUEST, "BAD_BODY")
+                }
+            })?;
     let store = state.store.clone();
     let write_guard = state.write_gate.clone().read_owned().await;
     check_upload_permission(&state, account.id).await?;
     let policy = state.policy();
-    let ((result, changed), _write_guard) = run_db_guarded(write_guard, move || {
-        store.contribute(&device, &towers, now_s(), &policy)
+    let intrinsic_rejections = batch.rejected;
+    let ((mut result, changed), _write_guard) = run_db_guarded(write_guard, move || {
+        store.contribute(&device, &batch.towers, now_s(), &policy)
     })
     .await?;
+    result.rejected += intrinsic_rejections;
     let visibility_store = state.store.clone();
     let visible = run_db(move || visibility_store.visible_changes(changed)).await?;
     for tower in visible {
@@ -300,7 +300,10 @@ async fn upload_cells(
     }))
 }
 
-async fn check_upload_permission(state: &AppState, account_id: i64) -> Result<(), ApiError> {
+async fn check_upload_permission(
+    state: &AppState,
+    account_id: crate::AccountId,
+) -> Result<(), ApiError> {
     let store = state.store.clone();
     let (sharing, verified) = run_db(move || store.account_sharing_status(account_id)).await?;
     if !verified {
@@ -594,7 +597,10 @@ async fn websocket_events(
     websocket: WebSocketUpgrade,
 ) -> Result<Response, ApiError> {
     let (account, authorization) = auth::admin_stream_account(&state, &headers, peer).await?;
-    tracing::info!(account_id = account.id, "admin event stream connected");
+    tracing::info!(
+        account_id = account.id.get(),
+        "admin event stream connected"
+    );
     Ok(crate::websocket::bounded_upgrade(websocket)
         .on_upgrade(move |socket| stream_events(socket, state, authorization))
         .into_response())
@@ -661,10 +667,12 @@ pub(crate) fn path_key(
     Ok(CellKey {
         radio: Radio::from_str(&radio)
             .map_err(|_| ApiError(StatusCode::BAD_REQUEST, "BAD_RADIO"))?,
-        mcc,
-        mnc,
-        area,
-        cid,
+        mcc: crate::Mcc::new(mcc).map_err(|_| ApiError(StatusCode::BAD_REQUEST, "BAD_CELL_KEY"))?,
+        mnc: crate::Mnc::new(mnc).map_err(|_| ApiError(StatusCode::BAD_REQUEST, "BAD_CELL_KEY"))?,
+        area: crate::CellArea::new(area)
+            .map_err(|_| ApiError(StatusCode::BAD_REQUEST, "BAD_CELL_KEY"))?,
+        cid: crate::CellId::new(cid)
+            .map_err(|_| ApiError(StatusCode::BAD_REQUEST, "BAD_CELL_KEY"))?,
     })
 }
 
@@ -695,11 +703,9 @@ pub(crate) async fn run_db_guarded<T: Send + 'static, G: Send + 'static>(
     run_db(move || Ok((operation()?, guard))).await
 }
 
+#[cfg(test)]
 fn valid_device_id(value: &str) -> bool {
-    (8..=64).contains(&value.len())
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+    crate::DeviceId::new(value.to_owned()).is_ok()
 }
 
 pub(crate) fn client_ip(peer: SocketAddr, headers: &HeaderMap, trust_proxy: bool) -> String {

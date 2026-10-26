@@ -28,8 +28,8 @@ impl NavigationEstimator {
         let gps_expiry_ms = self
             .state
             .last_gps_speed_ms
-            .saturating_add(GPS_SPEED_MAX_AGE_MS);
-        if self.state.last_gps_speed_ms >= 0 && now_ms < gps_expiry_ms {
+            .map(|last| last.get().saturating_add(GPS_SPEED_MAX_AGE_MS));
+        if let Some(gps_expiry_ms) = gps_expiry_ms.filter(|expiry| now_ms < *expiry) {
             self.state.walking_valid_until_ms = Some(gps_expiry_ms);
             return Ok(());
         }

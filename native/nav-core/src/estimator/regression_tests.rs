@@ -81,7 +81,7 @@ fn delayed_fix_matches_chronological_fusion_including_covariance_and_drift() {
     let outcome = delayed.tick(2_000, Some(observation)).unwrap();
     assert!(outcome.position_accepted && outcome.speed_accepted);
     assert_eq!(timely.estimate(), delayed.estimate());
-    assert!(outcome.estimate.position_m > outcome.projection.unwrap().position_m + 10.0);
+    assert!(outcome.estimate.position_m > outcome.projection.unwrap().position().get() + 10.0);
     assert!(outcome.estimate.systematic_drift_m > 0.0);
 }
 
@@ -99,7 +99,7 @@ fn delayed_fix_replays_later_obd_rejection_and_its_freshness() {
     timely.tick(1_000, None).unwrap();
     delayed.tick(1_000, Some(observation)).unwrap();
     assert_eq!(timely.estimate(), delayed.estimate());
-    assert_eq!(delayed.state.last_vehicle_speed_ms, -1);
+    assert_eq!(delayed.state.last_vehicle_speed_ms, None);
 }
 
 #[test]
@@ -109,7 +109,7 @@ fn delayed_suspect_gate_uses_measurement_time_position() {
     let mut observation = gps(0, 50.0);
     observation.trust = ObservationTrust::Suspect;
     // A valid old position must not be tested against a much newer position.
-    timely.state.filter = RouteFilter::new(0.0, 100.0, 100.0, 2.0, 0.0).unwrap();
+    timely.state.filter = RouteFilter::from_raw(0.0, 100.0, 100.0, 2.0, 0.0).unwrap();
     timely.history.clear();
     timely.remember(None);
     delayed.clone_from(&timely);
@@ -125,10 +125,13 @@ fn delayed_suspect_gate_uses_measurement_time_position() {
 fn rejected_obd_neither_starts_nor_extends_freshness() {
     let mut navigation = estimator(10.0);
     assert!(!navigation.on_vehicle_speed(250.0, 0).unwrap());
-    assert_eq!(navigation.state.last_vehicle_speed_ms, -1);
+    assert_eq!(navigation.state.last_vehicle_speed_ms, None);
     assert!(navigation.on_vehicle_speed(36.0, 1_000).unwrap());
     assert!(!navigation.on_vehicle_speed(250.0, 2_000).unwrap());
-    assert_eq!(navigation.state.last_vehicle_speed_ms, 1_000);
+    assert_eq!(
+        navigation.state.last_vehicle_speed_ms,
+        imu_nav_types::ElapsedMs::new(1_000).ok()
+    );
     let estimate = navigation.tick(4_000, None).unwrap().estimate;
     // 1 s estimated + 2.5 s accepted OBD + 0.5 s expired OBD, all at 10 m/s.
     assert!((estimate.systematic_drift_m - 1.7).abs() < 1.0e-9);
@@ -143,7 +146,10 @@ fn duplicate_and_stale_obd_do_not_change_state_or_freshness() {
     for time in [-1, 1_000, 1_200] {
         assert!(!navigation.on_vehicle_speed(40.0, time).unwrap());
         assert_eq!(navigation.estimate(), before);
-        assert_eq!(navigation.state.last_vehicle_speed_ms, 1_000);
+        assert_eq!(
+            navigation.state.last_vehicle_speed_ms,
+            imu_nav_types::ElapsedMs::new(1_000).ok()
+        );
     }
 }
 
@@ -415,7 +421,7 @@ fn rejected_gps_restores_history_prefix_and_owned_suffix() {
             assert!(outcome.projection.is_some());
             assert!(!outcome.position_accepted && !outcome.speed_accepted);
             reference.tick(now_ms, None).unwrap();
-            reference.last_gps_ms = observation.elapsed_ms;
+            reference.last_gps_ms = imu_nav_types::ElapsedMs::new(observation.elapsed_ms).ok();
             assert_eq!(format!("{candidate:?}"), format!("{reference:?}"));
             let retry_ms = now_ms + 500;
             let valid = gps(
@@ -434,7 +440,7 @@ fn rejected_gps_restores_history_prefix_and_owned_suffix() {
 fn vehicle_prediction_failure_rolls_back_earlier_prediction_steps() {
     let mut navigation = estimator(20.0);
     navigation.state.filter =
-        RouteFilter::new(f64::MAX / 2.0, f64::MAX / 16.0, 20.0, 2.0, 0.0).unwrap();
+        RouteFilter::from_raw(f64::MAX / 2.0, f64::MAX / 16.0, 20.0, 2.0, 0.0).unwrap();
     navigation.history.clear();
     navigation.remember(None);
     let before = navigation.clone();

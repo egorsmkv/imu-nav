@@ -1,0 +1,13 @@
+[package]
+name = "imu-nav-types"
+version = "0.1.0"
+description = "Checked domain quantities and opaque native handles for IMU Nav"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[features]
+serde = ["dep:serde"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"], optional = true }

@@ -257,7 +257,7 @@ fn reroute_discards_confirmation_and_rejects_old_route_fixes() {
 
 #[test]
 fn coarse_filter_gates_and_caps_without_overconfidence() {
-    let mut filter = crate::RouteFilter::new(0.0, 10.0, 100.0, 2.0, 50.0).unwrap();
+    let mut filter = crate::RouteFilter::from_raw(0.0, 10.0, 100.0, 2.0, 50.0).unwrap();
     let original = filter.estimate();
     assert!(
         !filter

@@ -1213,6 +1213,7 @@ dependencies = [
  "futures-util",
  "hotpath",
  "imu-nav-protocol",
+ "imu-nav-types",
  "lettre",
  "native-tls",
  "postgres",
@@ -1242,10 +1243,18 @@ dependencies = [
 name = "imu-nav-protocol"
 version = "0.1.0"
 dependencies = [
+ "imu-nav-types",
  "serde",
  "serde_json",
  "thiserror",
  "time",
+]
+
+[[package]]
+name = "imu-nav-types"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

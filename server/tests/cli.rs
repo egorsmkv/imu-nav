@@ -18,10 +18,10 @@ fn replays_withdrawals_before_starting_a_restored_sqlite_server() -> anyhow::Res
     let observation = CellTower {
         key: CellKey {
             radio: Radio::Lte,
-            mcc: 255,
-            mnc: 1,
-            area: 100,
-            cid: 200,
+            mcc: imu_nav_cell_server::Mcc::new(255).unwrap(),
+            mnc: imu_nav_cell_server::Mnc::new(1).unwrap(),
+            area: imu_nav_cell_server::CellArea::new(100).unwrap(),
+            cid: imu_nav_cell_server::CellId::new(200).unwrap(),
         },
         lat: 50.45,
         lon: 30.52,

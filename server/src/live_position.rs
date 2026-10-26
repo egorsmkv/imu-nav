@@ -36,7 +36,7 @@ pub struct LivePositionConfig {
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LivePositionReceiver {
-    pub account_id: i64,
+    pub account_id: crate::AccountId,
     pub port: u16,
     pub peer: Ipv4Addr,
 }
@@ -59,7 +59,7 @@ impl LivePositionConfig {
         let mut ports = std::collections::HashSet::new();
         for receiver in &self.receivers {
             anyhow::ensure!(
-                receiver.account_id > 0 && receiver.port >= 1024 && private_address(receiver.peer),
+                receiver.port >= 1024 && private_address(receiver.peer),
                 "invalid live_position receiver"
             );
             anyhow::ensure!(
@@ -82,22 +82,21 @@ fn private_address(address: Ipv4Addr) -> bool {
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Sample {
-    sequence: u64,
+    sequence: imu_nav_protocol::Sequence,
     lat: f64,
     lon: f64,
     speed_mps: f64,
     bearing_deg: f64,
     uncertainty_m: f64,
-    source: String,
-    elapsed_ms: u64,
-    utc_ms: i64,
-    age_ms: u64,
+    source: imu_nav_protocol::PositionSource,
+    elapsed_ms: imu_nav_types::ElapsedMs,
+    utc_ms: imu_nav_types::UnixMs,
+    age_ms: imu_nav_types::DurationMs,
 }
 
 impl Sample {
     fn valid(&self) -> bool {
-        self.sequence > 0
-            && (-90.0..=90.0).contains(&self.lat)
+        (-90.0..=90.0).contains(&self.lat)
             && (-180.0..=180.0).contains(&self.lon)
             && (0.0..=1_000.0).contains(&self.speed_mps)
             && (0.0..360.0).contains(&self.bearing_deg)
@@ -107,14 +106,15 @@ impl Sample {
                 self.source.as_str(),
                 "GPS" | "GPS_SUSPECT" | "DR" | "DR_NET" | "DR_OBD" | "DR_STOPPED" | "CELL"
             )
-            && (0..=4_102_444_799_999).contains(&self.utc_ms)
-            && self.age_ms <= 2_000
+            && (0..=4_102_444_799_999).contains(&self.utc_ms.get())
+            && self.age_ms.get() <= 2_000
     }
 
     fn nmea(&self) -> String {
-        let date =
-            time::OffsetDateTime::from_unix_timestamp_nanos(i128::from(self.utc_ms) * 1_000_000)
-                .expect("validated UTC range");
+        let date = time::OffsetDateTime::from_unix_timestamp_nanos(
+            i128::from(self.utc_ms.get()) * 1_000_000,
+        )
+        .expect("validated UTC range");
         let body = format!(
             "GPRMC,{:02}{:02}{:02}.{:03},A,{},{},{},{},{:.3},{:.3},{:02}{:02}{:02},,,E",
             date.hour(),
@@ -165,8 +165,8 @@ struct Session {
     id: String,
     login_id: String,
     updated: Instant,
-    sequence: u64,
-    elapsed_ms: Option<u64>,
+    sequence: Option<imu_nav_protocol::Sequence>,
+    elapsed_ms: Option<imu_nav_types::ElapsedMs>,
     samples: watch::Sender<Option<Arc<Published>>>,
     slots: Arc<Semaphore>,
     route: Option<Arc<MirrorRoute>>,
@@ -176,11 +176,11 @@ struct Session {
 #[derive(Default)]
 pub(crate) struct LivePositionHub {
     config: OnceLock<LivePositionConfig>,
-    sessions: Mutex<HashMap<i64, Session>>,
+    sessions: Mutex<HashMap<crate::AccountId, Session>>,
 }
 
 impl LivePositionHub {
-    fn stop_login(&self, account: i64, login_id: &str) {
+    fn stop_login(&self, account: crate::AccountId, login_id: &str) {
         let mut sessions = self.sessions.lock().expect("live session lock");
         if sessions
             .get(&account)
@@ -191,7 +191,7 @@ impl LivePositionHub {
         }
     }
 
-    pub(crate) fn stop(&self, account: i64) {
+    pub(crate) fn stop(&self, account: crate::AccountId) {
         if let Some(session) = self
             .sessions
             .lock()
@@ -294,7 +294,7 @@ struct ReceiverInfo {
     navigation_version: u8,
 }
 
-fn receiver_info(state: &AppState, account: i64) -> Result<ReceiverInfo, ApiError> {
+fn receiver_info(state: &AppState, account: crate::AccountId) -> Result<ReceiverInfo, ApiError> {
     let config = state
         .live_position
         .config
@@ -329,7 +329,10 @@ async fn capability(
     receiver_info(&state, account.id).map(Json)
 }
 
-async fn authorized(state: &AppState, headers: &HeaderMap) -> Result<(i64, String), ApiError> {
+async fn authorized(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<(crate::AccountId, String), ApiError> {
     let (account, session) = auth::bearer_account_session(state, headers).await?;
     if !eligible(state, account.id, &session).await? {
         state.live_position.stop_login(account.id, &session);
@@ -339,7 +342,11 @@ async fn authorized(state: &AppState, headers: &HeaderMap) -> Result<(i64, Strin
     Ok((account.id, session))
 }
 
-async fn eligible(state: &AppState, account: i64, session: &str) -> Result<bool, ApiError> {
+async fn eligible(
+    state: &AppState,
+    account: crate::AccountId,
+    session: &str,
+) -> Result<bool, ApiError> {
     let store = state.store.clone();
     let session = session.to_owned();
     let version = state
@@ -400,7 +407,7 @@ async fn start(
             id: id.clone(),
             login_id,
             updated: Instant::now(),
-            sequence: 0,
+            sequence: None,
             elapsed_ms: None,
             samples,
             slots: Arc::new(Semaphore::new(4)),
@@ -509,14 +516,16 @@ async fn publish_sample(
         .get_mut(&account)
         .filter(|session| session.id == id && session.login_id == login_id)
         .ok_or(ApiError(StatusCode::NOT_FOUND, "LIVE_SESSION_NOT_FOUND"))?;
-    if sample.sequence <= session.sequence
+    if session
+        .sequence
+        .is_some_and(|previous| sample.sequence <= previous)
         || session
             .elapsed_ms
             .is_some_and(|elapsed| sample.elapsed_ms <= elapsed)
     {
         return Err(ApiError(StatusCode::CONFLICT, "LIVE_SAMPLE_ORDER"));
     }
-    if session.sequence > 0 && session.updated.elapsed() < Duration::from_millis(250) {
+    if session.sequence.is_some() && session.updated.elapsed() < Duration::from_millis(250) {
         return Err(ApiError(StatusCode::TOO_MANY_REQUESTS, "LIVE_RATE_LIMIT"));
     }
     if let Some(revision) = guidance
@@ -536,7 +545,7 @@ async fn publish_sample(
     {
         session.route = None;
     }
-    session.sequence = sample.sequence;
+    session.sequence = Some(sample.sequence);
     session.elapsed_ms = Some(sample.elapsed_ms);
     session.updated = Instant::now();
     session.samples.send_replace(Some(Arc::new(Published {
@@ -598,12 +607,12 @@ async fn accept_receivers(listener: TcpListener, state: AppState, receiver: Live
 async fn stream(
     mut socket: TcpStream,
     state: AppState,
-    account: i64,
+    account: crate::AccountId,
     login_id: String,
     mut samples: watch::Receiver<Option<Arc<Published>>>,
 ) {
     let mut interval = tokio::time::interval(AUTH_INTERVAL);
-    let mut last_sequence = 0;
+    let mut last_sequence = None;
     let mut mirror = false;
     let mut request = Vec::new();
     let mut request_byte = [0u8; 1];
@@ -625,10 +634,13 @@ async fn stream(
         let Some(current) = current.filter(|sample| sample.received.elapsed() < SAMPLE_TTL) else {
             break;
         };
-        if current.sample.sequence != last_sequence {
+        if Some(current.sample.sequence) != last_sequence {
             let bytes = if mirror {
-                let age = current.sample.age_ms
-                    + u64::try_from(current.received.elapsed().as_millis()).unwrap_or(5000);
+                let age = imu_nav_types::DurationMs::new(
+                    current.sample.age_ms.get()
+                        + i64::try_from(current.received.elapsed().as_millis()).unwrap_or(5000),
+                )
+                .expect("sample age is bounded by its TTL");
                 let frame = Frame::State {
                     version: VERSION,
                     state: Box::new(imu_nav_protocol::State {
@@ -650,7 +662,7 @@ async fn stream(
             if !write_frame(&mut socket, &bytes).await {
                 break;
             }
-            last_sequence = current.sample.sequence;
+            last_sequence = Some(current.sample.sequence);
         }
         if mirror
             && let Some(route) = &current.route
@@ -682,7 +694,7 @@ async fn stream(
                     let Ok(hello) = imu_nav_protocol::encode(&Frame::Hello { version: VERSION }) else { break; };
                     if !write_frame(&mut socket, &hello).await { break; }
                     mirror = true;
-                    last_sequence = 0;
+                    last_sequence = None;
                 }
             }
         }

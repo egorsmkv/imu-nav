@@ -78,8 +78,10 @@ impl NavigationEstimator {
         if self.state.motion_control.is_some()
             || !(MIN_SPEED_MPS..=MAX_SPEED_MPS).contains(&estimate.speed_mps)
             || estimate.position_sigma_m() > MAX_POSITION_SIGMA_M
-            || (self.state.last_gps_position_ms >= 0
-                && now_ms - self.state.last_gps_position_ms <= GPS_FRESH_MS)
+            || self
+                .state
+                .last_gps_position_ms
+                .is_some_and(|last| now_ms - last.get() <= GPS_FRESH_MS)
             || self
                 .state
                 .turn_state

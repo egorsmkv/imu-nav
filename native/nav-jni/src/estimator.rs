@@ -1,9 +1,11 @@
 //! JNI exports for estimator.
 
+use imu_nav_types::handles::{self, RawHandleMap};
+
 use super::{
     Arc, AssertUnwindSafe, ERROR_INTERNAL, ERROR_INVALID_HANDLE, EstimatorTravelMode, GeoPoint,
     GpsObservation, InitialEstimate, JClass, JDoubleArray, JLongArray, JNIEnv, MotionObservation,
-    NEXT_HANDLE, NavigationEstimator, NetworkObservation, OK, ObservationTrust, Ordering, REJECTED,
+    NEXT_HANDLE, NavigationEstimator, NetworkObservation, OK, ObservationTrust, REJECTED,
     TurnObservation, WalkingObservation, catch_unwind, error_code, estimators, guarded_code,
     jdouble, jdoubleArray, jint, jlong, new_double_array, optional, ptr, routes, tick_values,
     with_estimator,
@@ -27,7 +29,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNavigationEstimator_
             .ok()?;
         let route = {
             let registry = routes().lock().ok()?;
-            Arc::clone(registry.get(&route_handle)?)
+            Arc::clone(registry.get_raw(&route_handle)?)
         };
         let travel_mode = match mode {
             0 => EstimatorTravelMode::Car,
@@ -47,12 +49,9 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNavigationEstimator_
             now_ms,
         )
         .ok()?;
-        let handle = NEXT_HANDLE.fetch_add(1, Ordering::Relaxed);
-        if handle <= 0 {
-            return None;
-        }
+        let handle = NEXT_HANDLE.next::<handles::Estimator>().ok()?;
         estimators().lock().ok()?.insert(handle, estimator);
-        Some(handle)
+        Some(handle.raw())
     }))
     .ok()
     .flatten()
@@ -69,7 +68,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNavigationEstimator_
         let Ok(mut registry) = estimators().lock() else {
             return ERROR_INTERNAL;
         };
-        if registry.remove(&handle).is_some() {
+        if registry.remove_raw(&handle).is_some() {
             OK
         } else {
             ERROR_INVALID_HANDLE
@@ -131,7 +130,7 @@ pub extern "system" fn Java_org_imunav_app_nativecore_NativeNavigationEstimator_
             let Ok(registry) = routes().lock() else {
                 return ERROR_INTERNAL;
             };
-            let Some(route) = registry.get(&route_handle) else {
+            let Some(route) = registry.get_raw(&route_handle) else {
                 return ERROR_INVALID_HANDLE;
             };
             Arc::clone(route)

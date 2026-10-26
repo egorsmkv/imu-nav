@@ -274,10 +274,10 @@ async fn public_exports_page_past_512_rows_without_changing_the_wire_format() ->
         .map(|cid| CellTower {
             key: CellKey {
                 radio: Radio::Lte,
-                mcc: 255,
-                mnc: 1,
-                area: 100,
-                cid,
+                mcc: imu_nav_cell_server::Mcc::new(255).unwrap(),
+                mnc: imu_nav_cell_server::Mnc::new(1).unwrap(),
+                area: imu_nav_cell_server::CellArea::new(100).unwrap(),
+                cid: imu_nav_cell_server::CellId::new(cid).unwrap(),
             },
             lat: 50.45,
             lon: 30.52,
@@ -667,10 +667,10 @@ fn tower(lat: f64) -> CellTower {
     CellTower {
         key: CellKey {
             radio: Radio::Lte,
-            mcc: 255,
-            mnc: 1,
-            area: 1864,
-            cid: 42,
+            mcc: imu_nav_cell_server::Mcc::new(255).unwrap(),
+            mnc: imu_nav_cell_server::Mnc::new(1).unwrap(),
+            area: imu_nav_cell_server::CellArea::new(1864).unwrap(),
+            cid: imu_nav_cell_server::CellId::new(42).unwrap(),
         },
         lat,
         lon: 30.5,
@@ -1010,7 +1010,7 @@ async fn browser_account_pages_show_and_delete_only_owned_contributions() -> Res
     let extra_towers = (0..100)
         .map(|index| {
             let mut cell = tower(50.4);
-            cell.key.cid = 1_000 + index;
+            cell.key.cid = imu_nav_cell_server::CellId::new(1_000 + index).unwrap();
             Consensus {
                 tower: cell,
                 devices: 2,
@@ -1584,7 +1584,7 @@ async fn admin_pages_use_session_and_render_controls() -> Result<()> {
     assert_eq!(correction.status(), StatusCode::SEE_OTHER);
     let seed_store = CellStore::open(server.database.path())?;
     let mut seeded = tower(50.45);
-    seeded.key.cid = 99;
+    seeded.key.cid = imu_nav_cell_server::CellId::new(99).unwrap();
     seed_store.seed(&[seeded], 10, &Policy::default())?;
     let observation = client
         .post(format!(
@@ -1877,10 +1877,10 @@ async fn admin_policy_import_export_and_account_actions_work() -> Result<()> {
         if store
             .consensus(&CellKey {
                 radio: Radio::Lte,
-                mcc: 255,
-                mnc: 1,
-                area: 1864,
-                cid: 99,
+                mcc: imu_nav_cell_server::Mcc::new(255).unwrap(),
+                mnc: imu_nav_cell_server::Mnc::new(1).unwrap(),
+                area: imu_nav_cell_server::CellArea::new(1864).unwrap(),
+                cid: imu_nav_cell_server::CellId::new(99).unwrap(),
             })?
             .is_some()
         {
@@ -2066,7 +2066,7 @@ async fn invalid_filters_keys_and_oversized_uploads_are_rejected() -> Result<()>
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
     let mut second_tower = tower(50.4);
-    second_tower.key.cid = 43;
+    second_tower.key.cid = imu_nav_cell_server::CellId::new(43).unwrap();
     let body = encode_towers(&[
         Consensus {
             tower: tower(50.4),

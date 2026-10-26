@@ -13,6 +13,7 @@ rust-version.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+imu-nav-types = { path = "../nav-types" }
 jni = { version = "0.21", default-features = false }
 
 [dev-dependencies]

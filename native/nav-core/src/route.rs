@@ -20,11 +20,42 @@ pub struct GeoPoint {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Projection {
+struct KernelProjection {
     pub position_m: f64,
     pub offset_m: f64,
     pub segment: usize,
     pub point: GeoPoint,
+}
+
+/// Checked projection output; route position and off-route distance are distinct quantities.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Projection {
+    position: crate::RoutePosition,
+    offset: crate::Distance,
+    pub segment: usize,
+    pub point: GeoPoint,
+}
+impl Projection {
+    #[must_use]
+    pub const fn position(self) -> crate::RoutePosition {
+        self.position
+    }
+    #[must_use]
+    pub const fn offset(self) -> crate::Distance {
+        self.offset
+    }
+}
+impl TryFrom<KernelProjection> for Projection {
+    type Error = RouteError;
+    fn try_from(raw: KernelProjection) -> Result<Self, Self::Error> {
+        Ok(Self {
+            position: crate::RoutePosition::new(raw.position_m)
+                .map_err(|_| RouteError::InvalidSearch)?,
+            offset: crate::Distance::new(raw.offset_m).map_err(|_| RouteError::InvalidSearch)?,
+            segment: raw.segment,
+            point: raw.point,
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -173,8 +204,7 @@ impl RouteGeometry {
         ahead_m: f64,
         global_if_farther_m: f64,
     ) -> Result<Projection, RouteError> {
-        if !point.latitude_deg.is_finite()
-            || !point.longitude_deg.is_finite()
+        if imu_nav_types::Coordinate::new(point.latitude_deg, point.longitude_deg).is_err()
             || !around_m.is_finite()
             || !behind_m.is_finite()
             || !ahead_m.is_finite()
@@ -191,19 +221,12 @@ impl RouteGeometry {
             (around_m + ahead_m).clamp(0.0, self.length_m()),
         );
         if local.offset_m > global_if_farther_m {
-            let global = if (-90.0..=90.0).contains(&point.latitude_deg)
-                && (-180.0..=180.0).contains(&point.longitude_deg)
-            {
-                self.project_indexed::<false>(point, longitude_scale(point))?
-            } else {
-                // Finite out-of-world queries cannot use geographic index bounds.
-                self.project_range(point, 0, self.points.len() - 2)
-            };
+            let global = self.project_indexed::<false>(point, longitude_scale(point))?;
             if global.offset_m < local.offset_m {
-                return Ok(global);
+                return global.try_into();
             }
         }
-        Ok(local)
+        local.try_into()
     }
 
     #[must_use]
@@ -284,7 +307,7 @@ impl RouteGeometry {
                 }
             }
         }
-        Ok(Some(best))
+        Ok(Some(best.try_into()?))
     }
 
     /// Seed a global search, then reject only blocks that cannot beat its current best.
@@ -293,7 +316,7 @@ impl RouteGeometry {
         &self,
         point: GeoPoint,
         longitude_scale: f64,
-    ) -> Result<Projection, RouteError> {
+    ) -> Result<KernelProjection, RouteError> {
         let seed_block = self
             .blocks
             .iter()
@@ -339,11 +362,11 @@ impl RouteGeometry {
     }
 
     /// Clip endpoint segments as well as segment indices to the permitted arc lengths.
-    fn project_window(&self, point: GeoPoint, start_m: f64, end_m: f64) -> Projection {
+    fn project_window(&self, point: GeoPoint, start_m: f64, end_m: f64) -> KernelProjection {
         let scale = longitude_scale(point);
         let from = self.segment_at(start_m);
         let to = self.segment_at(end_m);
-        let mut best = Projection {
+        let mut best = KernelProjection {
             position_m: start_m,
             offset_m: f64::MAX,
             segment: from,
@@ -383,7 +406,8 @@ impl RouteGeometry {
         best
     }
 
-    fn project_range(&self, point: GeoPoint, from: usize, to: usize) -> Projection {
+    #[cfg(test)]
+    fn project_range(&self, point: GeoPoint, from: usize, to: usize) -> KernelProjection {
         self.project_range_scaled::<false>(point, from, to, longitude_scale(point), f64::MAX)
     }
 
@@ -395,8 +419,8 @@ impl RouteGeometry {
         to: usize,
         metres_per_degree_longitude: f64,
         max_offset_m: f64,
-    ) -> Projection {
-        let mut best = Projection {
+    ) -> KernelProjection {
+        let mut best = KernelProjection {
             position_m: 0.0,
             offset_m: f64::MAX,
             segment: from,
@@ -454,7 +478,7 @@ impl RouteGeometry {
             }
             let offset_m = closest_x.hypot(closest_y);
             if offset_m < best.offset_m {
-                best = Projection {
+                best = KernelProjection {
                     position_m: self.cumulative_m[index]
                         + fraction * (self.cumulative_m[index + 1] - self.cumulative_m[index]),
                     offset_m,

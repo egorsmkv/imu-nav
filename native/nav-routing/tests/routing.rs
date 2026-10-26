@@ -65,7 +65,10 @@ fn turn_restriction_prevents_direct_turn() {
 
 #[test]
 fn mmap_ch_matches_independent_dijkstra_on_both_profiles() {
-    use imu_nav_routing::{query, storage::NONE};
+    use imu_nav_routing::{
+        ids::{Direction, VertexId},
+        query,
+    };
     use std::{cmp::Reverse, collections::BinaryHeap};
     let tmp = tempfile::tempdir().unwrap();
     let osm = tmp.path().join("test.osm");
@@ -77,13 +80,16 @@ fn mmap_ch_matches_independent_dijkstra_on_both_profiles() {
         let mut original = vec![vec![]; network.graph_count];
         for dir in 0..2 {
             for tail in 0..network.graph_count {
-                for index in network.outgoing(dir, u32::try_from(tail).unwrap()) {
-                    let arc = network.arc(dir, index);
-                    if arc.skipped == NONE {
+                for index in network.outgoing(
+                    Direction::ALL[dir],
+                    VertexId::new(u32::try_from(tail).unwrap()),
+                ) {
+                    let arc = network.arc(Direction::ALL[dir], index);
+                    if arc.skipped.is_none() {
                         let (from, to) = if dir == 0 {
-                            (tail, arc.head as usize)
+                            (tail, arc.head.get() as usize)
                         } else {
-                            (arc.head as usize, tail)
+                            (arc.head.get() as usize, tail)
                         };
                         original[from].push((to, arc.weight));
                     }
@@ -108,8 +114,8 @@ fn mmap_ch_matches_independent_dijkstra_on_both_profiles() {
             for (target, &expected) in distances.iter().enumerate() {
                 let actual = query::path(
                     &network,
-                    u32::try_from(source).unwrap(),
-                    u32::try_from(target).unwrap(),
+                    VertexId::new(u32::try_from(source).unwrap()),
+                    VertexId::new(u32::try_from(target).unwrap()),
                     &AtomicBool::new(false),
                 )
                 .unwrap();
@@ -121,9 +127,9 @@ fn mmap_ch_matches_independent_dijkstra_on_both_profiles() {
                     let actual_cost: u64 = path
                         .windows(2)
                         .map(|pair| {
-                            original[pair[0] as usize]
+                            original[pair[0].get() as usize]
                                 .iter()
-                                .filter(|(to, _)| *to == pair[1] as usize)
+                                .filter(|(to, _)| *to == pair[1].get() as usize)
                                 .map(|(_, cost)| cost)
                                 .min()
                                 .unwrap()
@@ -325,10 +331,10 @@ fn compact_pack_shares_geometry_and_preserves_point_order_and_precision() {
     assert_eq!(read(40), 0); // No absent-elevation array.
     let pack = imu_nav_routing::pack::Pack::open(&output).unwrap();
     for profile in ["car", "foot"] {
-        let network = pack.profile(profile).unwrap();
+        let network = pack.profile(profile.parse().unwrap()).unwrap();
         assert_eq!(network.count, 2);
-        let a = network.state(0);
-        let b = network.state(1);
+        let a = network.state(imu_nav_routing::ids::StateId::new(0));
+        let b = network.state(imu_nav_routing::ids::StateId::new(1));
         assert_eq!(a.geometry, b.geometry);
         assert_eq!(a.point_count, 3);
         for index in 0..3 {
@@ -435,8 +441,18 @@ fn trusted_open_skips_record_scan_but_keeps_layout_checks_and_routes() {
     let full = imu_nav_routing::pack::Pack::open(&output).unwrap();
     let trusted = imu_nav_routing::pack::Pack::open_trusted(&output).unwrap();
     for profile in ["car", "foot"] {
-        let expected = route(full.profile(profile).unwrap(), &request, &flag).unwrap();
-        let actual = route(trusted.profile(profile).unwrap(), &request, &flag).unwrap();
+        let expected = route(
+            full.profile(profile.parse().unwrap()).unwrap(),
+            &request,
+            &flag,
+        )
+        .unwrap();
+        let actual = route(
+            trusted.profile(profile.parse().unwrap()).unwrap(),
+            &request,
+            &flag,
+        )
+        .unwrap();
         assert_eq!(expected.geometry, actual.geometry);
         assert_eq!(expected.duration_s, actual.duration_s);
     }
@@ -475,16 +491,16 @@ fn single_mode_packs_trim_shared_data_and_preserve_routes_and_search() {
         assert_eq!(info["profiles"], serde_json::json!([profile]));
         let selected = imu_nav_routing::pack::Pack::open(&output).unwrap();
         let other = if profile == "car" { "foot" } else { "car" };
-        assert!(selected.profile(other).is_err());
+        assert!(selected.profile(other.parse().unwrap()).is_err());
         assert!(!output.join(format!("{other}.routing")).exists());
         let expected = route(
-            original.profile(profile).unwrap(),
+            original.profile(profile.parse().unwrap()).unwrap(),
             &query,
             &AtomicBool::new(false),
         )
         .unwrap();
         let actual = route(
-            selected.profile(profile).unwrap(),
+            selected.profile(profile.parse().unwrap()).unwrap(),
             &query,
             &AtomicBool::new(false),
         )
@@ -512,7 +528,7 @@ fn single_mode_packs_trim_shared_data_and_preserve_routes_and_search() {
         }
         let source_bytes = std::fs::read(combined.join(format!("{profile}.routing"))).unwrap();
         let selected_bytes = std::fs::read(output.join(format!("{profile}.routing"))).unwrap();
-        let records_end = 72 + original.profile(profile).unwrap().count * 40;
+        let records_end = 72 + original.profile(profile.parse().unwrap()).unwrap().count * 40;
         assert_eq!(source_bytes[..72], selected_bytes[..72]);
         assert_eq!(source_bytes[records_end..], selected_bytes[records_end..]);
         assert!(builder::subset::create(&combined, &output, profile).is_err());

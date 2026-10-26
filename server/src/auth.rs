@@ -41,7 +41,7 @@ pub struct MailConfig {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Account {
-    pub id: i64,
+    pub id: crate::AccountId,
     pub email: String,
     pub admin: bool,
     pub email_verified: bool,
@@ -368,7 +368,7 @@ pub(crate) async fn admin_account(
 // Retain credential digests, never raw tokens or passwords. Do not log or derive Debug for this
 // authorization snapshot.
 pub(crate) struct AdminStreamAuthorization {
-    account_id: i64,
+    account_id: crate::AccountId,
     credential: AdminStreamCredential,
 }
 
@@ -538,8 +538,11 @@ pub(crate) fn register_account_with_verification(
         "INSERT OR IGNORE INTO users(email,password_hash,admin,email_verified) VALUES (?1,?2,0,?3)",
         params![email, hash, verified],
     )?;
-    Ok((count > 0).then(|| Account {
-        id: connection.last_insert_rowid(),
+    if count == 0 {
+        return Ok(None);
+    }
+    Ok(Some(Account {
+        id: crate::AccountId::new(connection.last_insert_rowid())?,
         email: email.to_owned(),
         admin: false,
         email_verified: verified,
@@ -549,7 +552,7 @@ pub(crate) fn register_account_with_verification(
 
 pub(crate) fn verify_account_password(
     store: &CellStore,
-    account_id: i64,
+    account_id: crate::AccountId,
     password: &str,
 ) -> anyhow::Result<bool> {
     let hash: Option<String> = store
@@ -565,7 +568,7 @@ pub(crate) fn verify_account_password(
 
 pub(crate) fn change_account_password(
     store: &CellStore,
-    account_id: i64,
+    account_id: crate::AccountId,
     current: &str,
     replacement: &str,
     keep_token: &str,
@@ -598,7 +601,7 @@ pub(crate) fn change_account_password(
 
 pub(crate) fn create_email_verification(
     store: &CellStore,
-    account_id: i64,
+    account_id: crate::AccountId,
     email: &str,
 ) -> anyhow::Result<Option<String>> {
     let mut connection = store.connection()?;
@@ -730,7 +733,10 @@ async fn register(
             tracing::error!(%error, "verification email failed");
         }
     }
-    tracing::info!(account_id = session.account.id, "API account registered");
+    tracing::info!(
+        account_id = session.account.id.get(),
+        "API account registered"
+    );
     Ok(Json(session))
 }
 
@@ -751,7 +757,10 @@ async fn login(
     })
     .await?
     .ok_or(ApiError(StatusCode::UNAUTHORIZED, "INVALID_CREDENTIALS"))?;
-    tracing::info!(account_id = session.account.id, "API account signed in");
+    tracing::info!(
+        account_id = session.account.id.get(),
+        "API account signed in"
+    );
     Ok(Json(session))
 }
 

@@ -1,6 +1,47 @@
 use super::*;
 
 #[test]
+fn intrinsic_tower_validation_is_independent_of_publication_policy() {
+    let tower = CellTower {
+        key: CellKey {
+            radio: Radio::Nr,
+            mcc: crate::Mcc::new(255).unwrap(),
+            mnc: crate::Mnc::new(0).unwrap(),
+            area: crate::CellArea::new(0).unwrap(),
+            cid: crate::CellId::new(0).unwrap(),
+        },
+        lat: 90.0,
+        lon: 180.0,
+        range_m: 1.0,
+        samples: 1,
+    };
+    assert!(tower.validated().is_ok());
+    assert!(!plausible(
+        &tower,
+        &Policy {
+            ukraine_only: true,
+            ..Policy::default()
+        }
+    ));
+    for invalid in [
+        CellTower {
+            lat: f64::NAN,
+            ..tower.clone()
+        },
+        CellTower {
+            range_m: f64::INFINITY,
+            ..tower.clone()
+        },
+        CellTower {
+            samples: 0,
+            ..tower
+        },
+    ] {
+        assert!(invalid.validated().is_err());
+    }
+}
+
+#[test]
 fn radio_parsing_is_ascii_case_insensitive_and_does_not_trim_input() {
     for (name, expected) in [
         ("gSm", Radio::Gsm),

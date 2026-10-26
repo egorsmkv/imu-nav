@@ -61,6 +61,7 @@ val buildSearchNative = tasks.register<Exec>("buildSearchNative") {
     environment("CARGO_TARGET_DIR", searchNativeTarget.get())
     inputs.files(
         rootProject.fileTree("native/nav-search"),
+        rootProject.fileTree("native/nav-types"),
         rootProject.fileTree("native/nav-routing"),
         rootProject.file("native/Cargo.lock"),
         rootProject.file("native/Cargo.toml"),

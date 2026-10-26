@@ -7,20 +7,21 @@
     clippy::cast_precision_loss
 )]
 use crate::file_data::FileData;
+use crate::ids::{ArcIndex, Direction, GeometryId, NameId, NodeId, StateId, VertexId};
 use crate::shared::{REVERSED, Shared, section};
 use crate::{Result, geo::Point};
 use std::{path::Path, sync::Arc as Owner};
-pub const NONE: u32 = u32::MAX;
+pub(crate) const NONE: u32 = u32::MAX;
 pub const STATE_BYTES: usize = 40;
 pub const MAGIC: &[u8; 8] = b"IMURT002";
 #[derive(Clone, Copy, Debug)]
 pub struct State {
-    pub from: u32,
-    pub to: u32,
-    pub geometry: u32,
+    pub from: NodeId,
+    pub to: NodeId,
+    pub geometry: GeometryId,
     pub point_start: usize,
     pub point_count: u32,
-    pub name_id: u32,
+    pub name_id: NameId,
     pub speed: f32,
     pub maxspeed: u16,
     pub flags: u16,
@@ -29,8 +30,8 @@ pub struct State {
 }
 #[derive(Clone, Copy, Debug)]
 pub struct Arc {
-    pub head: u32,
-    pub skipped: u32,
+    pub head: VertexId,
+    pub skipped: Option<VertexId>,
     pub weight: u64,
 }
 /// Each profile is immutable while installed; the owner prevents replacement during reads.
@@ -152,17 +153,21 @@ impl Network {
     #[must_use]
     /// # Panics
     /// The ID/range must belong to this validated network.
-    pub fn state(&self, id: u32) -> State {
-        let at = self.states + id as usize * STATE_BYTES;
-        let geometry = self.u32(at + 8);
+    pub fn state(&self, id: StateId) -> State {
+        assert!(
+            (id.get() as usize) < self.count,
+            "road state outside network"
+        );
+        let at = self.states + id.get() as usize * STATE_BYTES;
+        let geometry = GeometryId::new(self.u32(at + 8));
         let (point_start, point_count) = self.shared.geometry(geometry);
         State {
-            from: self.u32(at),
-            to: self.u32(at + 4),
+            from: NodeId::new(self.u32(at)),
+            to: NodeId::new(self.u32(at + 4)),
             geometry,
             point_start,
             point_count,
-            name_id: self.u32(at + 12),
+            name_id: NameId::new(self.u32(at + 12)),
             speed: f32::from_bits(self.u32(at + 16)),
             maxspeed: u16::from_le_bytes(self.data.bytes::<2>(at + 20)),
             flags: u16::from_le_bytes(self.data.bytes::<2>(at + 22)),
@@ -190,36 +195,45 @@ impl Network {
     #[must_use]
     /// # Panics
     /// The ID/range must belong to this validated network.
-    pub fn arc(&self, dir: usize, index: usize) -> Arc {
-        let at = self.arcs[dir] + index * (8 + self.weight_widths[dir]);
+    pub fn arc(&self, direction: Direction, index: ArcIndex) -> Arc {
+        let dir = direction.index();
+        assert!(index.get() < self.arc_counts[dir], "arc outside network");
+        let at = self.arcs[dir] + index.get() * (8 + self.weight_widths[dir]);
+        let skipped = self.u32(at + 4);
         Arc {
-            head: self.u32(at),
-            skipped: self.u32(at + 4),
+            head: VertexId::new(self.u32(at)),
+            skipped: (skipped != NONE).then(|| VertexId::new(skipped)),
             weight: self.integer(at + 8, self.weight_widths[dir]),
         }
     }
-    #[must_use]
     /// # Panics
     /// The ID/range must belong to this validated network.
-    pub fn outgoing(&self, dir: usize, id: u32) -> std::ops::Range<usize> {
-        self.integer(
+    pub fn outgoing(&self, direction: Direction, id: VertexId) -> impl Iterator<Item = ArcIndex> {
+        let dir = direction.index();
+        assert!(
+            (id.get() as usize) < self.graph_count,
+            "vertex outside network"
+        );
+        let id = id.get();
+        (self.integer(
             self.offsets[dir] + id as usize * self.offset_widths[dir],
             self.offset_widths[dir],
         ) as usize
             ..self.integer(
                 self.offsets[dir] + (id as usize + 1) * self.offset_widths[dir],
                 self.offset_widths[dir],
-            ) as usize
+            ) as usize)
+            .map(ArcIndex::new)
     }
     #[must_use]
-    pub fn child(&self, dir: usize, tail: u32, head: u32) -> Option<Arc> {
+    pub fn child(&self, dir: Direction, tail: VertexId, head: VertexId) -> Option<Arc> {
         self.outgoing(dir, tail)
             .map(|i| self.arc(dir, i))
             .filter(|a| a.head == head)
             .min_by_key(|a| a.weight)
     }
-    #[must_use]
-    pub fn from_node(&self, node: u32) -> std::ops::Range<u32> {
+    pub fn from_node(&self, node: NodeId) -> impl Iterator<Item = StateId> + '_ {
+        let node = node.get();
         let bound = |upper: bool| {
             let mut lo = 0u32;
             let mut hi = self.count as u32;
@@ -234,9 +248,9 @@ impl Network {
             }
             lo
         };
-        bound(false)..bound(true)
+        (bound(false)..bound(true)).map(StateId::new)
     }
-    pub fn cell(&self, key: u64) -> impl Iterator<Item = u32> + '_ {
+    pub fn cell(&self, key: u64) -> impl Iterator<Item = StateId> + '_ {
         let mut lo = 0;
         let mut hi = self.grid_count;
         while lo < hi {
@@ -253,7 +267,7 @@ impl Network {
         } else {
             0..0
         };
-        range.map(|i| self.u32(self.postings + i * 4))
+        range.map(|i| StateId::new(self.u32(self.postings + i * 4)))
     }
     fn validate(&self) -> Result<()> {
         for id in 0..self.count as u32 {
@@ -263,8 +277,8 @@ impl Network {
             {
                 return Err("invalid shared reference".into());
             }
-            let s = self.state(id);
-            if id > 0 && self.u32(self.states + (id as usize - 1) * STATE_BYTES) > s.from {
+            let s = self.state(StateId::new(id));
+            if id > 0 && self.u32(self.states + (id as usize - 1) * STATE_BYTES) > s.from.get() {
                 return Err("unsorted road states".into());
             }
             if !(s.speed > 0. && s.speed.is_finite() && s.distance >= 0. && s.distance.is_finite())
@@ -323,16 +337,18 @@ impl Network {
                 return Err("invalid hierarchy length".into());
             }
             for tail in 0..self.graph_count as u32 {
-                for index in self.outgoing(dir, tail) {
-                    let arc = self.arc(dir, index);
-                    if arc.head as usize >= self.graph_count
-                        || arc.head == tail
-                        || arc.skipped != NONE && arc.skipped as usize >= self.graph_count
+                for index in self.outgoing(Direction::ALL[dir], VertexId::new(tail)) {
+                    let arc = self.arc(Direction::ALL[dir], index);
+                    if arc.head.get() as usize >= self.graph_count
+                        || arc.head.get() == tail
+                        || arc
+                            .skipped
+                            .is_some_and(|id| id.get() as usize >= self.graph_count)
                         || arc.weight > 1_000_000_000_000
                     {
                         return Err("invalid hierarchy arc".into());
                     }
-                    indegree[arc.head as usize] = indegree[arc.head as usize]
+                    indegree[arc.head.get() as usize] = indegree[arc.head.get() as usize]
                         .checked_add(1)
                         .ok_or("excessive degree")?;
                 }
@@ -348,8 +364,8 @@ impl Network {
         while let Some(node) = queue.pop_front() {
             visited += 1;
             for dir in 0..2 {
-                for i in self.outgoing(dir, node) {
-                    let head = self.arc(dir, i).head as usize;
+                for i in self.outgoing(Direction::ALL[dir], VertexId::new(node)) {
+                    let head = self.arc(Direction::ALL[dir], i).head.get() as usize;
                     indegree[head] -= 1;
                     if indegree[head] == 0 {
                         queue.push_back(head as u32);
@@ -362,31 +378,32 @@ impl Network {
         }
         for dir in 0..2 {
             for tail in 0..self.graph_count as u32 {
-                for index in self.outgoing(dir, tail) {
-                    let a = self.arc(dir, index);
-                    if a.skipped == NONE {
+                for index in self.outgoing(Direction::ALL[dir], VertexId::new(tail)) {
+                    let a = self.arc(Direction::ALL[dir], index);
+                    if a.skipped.is_none() {
                         let (from, to) = if dir == 0 {
-                            (tail, a.head)
+                            (VertexId::new(tail), a.head)
                         } else {
-                            (a.head, tail)
+                            (a.head, VertexId::new(tail))
                         };
                         if if self.node_based {
-                            !self.from_node(from).any(|id| {
+                            !self.from_node(NodeId::new(from.get())).any(|id| {
                                 let road = self.state(id);
-                                road.to == to && road.weight == a.weight
+                                road.to.get() == to.get() && road.weight == a.weight
                             })
                         } else {
-                            self.state(from).to != self.state(to).from
-                                || a.weight < self.state(to).weight
+                            self.state(StateId::new(from.get())).to
+                                != self.state(StateId::new(to.get())).from
+                                || a.weight < self.state(StateId::new(to.get())).weight
                         } {
                             return Err("disconnected transition".into());
                         }
-                    } else {
+                    } else if let Some(middle) = a.skipped {
                         let left = self
-                            .child(1 - dir, a.skipped, tail)
+                            .child(Direction::ALL[dir].opposite(), middle, VertexId::new(tail))
                             .ok_or("missing shortcut child")?;
                         let right = self
-                            .child(dir, a.skipped, a.head)
+                            .child(Direction::ALL[dir], middle, a.head)
                             .ok_or("missing shortcut child")?;
                         if left.weight.checked_add(right.weight) != Some(a.weight) {
                             return Err("invalid shortcut cost".into());

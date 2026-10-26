@@ -18,7 +18,7 @@ fn bounded_float(minimum: f64, maximum: f64) -> f64 {
 /// State preservation does not require an arithmetic history; all fields are symbolic.
 fn filter() -> RouteFilter {
     RouteFilter {
-        estimate: Estimate {
+        state: FilterEstimate::try_from(Estimate {
             position_m: bounded_float(-1_000_000.0, 1_000_000.0),
             speed_mps: bounded_float(0.0, 60.0),
             covariance: Covariance2 {
@@ -27,7 +27,8 @@ fn filter() -> RouteFilter {
                 speed: 4.0,
             },
             systematic_drift_m: bounded_float(0.0, 10_000.0),
-        },
+        })
+        .unwrap(),
     }
 }
 
@@ -165,7 +166,7 @@ fn anchor_and_reset_preserve_speed() {
     assert_eq!(after.covariance.speed, before.covariance.speed);
     assert_eq!(after.systematic_drift_m, 0.0);
     assert!(after.covariance.position >= MIN_VARIANCE);
-    filter.estimate = before;
+    filter.state = FilterEstimate::try_from(before).unwrap();
     filter.reset_systematic_drift();
     same_state(
         filter.estimate(),
@@ -181,7 +182,7 @@ fn anchor_and_reset_preserve_speed() {
 #[kani::unwind(2)]
 fn restore_prior_never_reduces_variance() {
     let mut filter = filter();
-    filter.estimate.covariance.speed = bounded_float(0.0625, 1_000_000.0);
+    filter.state.covariance.speed = bounded_float(0.0625, 1_000_000.0);
     let before = filter.estimate();
     let speed = bounded_float(0.0, 60.0);
     let sigma = bounded_float(0.0, 1000.0);
@@ -200,8 +201,8 @@ fn restore_prior_never_reduces_variance() {
 /// Fixed valid correlated covariance; integer measurements cover both gate outcomes.
 /// Avoid claiming unrestricted floating-point stability from these bounded corrections.
 fn coarse_correction(position: bool) {
-    let mut filter = RouteFilter::new(0.0, 0.0, 10.0, 2.0, 50.0).unwrap();
-    filter.estimate.covariance.position_speed = 2.0;
+    let mut filter = RouteFilter::from_raw(0.0, 0.0, 10.0, 2.0, 50.0).unwrap();
+    filter.state.covariance.position_speed = 2.0;
     let before = filter.estimate();
     let measurement: i16 = kani::any();
     kani::assume((-1000..=1000).contains(&measurement));
@@ -249,11 +250,11 @@ fn constructor_rejects_invalid_inputs() {
     kani::assume(field < 5);
     kani::assume(!value.is_finite() || (field >= 2 && value < 0.0));
     let result = match field {
-        0 => RouteFilter::new(value, 0.0, 1.0, 1.0, 0.0),
-        1 => RouteFilter::new(0.0, value, 1.0, 1.0, 0.0),
-        2 => RouteFilter::new(0.0, 0.0, value, 1.0, 0.0),
-        3 => RouteFilter::new(0.0, 0.0, 1.0, value, 0.0),
-        _ => RouteFilter::new(0.0, 0.0, 1.0, 1.0, value),
+        0 => RouteFilter::from_raw(value, 0.0, 1.0, 1.0, 0.0),
+        1 => RouteFilter::from_raw(0.0, value, 1.0, 1.0, 0.0),
+        2 => RouteFilter::from_raw(0.0, 0.0, value, 1.0, 0.0),
+        3 => RouteFilter::from_raw(0.0, 0.0, 1.0, value, 0.0),
+        _ => RouteFilter::from_raw(0.0, 0.0, 1.0, 1.0, value),
     };
     assert!(result.is_err());
     kani::cover!(result.is_err(), "rejected");
@@ -376,7 +377,7 @@ fn commit_is_atomic_and_finite() {
 #[kani::proof]
 #[kani::unwind(2)]
 fn constructor_success_is_finite() {
-    let result = RouteFilter::new(
+    let result = RouteFilter::from_raw(
         arbitrary_float(),
         arbitrary_float(),
         arbitrary_float(),
@@ -435,9 +436,9 @@ fn prediction_success_is_finite() {
     let speed = arbitrary_float();
     let drift = arbitrary_float();
     kani::assume(position.is_finite() && speed.is_finite() && drift.is_finite() && drift >= 0.0);
-    filter.estimate.position_m = position;
-    filter.estimate.speed_mps = speed;
-    filter.estimate.systematic_drift_m = drift;
+    filter.state.position = crate::RoutePosition::new(position).unwrap();
+    filter.state.velocity = crate::Velocity::new(speed).unwrap();
+    filter.state.systematic_drift = crate::Distance::new(drift).unwrap();
     let before = filter.estimate();
     let dt = if kani::any() { 1.0 } else { 5.0 };
     let result = filter.predict(dt, 1.0, 1.0);
@@ -451,8 +452,8 @@ fn prediction_success_is_finite() {
 
 /// All measurement/sigma bit patterns against the documented valid correlated fixture.
 fn measurement_success_is_finite(operation: u8) {
-    let mut filter = RouteFilter::new(10.0, 2.0, 10.0, 2.0, 5.0).unwrap();
-    filter.estimate.covariance.position_speed = 2.0;
+    let mut filter = RouteFilter::from_raw(10.0, 2.0, 10.0, 2.0, 5.0).unwrap();
+    filter.state.covariance.position_speed = 2.0;
     let before = filter.estimate();
     let measurement = arbitrary_float();
     let sigma = arbitrary_float();
@@ -502,7 +503,7 @@ fn coarse_speed_success_is_finite() {
 #[kani::proof]
 #[kani::unwind(2)]
 fn safety_radius_success_is_finite() {
-    let estimate = RouteFilter::new(0.0, 0.0, 2.0, 1.0, 5.0)
+    let estimate = RouteFilter::from_raw(0.0, 0.0, 2.0, 1.0, 5.0)
         .unwrap()
         .estimate();
     let result = estimate.safety_radius_m(arbitrary_float());

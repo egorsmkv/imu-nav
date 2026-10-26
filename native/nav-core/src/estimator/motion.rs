@@ -48,12 +48,13 @@ impl NavigationEstimator {
         if self.mode != TravelMode::Car || observation.network_moving {
             return self.state.release_motion();
         }
-        let fresh_gps = self.state.last_gps_speed_ms >= 0
-            && (0..GPS_SPEED_MAX_AGE_MS)
-                .contains(&now_ms.saturating_sub(self.state.last_gps_speed_ms));
-        let fresh_obd = self.state.last_vehicle_speed_ms >= 0
-            && (0..OBD_MAX_AGE_MS)
-                .contains(&now_ms.saturating_sub(self.state.last_vehicle_speed_ms));
+        let fresh_gps = self.state.last_gps_speed_ms.is_some_and(|last| {
+            (0..GPS_SPEED_MAX_AGE_MS).contains(&now_ms.saturating_sub(last.get()))
+        });
+        let fresh_obd = self
+            .state
+            .last_vehicle_speed_ms
+            .is_some_and(|last| (0..OBD_MAX_AGE_MS).contains(&now_ms.saturating_sub(last.get())));
         if fresh_gps || fresh_obd {
             return Ok(());
         }

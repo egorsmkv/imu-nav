@@ -93,12 +93,12 @@ fn stale_gate_cannot_rewind_anchor_or_expand_later_reachability() {
     for time in [-1, 0, 9_999, 10_000] {
         assert_eq!(tracker.gate(time, 50.0, 30.0), GateResult::Rejected);
         assert_eq!(
-            tracker.anchor.unwrap().time_s,
-            before.anchor.unwrap().time_s
+            tracker.anchor.unwrap().time_s.get(),
+            before.anchor.unwrap().time_s.get()
         );
         assert_eq!(
-            tracker.anchor.unwrap().position_m,
-            before.anchor.unwrap().position_m
+            tracker.anchor.unwrap().position_m.get(),
+            before.anchor.unwrap().position_m.get()
         );
         assert!(tracker.candidates.is_empty());
     }
@@ -113,8 +113,8 @@ fn stale_gate_cannot_reset_a_newer_reanchor_candidate() {
     for time in [9_000, 10_000] {
         assert_eq!(tracker.gate(time, 0.0, 30.0), GateResult::Rejected);
         assert_eq!(tracker.candidates.len(), 1);
-        assert_eq!(tracker.candidates[0].time_s, 10.0);
-        assert_eq!(tracker.candidates[0].position_m, 2_000.0);
+        assert_eq!(tracker.candidates[0].time_s.get(), 10.0);
+        assert_eq!(tracker.candidates[0].position_m.get(), 2_000.0);
     }
     assert_eq!(tracker.gate(22_000, 2_100.0, 30.0), GateResult::Reanchored);
 }
@@ -220,9 +220,9 @@ fn duplicate_and_invalid_samples_do_not_teach_speed_and_clear_removes_estimates(
     assert!(tracker.speed_estimate(100_000).is_none());
     assert!(tracker.strict_speed_estimate(100_000).is_none());
     let same_time = [Anchor {
-        time_s: 1.0,
-        position_m: 1.0,
-        accuracy_m: 1.0,
+        time_s: Seconds::new(1.0).unwrap(),
+        position_m: RoutePosition::new(1.0).unwrap(),
+        accuracy_m: PositionSigma::new(1.0).unwrap(),
     }; 2];
     assert_eq!(slope(&same_time), 0.0);
 }

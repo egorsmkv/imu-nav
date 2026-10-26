@@ -49,6 +49,12 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(self.selected('native/Cargo.lock'), {'native', 'kotlin', 'fdroid', 'android', 'routing', 'fdroidserver'})
         self.assertEqual(self.selected('.cargo/config.toml'), {'native', 'server', 'kotlin', 'fdroid', 'android', 'desktop', 'fdroidserver'})
 
+    def test_shared_types_invalidate_all_consuming_workspaces_and_android_packages(self):
+        consumers = {'desktop', 'native', 'server', 'kotlin', 'fdroid', 'android', 'routing'}
+        self.assertEqual(self.selected('native/nav-types/src/lib.rs'), consumers)
+        self.assertEqual(self.selected('native/nav-types/Cargo.toml'), consumers | {'fdroidserver'})
+        self.assertEqual(self.selected('native/Cargo.toml'), consumers | {'fdroidserver'})
+
     def test_desktop_protocol_selects_its_relay_consumers(self):
         self.assertEqual(self.selected('desktop/app/src/viewer.rs'), {'desktop'})
         self.assertEqual(self.selected('desktop/protocol/src/lib.rs'), {'desktop', 'server', 'kotlin'})

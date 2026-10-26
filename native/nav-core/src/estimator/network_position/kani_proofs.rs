@@ -173,9 +173,9 @@ fn measured_speed_and_motion_veto_discard_network_learning() {
     kani::assume(age <= 2500 && (reason != 2 || age < 2500));
     let measured = 31_000 - age;
     match reason {
-        0 => navigation.state.last_gps_position_ms = measured,
-        1 => navigation.state.last_gps_speed_ms = measured,
-        2 => navigation.state.last_vehicle_speed_ms = measured,
+        0 => navigation.state.last_gps_position_ms = imu_nav_types::ElapsedMs::new(measured).ok(),
+        1 => navigation.state.last_gps_speed_ms = imu_nav_types::ElapsedMs::new(measured).ok(),
+        2 => navigation.state.last_vehicle_speed_ms = imu_nav_types::ElapsedMs::new(measured).ok(),
         3 => (),
         _ => navigation.network_speed_enabled = false,
     }
@@ -238,9 +238,9 @@ fn position_correction_requires_count_and_span() {
     if !accepted {
         assert_eq!(after, before);
     }
-    assert_eq!(navigation.state.last_gps_position_ms, -1);
-    assert_eq!(navigation.state.last_gps_speed_ms, -1);
-    assert_eq!(navigation.state.last_vehicle_speed_ms, -1);
+    assert_eq!(navigation.state.last_gps_position_ms, None);
+    assert_eq!(navigation.state.last_gps_speed_ms, None);
+    assert_eq!(navigation.state.last_vehicle_speed_ms, None);
     kani::cover!(count == 2 && span == 10_000, "insufficient count");
     kani::cover!(count == 3 && span == 9999, "insufficient span");
     kani::cover!(
@@ -273,9 +273,9 @@ fn speed_allocations_never_fall_through_to_position() {
     assert_eq!(after.position_m, before.position_m);
     assert_eq!(after.covariance.position, before.covariance.position);
     assert_eq!(after.systematic_drift_m, before.systematic_drift_m);
-    assert_eq!(navigation.state.last_gps_position_ms, -1);
-    assert_eq!(navigation.state.last_gps_speed_ms, -1);
-    assert_eq!(navigation.state.last_vehicle_speed_ms, -1);
+    assert_eq!(navigation.state.last_gps_position_ms, None);
+    assert_eq!(navigation.state.last_gps_speed_ms, None);
+    assert_eq!(navigation.state.last_vehicle_speed_ms, None);
     match choice {
         0 | 2 => assert_eq!(after, before),
         1 => {

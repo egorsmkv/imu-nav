@@ -2,6 +2,23 @@ use super::*;
 
 const OPEN_GATE: f64 = 1.0e12;
 
+#[test]
+fn typed_filter_state_preserves_signed_velocity_and_rejects_invalid_covariance() {
+    let filter = RouteFilter::new(
+        RoutePosition::new(-10.0).unwrap(),
+        Velocity::new(-2.0).unwrap(),
+        PositionSigma::new(3.0).unwrap(),
+        SpeedSigma::new(1.0).unwrap(),
+        Distance::new(0.0).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(filter.state().position().get(), -10.0);
+    assert_eq!(filter.state().velocity().get(), -2.0);
+    assert!(Covariance2::new(1.0, 2.0, 1.0).is_err());
+    assert!(Covariance2::new(f64::NAN, 0.0, 1.0).is_err());
+    assert!(Covariance2::new(9.0, -12.0, 16.0).is_ok());
+}
+
 /// A rank-one negative correlation stays valid after prediction; this also reproduces the
 /// concrete input from the verifier's approximate powi model without that library model.
 #[test]
@@ -13,12 +30,13 @@ fn negative_rank_one_covariance_predicts_and_accepts_measurements() {
     };
     assert!(covariance.is_valid());
     let initial = RouteFilter {
-        estimate: Estimate {
+        state: FilterEstimate::try_from(Estimate {
             position_m: 10.0,
             speed_mps: 2.0,
             covariance,
             systematic_drift_m: 5.0,
-        },
+        })
+        .unwrap(),
     };
     let mut predicted = initial.clone();
     predicted.predict(0.5, 0.5, 0.25).unwrap();
@@ -41,7 +59,7 @@ fn negative_rank_one_covariance_predicts_and_accepts_measurements() {
 
 #[test]
 fn prediction_propagates_state_and_full_covariance() {
-    let mut filter = RouteFilter::new(10.0, 4.0, 3.0, 2.0, 5.0).unwrap();
+    let mut filter = RouteFilter::from_raw(10.0, 4.0, 3.0, 2.0, 5.0).unwrap();
     filter.predict(0.5, 1.0, 0.08).unwrap();
     let estimate = filter.estimate();
     assert!((estimate.position_m - 12.0).abs() < 1.0e-12);
@@ -53,7 +71,7 @@ fn prediction_propagates_state_and_full_covariance() {
 
 #[test]
 fn position_update_is_symmetric_and_adjusts_correlated_speed() {
-    let mut filter = RouteFilter::new(0.0, 10.0, 10.0, 2.0, 0.0).unwrap();
+    let mut filter = RouteFilter::from_raw(0.0, 10.0, 10.0, 2.0, 0.0).unwrap();
     filter.predict(1.0, 0.0, 0.0).unwrap();
     let before = filter.estimate();
     assert!(before.covariance.position_speed > 0.0);
@@ -67,7 +85,7 @@ fn position_update_is_symmetric_and_adjusts_correlated_speed() {
 
 #[test]
 fn speed_update_does_not_require_a_matrix_inverse() {
-    let mut filter = RouteFilter::new(100.0, 8.0, 20.0, 4.0, 0.0).unwrap();
+    let mut filter = RouteFilter::from_raw(100.0, 8.0, 20.0, 4.0, 0.0).unwrap();
     let outcome = filter.update_speed(12.0, 1.0, OPEN_GATE).unwrap();
     assert!(outcome.accepted);
     assert!(filter.estimate().speed_mps > 11.0);
@@ -76,7 +94,7 @@ fn speed_update_does_not_require_a_matrix_inverse() {
 
 #[test]
 fn innovation_gate_rejects_without_mutating_state() {
-    let mut filter = RouteFilter::new(100.0, 8.0, 5.0, 2.0, 7.0).unwrap();
+    let mut filter = RouteFilter::from_raw(100.0, 8.0, 5.0, 2.0, 7.0).unwrap();
     let before = filter.estimate();
     let outcome = filter.update_position(1000.0, 5.0, 9.0).unwrap();
     assert!(!outcome.accepted);
@@ -85,7 +103,7 @@ fn innovation_gate_rejects_without_mutating_state() {
 
 #[test]
 fn anchor_resets_systematic_drift_but_not_speed_variance() {
-    let mut filter = RouteFilter::new(0.0, 10.0, 5.0, 3.0, 0.0).unwrap();
+    let mut filter = RouteFilter::from_raw(0.0, 10.0, 5.0, 3.0, 0.0).unwrap();
     filter.predict(2.0, 1.0, 0.08).unwrap();
     let speed_variance = filter.estimate().covariance.speed;
     filter.anchor_position(21.0, 4.0).unwrap();
@@ -99,7 +117,7 @@ fn anchor_resets_systematic_drift_but_not_speed_variance() {
 
 #[test]
 fn independent_fix_can_reset_only_the_systematic_allowance() {
-    let mut filter = RouteFilter::new(0.0, 10.0, 5.0, 3.0, 0.0).unwrap();
+    let mut filter = RouteFilter::from_raw(0.0, 10.0, 5.0, 3.0, 0.0).unwrap();
     filter.predict(2.0, 1.0, 0.08).unwrap();
     let before = filter.estimate();
     assert!(before.systematic_drift_m > 0.0);
@@ -113,7 +131,7 @@ fn independent_fix_can_reset_only_the_systematic_allowance() {
 
 #[test]
 fn invalid_inputs_do_not_mutate_state() {
-    let mut filter = RouteFilter::new(0.0, 1.0, 1.0, 1.0, 0.0).unwrap();
+    let mut filter = RouteFilter::from_raw(0.0, 1.0, 1.0, 1.0, 0.0).unwrap();
     let before = filter.estimate();
     assert_eq!(
         filter.predict(f64::NAN, 1.0, 0.08),
@@ -128,7 +146,7 @@ fn invalid_inputs_do_not_mutate_state() {
 
 #[test]
 fn long_sequence_preserves_valid_covariance() {
-    let mut filter = RouteFilter::new(0.0, 15.0, 25.0, 5.0, 0.0).unwrap();
+    let mut filter = RouteFilter::from_raw(0.0, 15.0, 25.0, 5.0, 0.0).unwrap();
     for index in 1..=100_000 {
         filter.predict(0.5, 1.5, 0.02).unwrap();
         if index % 2 == 0 {
@@ -153,8 +171,8 @@ fn finite_uncertainty_overflow_is_rejected_before_mutation() {
         Covariance2::diagonal(1.0, f64::MAX),
         Err(FilterError::InvalidCovariance)
     );
-    assert!(RouteFilter::new(0.0, 1.0, f64::MAX, 1.0, 0.0).is_err());
-    let mut filter = RouteFilter::new(10.0, 2.0, 3.0, 4.0, 5.0).unwrap();
+    assert!(RouteFilter::from_raw(0.0, 1.0, f64::MAX, 1.0, 0.0).is_err());
+    let mut filter = RouteFilter::from_raw(10.0, 2.0, 3.0, 4.0, 5.0).unwrap();
     let before = filter.estimate();
     assert_eq!(
         filter.anchor_position(50.0, f64::MAX),
@@ -176,7 +194,7 @@ fn finite_uncertainty_overflow_is_rejected_before_mutation() {
 #[test]
 fn prediction_rejects_position_and_drift_overflow_atomically() {
     for (position, speed, drift) in [(f64::MAX, f64::MAX, 0.0), (0.0, f64::MAX, f64::MAX)] {
-        let mut filter = RouteFilter::new(position, speed, 1.0, 1.0, drift).unwrap();
+        let mut filter = RouteFilter::from_raw(position, speed, 1.0, 1.0, drift).unwrap();
         let before = filter.estimate();
         assert_eq!(filter.predict(1.0, 0.0, 1.0), Err(FilterError::NonFinite));
         assert_eq!(filter.estimate(), before);
@@ -185,7 +203,7 @@ fn prediction_rejects_position_and_drift_overflow_atomically() {
 
 #[test]
 fn safety_radius_rejects_finite_arithmetic_overflow() {
-    let filter = RouteFilter::new(0.0, 0.0, 2.0, 1.0, 0.0).unwrap();
+    let filter = RouteFilter::from_raw(0.0, 0.0, 2.0, 1.0, 0.0).unwrap();
     assert_eq!(
         filter.estimate().safety_radius_m(f64::MAX),
         Err(FilterError::NonFinite)

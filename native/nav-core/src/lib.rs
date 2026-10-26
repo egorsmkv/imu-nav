@@ -12,6 +12,8 @@ pub mod network;
 pub mod route;
 pub mod speed;
 pub mod trust;
+pub use imu_nav_types as types;
+pub use imu_nav_types::{Distance, PositionSigma, RoutePosition, SpeedSigma, Velocity};
 
 const MIN_VARIANCE: f64 = 1.0e-9;
 const SYMMETRY_TOLERANCE: f64 = 1.0e-8;
@@ -20,14 +22,42 @@ const SYMMETRY_TOLERANCE: f64 = 1.0e-8;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Covariance2 {
     /// Along-route position variance, m².
-    pub position: f64,
+    pub(crate) position: f64,
     /// Position-speed covariance, m²/s.
-    pub position_speed: f64,
+    pub(crate) position_speed: f64,
     /// Speed variance, (m/s)².
-    pub speed: f64,
+    pub(crate) speed: f64,
 }
 
 impl Covariance2 {
+    /// Construct a finite positive-semidefinite covariance, including correlated uncertainty.
+    /// # Errors
+    /// Rejects negative variances, non-finite entries and invalid covariance matrices.
+    pub fn new(position: f64, position_speed: f64, speed: f64) -> Result<Self, FilterError> {
+        let covariance = Self {
+            position,
+            position_speed,
+            speed,
+        };
+        if covariance.is_valid() {
+            Ok(covariance)
+        } else {
+            Err(FilterError::InvalidCovariance)
+        }
+    }
+
+    #[must_use]
+    pub const fn position(self) -> f64 {
+        self.position
+    }
+    #[must_use]
+    pub const fn position_speed(self) -> f64 {
+        self.position_speed
+    }
+    #[must_use]
+    pub const fn speed(self) -> f64 {
+        self.speed
+    }
     /// Diagonal covariance from position and speed standard deviations.
     ///
     /// # Errors
@@ -90,6 +120,65 @@ pub struct Estimate {
     pub systematic_drift_m: f64,
 }
 
+/// Validated filter state. Raw estimates are DTOs; live state always holds checked quantities.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FilterEstimate {
+    position: RoutePosition,
+    velocity: Velocity,
+    covariance: Covariance2,
+    systematic_drift: Distance,
+}
+
+impl FilterEstimate {
+    #[must_use]
+    pub const fn position(self) -> RoutePosition {
+        self.position
+    }
+    #[must_use]
+    pub const fn velocity(self) -> Velocity {
+        self.velocity
+    }
+    #[must_use]
+    pub const fn covariance(self) -> Covariance2 {
+        self.covariance
+    }
+    #[must_use]
+    pub const fn systematic_drift(self) -> Distance {
+        self.systematic_drift
+    }
+}
+
+impl TryFrom<Estimate> for FilterEstimate {
+    type Error = FilterError;
+    fn try_from(candidate: Estimate) -> Result<Self, Self::Error> {
+        if !candidate.covariance.is_valid() {
+            return Err(FilterError::InvalidCovariance);
+        }
+        validate_finite(candidate.position_m)?;
+        validate_finite(candidate.speed_mps)?;
+        validate_non_negative(candidate.systematic_drift_m)?;
+        Ok(Self {
+            position: RoutePosition::new(candidate.position_m)
+                .map_err(|_| FilterError::NonFinite)?,
+            velocity: Velocity::new(candidate.speed_mps).map_err(|_| FilterError::NonFinite)?,
+            covariance: candidate.covariance,
+            systematic_drift: Distance::new(candidate.systematic_drift_m)
+                .map_err(|_| FilterError::InvalidSigma)?,
+        })
+    }
+}
+
+impl From<FilterEstimate> for Estimate {
+    fn from(state: FilterEstimate) -> Self {
+        Self {
+            position_m: state.position.get(),
+            speed_mps: state.velocity.get(),
+            covariance: state.covariance,
+            systematic_drift_m: state.systematic_drift.get(),
+        }
+    }
+}
+
 impl Estimate {
     #[must_use]
     pub fn position_sigma_m(self) -> f64 {
@@ -141,7 +230,7 @@ pub enum FilterError {
 #[derive(Clone, Debug)]
 #[cfg_attr(any(test, kani), derive(PartialEq))]
 pub struct RouteFilter {
-    estimate: Estimate,
+    state: FilterEstimate,
 }
 
 impl RouteFilter {
@@ -151,7 +240,7 @@ impl RouteFilter {
     ///
     /// Returns [`FilterError`] when a value is non-finite, an uncertainty is negative, or the
     /// initial systematic drift is negative, or an uncertainty squared overflows.
-    pub fn new(
+    pub fn from_raw(
         position_m: f64,
         speed_mps: f64,
         position_sigma_m: f64,
@@ -163,18 +252,43 @@ impl RouteFilter {
         validate_non_negative(systematic_drift_m)?;
         let covariance = Covariance2::diagonal(position_sigma_m, speed_sigma_mps)?;
         Ok(Self {
-            estimate: Estimate {
+            state: FilterEstimate::try_from(Estimate {
                 position_m,
                 speed_mps,
                 covariance,
                 systematic_drift_m,
-            },
+            })?,
         })
+    }
+
+    /// Construct live state from quantities that cannot be confused by unit or domain.
+    /// # Errors
+    /// Rejects uncertainty squares that overflow or form an invalid covariance.
+    pub fn new(
+        position: RoutePosition,
+        velocity: Velocity,
+        position_sigma: PositionSigma,
+        speed_sigma: SpeedSigma,
+        systematic_drift: Distance,
+    ) -> Result<Self, FilterError> {
+        Self::from_raw(
+            position.get(),
+            velocity.get(),
+            position_sigma.get(),
+            speed_sigma.get(),
+            systematic_drift.get(),
+        )
+    }
+
+    /// Typed immutable state for Rust consumers; JNI exports the raw DTO using `estimate()`.
+    #[must_use]
+    pub const fn state(&self) -> FilterEstimate {
+        self.state
     }
 
     #[must_use]
     pub fn estimate(&self) -> Estimate {
-        self.estimate
+        self.state.into()
     }
 
     /// Constant-velocity prediction driven by continuous white acceleration noise.
@@ -202,7 +316,7 @@ impl RouteFilter {
             return Err(FilterError::InvalidSigma);
         }
 
-        let old = self.estimate;
+        let old = self.estimate();
         let distance = old.speed_mps * dt_s;
         validate_finite(distance)?;
         let dt2 = dt_s * dt_s;
@@ -272,7 +386,7 @@ impl RouteFilter {
         if !nis_gate.is_finite() || nis_gate <= 0.0 {
             return Err(FilterError::InvalidGate);
         }
-        let old = self.estimate;
+        let old = self.estimate();
         let measurement_variance = sigma_m * sigma_m;
         let innovation = position_m - old.position_m;
         let innovation_variance = old.covariance.position + measurement_variance;
@@ -320,7 +434,7 @@ impl RouteFilter {
         if !nis_gate.is_finite() || nis_gate <= 0.0 {
             return Err(FilterError::InvalidGate);
         }
-        let old = self.estimate;
+        let old = self.estimate();
         let measurement_variance = sigma_mps * sigma_mps;
         let innovation = speed_mps - old.speed_mps;
         let variance = old.covariance.speed + measurement_variance;
@@ -358,17 +472,18 @@ impl RouteFilter {
     pub fn anchor_position(&mut self, position_m: f64, sigma_m: f64) -> Result<(), FilterError> {
         validate_finite(position_m)?;
         let variance = finite_variance(sigma_m)?.max(MIN_VARIANCE);
-        self.estimate.position_m = position_m;
-        self.estimate.covariance.position = variance;
-        self.estimate.covariance.position_speed = 0.0;
-        self.estimate.systematic_drift_m = 0.0;
-        Ok(())
+        let mut candidate = self.estimate();
+        candidate.position_m = position_m;
+        candidate.covariance.position = variance;
+        candidate.covariance.position_speed = 0.0;
+        candidate.systematic_drift_m = 0.0;
+        self.commit_estimate(candidate)
     }
 
     /// An accepted independent position source removes distance accumulated since the previous
     /// anchor from the non-Gaussian safety allowance. The Kalman covariance is left untouched.
     pub fn reset_systematic_drift(&mut self) {
-        self.estimate.systematic_drift_m = 0.0;
+        self.state.systematic_drift = Distance::ZERO;
     }
 
     /// Changes model speed without treating an IMU stop/ramp as a position measurement.
@@ -379,10 +494,11 @@ impl RouteFilter {
     pub fn set_speed_prior(&mut self, speed_mps: f64, sigma_mps: f64) -> Result<(), FilterError> {
         validate_finite(speed_mps)?;
         let variance = finite_variance(sigma_mps)?.max(MIN_VARIANCE);
-        self.estimate.speed_mps = speed_mps;
-        self.estimate.covariance.speed = variance;
-        self.estimate.covariance.position_speed = 0.0;
-        Ok(())
+        let mut candidate = self.estimate();
+        candidate.speed_mps = speed_mps;
+        candidate.covariance.speed = variance;
+        candidate.covariance.position_speed = 0.0;
+        self.commit_estimate(candidate)
     }
 
     /// Retract a learned model without claiming a more precise speed. Unlike a fresh motion prior,
@@ -392,22 +508,16 @@ impl RouteFilter {
         speed_mps: f64,
         minimum_sigma_mps: f64,
     ) -> Result<(), FilterError> {
-        let previous_variance = self.estimate.covariance.speed;
+        let previous_variance = self.state.covariance.speed;
         self.set_speed_prior(speed_mps, minimum_sigma_mps)?;
-        self.estimate.covariance.speed = self.estimate.covariance.speed.max(previous_variance);
+        self.state.covariance.speed = self.state.covariance.speed.max(previous_variance);
         Ok(())
     }
 
     /// Publish a complete numerical update only after validating every state component.
     /// Keeping the assignment last makes all arithmetic-error paths atomic.
     fn commit_estimate(&mut self, candidate: Estimate) -> Result<(), FilterError> {
-        if !candidate.covariance.is_valid() {
-            return Err(FilterError::InvalidCovariance);
-        }
-        validate_finite(candidate.position_m)?;
-        validate_finite(candidate.speed_mps)?;
-        validate_non_negative(candidate.systematic_drift_m)?;
-        self.estimate = candidate;
+        self.state = FilterEstimate::try_from(candidate)?;
         Ok(())
     }
 
@@ -428,7 +538,7 @@ impl RouteFilter {
             return Err(FilterError::InvalidGate);
         }
 
-        let old = self.estimate;
+        let old = self.estimate();
         let p = old.covariance;
         let predicted_measurement = h0 * old.position_m + h1 * old.speed_mps;
         let innovation = measurement - predicted_measurement;

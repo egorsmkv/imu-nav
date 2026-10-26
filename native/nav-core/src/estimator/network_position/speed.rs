@@ -201,7 +201,7 @@ impl SpeedBatch {
         let mut minimum_slope = f64::INFINITY;
         let mut maximum_slope = f64::NEG_INFINITY;
         for sample in self.samples.iter().flatten() {
-            regression.add(sample.position_m, sample.accuracy_m, sample.last_ms);
+            regression.add_raw(sample.position_m, sample.accuracy_m, sample.last_ms);
             if let Some(older) = previous {
                 let dt = milliseconds_to_seconds(sample.last_ms - older.last_ms);
                 let slope = (sample.position_m - older.position_m) / dt;

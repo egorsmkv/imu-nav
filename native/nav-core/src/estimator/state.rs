@@ -68,7 +68,7 @@ impl FilterState {
             true,
         )?;
         if accepted {
-            self.last_vehicle_speed_ms = self.elapsed_ms;
+            self.last_vehicle_speed_ms = imu_nav_types::ElapsedMs::new(self.elapsed_ms).ok();
             self.stable_vehicle_speed = Some(self.stable_vehicle_speed.map_or_else(
                 || StableVehicleSpeed::new(self.elapsed_ms, speed_mps),
                 |stable| stable.add(self.elapsed_ms, speed_mps),

@@ -98,7 +98,7 @@ async fn upload(State(state): State<AppState>, request: Request) -> Result<Json<
 
 fn allowed(
     store: &crate::CellStore,
-    account_id: i64,
+    account_id: crate::AccountId,
     version: Option<&str>,
 ) -> anyhow::Result<Result<(), ApiError>> {
     if !enabled(store)? {
@@ -206,7 +206,7 @@ fn entry_count(body: &[u8]) -> Result<usize, ()> {
 /// Content hashing makes retries safe without trusting filenames or client-provided identifiers.
 fn save(
     store: &crate::CellStore,
-    account_id: i64,
+    account_id: crate::AccountId,
     body: &[u8],
     manifest: &Value,
 ) -> anyhow::Result<Result<Value, ApiError>> {
@@ -343,12 +343,30 @@ mod tests {
         let mut connection = store.connection()?;
         connection.execute("INSERT INTO users(id,email,password_hash) VALUES (1,'one@example.org','synthetic'),(2,'two@example.org','synthetic')", params![])?;
         let manifest = json!({"schema":2,"interrupted":false});
-        let first = save(&store, 1, b"synthetic archive", &manifest)?.unwrap();
+        let first = save(
+            &store,
+            crate::AccountId::new(1).unwrap(),
+            b"synthetic archive",
+            &manifest,
+        )?
+        .unwrap();
         assert_eq!(
-            save(&store, 1, b"synthetic archive", &manifest)?.unwrap(),
+            save(
+                &store,
+                crate::AccountId::new(1).unwrap(),
+                b"synthetic archive",
+                &manifest
+            )?
+            .unwrap(),
             first
         );
-        let second = save(&store, 2, b"synthetic archive", &manifest)?.unwrap();
+        let second = save(
+            &store,
+            crate::AccountId::new(2).unwrap(),
+            b"synthetic archive",
+            &manifest,
+        )?
+        .unwrap();
         assert_ne!(first, second);
         connection.execute(
             "UPDATE debug_sessions SET created_s=0 WHERE account_id=1",
@@ -372,7 +390,14 @@ mod tests {
         );
         connection.execute("INSERT INTO debug_sessions(id,account_id,client_id,context_json,created_s,updated_s,bytes) VALUES ('full',1,'full','{}',1,1,?1)",params![MAX_ACCOUNT_BYTES])?;
         assert_eq!(
-            save(&store, 1, b"new archive", &manifest)?.unwrap_err().0,
+            save(
+                &store,
+                crate::AccountId::new(1).unwrap(),
+                b"new archive",
+                &manifest
+            )?
+            .unwrap_err()
+            .0,
             StatusCode::PAYLOAD_TOO_LARGE
         );
         connection.execute("DELETE FROM debug_sessions", params![])?;
@@ -383,7 +408,14 @@ mod tests {
         }
         tx.commit()?;
         assert_eq!(
-            save(&store, 1, b"new archive", &manifest)?.unwrap_err().0,
+            save(
+                &store,
+                crate::AccountId::new(1).unwrap(),
+                b"new archive",
+                &manifest
+            )?
+            .unwrap_err()
+            .0,
             StatusCode::PAYLOAD_TOO_LARGE
         );
         assert_eq!(

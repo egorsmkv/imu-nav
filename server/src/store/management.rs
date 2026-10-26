@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 /// Minimal account data for the administrator list.
 pub(crate) struct ManagedAccount {
-    pub id: i64,
+    pub id: crate::AccountId,
     pub email: String,
     pub admin: bool,
     pub suspended: bool,
@@ -23,7 +23,7 @@ pub(crate) struct ManagedAccount {
 
 /// A recent administrator action without credentials or session data.
 pub(crate) struct AuditEntry {
-    pub actor_id: i64,
+    pub actor_id: crate::AccountId,
     pub action: String,
     pub target: String,
     pub at_s: i64,
@@ -321,7 +321,7 @@ impl CellStore {
             .finish()?;
         Ok(())
     }
-    pub(crate) fn audit(&self, actor: i64, action: &str, target: &str) -> Result<()> {
+    pub(crate) fn audit(&self, actor: crate::AccountId, action: &str, target: &str) -> Result<()> {
         self.connection()?.execute(
             "INSERT INTO admin_audit(actor_id,action,target,at_s) VALUES (?1,?2,?3,?4)",
             params![actor, action, target, now_s()],
@@ -422,7 +422,12 @@ impl CellStore {
             .collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
-    pub(crate) fn set_suspended(&self, actor: i64, account: i64, suspended: bool) -> Result<bool> {
+    pub(crate) fn set_suspended(
+        &self,
+        actor: crate::AccountId,
+        account: crate::AccountId,
+        suspended: bool,
+    ) -> Result<bool> {
         if actor == account && suspended {
             return Ok(false);
         }
@@ -483,7 +488,7 @@ impl CellStore {
 
     pub(crate) fn set_quarantined(
         &self,
-        actor: i64,
+        actor: crate::AccountId,
         key: &CellKey,
         quarantined: bool,
         policy: &Policy,
@@ -528,7 +533,11 @@ impl CellStore {
         Ok(true)
     }
 
-    pub(crate) fn delete_quarantined(&self, actor: i64, key: &CellKey) -> Result<bool> {
+    pub(crate) fn delete_quarantined(
+        &self,
+        actor: crate::AccountId,
+        key: &CellKey,
+    ) -> Result<bool> {
         let mut connection = self.connection()?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let quarantined: bool = transaction.query_row(
@@ -553,7 +562,7 @@ impl CellStore {
 
     pub(crate) fn correct_tower(
         &self,
-        actor: i64,
+        actor: crate::AccountId,
         tower: &CellTower,
         policy: &Policy,
     ) -> Result<Option<Consensus>> {
@@ -609,7 +618,7 @@ impl CellStore {
 
     pub(crate) fn remove_tower_contribution(
         &self,
-        actor: i64,
+        actor: crate::AccountId,
         key: &CellKey,
         device: &str,
         policy: &Policy,
@@ -649,9 +658,9 @@ impl CellStore {
         cancel: &AtomicBool,
         progress: &AtomicUsize,
         visibility: &tokio::sync::RwLock<()>,
-        active: &std::sync::RwLock<Policy>,
+        active: &std::sync::RwLock<crate::ValidatedPolicy>,
     ) -> Result<bool> {
-        policy.validate()?;
+        let validated_policy = crate::ValidatedPolicy::try_from(policy.clone())?;
         let mut connection = self.connection()?;
         connection.busy_timeout(std::time::Duration::from_secs(3600))?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -701,7 +710,7 @@ impl CellStore {
         transaction.commit()?;
         *active
             .write()
-            .map_err(|_| anyhow::anyhow!("policy lock poisoned"))? = policy.clone();
+            .map_err(|_| anyhow::anyhow!("policy lock poisoned"))? = validated_policy;
         Ok(true)
     }
 }
@@ -715,7 +724,7 @@ fn key_text(key: &CellKey) -> String {
 
 fn audit_in_transaction(
     transaction: &Transaction<'_>,
-    actor: i64,
+    actor: crate::AccountId,
     action: &str,
     target: &str,
 ) -> Result<()> {

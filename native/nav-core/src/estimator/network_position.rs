@@ -144,7 +144,7 @@ impl NavigationEstimator {
             evidence.speed.clear();
             return Ok(false);
         };
-        if projected.offset_m > accuracy_m {
+        if projected.offset().get() > accuracy_m {
             evidence.candidate = None;
             evidence.speed.clear();
             return Ok(false);
@@ -152,15 +152,15 @@ impl NavigationEstimator {
         let mut candidate = Candidate {
             first_ms: observation.elapsed_ms,
             last_ms: observation.elapsed_ms,
-            position_m: projected.position_m,
+            position_m: projected.position().get(),
             accuracy_m,
-            residual_m: projected.position_m - predicted_position_m,
+            residual_m: projected.position().get() - predicted_position_m,
             count: 1,
         };
         if let Some(previous) = evidence.candidate {
             let gap_ms = observation.elapsed_ms - previous.last_ms;
             let dt = milliseconds_to_seconds(gap_ms);
-            let delta_m = projected.position_m - previous.position_m;
+            let delta_m = projected.position().get() - previous.position_m;
             let slack_m = accuracy_m + previous.accuracy_m;
             if gap_ms <= MAX_GAP_MS
                 && delta_m <= MAX_SPEED_MPS * dt + slack_m
@@ -186,16 +186,22 @@ impl NavigationEstimator {
         motion: Option<MotionObservation>,
     ) -> Result<bool, FilterError> {
         let now_ms = self.state.elapsed_ms;
-        let fresh_gps = self.state.last_gps_position_ms >= 0
-            && now_ms.saturating_sub(self.state.last_gps_position_ms) <= MAX_AGE_MS;
+        let fresh_gps = self
+            .state
+            .last_gps_position_ms
+            .is_some_and(|last| now_ms.saturating_sub(last.get()) <= MAX_AGE_MS);
         if fresh_gps || candidate.residual_m.abs() > MAX_JUMP_M {
             self.state.network_evidence.speed.clear();
             return Ok(false);
         }
-        let measured_speed = (self.state.last_gps_speed_ms >= 0
-            && now_ms - self.state.last_gps_speed_ms <= MAX_AGE_MS)
-            || (self.state.last_vehicle_speed_ms >= 0
-                && now_ms - self.state.last_vehicle_speed_ms < OBD_MAX_AGE_MS);
+        let measured_speed = self
+            .state
+            .last_gps_speed_ms
+            .is_some_and(|last| now_ms - last.get() <= MAX_AGE_MS)
+            || self
+                .state
+                .last_vehicle_speed_ms
+                .is_some_and(|last| now_ms - last.get() < OBD_MAX_AGE_MS);
         let motion_blocked = self.state.motion_control.is_some()
             || motion.is_some_and(|hint| hint.factor < 1.0 || !hint.factor.is_finite());
         if self.network_speed_enabled && !measured_speed && !motion_blocked {

@@ -6,6 +6,7 @@
 
 use crate::conic::ConicConverter;
 use crate::{Point, Verb};
+use std::borrow::Cow;
 
 /// Before Android 11 Skia stored verbs back to front; from Android 11 they are in order.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -33,10 +34,10 @@ impl ConicEvaluation {
 }
 
 pub struct PathIterator<'a> {
-    points: &'a [Point],
+    points: Cow<'a, [Point]>,
     /// Verbs in memory order; [`VerbDirection::Backward`] reads them from the end.
-    verbs: &'a [u8],
-    weights: &'a [f32],
+    verbs: Cow<'a, [u8]>,
+    weights: Cow<'a, [f32]>,
     direction: VerbDirection,
     evaluation: ConicEvaluation,
     tolerance: f32,
@@ -62,9 +63,9 @@ impl<'a> PathIterator<'a> {
         tolerance: f32,
     ) -> Self {
         Self {
-            points,
-            verbs,
-            weights,
+            points: Cow::Borrowed(points),
+            verbs: Cow::Borrowed(verbs),
+            weights: Cow::Borrowed(weights),
             direction,
             evaluation,
             tolerance,
@@ -154,7 +155,7 @@ impl<'a> PathIterator<'a> {
         Some([slice[0], slice[1], slice[2]])
     }
 
-    fn take(&self, from: usize, count: usize) -> Option<&'a [Point]> {
+    fn take(&self, from: usize, count: usize) -> Option<&[Point]> {
         self.points.get(from..from + count)
     }
 
@@ -240,5 +241,52 @@ impl<'a> PathIterator<'a> {
         } else {
             self.next(out)
         }
+    }
+}
+
+impl PathIterator<'static> {
+    /// Own a snapshot of the path. Iteration never copies the buffers again.
+    #[must_use]
+    pub fn from_owned(
+        points: Vec<Point>,
+        verbs: Vec<u8>,
+        weights: Vec<f32>,
+        direction: VerbDirection,
+        evaluation: ConicEvaluation,
+        tolerance: f32,
+    ) -> Self {
+        let mut iterator = Self::new(&[], &[], &[], direction, evaluation, tolerance);
+        iterator.remaining = verbs.len();
+        iterator.points = Cow::Owned(points);
+        iterator.verbs = Cow::Owned(verbs);
+        iterator.weights = Cow::Owned(weights);
+        iterator
+    }
+}
+
+#[cfg(test)]
+mod ownership_tests {
+    use super::*;
+
+    #[test]
+    fn owned_iterator_outlives_source_storage() {
+        let mut iterator = {
+            let points = [Point { x: 1.0, y: 2.0 }, Point { x: 3.0, y: 4.0 }];
+            let verbs = [Verb::Move as u8, Verb::Line as u8];
+            PathIterator::from_owned(
+                points.to_vec(),
+                verbs.to_vec(),
+                vec![],
+                VerbDirection::Forward,
+                ConicEvaluation::AsConic,
+                0.25,
+            )
+        };
+        let mut output = [Point::default(); 4];
+        assert_eq!(iterator.next(&mut output), Verb::Move);
+        assert_eq!(output[0], Point { x: 1.0, y: 2.0 });
+        assert_eq!(iterator.next(&mut output), Verb::Line);
+        assert_eq!(output[1], Point { x: 3.0, y: 4.0 });
+        assert_eq!(iterator.next(&mut output), Verb::Done);
     }
 }

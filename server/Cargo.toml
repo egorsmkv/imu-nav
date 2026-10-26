@@ -10,6 +10,7 @@ rust-version = "1.99"
 profiling = ["dep:hotpath", "hotpath/hotpath"]
 
 [dependencies]
+imu-nav-types = { path = "../native/nav-types", features = ["serde"] }
 imu-nav-protocol = { path = "../desktop/protocol" }
 anyhow = "1.0"
 argon2 = "0.5"

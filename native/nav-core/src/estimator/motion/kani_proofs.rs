@@ -32,9 +32,9 @@ fn fresh_measured_speed_blocks_all_motion_hints() {
     kani::assume(i128::from(now) - i128::from(measured) < 2500);
     navigation.state.elapsed_ms = now;
     if gps {
-        navigation.state.last_gps_speed_ms = measured;
+        navigation.state.last_gps_speed_ms = imu_nav_types::ElapsedMs::new(measured).ok();
     } else {
-        navigation.state.last_vehicle_speed_ms = measured;
+        navigation.state.last_vehicle_speed_ms = imu_nav_types::ElapsedMs::new(measured).ok();
     }
     let before = snapshot(&navigation);
     navigation.apply_motion(arbitrary_hint()).unwrap();
@@ -52,9 +52,9 @@ fn measured_priority_ends_at_exact_freshness_boundary() {
     let gps: bool = kani::any();
     navigation.state.elapsed_ms = 5000;
     if gps {
-        navigation.state.last_gps_speed_ms = 5000 - age;
+        navigation.state.last_gps_speed_ms = imu_nav_types::ElapsedMs::new(5000 - age).ok();
     } else {
-        navigation.state.last_vehicle_speed_ms = 5000 - age;
+        navigation.state.last_vehicle_speed_ms = imu_nav_types::ElapsedMs::new(5000 - age).ok();
     }
     let before = navigation.estimate();
     navigation.apply_motion(Some(stop_hint())).unwrap();
@@ -74,11 +74,19 @@ fn measured_priority_ends_at_exact_freshness_boundary() {
     );
     assert_eq!(
         navigation.state.last_gps_speed_ms,
-        if gps { 5000 - age } else { -1 }
+        if gps {
+            imu_nav_types::ElapsedMs::new(5000 - age).ok()
+        } else {
+            None
+        }
     );
     assert_eq!(
         navigation.state.last_vehicle_speed_ms,
-        if gps { -1 } else { 5000 - age }
+        if gps {
+            None
+        } else {
+            imu_nav_types::ElapsedMs::new(5000 - age).ok()
+        }
     );
     kani::cover!(gps && age == 2499, "gps fresh boundary");
     kani::cover!(!gps && age == 2499, "obd fresh boundary");
@@ -110,7 +118,7 @@ fn repeated_motion_hint(initial_speed: f64, factor: f64) {
         .filter
         .set_speed_prior(initial_speed, 2.0)
         .unwrap();
-    navigation.state.filter.estimate.covariance.position_speed = 2.0;
+    navigation.state.filter.state.covariance.position_speed = 2.0;
     navigation.state.elapsed_ms = 5000;
     let hint = MotionObservation {
         factor,
@@ -129,8 +137,8 @@ fn repeated_motion_hint(initial_speed: f64, factor: f64) {
     assert_eq!(repeated.position_m, before.position_m);
     assert_eq!(repeated.covariance.position, before.covariance.position);
     assert_eq!(repeated.systematic_drift_m, before.systematic_drift_m);
-    assert_eq!(navigation.state.last_gps_speed_ms, -1);
-    assert_eq!(navigation.state.last_vehicle_speed_ms, -1);
+    assert_eq!(navigation.state.last_gps_speed_ms, None);
+    assert_eq!(navigation.state.last_vehicle_speed_ms, None);
     if let Some(control) = navigation.state.motion_control {
         let expected = if initial_speed >= 0.5 {
             initial_speed.min(MAX_CRUISE_SPEED_MPS)
@@ -201,8 +209,8 @@ fn vetoed_motion_restores_cruise_without_an_anchor() {
         navigation.estimate().systematic_drift_m,
         before.systematic_drift_m
     );
-    assert_eq!(navigation.state.last_gps_speed_ms, -1);
-    assert_eq!(navigation.state.last_vehicle_speed_ms, -1);
+    assert_eq!(navigation.state.last_gps_speed_ms, None);
+    assert_eq!(navigation.state.last_vehicle_speed_ms, None);
     kani::cover!(veto == 0, "missing");
     kani::cover!(veto == 1, "network moving");
     kani::cover!(veto == 2, "invalid");

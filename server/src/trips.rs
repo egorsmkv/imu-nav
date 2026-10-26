@@ -169,7 +169,7 @@ pub(crate) async fn owner(
     state: &AppState,
     headers: &HeaderMap,
     mutation: bool,
-) -> Result<i64, ApiError> {
+) -> Result<crate::AccountId, ApiError> {
     if headers.contains_key("authorization") {
         return Ok(auth::bearer_account(state, headers).await?.id);
     }
@@ -200,7 +200,7 @@ fn valid_id(id: &str) -> Result<(), ApiError> {
 }
 impl CellStore {
     #[cfg_attr(feature = "profiling", hotpath::measure)]
-    fn trip(&self, account: i64, id: &str) -> anyhow::Result<Option<String>> {
+    fn trip(&self, account: crate::AccountId, id: &str) -> anyhow::Result<Option<String>> {
         Ok(self
             .connection()?
             .query_row(
@@ -213,7 +213,7 @@ impl CellStore {
     #[cfg_attr(feature = "profiling", hotpath::measure)]
     fn save_trip(
         &self,
-        account: i64,
+        account: crate::AccountId,
         id: &str,
         document: &str,
         summary: &str,
@@ -714,7 +714,9 @@ mod tests {
             StatusCode::NOT_FOUND
         );
         let export = tempfile::NamedTempFile::new()?;
-        tokio::task::block_in_place(|| store.export_account_to_path(100, export.path()))?;
+        tokio::task::block_in_place(|| {
+            store.export_account_to_path(crate::AccountId::new(100).unwrap(), export.path())
+        })?;
         let mut exported = String::new();
         std::io::Read::read_to_string(
             &mut flate2::read::GzDecoder::new(std::fs::File::open(export.path())?),
@@ -737,7 +739,10 @@ mod tests {
                 .status(),
             StatusCode::NO_CONTENT
         );
-        assert!(tokio::task::block_in_place(|| store.trip(100, "one"))?.is_none());
+        assert!(
+            tokio::task::block_in_place(|| store.trip(crate::AccountId::new(100).unwrap(), "one"))?
+                .is_none()
+        );
         assert_eq!(
             client
                 .delete(format!("{base}/v1/privacy/consents/trip_archive"))
@@ -747,28 +752,63 @@ mod tests {
                 .status(),
             StatusCode::NO_CONTENT
         );
-        assert!(tokio::task::block_in_place(|| store.trip(100, "two"))?.is_none());
-        assert!(tokio::task::block_in_place(|| store.trip(100, "three"))?.is_none());
+        assert!(
+            tokio::task::block_in_place(|| store.trip(crate::AccountId::new(100).unwrap(), "two"))?
+                .is_none()
+        );
+        assert!(
+            tokio::task::block_in_place(
+                || store.trip(crate::AccountId::new(100).unwrap(), "three")
+            )?
+            .is_none()
+        );
         assert_eq!(
             put(url.clone(), example()).await?.status(),
             StatusCode::CONFLICT
         );
-        tokio::task::block_in_place(|| store.grant_privacy_consent(100, "trip_archive", "local"))?;
+        tokio::task::block_in_place(|| {
+            store.grant_privacy_consent(
+                crate::AccountId::new(100).unwrap(),
+                "trip_archive",
+                "local",
+            )
+        })?;
         assert_eq!(
             put(url.clone(), example()).await?.status(),
             StatusCode::NO_CONTENT
         );
         tokio::task::block_in_place(|| {
-            store.replay_withdrawal(100, "trip_archive", &crate::Policy::default())
+            store.replay_withdrawal(
+                crate::AccountId::new(100).unwrap(),
+                "trip_archive",
+                &crate::Policy::default(),
+            )
         })?;
-        assert!(tokio::task::block_in_place(|| store.trip(100, "one"))?.is_none());
-        tokio::task::block_in_place(|| store.grant_privacy_consent(100, "trip_archive", "local"))?;
+        assert!(
+            tokio::task::block_in_place(|| store.trip(crate::AccountId::new(100).unwrap(), "one"))?
+                .is_none()
+        );
+        tokio::task::block_in_place(|| {
+            store.grant_privacy_consent(
+                crate::AccountId::new(100).unwrap(),
+                "trip_archive",
+                "local",
+            )
+        })?;
         assert_eq!(
             put(url.clone(), example()).await?.status(),
             StatusCode::NO_CONTENT
         );
-        tokio::task::block_in_place(|| store.close_own_account(100, &crate::Policy::default()))?;
-        assert!(tokio::task::block_in_place(|| store.trip(100, "one"))?.is_none());
+        tokio::task::block_in_place(|| {
+            store.close_own_account(
+                crate::AccountId::new(100).unwrap(),
+                &crate::Policy::default(),
+            )
+        })?;
+        assert!(
+            tokio::task::block_in_place(|| store.trip(crate::AccountId::new(100).unwrap(), "one"))?
+                .is_none()
+        );
         Ok(())
     }
     #[tokio::test(flavor = "multi_thread")]

@@ -32,14 +32,13 @@ use imu_nav_core::trust::{
     TrustLevel,
 };
 use imu_nav_core::{Estimate, FilterError, RouteFilter};
+use imu_nav_types::handles::{self, Allocator, RawHandleMap, Registry};
 use jni::JNIEnv;
 use jni::objects::{JClass, JDoubleArray, JIntArray, JLongArray};
 use jni::sys::{jdouble, jdoubleArray, jint, jintArray, jlong};
-use std::collections::HashMap;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr;
-use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
 
 const OK: jint = 0;
 const REJECTED: jint = 1;
@@ -47,41 +46,41 @@ const ERROR_INVALID_HANDLE: jint = -1;
 const ERROR_INVALID_INPUT: jint = -2;
 const ERROR_INTERNAL: jint = -3;
 
-static NEXT_HANDLE: AtomicI64 = AtomicI64::new(1);
+static NEXT_HANDLE: Allocator = Allocator::new();
 struct NativeRouteState {
     filter: RouteFilter,
     route: Option<Arc<RouteGeometry>>,
 }
 
-static FILTERS: OnceLock<Mutex<HashMap<i64, NativeRouteState>>> = OnceLock::new();
-static ROUTES: OnceLock<Mutex<HashMap<i64, Arc<RouteGeometry>>>> = OnceLock::new();
+static FILTERS: OnceLock<Registry<handles::Filter, NativeRouteState>> = OnceLock::new();
+static ROUTES: OnceLock<Registry<handles::Route, Arc<RouteGeometry>>> = OnceLock::new();
 struct NativeTrustState {
     classifier: TrustClassifier,
     jam_detector: JamDetector,
 }
 
-static TRUST_CLASSIFIERS: OnceLock<Mutex<HashMap<i64, NativeTrustState>>> = OnceLock::new();
-static NETWORK_TRACKERS: OnceLock<Mutex<HashMap<i64, NetworkTracker>>> = OnceLock::new();
-static ESTIMATORS: OnceLock<Mutex<HashMap<i64, NavigationEstimator>>> = OnceLock::new();
+static TRUST_CLASSIFIERS: OnceLock<Registry<handles::Trust, NativeTrustState>> = OnceLock::new();
+static NETWORK_TRACKERS: OnceLock<Registry<handles::Network, NetworkTracker>> = OnceLock::new();
+static ESTIMATORS: OnceLock<Registry<handles::Estimator, NavigationEstimator>> = OnceLock::new();
 
-fn filters() -> &'static Mutex<HashMap<i64, NativeRouteState>> {
-    FILTERS.get_or_init(|| Mutex::new(HashMap::new()))
+fn filters() -> &'static Registry<handles::Filter, NativeRouteState> {
+    FILTERS.get_or_init(Registry::new)
 }
 
-fn trust_classifiers() -> &'static Mutex<HashMap<i64, NativeTrustState>> {
-    TRUST_CLASSIFIERS.get_or_init(|| Mutex::new(HashMap::new()))
+fn trust_classifiers() -> &'static Registry<handles::Trust, NativeTrustState> {
+    TRUST_CLASSIFIERS.get_or_init(Registry::new)
 }
 
-fn routes() -> &'static Mutex<HashMap<i64, Arc<RouteGeometry>>> {
-    ROUTES.get_or_init(|| Mutex::new(HashMap::new()))
+fn routes() -> &'static Registry<handles::Route, Arc<RouteGeometry>> {
+    ROUTES.get_or_init(Registry::new)
 }
 
-fn network_trackers() -> &'static Mutex<HashMap<i64, NetworkTracker>> {
-    NETWORK_TRACKERS.get_or_init(|| Mutex::new(HashMap::new()))
+fn network_trackers() -> &'static Registry<handles::Network, NetworkTracker> {
+    NETWORK_TRACKERS.get_or_init(Registry::new)
 }
 
-fn estimators() -> &'static Mutex<HashMap<i64, NavigationEstimator>> {
-    ESTIMATORS.get_or_init(|| Mutex::new(HashMap::new()))
+fn estimators() -> &'static Registry<handles::Estimator, NavigationEstimator> {
+    ESTIMATORS.get_or_init(Registry::new)
 }
 
 fn with_estimator<T>(
@@ -92,7 +91,7 @@ fn with_estimator<T>(
         return Err(ERROR_INVALID_HANDLE);
     }
     let mut registry = estimators().lock().map_err(|_| ERROR_INTERNAL)?;
-    let estimator = registry.get_mut(&handle).ok_or(ERROR_INVALID_HANDLE)?;
+    let estimator = registry.get_mut_raw(&handle).ok_or(ERROR_INVALID_HANDLE)?;
     Ok(action(estimator))
 }
 
@@ -104,7 +103,7 @@ fn with_network_tracker<T>(
         return Err(ERROR_INVALID_HANDLE);
     }
     let mut registry = network_trackers().lock().map_err(|_| ERROR_INTERNAL)?;
-    let tracker = registry.get_mut(&handle).ok_or(ERROR_INVALID_HANDLE)?;
+    let tracker = registry.get_mut_raw(&handle).ok_or(ERROR_INVALID_HANDLE)?;
     Ok(action(tracker))
 }
 
@@ -124,7 +123,7 @@ fn with_filter<T>(handle: jlong, action: impl FnOnce(&mut RouteFilter) -> T) -> 
         return Err(ERROR_INVALID_HANDLE);
     }
     let mut registry = filters().lock().map_err(|_| ERROR_INTERNAL)?;
-    let state = registry.get_mut(&handle).ok_or(ERROR_INVALID_HANDLE)?;
+    let state = registry.get_mut_raw(&handle).ok_or(ERROR_INVALID_HANDLE)?;
     Ok(action(&mut state.filter))
 }
 
@@ -136,7 +135,7 @@ fn with_route_state<T>(
         return Err(ERROR_INVALID_HANDLE);
     }
     let mut registry = filters().lock().map_err(|_| ERROR_INTERNAL)?;
-    let state = registry.get_mut(&handle).ok_or(ERROR_INVALID_HANDLE)?;
+    let state = registry.get_mut_raw(&handle).ok_or(ERROR_INVALID_HANDLE)?;
     Ok(action(state))
 }
 
@@ -169,9 +168,9 @@ fn estimate_values(estimate: Estimate) -> Option<[f64; 7]> {
     Some([
         estimate.position_m,
         estimate.speed_mps,
-        estimate.covariance.position,
-        estimate.covariance.position_speed,
-        estimate.covariance.speed,
+        estimate.covariance.position(),
+        estimate.covariance.position_speed(),
+        estimate.covariance.speed(),
         estimate.systematic_drift_m,
         estimate.safety_radius_m(2.0).ok()?,
     ])

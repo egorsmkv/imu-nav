@@ -2,6 +2,7 @@
 
 use crate::milliseconds_to_seconds;
 use crate::speed::{NetworkSpeedEstimator, SpeedEstimate};
+use imu_nav_types::{Coordinate, ElapsedMs, PositionSigma, RoutePosition, Seconds};
 
 const MAX_SPEED_MPS: f64 = 150.0 / 3.6;
 const COARSE_ACCURACY_M: f64 = 300.0;
@@ -25,9 +26,9 @@ pub enum GateResult {
 
 #[derive(Clone, Copy, Debug)]
 struct Anchor {
-    time_s: f64,
-    position_m: f64,
-    accuracy_m: f64,
+    time_s: Seconds,
+    position_m: RoutePosition,
+    accuracy_m: PositionSigma,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -58,10 +59,17 @@ impl NetworkTracker {
         {
             return GateResult::Rejected;
         }
+        let (Ok(time), Ok(position), Ok(accuracy)) = (
+            ElapsedMs::new(elapsed_ms),
+            RoutePosition::new(position_m),
+            PositionSigma::new(accuracy_m),
+        ) else {
+            return GateResult::Rejected;
+        };
         let fix = Anchor {
-            time_s: milliseconds_to_seconds(elapsed_ms),
-            position_m,
-            accuracy_m,
+            time_s: time.since_boot().to_seconds(),
+            position_m: position,
+            accuracy_m: accuracy,
         };
         let Some(current) = self.anchor else {
             if accuracy_m <= COARSE_ACCURACY_M {
@@ -70,11 +78,11 @@ impl NetworkTracker {
             }
             return GateResult::Rejected;
         };
-        if fix.time_s <= current.time_s
+        if fix.time_s.get() <= current.time_s.get()
             || self
                 .candidates
                 .last()
-                .is_some_and(|candidate| fix.time_s <= candidate.time_s)
+                .is_some_and(|candidate| fix.time_s.get() <= candidate.time_s.get())
         {
             return GateResult::Rejected;
         }
@@ -92,7 +100,7 @@ impl NetworkTracker {
         {
             self.candidates.push(fix);
             let span_s = match (self.candidates.first(), self.candidates.last()) {
-                (Some(first), Some(last)) => last.time_s - first.time_s,
+                (Some(first), Some(last)) => last.time_s.get() - first.time_s.get(),
                 _ => return GateResult::Rejected,
             };
             if self.candidates.len() >= 2
@@ -118,14 +126,15 @@ impl NetworkTracker {
 
     /// Invalid records must not alter samples, speed evidence, or cached-coordinate tracking.
     pub fn record(&mut self, sample: NetworkSample, latitude_deg: f64, longitude_deg: f64) {
-        if sample.elapsed_ms < 0
-            || !sample.position_m.is_finite()
-            || !sample.accuracy_m.is_finite()
-            || sample.accuracy_m < 0.0
-            || !sample.offset_m.is_finite()
-            || !(-90.0..=90.0).contains(&latitude_deg)
-            || !(-180.0..=180.0).contains(&longitude_deg)
-        {
+        let (Ok(elapsed), Ok(position), Ok(accuracy), Ok(_coordinate)) = (
+            ElapsedMs::new(sample.elapsed_ms),
+            RoutePosition::new(sample.position_m),
+            PositionSigma::new(sample.accuracy_m),
+            Coordinate::new(latitude_deg, longitude_deg),
+        ) else {
+            return;
+        };
+        if !sample.offset_m.is_finite() {
             return;
         }
         self.recent.push(sample);
@@ -140,8 +149,7 @@ impl NetworkTracker {
             return;
         }
         if sample.accuracy_m <= 120.0 {
-            self.speed
-                .add(sample.position_m, sample.accuracy_m, sample.elapsed_ms);
+            self.speed.add(position, accuracy, elapsed.into());
         }
         self.history.push(sample);
     }
@@ -184,8 +192,10 @@ impl NetworkTracker {
 }
 
 fn reachable(from: Anchor, to: Anchor) -> bool {
-    (to.position_m - from.position_m).abs()
-        <= (to.time_s - from.time_s).max(0.0) * MAX_SPEED_MPS + from.accuracy_m + to.accuracy_m
+    (to.position_m.get() - from.position_m.get()).abs()
+        <= (to.time_s.get() - from.time_s.get()).max(0.0) * MAX_SPEED_MPS
+            + from.accuracy_m.get()
+            + to.accuracy_m.get()
 }
 
 fn slope(points: &[Anchor]) -> f64 {
@@ -193,13 +203,17 @@ fn slope(points: &[Anchor]) -> f64 {
         return 0.0;
     };
     let count = f64::from(count);
-    let mean_time = points.iter().map(|point| point.time_s).sum::<f64>() / count;
-    let mean_position = points.iter().map(|point| point.position_m).sum::<f64>() / count;
+    let mean_time = points.iter().map(|point| point.time_s.get()).sum::<f64>() / count;
+    let mean_position = points
+        .iter()
+        .map(|point| point.position_m.get())
+        .sum::<f64>()
+        / count;
     let time_variance = points
         .iter()
         .map(|point| {
             // An explicit square has precise multiplication semantics for the verifier.
-            let centered_time = point.time_s - mean_time;
+            let centered_time = point.time_s.get() - mean_time;
             centered_time * centered_time
         })
         .sum::<f64>();
@@ -208,7 +222,7 @@ fn slope(points: &[Anchor]) -> f64 {
     }
     points
         .iter()
-        .map(|point| (point.time_s - mean_time) * (point.position_m - mean_position))
+        .map(|point| (point.time_s.get() - mean_time) * (point.position_m.get() - mean_position))
         .sum::<f64>()
         / time_variance
 }

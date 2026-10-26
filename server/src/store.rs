@@ -538,7 +538,7 @@ impl CellStore {
     /// Keep receipt history while enforcing independent, versioned purpose consent.
     pub(crate) fn has_privacy_consent(
         &self,
-        account_id: i64,
+        account_id: crate::AccountId,
         purpose: &str,
         version: &str,
     ) -> Result<bool> {
@@ -548,7 +548,7 @@ impl CellStore {
     /// Reuse the caller's connection while the write gate keeps consent ordering stable.
     pub(crate) fn has_privacy_consent_on(
         connection: &Connection,
-        account_id: i64,
+        account_id: crate::AccountId,
         purpose: &str,
         version: &str,
     ) -> Result<bool> {
@@ -561,7 +561,7 @@ impl CellStore {
 
     pub(crate) fn grant_privacy_consent(
         &self,
-        account_id: i64,
+        account_id: crate::AccountId,
         purpose: &str,
         version: &str,
     ) -> Result<()> {
@@ -584,7 +584,7 @@ impl CellStore {
     /// Withdraw consent and erase that purpose's stored data in one transaction.
     pub(crate) fn withdraw_privacy_consent(
         &self,
-        account_id: i64,
+        account_id: crate::AccountId,
         purpose: &str,
         policy: &Policy,
     ) -> Result<Vec<OwnContributionChange>> {
@@ -643,9 +643,14 @@ impl CellStore {
     /// # Errors
     ///
     /// Returns an error for an invalid purpose or a failed database transaction.
-    pub fn replay_withdrawal(&self, account_id: i64, purpose: &str, policy: &Policy) -> Result<()> {
+    pub fn replay_withdrawal(
+        &self,
+        account_id: crate::AccountId,
+        purpose: &str,
+        policy: &Policy,
+    ) -> Result<()> {
         anyhow::ensure!(
-            account_id > 0
+            account_id.get() > 0
                 && matches!(
                     purpose,
                     "tower_upload"
@@ -673,8 +678,12 @@ impl CellStore {
     /// # Errors
     ///
     /// Returns an error if the database transaction fails or the identifier is invalid.
-    pub fn replay_account_closure(&self, account_id: i64, policy: &Policy) -> Result<()> {
-        anyhow::ensure!(account_id > 0, "invalid deletion replay entry");
+    pub fn replay_account_closure(
+        &self,
+        account_id: crate::AccountId,
+        policy: &Policy,
+    ) -> Result<()> {
+        anyhow::ensure!(account_id.get() > 0, "invalid deletion replay entry");
         self.close_own_account(account_id, policy)?;
         Ok(())
     }
@@ -742,7 +751,10 @@ impl CellStore {
     }
 
     /// Account sharing and email status are checked again under the upload gate before writing.
-    pub(crate) fn account_sharing_status(&self, account_id: i64) -> Result<(bool, bool)> {
+    pub(crate) fn account_sharing_status(
+        &self,
+        account_id: crate::AccountId,
+    ) -> Result<(bool, bool)> {
         Ok(self.connection()?.query_row(
             "SELECT sharing_enabled,email_verified FROM users WHERE id=?1",
             [account_id],
@@ -750,7 +762,11 @@ impl CellStore {
         )?)
     }
 
-    pub(crate) fn set_account_sharing(&self, account_id: i64, enabled: bool) -> Result<bool> {
+    pub(crate) fn set_account_sharing(
+        &self,
+        account_id: crate::AccountId,
+        enabled: bool,
+    ) -> Result<bool> {
         Ok(self.connection()?.execute(
             "UPDATE users SET sharing_enabled=?1 WHERE id=?2 AND (email_verified=1 OR ?1=0)",
             params![enabled, account_id],
@@ -758,7 +774,7 @@ impl CellStore {
     }
 
     /// Absence of a preference means the account has never opted in.
-    pub(crate) fn air_alerts_enabled(&self, account_id: i64) -> Result<bool> {
+    pub(crate) fn air_alerts_enabled(&self, account_id: crate::AccountId) -> Result<bool> {
         Ok(self
             .connection()?
             .query_row(
@@ -771,7 +787,11 @@ impl CellStore {
     }
 
     /// Store the same opt-in for the browser and Android app.
-    pub(crate) fn set_air_alerts_enabled(&self, account_id: i64, enabled: bool) -> Result<()> {
+    pub(crate) fn set_air_alerts_enabled(
+        &self,
+        account_id: crate::AccountId,
+        enabled: bool,
+    ) -> Result<()> {
         self.connection()?.execute(
             "INSERT INTO air_alert_preferences(account_id,enabled,updated_s) VALUES (?1,?2,?3)
              ON CONFLICT(account_id) DO UPDATE SET enabled=excluded.enabled,updated_s=excluded.updated_s",
@@ -783,7 +803,7 @@ impl CellStore {
     /// Remove an ordinary account and all its observations, tokens, and deletion markers atomically.
     pub(crate) fn close_own_account(
         &self,
-        account_id: i64,
+        account_id: crate::AccountId,
         policy: &Policy,
     ) -> Result<Option<Vec<OwnContributionChange>>> {
         let mut connection = self.connection()?;
@@ -1054,10 +1074,10 @@ impl CellStore {
             cursor = Some((
                 last.updated_s,
                 last.tower.key.radio.to_string(),
-                last.tower.key.mcc,
-                last.tower.key.mnc,
-                last.tower.key.area,
-                last.tower.key.cid,
+                last.tower.key.mcc.get(),
+                last.tower.key.mnc.get(),
+                last.tower.key.area.get(),
+                last.tower.key.cid.get(),
             ));
             if page.len() < EXPORT_PAGE_SIZE {
                 break;
@@ -1172,10 +1192,10 @@ impl CellStore {
                     let key = &consensus.tower.key;
                     [
                         Value::Text(key.radio.to_string()),
-                        Value::Integer(key.mcc),
-                        Value::Integer(key.mnc),
-                        Value::Integer(key.area),
-                        Value::Integer(key.cid),
+                        Value::Integer(key.mcc.get()),
+                        Value::Integer(key.mnc.get()),
+                        Value::Integer(key.area.get()),
+                        Value::Integer(key.cid.get()),
                     ]
                 })
                 .collect::<Vec<_>>();
@@ -1286,7 +1306,7 @@ impl CellStore {
     #[cfg_attr(feature = "profiling", hotpath::measure(impl_type = "CellStore"))]
     pub(crate) fn own_contributions(
         &self,
-        account_id: i64,
+        account_id: crate::AccountId,
         filter: &OwnFilter,
         limit: usize,
         offset: usize,
@@ -1327,7 +1347,11 @@ impl CellStore {
     }
 
     /// Stream a machine-readable account archive without password hashes or bearer tokens.
-    pub(crate) fn export_account_to_path(&self, account_id: i64, path: &Path) -> Result<()> {
+    pub(crate) fn export_account_to_path(
+        &self,
+        account_id: crate::AccountId,
+        path: &Path,
+    ) -> Result<()> {
         let sync_entries = self.sync_entries(account_id)?;
         let connection = self.connection()?;
         let mut out = GzEncoder::new(std::fs::File::create(path)?, Compression::default());
@@ -1433,7 +1457,7 @@ impl CellStore {
     /// Delete one account-owned device observation and recalculate that cell's consensus.
     pub(crate) fn delete_own_contribution(
         &self,
-        account_id: i64,
+        account_id: crate::AccountId,
         key: &CellKey,
         device: &str,
         policy: &Policy,
@@ -1468,7 +1492,7 @@ impl CellStore {
     /// Remove every observation owned by one account in one transaction.
     pub(crate) fn delete_all_own_contributions(
         &self,
-        account_id: i64,
+        account_id: crate::AccountId,
         policy: &Policy,
     ) -> Result<Vec<OwnContributionChange>> {
         let mut connection = self.connection()?;
@@ -1548,7 +1572,7 @@ impl CellStore {
 /// Include the original private archive in the owner's streamed data export.
 fn export_profile_archives(
     connection: &Connection,
-    account_id: i64,
+    account_id: crate::AccountId,
     emit: &mut impl FnMut(serde_json::Value) -> Result<()>,
 ) -> Result<()> {
     let mut statement = connection.prepare("SELECT p.session_id,p.archive FROM debug_profiles p JOIN debug_sessions s ON s.id=p.session_id WHERE s.account_id=?1")?;
@@ -1564,7 +1588,7 @@ fn export_profile_archives(
 
 fn export_account_summary(
     connection: &Connection,
-    account_id: i64,
+    account_id: crate::AccountId,
     emit: &mut impl FnMut(serde_json::Value) -> Result<()>,
 ) -> Result<()> {
     let (email, admin, sharing, verified): (String, bool, bool, bool) = connection.query_row(
@@ -1580,7 +1604,7 @@ fn export_account_summary(
 
 fn export_air_alert_preference(
     connection: &Connection,
-    account_id: i64,
+    account_id: crate::AccountId,
     emit: &mut impl FnMut(serde_json::Value) -> Result<()>,
 ) -> Result<()> {
     let alert_preference: Option<(bool, i64)> = connection
@@ -1598,7 +1622,7 @@ fn export_air_alert_preference(
     Ok(())
 }
 
-fn account_device_pattern(account_id: i64) -> String {
+fn account_device_pattern(account_id: crate::AccountId) -> String {
     format!("account:{account_id}:*")
 }
 
@@ -1812,10 +1836,10 @@ impl CellStore {
             cursor = Some((
                 *updated,
                 last.radio.to_string(),
-                last.mcc,
-                last.mnc,
-                last.area,
-                last.cid,
+                last.mcc.get(),
+                last.mnc.get(),
+                last.area.get(),
+                last.cid.get(),
             ));
             if page.len() < EXPORT_PAGE_SIZE {
                 break;
@@ -1918,7 +1942,7 @@ fn row_to_consensus(row: &crate::db::Row) -> rusqlite::Result<Consensus> {
     let radio = Radio::from_str(&radio_text).map_err(|error| {
         rusqlite::Error::FromSqlConversionFailure(0, Type::Text, Box::new(error))
     })?;
-    Ok(Consensus {
+    let consensus = Consensus {
         tower: CellTower {
             key: CellKey {
                 radio,
@@ -1937,7 +1961,11 @@ fn row_to_consensus(row: &crate::db::Row) -> rusqlite::Result<Consensus> {
         })?,
         seeded: row.get(10)?,
         updated_s: row.get(11)?,
-    })
+    };
+    consensus.tower.validated().map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(5, Type::Real, Box::new(error))
+    })?;
+    Ok(consensus)
 }
 
 #[cfg(test)]
@@ -1945,7 +1973,7 @@ mod tests;
 
 fn export_trips(
     connection: &Connection,
-    account_id: i64,
+    account_id: crate::AccountId,
     emit: &mut impl FnMut(serde_json::Value) -> Result<()>,
 ) -> Result<()> {
     let mut statement = connection

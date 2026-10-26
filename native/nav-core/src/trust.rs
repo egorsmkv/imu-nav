@@ -159,6 +159,39 @@ pub struct TrustInput {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TrustConfig {
+    pub(crate) altitude_min_m: f64,
+    pub(crate) altitude_max_m: f64,
+    pub(crate) max_speed_mps: f64,
+    pub(crate) max_accuracy_m: f64,
+    pub(crate) max_clock_skew_ms: i64,
+    pub(crate) min_satellites_used: u16,
+    pub(crate) min_mean_cn0: f64,
+    pub(crate) min_cn0_spread: f64,
+    pub(crate) max_heading_difference_deg: f64,
+    pub(crate) heading_check_min_speed_mps: f64,
+    pub(crate) jam_agc_db: f64,
+    pub(crate) hard_jam_agc_db: f64,
+    pub(crate) frozen_min_speed_mps: f64,
+    pub(crate) frozen_suspect_ms: i64,
+    pub(crate) frozen_bad_ms: i64,
+    pub(crate) network_difference_min_m: f64,
+    pub(crate) network_max_accuracy_m: f64,
+    pub(crate) network_difference_max_speed_mps: f64,
+    pub(crate) speed_mismatch_min_mps: f64,
+    pub(crate) strong_jam_min_satellites: u16,
+    pub(crate) strong_jam_min_satellites_dual: u16,
+    pub(crate) strong_jam_min_cn0: f64,
+    pub(crate) strong_jam_min_spread: f64,
+    pub(crate) strong_jam_network_m: f64,
+    pub(crate) strong_jam_network_max_age_ms: i64,
+    pub(crate) strong_jam_network_max_accuracy_m: f64,
+    pub(crate) strong_jam_chain_ms: i64,
+    pub(crate) max_plausible_speed_mps: f64,
+}
+
+/// Raw tuning input; only checked configurations can be installed in a classifier.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TrustConfigValues {
     pub altitude_min_m: f64,
     pub altitude_max_m: f64,
     pub max_speed_mps: f64,
@@ -187,6 +220,153 @@ pub struct TrustConfig {
     pub strong_jam_network_max_accuracy_m: f64,
     pub strong_jam_chain_ms: i64,
     pub max_plausible_speed_mps: f64,
+}
+impl Default for TrustConfigValues {
+    fn default() -> Self {
+        TrustConfig::default().values()
+    }
+}
+
+impl TrustConfig {
+    /// Export editable tuning input without exposing mutable classifier configuration.
+    #[must_use]
+    pub const fn values(self) -> TrustConfigValues {
+        TrustConfigValues {
+            altitude_min_m: self.altitude_min_m,
+            altitude_max_m: self.altitude_max_m,
+            max_speed_mps: self.max_speed_mps,
+            max_accuracy_m: self.max_accuracy_m,
+            max_clock_skew_ms: self.max_clock_skew_ms,
+            min_satellites_used: self.min_satellites_used,
+            min_mean_cn0: self.min_mean_cn0,
+            min_cn0_spread: self.min_cn0_spread,
+            max_heading_difference_deg: self.max_heading_difference_deg,
+            heading_check_min_speed_mps: self.heading_check_min_speed_mps,
+            jam_agc_db: self.jam_agc_db,
+            hard_jam_agc_db: self.hard_jam_agc_db,
+            frozen_min_speed_mps: self.frozen_min_speed_mps,
+            frozen_suspect_ms: self.frozen_suspect_ms,
+            frozen_bad_ms: self.frozen_bad_ms,
+            network_difference_min_m: self.network_difference_min_m,
+            network_max_accuracy_m: self.network_max_accuracy_m,
+            network_difference_max_speed_mps: self.network_difference_max_speed_mps,
+            speed_mismatch_min_mps: self.speed_mismatch_min_mps,
+            strong_jam_min_satellites: self.strong_jam_min_satellites,
+            strong_jam_min_satellites_dual: self.strong_jam_min_satellites_dual,
+            strong_jam_min_cn0: self.strong_jam_min_cn0,
+            strong_jam_min_spread: self.strong_jam_min_spread,
+            strong_jam_network_m: self.strong_jam_network_m,
+            strong_jam_network_max_age_ms: self.strong_jam_network_max_age_ms,
+            strong_jam_network_max_accuracy_m: self.strong_jam_network_max_accuracy_m,
+            strong_jam_chain_ms: self.strong_jam_chain_ms,
+            max_plausible_speed_mps: self.max_plausible_speed_mps,
+        }
+    }
+}
+
+impl TryFrom<TrustConfigValues> for TrustConfig {
+    type Error = imu_nav_types::ValueError;
+    fn try_from(values: TrustConfigValues) -> Result<Self, Self::Error> {
+        for (name, value) in [
+            ("altitude_min_m", values.altitude_min_m),
+            ("altitude_max_m", values.altitude_max_m),
+            ("jam_agc_db", values.jam_agc_db),
+            ("hard_jam_agc_db", values.hard_jam_agc_db),
+        ] {
+            if !value.is_finite() {
+                return Err(imu_nav_types::ValueError::Invalid(name));
+            }
+        }
+        for (name, value) in [
+            ("max_speed_mps", values.max_speed_mps),
+            ("max_accuracy_m", values.max_accuracy_m),
+            ("min_mean_cn0", values.min_mean_cn0),
+            ("min_cn0_spread", values.min_cn0_spread),
+            (
+                "max_heading_difference_deg",
+                values.max_heading_difference_deg,
+            ),
+            (
+                "heading_check_min_speed_mps",
+                values.heading_check_min_speed_mps,
+            ),
+            ("frozen_min_speed_mps", values.frozen_min_speed_mps),
+            ("network_difference_min_m", values.network_difference_min_m),
+            ("network_max_accuracy_m", values.network_max_accuracy_m),
+            (
+                "network_difference_max_speed_mps",
+                values.network_difference_max_speed_mps,
+            ),
+            ("speed_mismatch_min_mps", values.speed_mismatch_min_mps),
+            ("strong_jam_min_cn0", values.strong_jam_min_cn0),
+            ("strong_jam_min_spread", values.strong_jam_min_spread),
+            ("strong_jam_network_m", values.strong_jam_network_m),
+            (
+                "strong_jam_network_max_accuracy_m",
+                values.strong_jam_network_max_accuracy_m,
+            ),
+            ("max_plausible_speed_mps", values.max_plausible_speed_mps),
+        ] {
+            if !value.is_finite() || value < 0.0 {
+                return Err(imu_nav_types::ValueError::Invalid(name));
+            }
+        }
+        for (name, value) in [
+            ("max_clock_skew_ms", values.max_clock_skew_ms),
+            ("frozen_suspect_ms", values.frozen_suspect_ms),
+            ("frozen_bad_ms", values.frozen_bad_ms),
+            (
+                "strong_jam_network_max_age_ms",
+                values.strong_jam_network_max_age_ms,
+            ),
+            ("strong_jam_chain_ms", values.strong_jam_chain_ms),
+        ] {
+            if value < 0 {
+                return Err(imu_nav_types::ValueError::Invalid(name));
+            }
+        }
+        if values.altitude_min_m > values.altitude_max_m
+            || values.hard_jam_agc_db > values.jam_agc_db
+            || values.frozen_bad_ms < values.frozen_suspect_ms
+            || values.max_heading_difference_deg > 180.0
+            || values.max_speed_mps <= 0.0
+            || values.max_accuracy_m <= 0.0
+        {
+            return Err(imu_nav_types::ValueError::Invalid(
+                "trust configuration bounds",
+            ));
+        }
+        Ok(Self {
+            altitude_min_m: values.altitude_min_m,
+            altitude_max_m: values.altitude_max_m,
+            max_speed_mps: values.max_speed_mps,
+            max_accuracy_m: values.max_accuracy_m,
+            max_clock_skew_ms: values.max_clock_skew_ms,
+            min_satellites_used: values.min_satellites_used,
+            min_mean_cn0: values.min_mean_cn0,
+            min_cn0_spread: values.min_cn0_spread,
+            max_heading_difference_deg: values.max_heading_difference_deg,
+            heading_check_min_speed_mps: values.heading_check_min_speed_mps,
+            jam_agc_db: values.jam_agc_db,
+            hard_jam_agc_db: values.hard_jam_agc_db,
+            frozen_min_speed_mps: values.frozen_min_speed_mps,
+            frozen_suspect_ms: values.frozen_suspect_ms,
+            frozen_bad_ms: values.frozen_bad_ms,
+            network_difference_min_m: values.network_difference_min_m,
+            network_max_accuracy_m: values.network_max_accuracy_m,
+            network_difference_max_speed_mps: values.network_difference_max_speed_mps,
+            speed_mismatch_min_mps: values.speed_mismatch_min_mps,
+            strong_jam_min_satellites: values.strong_jam_min_satellites,
+            strong_jam_min_satellites_dual: values.strong_jam_min_satellites_dual,
+            strong_jam_min_cn0: values.strong_jam_min_cn0,
+            strong_jam_min_spread: values.strong_jam_min_spread,
+            strong_jam_network_m: values.strong_jam_network_m,
+            strong_jam_network_max_age_ms: values.strong_jam_network_max_age_ms,
+            strong_jam_network_max_accuracy_m: values.strong_jam_network_max_accuracy_m,
+            strong_jam_chain_ms: values.strong_jam_chain_ms,
+            max_plausible_speed_mps: values.max_plausible_speed_mps,
+        })
+    }
 }
 
 impl Default for TrustConfig {

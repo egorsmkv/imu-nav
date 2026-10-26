@@ -1,0 +1,1 @@
+Strengthened Rust type safety across navigation, routing, search, the cell server and desktop mirror. Added stricter validation of malformed input while preserving navigation calculations and existing data formats. Graphics path iterators now own their source buffers.

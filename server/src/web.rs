@@ -4,7 +4,7 @@ use crate::api::{ApiError, AppState, run_db, run_db_guarded};
 use crate::auth::{self, Account};
 use crate::db::params;
 use crate::store::{OwnContributionChange, OwnContributionPage, OwnFilter};
-use crate::{CellKey, Radio, ServerEvent};
+use crate::{Radio, ServerEvent};
 use askama::Template;
 use axum::Router;
 use axum::body::Body;
@@ -153,7 +153,10 @@ struct SyncAccountView {
     enabled: bool,
 }
 
-async fn sync_account_view(state: &AppState, account: i64) -> Result<SyncAccountView, ApiError> {
+async fn sync_account_view(
+    state: &AppState,
+    account: crate::AccountId,
+) -> Result<SyncAccountView, ApiError> {
     let store = state.store.clone();
     let version = crate::account_sync::notice_version(state);
     Ok(SyncAccountView {
@@ -174,9 +177,9 @@ struct AirAlertAccountView {
 }
 
 struct Impersonation {
-    actor_id: i64,
+    actor_id: crate::AccountId,
     actor_email: String,
-    target_id: i64,
+    target_id: crate::AccountId,
     admin_token_hash: String,
 }
 
@@ -308,10 +311,10 @@ impl From<OwnContributionPage> for Vec<AccountRow> {
             .into_iter()
             .map(|row| AccountRow {
                 radio: row.key.radio.to_string(),
-                mcc: row.key.mcc,
-                mnc: row.key.mnc,
-                area: row.key.area,
-                cid: row.key.cid,
+                mcc: row.key.mcc.get(),
+                mnc: row.key.mnc.get(),
+                area: row.key.area.get(),
+                cid: row.key.cid.get(),
                 device_label: row
                     .device
                     .splitn(3, ':')
@@ -711,7 +714,7 @@ async fn start_session(
     );
     clear_cookie(&mut response, "imu_nav_admin_return");
     tracing::info!(
-        account_id = account.id,
+        account_id = account.id.get(),
         admin = account.admin,
         "browser session started"
     );
@@ -989,7 +992,7 @@ async fn account_page(
 /// Read both account receipts against the version currently served to clients.
 async fn account_privacy_view(
     state: &AppState,
-    account_id: i64,
+    account_id: crate::AccountId,
 ) -> Result<AccountPrivacyView, ApiError> {
     let Some(version) = state
         .config
@@ -1124,7 +1127,7 @@ async fn withdraw_privacy(
             }
         }
     }
-    tracing::info!(account_id=account.id, purpose=%purpose_for_log, "privacy withdrawal committed");
+    tracing::info!(account_id=account.id.get(), purpose=%purpose_for_log, "privacy withdrawal committed");
     Ok(redirect("/account"))
 }
 
@@ -1418,7 +1421,7 @@ async fn close_account(
     for change in changes {
         publish_change(&state, change);
     }
-    tracing::info!(account_id = account.id, "privacy account closed");
+    tracing::info!(account_id = account.id.get(), "privacy account closed");
     let mut response = redirect("/login");
     clear_cookie(&mut response, "imu_nav_session");
     clear_cookie(&mut response, "imu_nav_admin_return");
@@ -1539,13 +1542,7 @@ async fn delete_one(
             "Invalid tower identifier.",
         ));
     };
-    let key = CellKey {
-        radio,
-        mcc: form.mcc,
-        mnc: form.mnc,
-        area: form.area,
-        cid: form.cid,
-    };
+    let key = crate::api::path_key((radio.to_string(), form.mcc, form.mnc, form.area, form.cid))?;
     let store = state.store.clone();
     let _write_guard = state.write_gate.write().await;
     let policy = state.policy();
@@ -1557,7 +1554,7 @@ async fn delete_one(
     };
     publish_change(&state, change);
     tracing::info!(
-        account_id = account.id,
+        account_id = account.id.get(),
         purpose = "tower_upload",
         "privacy erasure committed"
     );
@@ -1590,7 +1587,7 @@ async fn delete_all(
         publish_change(&state, change);
     }
     tracing::info!(
-        account_id = account.id,
+        account_id = account.id.get(),
         purpose = "tower_upload",
         "privacy erasure committed"
     );

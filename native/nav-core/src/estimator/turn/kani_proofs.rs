@@ -8,10 +8,10 @@ fn navigation(turns: Vec<RouteTurn>) -> NavigationEstimator {
     let mut navigation = estimator();
     navigation.route = Arc::new(crate::route::kani_proofs::with_landmarks(turns));
     navigation.state.elapsed_ms = 6000;
-    navigation.state.filter.estimate.position_m = 400.0;
-    navigation.state.filter.estimate.covariance.position = 10_000.0;
-    navigation.state.filter.estimate.covariance.position_speed = 2.0;
-    navigation.state.filter.estimate.systematic_drift_m = 50.0;
+    navigation.state.filter.state.position = crate::RoutePosition::new(400.0).unwrap();
+    navigation.state.filter.state.covariance.position = 10_000.0;
+    navigation.state.filter.state.covariance.position_speed = 2.0;
+    navigation.state.filter.state.systematic_drift = crate::Distance::new(50.0).unwrap();
     navigation
 }
 
@@ -68,7 +68,7 @@ fn measured_position_motion_and_quality_gates_block_turns() {
     let age = i64::from(kani::any::<u16>());
     kani::assume(age <= 2500);
     match reason {
-        0 => navigation.state.last_gps_position_ms = 6000 - age,
+        0 => navigation.state.last_gps_position_ms = imu_nav_types::ElapsedMs::new(6000 - age).ok(),
         1 => {
             navigation.state.motion_control = Some(crate::estimator::MotionControl {
                 cruise_speed_mps: 10.0,
@@ -76,9 +76,9 @@ fn measured_position_motion_and_quality_gates_block_turns() {
             })
         }
         2 => navigation.mode = TravelMode::Foot,
-        3 => navigation.state.filter.estimate.speed_mps = 0.0,
-        4 => navigation.state.filter.estimate.speed_mps = 19.0,
-        _ => navigation.state.filter.estimate.covariance.position = 90_001.0,
+        3 => navigation.state.filter.state.velocity = crate::Velocity::new(0.0).unwrap(),
+        4 => navigation.state.filter.state.velocity = crate::Velocity::new(19.0).unwrap(),
+        _ => navigation.state.filter.state.covariance.position = 90_001.0,
     }
     let before = snapshot(&navigation);
     assert!(!navigation.apply_turn(Some(observation())).unwrap());
@@ -201,9 +201,9 @@ fn isolated_turn_correction_is_bounded_and_never_refreshes_sensors() {
     assert_eq!(after.covariance.speed, before.covariance.speed);
     assert_eq!(after.systematic_drift_m, before.systematic_drift_m);
     assert!(after.covariance.position >= 30.0 * 30.0);
-    assert_eq!(navigation.state.last_gps_position_ms, -1);
-    assert_eq!(navigation.state.last_gps_speed_ms, -1);
-    assert_eq!(navigation.state.last_vehicle_speed_ms, -1);
+    assert_eq!(navigation.state.last_gps_position_ms, None);
+    assert_eq!(navigation.state.last_gps_speed_ms, None);
+    assert_eq!(navigation.state.last_vehicle_speed_ms, None);
     assert_eq!(navigation.state.turn_state.last_used_ms, Some(5000));
     assert_eq!(navigation.state.turn_state.last_landmark, Some(0));
     // The same event is inert even when offered again immediately.

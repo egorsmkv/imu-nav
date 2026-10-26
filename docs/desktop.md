@@ -73,6 +73,9 @@ Only connection, theme, language, tile-template/attribution and selected map-pat
 saved locally. Routes, precise positions and trails are never saved or uploaded by the desktop.
 Plain sharing TCP has no encryption or login; use a private network or the configured VPN.
 
+The [Rust type-safety reference](reference/rust-type-safety.md) describes checked guidance,
+identity and timestamp types and the unchanged navigation protocol version.
+
 ## Developer verification
 
 Kotlin and Rust share the synthetic fixtures in `desktop/protocol/fixtures/`.

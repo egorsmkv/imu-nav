@@ -73,8 +73,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 for value in [
                     1,
                     p.segment as u64,
-                    p.position_m.to_bits(),
-                    p.offset_m.to_bits(),
+                    p.position().get().to_bits(),
+                    p.offset().get().to_bits(),
                     p.point.latitude_deg.to_bits(),
                     p.point.longitude_deg.to_bits(),
                 ] {

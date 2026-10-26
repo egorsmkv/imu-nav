@@ -1680,10 +1680,18 @@ dependencies = [
 name = "imu-nav-protocol"
 version = "0.1.0"
 dependencies = [
+ "imu-nav-types",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
  "time",
+]
+
+[[package]]
+name = "imu-nav-types"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

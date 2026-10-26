@@ -33,7 +33,7 @@ fn fresh_gps_preserves_walking_speed_and_original_deadline() {
     let deadline = measured.saturating_add(GPS_SPEED_MAX_AGE_MS);
     kani::assume(now < deadline);
     navigation.state.elapsed_ms = now;
-    navigation.state.last_gps_speed_ms = measured;
+    navigation.state.last_gps_speed_ms = imu_nav_types::ElapsedMs::new(measured).ok();
     let before = snapshot(&navigation);
     let hint = arbitrary_hint();
     navigation.apply_walking(hint).unwrap();
@@ -57,7 +57,7 @@ fn walking_hint_takes_over_at_gps_expiry() {
     navigation.state.elapsed_ms = 5000;
     let age = i64::from(kani::any::<u16>());
     kani::assume(age <= 3000);
-    navigation.state.last_gps_speed_ms = 5000 - age;
+    navigation.state.last_gps_speed_ms = imu_nav_types::ElapsedMs::new(5000 - age).ok();
     let before = navigation.estimate();
     navigation
         .apply_walking(Some(WalkingObservation {
@@ -82,8 +82,11 @@ fn walking_hint_takes_over_at_gps_expiry() {
         navigation.estimate().systematic_drift_m,
         before.systematic_drift_m
     );
-    assert_eq!(navigation.state.last_gps_speed_ms, 5000 - age);
-    assert_eq!(navigation.state.last_vehicle_speed_ms, -1);
+    assert_eq!(
+        navigation.state.last_gps_speed_ms,
+        imu_nav_types::ElapsedMs::new(5000 - age).ok()
+    );
+    assert_eq!(navigation.state.last_vehicle_speed_ms, None);
     kani::cover!(age == 2499, "fresh boundary");
     kani::cover!(age == 2500, "expired boundary");
     kani::cover!(age > 2500, "expired");
@@ -95,7 +98,7 @@ fn repeated_walking_hints_are_bounded_and_never_anchor_position() {
     let mut navigation = estimator();
     navigation.mode = TravelMode::Foot;
     navigation.state.elapsed_ms = 5000;
-    navigation.state.filter.estimate.covariance.position_speed = 2.0;
+    navigation.state.filter.state.covariance.position_speed = 2.0;
     let hint = arbitrary_hint();
     let before = navigation.estimate();
     navigation.apply_walking(hint).unwrap();
@@ -115,8 +118,8 @@ fn repeated_walking_hints_are_bounded_and_never_anchor_position() {
     assert_eq!(repeated.position_m, before.position_m);
     assert_eq!(repeated.covariance.position, before.covariance.position);
     assert_eq!(repeated.systematic_drift_m, before.systematic_drift_m);
-    assert_eq!(navigation.state.last_gps_speed_ms, -1);
-    assert_eq!(navigation.state.last_vehicle_speed_ms, -1);
+    assert_eq!(navigation.state.last_gps_speed_ms, None);
+    assert_eq!(navigation.state.last_vehicle_speed_ms, None);
     assert_eq!(
         navigation.state.walking_valid_until_ms,
         if valid {

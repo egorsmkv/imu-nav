@@ -21,7 +21,7 @@ fn main() -> Result<()> {
     println!("pack_open_ms={:.3}", opened.elapsed().as_secs_f64() * 1000.);
     for profile in info["profiles"].as_array().ok_or("missing profiles")? {
         let profile = profile.as_str().ok_or("invalid profile")?;
-        let network = pack.profile(profile)?;
+        let network = pack.profile(profile.parse()?)?;
         if let Some(data) = &queries {
             let requests: Vec<Request> = serde_json::from_slice(data)?;
             for (index, request) in requests.iter().enumerate() {
@@ -44,7 +44,7 @@ fn main() -> Result<()> {
         let mut successes = 0;
         for index in 0..32 {
             let id = (index * 7919) % network.count;
-            let road = network.state(u32::try_from(id)?);
+            let road = network.state(imu_nav_routing::ids::StateId::new(u32::try_from(id)?));
             let from = network.point(road, 0);
             let to = network.point(road, road.point_count - 1);
             let request = Request {

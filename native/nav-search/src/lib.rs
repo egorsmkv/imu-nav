@@ -1,5 +1,7 @@
 //! Tantivy candidate retrieval for offline routing packs.
 //! Indexes are immutable; cancellation is checked while enumerating terms and postings.
+use imu_nav_types::Coordinate;
+pub use imu_nav_types::{SearchId, SearchKind};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, HashSet};
@@ -17,8 +19,8 @@ const FORMAT: &str = "imu-nav-tantivy-1\n";
 /// Builder input preserves SQLite IDs, aliases and display text without another normalization pass.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Row {
-    pub kind: String,
-    pub id: u64,
+    pub kind: SearchKind,
+    pub id: SearchId,
     #[serde(default)]
     pub text: String,
     #[serde(default)]
@@ -28,13 +30,25 @@ pub struct Row {
     #[serde(default)]
     pub population: i64,
     #[serde(default)]
-    pub place_id: Option<u64>,
+    pub place_id: Option<SearchId>,
     #[serde(default)]
     pub place_name: Option<String>,
     #[serde(default)]
     pub number: String,
     pub lat: f64,
     pub lon: f64,
+}
+
+impl Row {
+    /// # Errors
+    /// Rejects geographic bounds and missing address street references before indexing or use.
+    pub fn validate(&self) -> Result<()> {
+        Coordinate::new(self.lat, self.lon)?;
+        if self.kind == SearchKind::Address && self.place_id.is_none() {
+            return Err("address has no street".into());
+        }
+        Ok(())
+    }
 }
 
 fn schema() -> Schema {
@@ -68,18 +82,16 @@ pub fn build(input: impl BufRead, directory: &Path) -> Result<()> {
     let mut writer = index.writer_with_num_threads(1, 50_000_000)?;
     for line in input.lines() {
         let row: Row = serde_json::from_str(&line?)?;
-        if !row.lat.is_finite() || !row.lon.is_finite() || row.id == 0 {
-            return Err("invalid row".into());
-        }
+        row.validate()?;
         let mut doc = TantivyDocument::default();
-        let field = schema.get_field(&row.kind)?;
-        match row.kind.as_str() {
-            "place" | "street" => {
+        let field = schema.get_field(row.kind.as_str())?;
+        match row.kind {
+            SearchKind::Place | SearchKind::Street => {
                 for token in tokens(&row.text) {
                     doc.add_text(field, token);
                 }
             }
-            "address" => doc.add_text(
+            SearchKind::Address => doc.add_text(
                 field,
                 format!(
                     "{}\t{}",
@@ -87,10 +99,12 @@ pub fn build(input: impl BufRead, directory: &Path) -> Result<()> {
                     row.number
                 ),
             ),
-            _ => return Err("invalid row kind".into()),
         }
-        doc.add_u64(schema.get_field("id")?, row.id);
-        doc.add_u64(schema.get_field("place_id")?, row.place_id.unwrap_or(0));
+        doc.add_u64(schema.get_field("id")?, row.id.get());
+        doc.add_u64(
+            schema.get_field("place_id")?,
+            row.place_id.map_or(0, SearchId::get),
+        );
         doc.add_f64(schema.get_field("lat")?, row.lat);
         doc.add_f64(schema.get_field("lon")?, row.lon);
         doc.add_text(schema.get_field("row")?, serde_json::to_string(&row)?);
@@ -120,7 +134,7 @@ pub struct Request {
 pub struct Lookup {
     pub words: Vec<String>,
     pub limit: usize,
-    pub ids: Vec<u64>,
+    pub ids: Vec<SearchId>,
     pub rows: Vec<Row>,
     pub count: Option<u64>,
 }
@@ -139,7 +153,7 @@ pub struct SearchIndex {
 
 fn check(cancel: &AtomicBool) -> Result<()> {
     if cancel.load(AtomicOrdering::Relaxed) {
-        Err("search cancelled".into())
+        Err(Cancelled.into())
     } else {
         Ok(())
     }
@@ -264,7 +278,7 @@ impl SearchIndex {
         }
         if request
             .near
-            .is_some_and(|(lat, lon)| !lat.is_finite() || !lon.is_finite())
+            .is_some_and(|(lat, lon)| Coordinate::new(lat, lon).is_err())
         {
             return Err("invalid reference".into());
         }
@@ -278,8 +292,8 @@ impl SearchIndex {
             request,
             cancel,
         };
-        let mut places = vec![context.lookup("place", &request.words, 30, &[])?];
-        let mut streets = vec![context.lookup("street", &request.words, 80, &[])?];
+        let mut places = vec![context.lookup(SearchKind::Place, &request.words, 30, &[])?];
+        let mut streets = vec![context.lookup(SearchKind::Street, &request.words, 80, &[])?];
         let mut place_keys = HashMap::new();
         let mut street_keys = HashSet::new();
         for (town, street) in &request.splits {
@@ -287,7 +301,7 @@ impl SearchIndex {
                 *index
             } else {
                 let index = places.len();
-                places.push(context.lookup("place", town, 10, &[])?);
+                places.push(context.lookup(SearchKind::Place, town, 10, &[])?);
                 place_keys.insert(town.clone(), index);
                 index
             };
@@ -304,7 +318,7 @@ impl SearchIndex {
                 .collect();
             ids.sort_unstable();
             if !ids.is_empty() && street_keys.insert((street.clone(), ids.clone())) {
-                streets.push(context.lookup("street", street, 40, &ids)?);
+                streets.push(context.lookup(SearchKind::Street, street, 40, &ids)?);
             }
         }
         let mut addresses = Vec::new();
@@ -357,7 +371,7 @@ struct SearchContext<'a> {
 impl SearchContext<'_> {
     /// House keys are sparse: visit their postings directly instead of allocating and scanning
     /// a segment-sized bitset for every candidate street. Exact and space-suffix keys are disjoint.
-    fn addresses(&self, number: &str, ids: &HashSet<u64>) -> Result<Vec<Row>> {
+    fn addresses(&self, number: &str, ids: &HashSet<SearchId>) -> Result<Vec<Row>> {
         let mut rows = Vec::new();
         let field = self.index.schema.get_field("address")?;
         for (ordinal, segment) in self.searcher.segment_readers().iter().enumerate() {
@@ -403,20 +417,22 @@ impl SearchContext<'_> {
 
     fn row(&self, address: DocAddress) -> Result<Row> {
         let document: TantivyDocument = self.searcher.doc(address)?;
-        Ok(serde_json::from_str(
+        let row: Row = serde_json::from_str(
             document
                 .get_first(self.index.schema.get_field("row")?)
                 .and_then(|value| value.as_str())
                 .ok_or("missing stored row")?,
-        )?)
+        )?;
+        row.validate()?;
+        Ok(row)
     }
 
     fn lookup(
         &mut self,
-        kind: &str,
+        kind: SearchKind,
         words: &[String],
         limit: usize,
-        ids: &[u64],
+        ids: &[SearchId],
     ) -> Result<Lookup> {
         let request = self.request;
         let cancel = self.cancel;
@@ -437,8 +453,12 @@ impl SearchContext<'_> {
         let mut count = 0;
         let longitude_weight = request.near.map(|p| p.0.to_radians().cos().powi(2));
         for (ordinal, segment) in searcher.segment_readers().iter().enumerate() {
-            let bits =
-                SearchIndex::matches(segment, self.index.schema.get_field(kind)?, &terms, cancel)?;
+            let bits = SearchIndex::matches(
+                segment,
+                self.index.schema.get_field(kind.as_str())?,
+                &terms,
+                cancel,
+            )?;
             if bits.is_empty() {
                 continue;
             }
@@ -456,7 +476,11 @@ impl SearchContext<'_> {
                     if doc >= segment.max_doc() || segment.is_deleted(doc) {
                         continue;
                     }
-                    if !ids.is_empty() && !ids.contains(&columns.places.first(doc).unwrap_or(0)) {
+                    if !ids.is_empty()
+                        && !ids
+                            .iter()
+                            .any(|id| id.get() == columns.places.first(doc).unwrap_or(0))
+                    {
                         continue;
                     }
                     count += 1;
@@ -469,7 +493,7 @@ impl SearchContext<'_> {
                     });
                     let candidate = Candidate {
                         distance,
-                        id: columns.ids.first(doc).unwrap_or(0),
+                        id: SearchId::new(columns.ids.first(doc).unwrap_or(0))?.get(),
                         address: DocAddress::new(u32::try_from(ordinal)?, doc),
                     };
                     if heap.len() == limit && heap.peek().is_some_and(|worst| candidate >= *worst) {
@@ -496,3 +520,13 @@ impl SearchContext<'_> {
         })
     }
 }
+
+/// Search cancellation is a typed control-flow outcome at the JNI boundary.
+#[derive(Clone, Copy, Debug)]
+pub struct Cancelled;
+impl std::fmt::Display for Cancelled {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("search cancelled")
+    }
+}
+impl std::error::Error for Cancelled {}

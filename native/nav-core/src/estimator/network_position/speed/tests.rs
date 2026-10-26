@@ -104,7 +104,7 @@ fn stationary_reverse_jump_acceleration_and_poor_accuracy_batches_are_not_speed(
 
 #[test]
 fn coarse_speed_never_corrects_position_clears_drift_or_claims_precision() {
-    let mut filter = RouteFilter::new(100.0, 10.0, 50.0, 6.0, 70.0).unwrap();
+    let mut filter = RouteFilter::from_raw(100.0, 10.0, 50.0, 6.0, 70.0).unwrap();
     let original = filter.estimate();
     assert!(filter.update_coarse_speed(20.0, 2.0, 9.0, 2.0).unwrap());
     assert_eq!(filter.estimate().speed_mps, 12.0);
@@ -156,8 +156,8 @@ fn speed_fix_has_no_position_update_and_does_not_refresh_measured_speed() {
     assert!(navigation.estimate().speed_mps > 10.5);
     assert!(navigation.estimate().speed_mps < 12.0);
     assert!(navigation.estimate().speed_sigma_mps() >= 2.0);
-    assert_eq!(navigation.state.last_gps_speed_ms, -1);
-    assert_eq!(navigation.state.last_vehicle_speed_ms, -1);
+    assert_eq!(navigation.state.last_gps_speed_ms, None);
+    assert_eq!(navigation.state.last_vehicle_speed_ms, None);
 }
 
 #[test]

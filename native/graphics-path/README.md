@@ -16,7 +16,7 @@ AAR's Kotlin classes stay unchanged and call this library.
 ## Contents
 
 - `src/conic.rs` — conic → quadratic subdivision (`Conic.cpp`), same float operations.
-- `src/iterator.rs` — verb/point walk (`PathIterator.cpp`) over bounds-checked slices.
+- `src/iterator.rs` — verb/point walk (`PathIterator.cpp`) over borrowed host slices or owned JNI snapshots.
 - `src/bridge.rs` (Android only) — `JNI_OnLoad`, the eight registered native methods and the
   `SkPathRef` layouts for Android 7, 8–10 and 11+ (`Path.h`).
 
@@ -32,6 +32,17 @@ the Rust port preserves it for parity. Use separate fresh iterators for sizing a
 the device circle test compares the calculated size with a fresh walk and checks its Move/Close
 boundaries, quadratic continuity and circle endpoints. No dependency upgrade or fixture rewrite
 is needed for this workaround.
+
+## Ownership and handles
+
+JNI snapshots Skia points, verbs and conic weights during iterator creation, then retains owned
+buffers. No foreign-memory slices are stored with a fabricated static lifetime. The unsafe
+platform-layout read is still required and assumes Skia keeps the source path unchanged during
+that call. Native iterator IDs now use a tagged registry: stale, wrong-kind and repeated destroys
+cannot dereference or free an arbitrary pointer. Kotlin signatures and the eight registered
+methods remain unchanged. A snapshot adds up to three buffer allocations and copies at creation;
+walking uses fixed scratch arrays and does not copy those buffers again. Host callers retain the
+borrowed `PathIterator::new` API; `from_owned` takes ownership of existing vectors.
 
 ## Verification
 

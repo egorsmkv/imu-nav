@@ -109,12 +109,17 @@ imu-nav-core = { path = "/path/to/imu-nav/native/nav-core" }
 
 ```rust
 use imu_nav_core::speed::{NetworkSpeedEstimator, fuse_speed};
+use imu_nav_core::types::{MonotonicMs, PositionSigma, RoutePosition};
 
 fn main() {
     let mut estimator = NetworkSpeedEstimator::default();
     for elapsed_ms in [5_000_i64, 15_000, 25_000, 35_000] {
         let position_m = 10.0 * (elapsed_ms as f64 / 1_000.0);
-        estimator.add(position_m, 20.0, elapsed_ms);
+        estimator.add(
+            RoutePosition::new(position_m).unwrap(),
+            PositionSigma::new(20.0).unwrap(),
+            MonotonicMs::new(elapsed_ms).unwrap(),
+        );
     }
     assert!(estimator.estimate(4_000).is_none());
     let estimate = estimator.strict_estimate(35_000).expect("four valid samples");
@@ -164,3 +169,25 @@ observations define the mean of their predicted positions; other observations do
 to that mean. With positive accuracies, the existing inverse-variance mean is used. A non-finite
 mean leaves progress unchanged, and an accepted correction remains capped at 300 m.
 These rules do not describe the comparison estimator's separate, more restrictive coarse input.
+
+## Checked Rust interfaces
+
+`imu-nav-types` supplies checked quantities shared by the native, server and desktop workspaces.
+The core re-exports it as `imu_nav_core::types`. `RouteFilter::new` accepts route position,
+signed velocity, position/speed standard deviations and distance allowance as distinct types;
+`from_raw` remains the explicit untrusted scalar ingress used by JNI and malformed-input tests.
+`RouteFilter::state` returns immutable checked state; `estimate` returns the existing scalar DTO.
+`Covariance2::new` validates correlated covariance; external callers use its scalar getters.
+Route projection results expose checked `position()` and `offset()` quantities; local and global
+queries reject geographic coordinates outside the latitude/longitude bounds.
+Classifier configuration is immutable: edit `TrustConfig::values()` and convert the resulting
+`TrustConfigValues` with `TrustConfig::try_from` before installing it.
+
+`NetworkSpeedEstimator::add` accepts checked quantities and signed `MonotonicMs`; `add_raw`
+retains its documented rejection behavior for untrusted samples. Network anchors store checked
+positions, uncertainty and durations. Missing estimator GPS/vehicle timestamps use
+`Option<ElapsedMs>`, never a negative timestamp. Raw GPS DTOs still admit malformed inputs so the
+trust classifier can report BAD rather than silently removing that evidence.
+
+See the [Rust type-safety reference](../reference/rust-type-safety.md) for wire compatibility,
+validation changes, native handle tags and graphics ownership.

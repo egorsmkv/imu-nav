@@ -83,11 +83,11 @@ fn change_pending(state: &mut FilterState, elapsed_ms: i64, position: u8) {
         .anchor_position(f64::from(position), 5.0)
         .unwrap();
     state.elapsed_ms = elapsed_ms;
-    state.last_vehicle_speed_ms = elapsed_ms;
+    state.last_vehicle_speed_ms = imu_nav_types::ElapsedMs::new(elapsed_ms).ok();
     state.vehicle_speed_scale = 1.01;
     state.stable_vehicle_speed = Some(StableVehicleSpeed::new(elapsed_ms, 10.0));
-    state.last_gps_speed_ms = elapsed_ms;
-    state.last_gps_position_ms = elapsed_ms;
+    state.last_gps_speed_ms = imu_nav_types::ElapsedMs::new(elapsed_ms).ok();
+    state.last_gps_position_ms = imu_nav_types::ElapsedMs::new(elapsed_ms).ok();
     state.motion_control = Some(MotionControl {
         cruise_speed_mps: 10.0,
         valid_until_ms: elapsed_ms + 100,
@@ -105,8 +105,8 @@ fn tick_transaction(accepted: bool) {
     let position: u8 = kani::any();
     let result = navigation.try_tick(|pending| {
         change_pending(&mut pending.state, event, position);
-        pending.last_gps_ms = event;
-        pending.last_vehicle_input_ms = event;
+        pending.last_gps_ms = imu_nav_types::ElapsedMs::new(event).ok();
+        pending.last_vehicle_input_ms = imu_nav_types::ElapsedMs::new(event).ok();
         pending.network_speed_enabled = !pending.network_speed_enabled;
         pending.mode = TravelMode::Foot;
         pending.history.front_mut().unwrap().state = pending.state.clone();
@@ -120,8 +120,14 @@ fn tick_transaction(accepted: bool) {
         assert!(snapshot(&navigation) == before);
     } else {
         assert_eq!(navigation.state.elapsed_ms, event);
-        assert_eq!(navigation.last_gps_ms, event);
-        assert_eq!(navigation.last_vehicle_input_ms, event);
+        assert_eq!(
+            navigation.last_gps_ms,
+            imu_nav_types::ElapsedMs::new(event).ok()
+        );
+        assert_eq!(
+            navigation.last_vehicle_input_ms,
+            imu_nav_types::ElapsedMs::new(event).ok()
+        );
         assert_eq!(navigation.estimate().position_m, f64::from(position));
     }
     assert_eq!(result.is_ok(), accepted);
@@ -206,7 +212,13 @@ fn prediction_boundaries_advance_and_split_at_expiry() {
     kani::assume(last_obd == -1 || (last_obd >= 0 && last_obd <= now));
     kani::assume(motion.is_none_or(|expiry| expiry > now));
     kani::assume(walking.is_none_or(|expiry| expiry > now));
-    let (end, fresh) = timing::prediction_step(now, target, last_obd, motion, walking);
+    let (end, fresh) = timing::prediction_step(
+        now,
+        target,
+        imu_nav_types::ElapsedMs::new(last_obd).ok(),
+        motion,
+        walking,
+    );
     assert!(now < end && end <= target);
     assert!(i128::from(end) - i128::from(now) <= i128::from(MAX_PREDICTION_MS));
     assert!(motion.is_none_or(|expiry| end <= expiry));
@@ -232,9 +244,16 @@ fn gps_time_gate_obeys_history_and_watermarks() {
     let last: i64 = kani::any();
     let oldest: i64 = kani::any();
     let initial: bool = kani::any();
-    let eligible = timing::gps_time_is_eligible(measurement, now, last, oldest, initial);
+    let eligible = timing::gps_time_is_eligible(
+        measurement,
+        now,
+        imu_nav_types::ElapsedMs::new(last).ok(),
+        oldest,
+        initial,
+    );
     let age = i128::from(now) - i128::from(measurement);
-    let expected = measurement > last
+    let expected = measurement >= 0
+        && (last < 0 || measurement > last)
         && (0..=i128::from(GPS_HISTORY_MS)).contains(&age)
         && (measurement > oldest || (measurement == oldest && initial));
     assert_eq!(eligible, expected);
@@ -257,8 +276,12 @@ fn vehicle_time_gate_rejects_stale_samples() {
     let now: i64 = kani::any();
     let last: i64 = kani::any();
     let observation: i64 = kani::any();
-    let eligible = timing::vehicle_time_is_eligible(observation, now, last);
-    if observation < now || observation <= last {
+    let eligible = timing::vehicle_time_is_eligible(
+        observation,
+        now,
+        imu_nav_types::ElapsedMs::new(last).ok(),
+    );
+    if observation < 0 || observation < now || (last >= 0 && observation <= last) {
         assert!(!eligible);
     } else {
         assert!(eligible);
@@ -445,8 +468,8 @@ fn walking_hint_expiry_cannot_refresh_itself() {
         navigation.estimate().systematic_drift_m,
         before.systematic_drift_m
     );
-    assert_eq!(navigation.state.last_gps_speed_ms, -1);
-    assert_eq!(navigation.state.last_vehicle_speed_ms, -1);
+    assert_eq!(navigation.state.last_gps_speed_ms, None);
+    assert_eq!(navigation.state.last_vehicle_speed_ms, None);
     kani::cover!(valid, "expires");
     kani::cover!(!valid, "rejected");
 }
@@ -497,8 +520,8 @@ fn motion_hint_expiry_cannot_refresh_itself() {
         navigation.estimate().systematic_drift_m,
         before.systematic_drift_m
     );
-    assert_eq!(navigation.state.last_gps_speed_ms, -1);
-    assert_eq!(navigation.state.last_vehicle_speed_ms, -1);
+    assert_eq!(navigation.state.last_gps_speed_ms, None);
+    assert_eq!(navigation.state.last_vehicle_speed_ms, None);
     kani::cover!(valid, "expires");
     kani::cover!(!valid, "rejected");
 }
@@ -509,12 +532,15 @@ fn motion_hint_expiry_cannot_refresh_itself() {
 fn prediction_drops_obd_allowance_at_expiry() {
     let mut state = estimator().state;
     state.elapsed_ms = 2000;
-    state.last_vehicle_speed_ms = 0;
+    state.last_vehicle_speed_ms = imu_nav_types::ElapsedMs::new(0).ok();
     let before = state.filter.estimate();
     state.predict_to(3000, TravelMode::Car).unwrap();
     let after = state.filter.estimate();
     assert_eq!(state.elapsed_ms, 3000);
-    assert_eq!(state.last_vehicle_speed_ms, 0);
+    assert_eq!(
+        state.last_vehicle_speed_ms,
+        imu_nav_types::ElapsedMs::new(0).ok()
+    );
     assert_eq!(after.position_m - before.position_m, 10.0);
     assert!((after.systematic_drift_m - before.systematic_drift_m - 0.5).abs() < 1.0e-12);
     kani::cover!(true, "crossed expiry");

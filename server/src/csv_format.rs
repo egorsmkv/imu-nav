@@ -67,6 +67,16 @@ pub(crate) const HEADER: [&str; 14] = [
 /// Returns an error for corrupt gzip or CSV data and when the valid-row limit is exceeded.
 #[cfg_attr(feature = "profiling", hotpath::measure)]
 pub fn decode_towers(bytes: &[u8], limit: usize) -> Result<Vec<CellTower>, CsvDecodeError> {
+    Ok(decode_batch(bytes, limit)?.towers)
+}
+
+/// Parsed but intrinsically invalid identities still count as rejected upload rows.
+pub(crate) struct DecodedBatch {
+    pub towers: Vec<CellTower>,
+    pub rejected: usize,
+}
+
+pub(crate) fn decode_batch(bytes: &[u8], limit: usize) -> Result<DecodedBatch, CsvDecodeError> {
     let decoded = if bytes.starts_with(&[0x1f, 0x8b]) {
         let mut decoded = Vec::new();
         GzDecoder::new(Cursor::new(bytes))
@@ -82,6 +92,7 @@ pub fn decode_towers(bytes: &[u8], limit: usize) -> Result<Vec<CellTower>, CsvDe
     };
 
     let mut towers = Vec::new();
+    let mut rejected = 0;
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(false)
         .flexible(true)
@@ -95,31 +106,52 @@ pub fn decode_towers(bytes: &[u8], limit: usize) -> Result<Vec<CellTower>, CsvDe
         {
             continue;
         }
-        let Some(tower) = parse_tower(&row) else {
+        let Some(tower) = parse_numeric_tower(&row) else {
             continue;
         };
-        if towers.len() >= limit {
+        if towers.len() + rejected >= limit {
             return Err(CsvDecodeError::TooManyRows { limit });
         }
-        towers.push(tower);
+        match tower {
+            Ok(tower) => towers.push(tower),
+            Err(_) => rejected += 1,
+        }
     }
-    Ok(towers)
+    Ok(DecodedBatch { towers, rejected })
 }
 
 pub(crate) fn parse_tower(row: &csv::StringRecord) -> Option<CellTower> {
-    Some(CellTower {
-        key: CellKey {
-            radio: Radio::from_str(row.get(0)?).ok()?,
-            mcc: row.get(1)?.parse().ok()?,
-            mnc: row.get(2)?.parse().ok()?,
-            area: row.get(3)?.parse().ok()?,
-            cid: row.get(4)?.parse().ok()?,
-        },
-        lon: row.get(6)?.parse().ok()?,
-        lat: row.get(7)?.parse().ok()?,
-        range_m: row.get(8)?.parse().ok()?,
-        samples: row.get(9)?.parse().ok()?,
-    })
+    parse_numeric_tower(row)?.ok()
+}
+
+/// Keep syntax errors separate from valid numeric rows outside the identity domain.
+fn parse_numeric_tower(
+    row: &csv::StringRecord,
+) -> Option<Result<CellTower, imu_nav_types::ValueError>> {
+    let radio = Radio::from_str(row.get(0)?).ok()?;
+    let mcc = row.get(1)?.parse::<i64>().ok()?;
+    let mnc = row.get(2)?.parse::<i64>().ok()?;
+    let area = row.get(3)?.parse::<i64>().ok()?;
+    let cid = row.get(4)?.parse::<i64>().ok()?;
+    let lon = row.get(6)?.parse().ok()?;
+    let lat = row.get(7)?.parse().ok()?;
+    let range_m = row.get(8)?.parse().ok()?;
+    let samples = row.get(9)?.parse().ok()?;
+    Some((|| {
+        Ok(CellTower {
+            key: CellKey {
+                radio,
+                mcc: crate::Mcc::new(mcc)?,
+                mnc: crate::Mnc::new(mnc)?,
+                area: crate::CellArea::new(area)?,
+                cid: crate::CellId::new(cid)?,
+            },
+            lon,
+            lat,
+            range_m,
+            samples,
+        })
+    })())
 }
 
 /// Encode published towers as gzip-compressed `OpenCellID` CSV for existing Android clients.
@@ -188,6 +220,19 @@ mod tests {
     use super::*;
     use std::io::Write;
 
+    #[test]
+    fn intrinsic_identity_rejections_keep_upload_counts_and_limits() {
+        let csv = b"LTE,255,1,0,0,,30.5,50.4,500,5\nLTE,0,1,0,1,,30.5,50.4,500,5\nLTE,255,1,-1,2,,30.5,50.4,500,5\nmalformed\n";
+        let batch = decode_batch(csv, 3).unwrap();
+        assert_eq!(batch.towers.len(), 1);
+        assert_eq!(batch.rejected, 2);
+        assert!(matches!(
+            decode_batch(csv, 2),
+            Err(CsvDecodeError::TooManyRows { limit: 2 })
+        ));
+        assert_eq!(decode_towers(csv, 3).unwrap().len(), 1);
+    }
+
     const CSV: &[u8] = b"radio,mcc,net,area,cell,unit,lon,lat,range,samples\n\
         lTe,255,1,10,1,,30.5,50.4,500,5\n\
         malformed\n\
@@ -206,10 +251,10 @@ mod tests {
             let towers = decode_towers(bytes, 2).unwrap();
             assert_eq!(towers.len(), 2);
             assert_eq!(towers[0].key.radio, Radio::Lte);
-            assert_eq!(towers[0].key.cid, 1);
+            assert_eq!(towers[0].key.cid, crate::CellId::new(1).unwrap());
             assert_eq!(towers[0].samples, 5);
             assert_eq!(towers[1].key.radio, Radio::Nr);
-            assert_eq!(towers[1].key.cid, 2);
+            assert_eq!(towers[1].key.cid, crate::CellId::new(2).unwrap());
             assert_eq!(towers[1].samples, 6);
             assert!(matches!(
                 decode_towers(bytes, 1),

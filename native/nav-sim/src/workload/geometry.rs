@@ -119,8 +119,8 @@ fn record(outcome: &mut Outcome, projection: Projection) -> Result<()> {
     outcome.hash(1);
     outcome.hash(projection.segment as u64);
     for value in [
-        projection.position_m,
-        projection.offset_m,
+        projection.position().get(),
+        projection.offset().get(),
         projection.point.latitude_deg,
         projection.point.longitude_deg,
     ] {

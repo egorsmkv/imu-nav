@@ -5,6 +5,11 @@
 Source code: MIT (see `LICENSE`). Bundled data keeps its own licences — OpenStreetMap-derived
 routing/search packs are ODbL, the cell database is CC BY-SA 4.0; see `NOTICE.md`.
 
+The project-owned `imu-nav-types` crate under `native/nav-types` is MIT-licensed and shared by
+native navigation/JNI, graphics, routing/search, the desktop protocol and the cell server. It has no
+mandatory third-party dependencies. Its optional Serde feature uses the same Serde dependency
+already listed below; host-only routing builder features remain excluded from Android.
+
 ## Libraries and licences
 
 Every library below was read from the resolved dependency graph (`./gradlew :app:dependencies`

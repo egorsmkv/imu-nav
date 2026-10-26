@@ -109,7 +109,7 @@ fn check_ordinary_fusion(gps: bool, route: bool, network: bool, age: i64) {
 fn invalid_or_nonincreasing_samples_preserve_storage() {
     let mut estimator = NetworkSpeedEstimator::default();
     let previous: i64 = kani::any();
-    estimator.add(10.0, 20.0, previous);
+    estimator.add_raw(10.0, 20.0, previous);
     let before = estimator.clone();
     let time: i64 = kani::any();
     let position = f64::from_bits(kani::any());
@@ -117,7 +117,7 @@ fn invalid_or_nonincreasing_samples_preserve_storage() {
     kani::assume(
         !position.is_finite() || !accuracy.is_finite() || accuracy < 0.0 || time <= previous,
     );
-    estimator.add(position, accuracy, time);
+    estimator.add_raw(position, accuracy, time);
     assert_same_samples(&estimator, &before);
     kani::cover!(
         time == previous && position.is_finite() && accuracy == 0.0,
@@ -149,7 +149,7 @@ fn insertion_retains_the_newest_sixty_samples() {
     let position = f64::from_bits(kani::any());
     let accuracy = f64::from_bits(kani::any());
     kani::assume(position.is_finite() && accuracy.is_finite() && accuracy >= 0.0);
-    estimator.add(position, accuracy, 1000);
+    estimator.add_raw(position, accuracy, 1000);
     assert_eq!(estimator.samples.len(), MAX_SAMPLES);
     for (index, sample) in estimator.samples.iter().take(MAX_SAMPLES - 1).enumerate() {
         assert_eq!(sample.elapsed_ms, i64::try_from(index + 1).unwrap());
@@ -171,7 +171,7 @@ fn check_spare_capacity(count: usize) {
         samples: stored_samples(),
     };
     estimator.samples.truncate(count);
-    estimator.add(30.0, 40.0, 1000);
+    estimator.add_raw(30.0, 40.0, 1000);
     assert_eq!(estimator.samples.len(), count + 1);
     for (index, sample) in estimator.samples.iter().take(count).enumerate() {
         assert_eq!(sample.elapsed_ms, i64::try_from(index).unwrap());

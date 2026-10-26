@@ -131,14 +131,14 @@ async fn start(
         Ok(Ok(Some(SessionStatus { id: id_for_db, next_seq: 0, finished: false, incomplete: false })))
     }).await??;
     let session = session.ok_or_else(unavailable)?;
-    tracing::info!(account_id = account.id, "debug session accepted");
+    tracing::info!(account_id = account.id.get(), "debug session accepted");
     Ok(Json(session))
 }
 
 fn owned_status(
     store: &crate::CellStore,
     id: &str,
-    account_id: i64,
+    account_id: crate::AccountId,
 ) -> anyhow::Result<Option<SessionStatus>> {
     let connection = store.connection()?;
     connection.query_row(
@@ -582,7 +582,7 @@ async fn delete_all(
     })
     .await?;
     tracing::info!(
-        account_id = account.id,
+        account_id = account.id.get(),
         purpose = "diagnostics",
         "privacy erasure committed"
     );

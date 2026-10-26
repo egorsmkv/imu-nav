@@ -305,7 +305,12 @@ async fn stream_upgrade(
         .on_upgrade(move |socket| stream(socket, state, token, account.id)))
 }
 
-async fn stream(mut socket: WebSocket, state: AppState, token: String, account_id: i64) {
+async fn stream(
+    mut socket: WebSocket,
+    state: AppState,
+    token: String,
+    account_id: crate::AccountId,
+) {
     let mut events = state.air_alerts.events.subscribe();
     if !stream_allowed(&state, &token, account_id).await {
         return;
@@ -351,7 +356,7 @@ async fn stream(mut socket: WebSocket, state: AppState, token: String, account_i
 }
 
 #[cfg_attr(feature = "profiling", hotpath::measure)]
-async fn stream_allowed(state: &AppState, token: &str, account_id: i64) -> bool {
+async fn stream_allowed(state: &AppState, token: &str, account_id: crate::AccountId) -> bool {
     let store = state.store.clone();
     let token = token.to_owned();
     run_db(move || {

@@ -6,6 +6,7 @@
     clippy::cast_sign_loss,
     clippy::cast_precision_loss
 )]
+use crate::ids::StateId;
 use crate::{
     Result, check,
     geo::{self, Point},
@@ -130,7 +131,7 @@ fn modifier(angle: f64) -> &'static str {
 pub(crate) fn append(
     network: &Network,
     route: &mut Route,
-    path: &[u32],
+    path: &[StateId],
     source: &Snap,
     target: &Snap,
     cancel: &AtomicBool,

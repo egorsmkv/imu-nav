@@ -25,8 +25,10 @@ The sharing server vendors MapLibre GL JS 5.20.0 under BSD-3-Clause. Its distrib
 (Apache-2.0, a derivative of The Android Open Source Project's code). Its `LICENSE` is the
 upstream licence; its README names the source commit and lists the changes. The prebuilt
 library is removed from the AAR; the Maven Java/Kotlin API is pinned to the same version.
-The crate's only runtime dependency is `jni` 0.21 (MIT/Apache-2.0), already used by the other
-Rust libraries; `serde_json` is a test-only dependency.
+The crate uses `jni` 0.21 (MIT/Apache-2.0), already used by the other Rust libraries, and the
+project-owned `imu-nav-types` crate (MIT). `serde_json` is a test-only dependency.
+The shared types crate has no mandatory third-party dependencies; its optional Serde feature uses
+the already-listed Serde dependency and is shared by the server, desktop protocol, routing and search.
 
 ## Device tests
 

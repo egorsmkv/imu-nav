@@ -54,3 +54,6 @@ Start with the [newcomer glossary](glossary.md) for *contribution*, *consensus*,
 the app as a whole.
 
 See [settings and bookmark synchronization](account-sync.md) for account restore, offline edits and deletion.
+
+Checked Rust identities, active policy validation, CSV rejection accounting and database conversion rules:
+[Rust type safety](../reference/rust-type-safety.md).

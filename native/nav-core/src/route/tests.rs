@@ -46,7 +46,7 @@ fn varied_degenerate_routes_match_exhaustive_projection_and_ambiguity() {
                         "lat={latitude} shape={shape} query={query_index}"
                     );
                     if let Some(actual) = result {
-                        assert!((actual.position_m - best.position_m).abs() < 1e-7);
+                        assert!((actual.position().get() - best.position_m).abs() < 1e-7);
                     }
                 }
             }
@@ -135,8 +135,8 @@ fn date_line_segments_use_short_interpolation_projection_and_heading() {
                 120.0,
             )
             .unwrap();
-        assert!((projected.position_m - route.length_m() / 2.0).abs() < 1e-5);
-        assert!(projected.offset_m < 1e-5);
+        assert!((projected.position().get() - route.length_m() / 2.0).abs() < 1e-5);
+        assert!(projected.offset().get() < 1e-5);
         let clipped = route
             .project(query, route.length_m() / 4.0, 0.0, 0.0, f64::MAX)
             .unwrap();
@@ -153,7 +153,7 @@ fn date_line_segments_use_short_interpolation_projection_and_heading() {
                 120.0,
             )
             .unwrap();
-        assert!(far.offset_m > 10_000_000.0);
+        assert!(far.offset().get() > 10_000_000.0);
     }
 }
 
@@ -178,7 +178,7 @@ fn wrapped_block_bounds_match_exhaustive_global_search() {
         assert_eq!(actual, expected);
         if longitude.abs() > 179.98 {
             let unambiguous = route.project_unambiguous(query, 2.0).unwrap().unwrap();
-            assert_eq!(unambiguous, expected);
+            assert_eq!(unambiguous, Projection::try_from(expected).unwrap());
         }
     }
 }
@@ -217,7 +217,7 @@ fn shared_scale_matches_independent_segment_projection_exactly() {
                 });
                 assert_eq!(
                     route.project_unambiguous(query, accuracy).unwrap(),
-                    (!ambiguous).then_some(best)
+                    (!ambiguous).then(|| Projection::try_from(best).unwrap())
                 );
             }
         }
@@ -230,9 +230,9 @@ fn exhaustive_projection(
     point: GeoPoint,
     from: usize,
     to: usize,
-) -> Projection {
+) -> KernelProjection {
     let metres_per_degree_longitude = longitude_scale(point);
-    let mut best = Projection {
+    let mut best = KernelProjection {
         position_m: 0.0,
         offset_m: f64::MAX,
         segment: from,
@@ -258,7 +258,7 @@ fn exhaustive_projection(
         let closest_y = start_y + direction_y * fraction;
         let offset_m = closest_x.hypot(closest_y);
         if offset_m < best.offset_m {
-            best = Projection {
+            best = KernelProjection {
                 position_m: route.cumulative_m[index]
                     + fraction * (route.cumulative_m[index + 1] - route.cumulative_m[index]),
                 offset_m,
@@ -319,7 +319,7 @@ fn bounded_scans_match_exhaustive_search_and_ambiguity_at_corridor_edges() {
                 });
                 assert_eq!(
                     route.project_unambiguous(query, accuracy).unwrap(),
-                    (!ambiguous).then_some(best)
+                    (!ambiguous).then(|| Projection::try_from(best).unwrap())
                 );
             }
         }
@@ -359,7 +359,7 @@ fn long_segments_crossing_the_query_survive_endpoint_bounds() {
         );
         assert_eq!(
             route.project_unambiguous(query, 1.0).unwrap(),
-            Some(expected)
+            Some(Projection::try_from(expected).unwrap())
         );
     }
 }
@@ -426,7 +426,7 @@ fn block_index_matches_exhaustive_search_on_long_winding_and_parallel_routes() {
                 });
                 assert_eq!(
                     route.project_unambiguous(query, accuracy).unwrap(),
-                    (!ambiguous).then_some(best),
+                    (!ambiguous).then(|| Projection::try_from(best).unwrap()),
                     "parallel_return={parallel_return} index={index} accuracy={accuracy}"
                 );
             }
@@ -450,8 +450,8 @@ fn projects_onto_local_segment_with_arc_length() {
         )
         .unwrap();
     assert_eq!(projection.segment, 0);
-    assert!((projection.position_m - 556.0).abs() < 2.0);
-    assert!(projection.offset_m < 10.0);
+    assert!((projection.position().get() - 556.0).abs() < 2.0);
+    assert!(projection.offset().get() < 10.0);
 }
 
 #[test]
@@ -470,8 +470,8 @@ fn global_fallback_finds_farther_route_section() {
         )
         .unwrap();
     assert_eq!(projection.segment, 1);
-    assert!(projection.offset_m < 1.0);
-    assert!(projection.position_m > 1_500.0);
+    assert!(projection.offset().get() < 1.0);
+    assert!(projection.position().get() > 1_500.0);
 }
 
 #[test]
@@ -512,7 +512,17 @@ fn indexed_global_fallback_matches_exhaustive_projection() {
         } else {
             local
         };
-        assert_eq!(route.project(query, 0.0, 0.0, 0.0, 0.0), Ok(expected));
+        if imu_nav_types::Coordinate::new(query.latitude_deg, query.longitude_deg).is_ok() {
+            assert_eq!(
+                route.project(query, 0.0, 0.0, 0.0, 0.0),
+                Ok(Projection::try_from(expected).unwrap())
+            );
+        } else {
+            assert_eq!(
+                route.project(query, 0.0, 0.0, 0.0, 0.0),
+                Err(RouteError::InvalidSearch)
+            );
+        }
     }
 }
 
@@ -568,10 +578,11 @@ fn long_segment_clamps_to_arc_window_including_backward_motion() {
                         1e9,
                     )
                     .unwrap();
-                assert!((result.position_m - expected * route.length_m()).abs() < 1e-6);
+                assert!((result.position().get() - expected * route.length_m()).abs() < 1e-6);
                 assert!((result.point.latitude_deg - (50.0 + 0.02 * expected)).abs() < 1e-10);
                 assert!(
-                    (result.offset_m - (query - expected).abs() * 0.02 * 110_540.0).abs() < 1e-6
+                    (result.offset().get() - (query - expected).abs() * 0.02 * 110_540.0).abs()
+                        < 1e-6
                 );
             }
         }
@@ -601,9 +612,9 @@ fn global_fallback_escapes_window_inside_a_single_segment() {
     let global = route
         .project(query, route.length_m() * 0.5, 0.0, 0.0, 20.0)
         .unwrap();
-    assert!((local.position_m - route.length_m() * 0.5).abs() < 1e-6);
-    assert!((global.position_m - route.length_m() * 0.9).abs() < 1e-6);
-    assert!(global.offset_m < 1e-6);
+    assert!((local.position().get() - route.length_m() * 0.5).abs() < 1e-6);
+    assert!((global.position().get() - route.length_m() * 0.9).abs() < 1e-6);
+    assert!(global.offset().get() < 1e-6);
 }
 
 #[test]
@@ -645,7 +656,7 @@ fn repeated_vertices_loops_and_parallel_returns_respect_window() {
                 1e9,
             )
             .unwrap();
-        assert!((result.position_m - first_length * 0.7).abs() < 1e-6);
+        assert!((result.position().get() - first_length * 0.7).abs() < 1e-6);
         assert_eq!(result.segment, 0);
     }
     let point = GeoPoint {
@@ -654,6 +665,6 @@ fn repeated_vertices_loops_and_parallel_returns_respect_window() {
     };
     let route = RouteGeometry::new(vec![point, point, point]).unwrap();
     let result = route.project(point, 0.0, 0.0, 0.0, 1e9).unwrap();
-    assert_eq!(result.position_m, 0.0);
-    assert_eq!(result.offset_m, 0.0);
+    assert_eq!(result.position().get(), 0.0);
+    assert_eq!(result.offset().get(), 0.0);
 }

@@ -198,10 +198,10 @@ impl TowerRow {
         Self {
             detail_path,
             radio,
-            mcc: consensus.tower.key.mcc,
-            mnc: consensus.tower.key.mnc,
-            area: consensus.tower.key.area,
-            cid: consensus.tower.key.cid,
+            mcc: consensus.tower.key.mcc.get(),
+            mnc: consensus.tower.key.mnc.get(),
+            area: consensus.tower.key.area.get(),
+            cid: consensus.tower.key.cid.get(),
             lat: format!("{:.7}", consensus.tower.lat),
             lon: format!("{:.7}", consensus.tower.lon),
             range_m: format!("{:.0}", consensus.tower.range_m),
@@ -218,7 +218,7 @@ impl TowerRow {
 
 /// Keep storage timestamps out of the administrator activity template.
 struct AuditRow {
-    actor_id: i64,
+    actor_id: crate::AccountId,
     action: String,
     target: String,
     at: web::WebTime,
@@ -320,7 +320,7 @@ struct AdminTemplate {
     csrf: String,
     accounts: Vec<crate::store::management::ManagedAccount>,
     audit: Vec<AuditRow>,
-    policy: Policy,
+    policy: crate::ValidatedPolicy,
     job: JobSummary,
 }
 
@@ -622,7 +622,7 @@ async fn correct_tower(
             .send(ServerEvent::TowerUpserted { tower: changed });
     }
     tracing::info!(
-        actor_id = account.id,
+        actor_id = account.id.get(),
         action = "correct_tower",
         "admin action completed"
     );
@@ -664,7 +664,11 @@ async fn set_quarantine(
     } else {
         "restore_tower"
     };
-    tracing::info!(actor_id = account.id, action, "admin action completed");
+    tracing::info!(
+        actor_id = account.id.get(),
+        action,
+        "admin action completed"
+    );
     Ok(redirect(&tower_path(&key)))
 }
 
@@ -707,7 +711,7 @@ async fn delete_tower(
         ));
     }
     tracing::info!(
-        actor_id = account.id,
+        actor_id = account.id.get(),
         action = "delete_tower",
         "admin action completed"
     );
@@ -745,7 +749,7 @@ async fn delete_observation(
         let _ = state.events.send(event);
     }
     tracing::info!(
-        actor_id = account.id,
+        actor_id = account.id.get(),
         action = "delete_observation",
         "admin action completed"
     );
@@ -755,7 +759,7 @@ async fn delete_observation(
 async fn account_action(
     state: AppState,
     headers: HeaderMap,
-    id: i64,
+    id: crate::AccountId,
     form: CsrfForm,
     suspended: bool,
 ) -> Result<Response, AdminError> {
@@ -774,8 +778,8 @@ async fn account_action(
         "restore_account"
     };
     tracing::info!(
-        actor_id = account.id,
-        target_id = id,
+        actor_id = account.id.get(),
+        target_id = id.get(),
         action,
         "admin action completed"
     );
@@ -785,7 +789,7 @@ async fn account_action(
 async fn suspend_account(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Path(id): Path<i64>,
+    Path(id): Path<crate::AccountId>,
     Form(form): Form<CsrfForm>,
 ) -> Result<Response, AdminError> {
     account_action(state, headers, id, form, true).await
@@ -794,7 +798,7 @@ async fn suspend_account(
 async fn restore_account(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Path(id): Path<i64>,
+    Path(id): Path<crate::AccountId>,
     Form(form): Form<CsrfForm>,
 ) -> Result<Response, AdminError> {
     account_action(state, headers, id, form, false).await
@@ -805,7 +809,7 @@ async fn impersonate_account(
     State(state): State<AppState>,
     uri: Uri,
     headers: HeaderMap,
-    Path(id): Path<i64>,
+    Path(id): Path<crate::AccountId>,
     Form(form): Form<CsrfForm>,
 ) -> Result<Response, AdminError> {
     let (actor, raw) = admin_session(&state, &headers).await?;
@@ -865,8 +869,8 @@ async fn impersonate_account(
         secure,
     );
     tracing::info!(
-        actor_id = actor.id,
-        target_id = id,
+        actor_id = actor.id.get(),
+        target_id = id.get(),
         action = "start_impersonation",
         "admin action completed"
     );

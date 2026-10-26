@@ -81,7 +81,25 @@ Builds:
       - rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
     ndk: r28c
 
+  - versionName: 0.12.0
+    versionCode: 12
+    # TODO: create and push this tag on the exact release commit before fdroiddata submission.
+    commit: v0.12.0
+    subdir: app
+    # Gzipped CSV tower data, not code; CC BY-SA 4.0 provenance is in app/src/main/assets/cells/LICENSE.txt.
+    scanignore:
+      - app/src/main/assets/cells/bundled-cells.csv.gz
+    sudo:
+      - apt-get update
+      - apt-get install -y gcc libc-dev make rustup
+    gradle:
+      - fdroid
+    prebuild:
+      - rustup default 1.99.0
+      - rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+    ndk: r28c
+
 AutoUpdateMode: Version
 UpdateCheckMode: Tags
-CurrentVersion: 0.11.0
-CurrentVersionCode: 11
+CurrentVersion: 0.12.0
+CurrentVersionCode: 12

@@ -100,7 +100,7 @@ fn weighted_regression_recovers_speed_and_drops_outlier() {
         } else {
             f64::from(index) * 50.0
         };
-        estimator.add(position_m, 30.0, elapsed_ms);
+        estimator.add_raw(position_m, 30.0, elapsed_ms);
     }
     let estimate = estimator.estimate(35_000).unwrap();
     assert!((estimate.speed_mps - 10.0).abs() < 0.1);
@@ -112,7 +112,7 @@ fn weighted_regression_recovers_speed_and_drops_outlier() {
 fn regression_rejects_short_or_imprecise_windows() {
     let mut estimator = NetworkSpeedEstimator::default();
     for index in 0_i32..4 {
-        estimator.add(f64::from(index) * 10.0, 500.0, i64::from(index) * 1_000);
+        estimator.add_raw(f64::from(index) * 10.0, 500.0, i64::from(index) * 1_000);
     }
     assert_eq!(estimator.estimate(3_000), None);
 }
@@ -150,7 +150,7 @@ fn overflowing_fusion_is_rejected_and_negative_speed_is_ignored() {
 fn repeated_insertion_keeps_only_the_latest_sixty_observations() {
     let mut estimator = NetworkSpeedEstimator::default();
     for time in 0..125 {
-        estimator.add(10.0, 20.0, time);
+        estimator.add_raw(10.0, 20.0, time);
         assert!(estimator.samples.len() <= 60);
     }
     assert_eq!(estimator.samples.first().unwrap().elapsed_ms, 65);
@@ -163,7 +163,7 @@ fn repeated_insertion_keeps_only_the_latest_sixty_observations() {
 fn future_samples_cannot_supply_a_current_speed_estimate() {
     let mut estimator = NetworkSpeedEstimator::default();
     for index in 0..4 {
-        estimator.add(
+        estimator.add_raw(
             f64::from(index) * 100.0,
             20.0,
             i64::from(index) * 10_000 + 1000,
@@ -207,7 +207,7 @@ fn future_query_fast_path_preserves_estimates_at_timestamp_extremes() {
     for first_ms in [i64::MIN, i64::MIN + 1, -30_000, 1000, i64::MAX - 30_000] {
         let mut estimator = NetworkSpeedEstimator::default();
         for index in 0..4 {
-            estimator.add(
+            estimator.add_raw(
                 f64::from(index) * 100.0,
                 20.0,
                 first_ms + i64::from(index) * 10_000,
@@ -237,7 +237,7 @@ fn future_observations_do_not_change_an_existing_estimate() {
     for interval_ms in [5000, 10_000] {
         let mut estimator = NetworkSpeedEstimator::default();
         for index in 0..4 {
-            estimator.add(
+            estimator.add_raw(
                 f64::from(index) * 50.0,
                 20.0,
                 i64::from(index) * interval_ms,
@@ -246,7 +246,7 @@ fn future_observations_do_not_change_an_existing_estimate() {
         let now_ms = 3 * interval_ms;
         let before = estimator.estimate(now_ms).unwrap();
         let strict_before = estimator.strict_estimate(now_ms);
-        estimator.add(200.0, 20.0, 4 * interval_ms);
+        estimator.add_raw(200.0, 20.0, 4 * interval_ms);
         assert_eq!(estimator.estimate(now_ms), Some(before));
         assert_eq!(estimator.strict_estimate(now_ms), strict_before);
     }
@@ -257,7 +257,7 @@ fn speed_windows_include_the_exact_expiry_boundary_only() {
     for (window_ms, minimum_span_s) in [(30_000, 15.0), (40_000, 20.0), (90_000, 30.0)] {
         let mut estimator = NetworkSpeedEstimator::default();
         for index in 0..4 {
-            estimator.add(
+            estimator.add_raw(
                 f64::from(index) * 100.0,
                 20.0,
                 i64::from(index) * window_ms / 3,
@@ -285,7 +285,7 @@ fn speed_windows_include_the_exact_expiry_boundary_only() {
 fn too_few_inliers_reject_instead_of_reusing_the_unfiltered_fit() {
     let mut estimator = NetworkSpeedEstimator::default();
     for (index, position) in [0.0, 100.0, 200.0, 10_000.0].into_iter().enumerate() {
-        estimator.add(position, 20.0, i64::try_from(index).unwrap() * 10_000);
+        estimator.add_raw(position, 20.0, i64::try_from(index).unwrap() * 10_000);
     }
     assert!(estimator.estimate(30_000).is_none());
     assert!(estimator.strict_estimate(30_000).is_none());
@@ -295,7 +295,7 @@ fn too_few_inliers_reject_instead_of_reusing_the_unfiltered_fit() {
 fn degenerate_finite_observations_cannot_publish_nonfinite_regression() {
     let mut estimator = NetworkSpeedEstimator::default();
     for index in 0..4 {
-        estimator.add(
+        estimator.add_raw(
             f64::from(index) * 100.0,
             f64::MAX,
             i64::from(index) * 10_000,
@@ -314,7 +314,7 @@ fn removing_an_endpoint_rechecks_the_surviving_time_span() {
         } else {
             f64::from(index) * 30.0
         };
-        estimator.add(position, 20.0, i64::from(index) * 3000);
+        estimator.add_raw(position, 20.0, i64::from(index) * 3000);
     }
     let initial = fit(&estimator.samples).unwrap();
     let retained = select_inliers(&estimator.samples, initial);

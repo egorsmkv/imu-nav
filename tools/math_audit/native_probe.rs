@@ -106,8 +106,8 @@ fn inspect_prediction_partition() {
         println!(
             "native_estimator step_ms={step_ms} position_m={} position_variance={} speed_variance={} drift_m={} radius_m={}",
             estimate.position_m,
-            estimate.covariance.position,
-            estimate.covariance.speed,
+            estimate.covariance.position(),
+            estimate.covariance.speed(),
             estimate.systematic_drift_m,
             estimate.safety_radius_m(2.0).unwrap()
         );
@@ -116,7 +116,7 @@ fn inspect_prediction_partition() {
 
 /// Both variances are finite individually; their product overflows the validator's determinant.
 fn inspect_constructor_range() {
-    let mut filter = RouteFilter::new(0.0, 1.0, 1.0e100, 1.0e100, 0.0).unwrap();
+    let mut filter = RouteFilter::from_raw(0.0, 1.0, 1.0e100, 1.0e100, 0.0).unwrap();
     println!(
         "route_initial_huge covariance={:?} zero_predict={:?}",
         filter.estimate().covariance,

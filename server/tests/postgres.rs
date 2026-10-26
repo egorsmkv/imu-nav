@@ -124,10 +124,10 @@ fn imports_full_sqlite_state_and_continues_writing() -> Result<()> {
     let tower = CellTower {
         key: CellKey {
             radio: Radio::Lte,
-            mcc: 255,
-            mnc: 1,
-            area: 100,
-            cid: 200,
+            mcc: imu_nav_cell_server::Mcc::new(255).unwrap(),
+            mnc: imu_nav_cell_server::Mnc::new(1).unwrap(),
+            area: imu_nav_cell_server::CellArea::new(100).unwrap(),
+            cid: imu_nav_cell_server::CellId::new(200).unwrap(),
         },
         lat: 50.45,
         lon: 30.52,
@@ -143,7 +143,7 @@ fn imports_full_sqlite_state_and_continues_writing() -> Result<()> {
     assert_migrated_tables(source.path(), &url)?;
     assert!(postgres.migrate_from_sqlite(source.path()).is_err());
     let mut second = tower;
-    second.key.cid = 203;
+    second.key.cid = imu_nav_cell_server::CellId::new(203).unwrap();
     postgres.seed(&[second], 101, &policy)?;
     assert_eq!(postgres.query(None, 0, None, &policy)?.len(), 2);
     Ok(())
@@ -244,10 +244,10 @@ async fn exercise_privacy_withdrawal(base: &str, url: &str) -> Result<()> {
     let tower = CellTower {
         key: CellKey {
             radio: Radio::Lte,
-            mcc: 255,
-            mnc: 1,
-            area: 100,
-            cid: 909,
+            mcc: imu_nav_cell_server::Mcc::new(255).unwrap(),
+            mnc: imu_nav_cell_server::Mnc::new(1).unwrap(),
+            area: imu_nav_cell_server::CellArea::new(100).unwrap(),
+            cid: imu_nav_cell_server::CellId::new(909).unwrap(),
         },
         lat: 50.45,
         lon: 30.52,
@@ -341,10 +341,10 @@ async fn exercise_api(base: &str, url: &str) -> Result<()> {
     let tower = CellTower {
         key: CellKey {
             radio: Radio::Lte,
-            mcc: 255,
-            mnc: 1,
-            area: 100,
-            cid: 200,
+            mcc: imu_nav_cell_server::Mcc::new(255).unwrap(),
+            mnc: imu_nav_cell_server::Mnc::new(1).unwrap(),
+            area: imu_nav_cell_server::CellArea::new(100).unwrap(),
+            cid: imu_nav_cell_server::CellId::new(200).unwrap(),
         },
         lat: 50.45,
         lon: 30.52,

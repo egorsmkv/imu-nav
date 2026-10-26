@@ -262,11 +262,13 @@ impl Viewer {
             ui.label(language.text("enable"));
             return;
         };
-        ui.label(language.text(if guidance.travel_mode == "FOOT" {
-            "foot"
-        } else {
-            "car"
-        }));
+        ui.label(language.text(
+            if guidance.travel_mode == imu_nav_protocol::TravelMode::Foot {
+                "foot"
+            } else {
+                "car"
+            },
+        ));
         for (flag, key) in [
             (guidance.arrived, "arrived"),
             (guidance.off_route, "off_route"),
@@ -307,16 +309,16 @@ impl Viewer {
         ui.label(format!(
             "{}: {}",
             language.text("source"),
-            language.text(&guidance.source)
+            language.text(guidance.source.as_str())
         ));
         ui.label(format!(
             "{}: {} / {}",
             language.text("gps"),
-            language.text(&guidance.gps_state),
+            language.text(guidance.gps_state.as_str()),
             guidance
                 .gps_verdict
                 .as_ref()
-                .map_or("—", |verdict| language.text(verdict))
+                .map_or("—", |verdict| language.text(verdict.as_str()))
         ));
         ui.label(format!(
             "{}: {:.0} {}",

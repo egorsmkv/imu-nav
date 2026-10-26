@@ -575,8 +575,8 @@ fn record_tick(
     if let Some(projection) = tick.projection {
         outcome.hash(projection.segment as u64);
         for value in [
-            projection.position_m,
-            projection.offset_m,
+            projection.position().get(),
+            projection.offset().get(),
             projection.point.latitude_deg,
             projection.point.longitude_deg,
         ] {
@@ -600,9 +600,9 @@ fn record_tick(
     for value in [
         estimate.position_m,
         estimate.speed_mps,
-        estimate.covariance.position,
-        estimate.covariance.position_speed,
-        estimate.covariance.speed,
+        estimate.covariance.position(),
+        estimate.covariance.position_speed(),
+        estimate.covariance.speed(),
         estimate.systematic_drift_m,
     ] {
         ensure!(value.is_finite(), "non-finite navigation output");

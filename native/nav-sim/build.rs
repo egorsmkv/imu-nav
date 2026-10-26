@@ -28,6 +28,7 @@ fn hash_sources(path: &Path, hash: &mut u64) {
 
 fn main() {
     println!("cargo:rerun-if-changed=../nav-core/src");
+    println!("cargo:rerun-if-changed=../nav-types/src");
     println!("cargo:rerun-if-changed=src");
     println!("cargo:rerun-if-changed=../Cargo.lock");
     println!("cargo:rerun-if-env-changed=CARGO_ENCODED_RUSTFLAGS");
@@ -39,6 +40,7 @@ fn main() {
     );
     let mut core_hash = 0xcbf2_9ce4_8422_2325;
     hash_sources(Path::new("../nav-core/src"), &mut core_hash);
+    hash_sources(Path::new("../nav-types/src"), &mut core_hash);
     let mut harness_hash = 0xcbf2_9ce4_8422_2325;
     hash_sources(Path::new("src"), &mut harness_hash);
     println!("cargo:rustc-env=SIM_CORE_HASH={core_hash:016x}");

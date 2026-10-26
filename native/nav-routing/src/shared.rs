@@ -1,4 +1,5 @@
 //! Shared, direction-independent E7 geometry and UTF-8 names, validated once per pack.
+use crate::ids::{GeometryId, NameId};
 use crate::{Result, file_data::FileData, geo::Point};
 use std::path::Path;
 pub const MAGIC: &[u8; 8] = b"IMUGEO02";
@@ -128,8 +129,8 @@ impl Shared {
     pub(crate) fn has_elevation(&self) -> bool {
         self.point_width == 16
     }
-    pub fn geometry(&self, id: u32) -> (usize, u32) {
-        self.descriptor(self.geometry_table, id as usize)
+    pub fn geometry(&self, id: GeometryId) -> (usize, u32) {
+        self.descriptor(self.geometry_table, id.get() as usize)
     }
     pub fn point(&self, id: usize) -> Point {
         let at = self.points + id * self.point_width;
@@ -143,8 +144,8 @@ impl Shared {
             },
         }
     }
-    pub fn name(&self, id: u32) -> String {
-        let (offset, count) = self.descriptor(self.name_table, id as usize);
+    pub fn name(&self, id: NameId) -> String {
+        let (offset, count) = self.descriptor(self.name_table, id.get() as usize);
         self.data
             .with_slice(self.name_bytes + offset, count as usize, |v| {
                 std::str::from_utf8(v).unwrap_or("").to_owned()

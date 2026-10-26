@@ -1,7 +1,7 @@
 //! Correlated covariance families, kept separate from the arbitrary-scalar overflow contracts.
 
 use super::{assert_finite, same_state};
-use crate::{Covariance2, Estimate, MIN_VARIANCE, RouteFilter, SYMMETRY_TOLERANCE};
+use crate::{Covariance2, Estimate, FilterEstimate, MIN_VARIANCE, RouteFilter, SYMMETRY_TOLERANCE};
 
 /// A finite grid of independently varying standard deviations and correlation coefficients.
 /// Binary scaling keeps the input construction exact, including the rank-one endpoints.
@@ -46,12 +46,13 @@ fn filter() -> RouteFilter {
     let covariance = family();
     assert_covariance(covariance);
     RouteFilter {
-        estimate: Estimate {
+        state: FilterEstimate::try_from(Estimate {
             position_m: 10.0,
             speed_mps: 2.0,
             covariance,
             systematic_drift_m: 5.0,
-        },
+        })
+        .unwrap(),
     }
 }
 

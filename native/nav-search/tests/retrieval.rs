@@ -2,15 +2,53 @@
 use imu_nav_search::{Request, Row, SearchIndex, build};
 use std::sync::atomic::{AtomicBool, Ordering};
 
+#[test]
+fn checked_row_and_query_boundaries_reject_invalid_geography_and_references() {
+    let directory = tempfile::tempdir().unwrap();
+    for (index, (latitude, longitude, reference)) in [
+        (91.0, 30.0, Some(1)),
+        (50.0, 181.0, Some(1)),
+        (50.0, 30.0, Some(0)),
+        (50.0, 30.0, None),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let input = serde_json::json!({
+            "kind": "address",
+            "id": 1,
+            "lat": latitude,
+            "lon": longitude,
+            "place_id": reference,
+        });
+        let output = directory.path().join(format!("invalid-{index}"));
+        assert!(build(std::io::Cursor::new(input.to_string()), &output).is_err());
+        assert!(!output.join("search-format").exists());
+    }
+    let output = directory.path().join("valid");
+    let input = serde_json::to_string(&row("street", 1, "main", 30.0)).unwrap();
+    build(std::io::Cursor::new(input), &output).unwrap();
+    let index = SearchIndex::open(&output).unwrap();
+    let cancel = AtomicBool::new(false);
+    for near in [(91.0, 30.0), (50.0, -181.0)] {
+        let mut query = request(&["main"]);
+        query.near = Some(near);
+        assert!(index.search(&query, &cancel).is_err());
+    }
+    let mut query = request(&["main"]);
+    query.near = Some((-90.0, 180.0));
+    assert!(index.search(&query, &cancel).is_ok());
+}
+
 fn row(kind: &str, id: u64, text: &str, lon: f64) -> Row {
     Row {
-        kind: kind.into(),
-        id,
+        kind: kind.parse().unwrap(),
+        id: imu_nav_search::SearchId::new(id).unwrap(),
         text: text.into(),
         name: text.into(),
         place_kind: "town".into(),
         population: 1000,
-        place_id: Some(1),
+        place_id: Some(imu_nav_search::SearchId::new(1).unwrap()),
         place_name: Some("New Town".into()),
         number: String::new(),
         lat: 0.0,
@@ -52,12 +90,12 @@ fn prefixes_conjoin_and_wrap_before_limit() {
     query.count = true;
     let response = index.search(&query, &AtomicBool::new(false)).unwrap();
     assert_eq!(response.streets[0].rows.len(), 80);
-    assert_eq!(response.streets[0].rows[0].id, 101);
+    assert_eq!(response.streets[0].rows[0].id.get(), 101);
     assert_eq!(response.streets[0].count, Some(101));
     query.near = None;
     query.count = false;
     let response = index.search(&query, &AtomicBool::new(false)).unwrap();
-    assert_eq!(response.streets[0].rows[0].id, 1);
+    assert_eq!(response.streets[0].rows[0].id.get(), 1);
     assert_eq!(response.streets[0].count, None);
     assert!(
         index
@@ -169,7 +207,7 @@ fn staged_lookups_keep_segment_columns_and_deletions_separate() {
     // A second segment restarts document IDs but has different row IDs and coordinates.
     for (kind, text) in [("place", "new town"), ("street", "main"), ("address", "")] {
         let mut value = row(kind, 10, text, -179.99);
-        value.place_id = Some(10);
+        value.place_id = Some(imu_nav_search::SearchId::new(10).unwrap());
         value.number = "22".into();
         let mut document = tantivy::TantivyDocument::default();
         let field = schema.get_field(kind).unwrap();
@@ -203,8 +241,8 @@ fn staged_lookups_keep_segment_columns_and_deletions_separate() {
     let response = index.search(&query, &cancel).unwrap();
     assert!(response.streets[0].rows.is_empty());
     assert_eq!(response.streets[1].count, Some(2));
-    assert_eq!(response.streets[1].rows[0].id, 10);
-    assert_eq!(response.streets[1].rows[1].id, 1);
+    assert_eq!(response.streets[1].rows[0].id.get(), 10);
+    assert_eq!(response.streets[1].rows[1].id.get(), 1);
     assert_eq!(response.addresses.len(), 2);
     let empty = index
         .search(&request(&["main", "absent"]), &cancel)
@@ -212,7 +250,9 @@ fn staged_lookups_keep_segment_columns_and_deletions_separate() {
     assert!(empty.streets[0].rows.is_empty());
     query.near = None;
     assert_eq!(
-        index.search(&query, &cancel).unwrap().streets[1].rows[0].id,
+        index.search(&query, &cancel).unwrap().streets[1].rows[0]
+            .id
+            .get(),
         1
     );
 }

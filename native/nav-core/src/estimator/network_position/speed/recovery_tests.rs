@@ -182,8 +182,8 @@ fn recovery_does_not_move_position_reduce_uncertainty_or_refresh_measurement_age
     assert!(navigation.estimate().covariance.speed >= predicted.estimate().covariance.speed);
     assert!(navigation.estimate().speed_sigma_mps() >= 6.0);
     assert_eq!(navigation.estimate().covariance.position_speed, 0.0);
-    assert_eq!(navigation.state.last_gps_speed_ms, -1);
-    assert_eq!(navigation.state.last_vehicle_speed_ms, -1);
+    assert_eq!(navigation.state.last_gps_speed_ms, None);
+    assert_eq!(navigation.state.last_vehicle_speed_ms, None);
 }
 
 #[test]

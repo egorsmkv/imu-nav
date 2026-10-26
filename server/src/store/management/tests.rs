@@ -7,10 +7,10 @@ fn tower(cid: i64, lat: f64) -> CellTower {
     CellTower {
         key: CellKey {
             radio: Radio::Lte,
-            mcc: 255,
-            mnc: 1,
-            area: 10,
-            cid,
+            mcc: crate::Mcc::new(255).unwrap(),
+            mnc: crate::Mnc::new(1).unwrap(),
+            area: crate::CellArea::new(10).unwrap(),
+            cid: crate::CellId::new(cid).unwrap(),
         },
         lat,
         lon: 30.5,
@@ -71,7 +71,7 @@ fn manual_correction_import_and_quarantine() -> Result<()> {
     assert_eq!(store.query(None, 0, None, &policy)?.len(), 1);
     assert!(
         (store
-            .correct_tower(1, &tower(1, 50.8), &policy)?
+            .correct_tower(crate::AccountId::new(1).unwrap(), &tower(1, 50.8), &policy)?
             .unwrap()
             .tower
             .lat
@@ -79,17 +79,27 @@ fn manual_correction_import_and_quarantine() -> Result<()> {
             .abs()
             < 1e-9
     );
-    store.set_quarantined(1, &original.key, true, &policy)?;
+    store.set_quarantined(
+        crate::AccountId::new(1).unwrap(),
+        &original.key,
+        true,
+        &policy,
+    )?;
     assert!(store.query(None, 0, None, &policy)?.is_empty());
     store.contribute("account:2:phone", &[tower(1, 50.4)], 100, &policy)?;
     assert!(store.query(None, 0, None, &policy)?.is_empty());
     store.import_seeds(import.path(), &policy, &cancel, &progress)?;
     assert!((store.consensus(&original.key)?.unwrap().tower.lat - 50.8).abs() < 1e-9);
-    assert!(store.delete_quarantined(1, &original.key)?);
+    assert!(store.delete_quarantined(crate::AccountId::new(1).unwrap(), &original.key)?);
     assert!(store.consensus(&original.key)?.is_none());
     store.contribute("account:2:phone", &[tower(1, 50.4)], 101, &policy)?;
     assert!(store.query(None, 0, None, &policy)?.is_empty());
-    store.set_quarantined(1, &original.key, false, &policy)?;
+    store.set_quarantined(
+        crate::AccountId::new(1).unwrap(),
+        &original.key,
+        false,
+        &policy,
+    )?;
     assert!(store.query(None, 0, None, &policy)?.is_empty());
     Ok(())
 }
@@ -115,7 +125,7 @@ fn cancelled_jobs_roll_back_and_policy_persists() -> Result<()> {
         ..policy
     };
     let visibility = tokio::sync::RwLock::new(());
-    let active = std::sync::RwLock::new(policy);
+    let active = std::sync::RwLock::new(crate::ValidatedPolicy::try_from(policy).unwrap());
     assert!(!store.apply_policy_live(&modified, &cancel, &progress, &visibility, &active)?);
     assert!(store.stored_policy()?.is_none());
     cancel.store(false, Ordering::Relaxed);
@@ -141,7 +151,9 @@ async fn policy_and_results_activate_after_readers_finish() -> Result<()> {
         ..original
     };
     let gate = std::sync::Arc::new(tokio::sync::RwLock::new(()));
-    let active = std::sync::Arc::new(std::sync::RwLock::new(original));
+    let active = std::sync::Arc::new(std::sync::RwLock::new(
+        crate::ValidatedPolicy::try_from(original.clone()).unwrap(),
+    ));
     let cancel = std::sync::Arc::new(AtomicBool::new(false));
     let progress = std::sync::Arc::new(AtomicUsize::new(0));
     let reader = gate.read().await;
@@ -203,7 +215,7 @@ fn recalculation_reweights_existing_device_samples() -> Result<()> {
         ..original
     };
     let gate = tokio::sync::RwLock::new(());
-    let active = std::sync::RwLock::new(original);
+    let active = std::sync::RwLock::new(crate::ValidatedPolicy::try_from(original).unwrap());
     assert!(store.apply_policy_live(
         &changed,
         &AtomicBool::new(false),
@@ -260,7 +272,12 @@ fn exports_include_quarantine_but_not_credentials() -> Result<()> {
     let store = CellStore::open(database.path())?;
     let item = tower(1, 50.4);
     store.seed(std::slice::from_ref(&item), 1, &Policy::default())?;
-    store.set_quarantined(1, &item.key, true, &Policy::default())?;
+    store.set_quarantined(
+        crate::AccountId::new(1).unwrap(),
+        &item.key,
+        true,
+        &Policy::default(),
+    )?;
     store.export_to_path(export.path(), false)?;
     let mut plain = String::new();
     GzDecoder::new(std::fs::File::open(export.path())?).read_to_string(&mut plain)?;
@@ -282,15 +299,15 @@ fn removals_follow_quarantine_delete_and_restore() -> Result<()> {
     let item = tower(7, 50.4);
     store.seed(std::slice::from_ref(&item), 1, &policy)?;
     assert_eq!(store.removals(None, 0)?, []);
-    store.set_quarantined(1, &item.key, true, &policy)?;
+    store.set_quarantined(crate::AccountId::new(1).unwrap(), &item.key, true, &policy)?;
     assert_eq!(store.removals(None, 0)?, vec![item.key.clone()]);
-    assert!(store.delete_quarantined(1, &item.key)?);
-    store.set_quarantined(1, &item.key, false, &policy)?;
+    assert!(store.delete_quarantined(crate::AccountId::new(1).unwrap(), &item.key)?);
+    store.set_quarantined(crate::AccountId::new(1).unwrap(), &item.key, false, &policy)?;
     assert_eq!(store.removals(None, 0)?, vec![item.key.clone()]);
     store.seed(std::slice::from_ref(&item), 2, &policy)?;
     assert_eq!(store.removals(None, 0)?, []);
-    store.set_quarantined(1, &item.key, true, &policy)?;
-    store.set_quarantined(1, &item.key, false, &policy)?;
+    store.set_quarantined(crate::AccountId::new(1).unwrap(), &item.key, true, &policy)?;
+    store.set_quarantined(crate::AccountId::new(1).unwrap(), &item.key, false, &policy)?;
     assert_eq!(store.removals(None, 0)?, []);
     assert!(store.consensus(&item.key)?.unwrap().updated_s >= auth::now_s() - 1);
     Ok(())
@@ -313,7 +330,8 @@ fn policy_filters_historical_rows_and_recovers_when_relaxed() -> Result<()> {
         ..original
     };
     let gate = tokio::sync::RwLock::new(());
-    let active = std::sync::RwLock::new(original.clone());
+    let active =
+        std::sync::RwLock::new(crate::ValidatedPolicy::try_from(original.clone()).unwrap());
     assert!(store.apply_policy_live(
         &restricted,
         &AtomicBool::new(false),
@@ -388,7 +406,12 @@ fn management_lists_page_beyond_old_caps_and_filter_status() -> Result<()> {
         store.admin_tower_page(None, "", 100, 100, &policy)?.len(),
         5
     );
-    store.set_quarantined(1, &towers[0].key, true, &policy)?;
+    store.set_quarantined(
+        crate::AccountId::new(1).unwrap(),
+        &towers[0].key,
+        true,
+        &policy,
+    )?;
     assert_eq!(
         store
             .admin_tower_page(None, "quarantined", 100, 0, &policy)?
@@ -411,8 +434,18 @@ fn visible_changes_batch_moderation_and_admin_page_shares_status() -> Result<()>
     let policy = Policy::default();
     let towers = (1..=105).map(|cid| tower(cid, 50.4)).collect::<Vec<_>>();
     let (_, changed) = store.seed(&towers, 1, &policy)?;
-    store.set_quarantined(1, &towers[0].key, true, &policy)?;
-    store.set_quarantined(1, &towers[104].key, true, &policy)?;
+    store.set_quarantined(
+        crate::AccountId::new(1).unwrap(),
+        &towers[0].key,
+        true,
+        &policy,
+    )?;
+    store.set_quarantined(
+        crate::AccountId::new(1).unwrap(),
+        &towers[104].key,
+        true,
+        &policy,
+    )?;
 
     let visible = store.visible_changes(changed)?;
     assert_eq!(visible.len(), 103);

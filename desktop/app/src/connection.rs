@@ -196,8 +196,8 @@ pub fn endpoint(address: &str, port: &str) -> Option<SocketAddrV4> {
 struct Receiver {
     lines: Lines,
     route: RouteAssembly,
-    sequence: u64,
-    elapsed: Option<u64>,
+    sequence: Option<imu_nav_protocol::Sequence>,
+    elapsed: Option<imu_nav_protocol::ElapsedMs>,
     trail: VecDeque<[f64; 2]>,
 }
 
@@ -212,7 +212,10 @@ impl Receiver {
                 }
                 continue;
             }
-            match decode(&line).map_err(|_| Status::InvalidData)? {
+            match decode(&line).map_err(|error| match error {
+                imu_nav_protocol::ProtocolError::UnsupportedVersion => Status::Unsupported,
+                _ => Status::InvalidData,
+            })? {
                 Frame::Hello { version } => {
                     if version != VERSION {
                         return Err(Status::Unsupported);
@@ -225,16 +228,18 @@ impl Receiver {
                     }
                     if !view.mirror
                         || !state.valid()
-                        || state.sequence <= self.sequence
+                        || self
+                            .sequence
+                            .is_some_and(|previous| state.sequence <= previous)
                         || self
                             .elapsed
                             .is_some_and(|elapsed| state.elapsed_ms <= elapsed)
                     {
                         return Err(Status::InvalidData);
                     }
-                    self.sequence = state.sequence;
+                    self.sequence = Some(state.sequence);
                     self.elapsed = Some(state.elapsed_ms);
-                    view.source_age = Duration::from_millis(state.age_ms);
+                    view.source_age = Duration::from_millis(state.age_ms.get().unsigned_abs());
                     view.guidance = state.guidance.map(Arc::new);
                     let revision = view
                         .guidance
@@ -330,7 +335,7 @@ mod tests {
         }
         assert!(!view.stale());
         let route = Route {
-            revision: 1,
+            revision: imu_nav_protocol::Revision::new(1).unwrap(),
             geometry: vec![[0.0, 0.0], [0.01, 0.01]],
             summary: String::new(),
             destination: [0.01, 0.01],
@@ -342,13 +347,14 @@ mod tests {
         let Frame::State { version, mut state } = decode(bytes).unwrap() else {
             panic!("state fixture");
         };
-        state.sequence = 2;
-        state.elapsed_ms = 1500;
+        state.sequence = imu_nav_protocol::Sequence::new(2).unwrap();
+        state.elapsed_ms = imu_nav_protocol::ElapsedMs::new(1500).unwrap();
         let guidance = state.guidance.as_mut().unwrap();
-        guidance.source = "GPS".into();
-        guidance.gps_state = "OK".into();
-        guidance.gps_verdict = Some("GOOD".into());
-        state.guidance.as_mut().unwrap().route_revision = Some(2);
+        guidance.source = "GPS".parse().unwrap();
+        guidance.gps_state = "OK".parse().unwrap();
+        guidance.gps_verdict = Some("GOOD".parse().unwrap());
+        state.guidance.as_mut().unwrap().route_revision =
+            Some(imu_nav_protocol::Revision::new(2).unwrap());
         receiver
             .accept(
                 &imu_nav_protocol::encode(&Frame::State {
@@ -360,12 +366,12 @@ mod tests {
             )
             .unwrap();
         assert!(view.route.is_none());
-        assert_eq!(view.guidance.as_ref().unwrap().source, "GPS");
-        state.sequence = 3;
-        state.elapsed_ms = 2000;
+        assert_eq!(view.guidance.as_ref().unwrap().source.as_str(), "GPS");
+        state.sequence = imu_nav_protocol::Sequence::new(3).unwrap();
+        state.elapsed_ms = imu_nav_protocol::ElapsedMs::new(2000).unwrap();
         let guidance = state.guidance.as_mut().unwrap();
-        guidance.source = "DR".into();
-        guidance.gps_state = "LOST".into();
+        guidance.source = "DR".parse().unwrap();
+        guidance.gps_state = "LOST".parse().unwrap();
         guidance.rerouting = true;
         receiver
             .accept(
@@ -377,10 +383,10 @@ mod tests {
                 &mut view,
             )
             .unwrap();
-        assert_eq!(view.guidance.as_ref().unwrap().source, "DR");
+        assert_eq!(view.guidance.as_ref().unwrap().source.as_str(), "DR");
         assert!(view.guidance.as_ref().unwrap().rerouting);
-        state.sequence = 4;
-        state.elapsed_ms = 2500;
+        state.sequence = imu_nav_protocol::Sequence::new(4).unwrap();
+        state.elapsed_ms = imu_nav_protocol::ElapsedMs::new(2500).unwrap();
         state.guidance = None;
         let off = imu_nav_protocol::encode(&Frame::State { version, state }).unwrap();
         receiver.accept(&off, &mut view).unwrap();

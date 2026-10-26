@@ -165,6 +165,6 @@ async fn withdraw(
             }
         }
     }
-    tracing::info!(account_id=account.id, purpose=%purpose_for_log, "privacy withdrawal committed");
+    tracing::info!(account_id=account.id.get(), purpose=%purpose_for_log, "privacy withdrawal committed");
     Ok(StatusCode::NO_CONTENT)
 }

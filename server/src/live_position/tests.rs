@@ -1,17 +1,21 @@
 use super::*;
 
+fn test_account(value: i64) -> crate::AccountId {
+    crate::AccountId::new(value).expect("synthetic positive account ID")
+}
+
 fn sample() -> Sample {
     Sample {
-        sequence: 1,
+        sequence: imu_nav_protocol::Sequence::new(1).unwrap(),
         lat: -50.5,
         lon: -30.25,
         speed_mps: 10.0,
         bearing_deg: 90.0,
         uncertainty_m: 80.0,
-        source: "DR".into(),
-        elapsed_ms: 1_000,
-        utc_ms: 1_767_225_600_000,
-        age_ms: 0,
+        source: "DR".parse().unwrap(),
+        elapsed_ms: imu_nav_protocol::ElapsedMs::new(1_000).unwrap(),
+        utc_ms: imu_nav_protocol::UnixMs::new(1_767_225_600_000).unwrap(),
+        age_ms: imu_nav_protocol::DurationMs::new(0).unwrap(),
     }
 }
 
@@ -35,16 +39,14 @@ fn invalid_samples_and_public_listener_configs_are_rejected() {
     let mut invalid = sample();
     invalid.lat = f64::NAN;
     assert!(!invalid.valid());
+    assert!(serde_json::from_str::<imu_nav_protocol::PositionSource>("\"NONE\"").is_err());
     invalid = sample();
-    invalid.source = "NONE".into();
-    assert!(!invalid.valid());
-    invalid = sample();
-    invalid.age_ms = 2_001;
+    invalid.age_ms = imu_nav_protocol::DurationMs::new(2_001).unwrap();
     assert!(!invalid.valid());
     let mut config = LivePositionConfig {
         bind: Ipv4Addr::LOCALHOST,
         receivers: vec![LivePositionReceiver {
-            account_id: 1,
+            account_id: test_account(1),
             port: 10110,
             peer: Ipv4Addr::LOCALHOST,
         }],
@@ -67,13 +69,13 @@ fn expiry_discards_latest_samples_and_closes_subscriptions() {
         received: Instant::now(),
     })));
     hub.sessions.lock().unwrap().insert(
-        1,
+        test_account(1),
         Session {
             id: "a".repeat(64),
             login_id: "test".into(),
             updated: Instant::now().checked_sub(SESSION_TTL).unwrap(),
-            sequence: 1,
-            elapsed_ms: Some(1_000),
+            sequence: Some(imu_nav_protocol::Sequence::new(1).unwrap()),
+            elapsed_ms: Some(imu_nav_protocol::ElapsedMs::new(1_000).unwrap()),
             samples: sender,
             slots: Arc::new(Semaphore::new(4)),
             route: None,
@@ -95,7 +97,7 @@ async fn account_session_publishes_only_to_its_receiver_and_withdrawal_stops_it(
     state.configure_live_position(LivePositionConfig {
         bind: Ipv4Addr::LOCALHOST,
         receivers: vec![LivePositionReceiver {
-            account_id: 1,
+            account_id: test_account(1),
             port,
             peer: Ipv4Addr::LOCALHOST,
         }],
@@ -266,7 +268,7 @@ async fn assert_rejected_peer(port: u16) -> anyhow::Result<()> {
 }
 
 /// Install only synthetic credentials to exercise the same token/session checks as the HTTP flow.
-fn headers(state: &AppState, account: i64, login: &str) -> anyhow::Result<HeaderMap> {
+fn headers(state: &AppState, account: crate::AccountId, login: &str) -> anyhow::Result<HeaderMap> {
     let token = format!("synthetic-{account}-{login}");
     let connection = state.store.connection()?;
     for kind in ["access", "refresh"] {
@@ -286,13 +288,13 @@ async fn account_isolation_refresh_ordering_and_logout_are_enforced() -> anyhow:
     let (_file, state) = fixture()?;
     crate::create_admin(&state.store, "other@example.org", "synthetic-password-456")?;
     configure_accounts(&state)?;
-    for account in [1, 2] {
+    for account in [test_account(1), test_account(2)] {
         state
             .store
             .grant_privacy_consent(account, "live_position", "test")?;
     }
-    let mut first = headers(&state, 1, "first")?;
-    let mut second = headers(&state, 2, "second")?;
+    let mut first = headers(&state, test_account(1), "first")?;
+    let mut second = headers(&state, test_account(2), "second")?;
     let Json(created) = start(State(state.clone()), first.clone()).await.unwrap();
     first.insert("X-Live-Session", created.session.parse()?);
     second.insert("X-Live-Session", created.session.parse()?);
@@ -324,15 +326,15 @@ async fn account_isolation_refresh_ordering_and_logout_are_enforced() -> anyhow:
         StatusCode::CONFLICT
     );
     let mut next = sample();
-    next.sequence = 2;
-    next.elapsed_ms = 1_500;
+    next.sequence = imu_nav_protocol::Sequence::new(2).unwrap();
+    next.elapsed_ms = imu_nav_protocol::ElapsedMs::new(1_500).unwrap();
     // Keep the rate gate closed even if unrelated concurrent tests consume more than 250 ms.
     state
         .live_position
         .sessions
         .lock()
         .unwrap()
-        .get_mut(&1)
+        .get_mut(&test_account(1))
         .unwrap()
         .updated = Instant::now() + Duration::from_secs(30);
     assert_eq!(
@@ -348,7 +350,7 @@ async fn account_isolation_refresh_ordering_and_logout_are_enforced() -> anyhow:
         .sessions
         .lock()
         .unwrap()
-        .get_mut(&1)
+        .get_mut(&test_account(1))
         .unwrap()
         .updated = Instant::now()
         .checked_sub(Duration::from_millis(251))
@@ -379,8 +381,8 @@ async fn account_isolation_refresh_ordering_and_logout_are_enforced() -> anyhow:
             .0,
         StatusCode::UNAUTHORIZED
     );
-    assert!(!eligible(&state, 1, "first").await.unwrap());
-    state.live_position.stop_login(1, "first");
+    assert!(!eligible(&state, test_account(1), "first").await.unwrap());
+    state.live_position.stop_login(test_account(1), "first");
     assert!(state.live_position.sessions.lock().unwrap().is_empty());
     Ok(())
 }
@@ -395,19 +397,19 @@ fn sample_expiry_clears_memory_before_the_session_lease_expires() {
         received: Instant::now().checked_sub(SAMPLE_TTL).unwrap(),
     })));
     hub.sessions.lock().unwrap().insert(
-        1,
+        test_account(1),
         Session {
             id: "a".repeat(64),
             login_id: "new-login".into(),
             updated: Instant::now(),
-            sequence: 1,
-            elapsed_ms: Some(1000),
+            sequence: Some(imu_nav_protocol::Sequence::new(1).unwrap()),
+            elapsed_ms: Some(imu_nav_protocol::ElapsedMs::new(1000).unwrap()),
             samples: sender,
             slots: Arc::new(Semaphore::new(4)),
             route: None,
         },
     );
-    hub.stop_login(1, "old-login");
+    hub.stop_login(test_account(1), "old-login");
     assert_eq!(hub.sessions.lock().unwrap().len(), 1);
     hub.prune();
     assert!(receiver.borrow_and_update().is_none());
@@ -421,15 +423,15 @@ async fn logout_disconnects_an_idle_receiver_without_another_publish() -> anyhow
     state.configure_live_position(LivePositionConfig {
         bind: Ipv4Addr::LOCALHOST,
         receivers: vec![LivePositionReceiver {
-            account_id: 1,
+            account_id: test_account(1),
             port: 10111,
             peer: Ipv4Addr::LOCALHOST,
         }],
     })?;
     state
         .store
-        .grant_privacy_consent(1, "live_position", "test")?;
-    let mut headers = headers(&state, 1, "synthetic-login")?;
+        .grant_privacy_consent(test_account(1), "live_position", "test")?;
+    let mut headers = headers(&state, test_account(1), "synthetic-login")?;
     let Json(created) = start(State(state.clone()), headers.clone()).await.unwrap();
     headers.insert("X-Live-Session", created.session.parse()?);
     let _ = publish(State(state.clone()), headers, Json(sample()))
@@ -440,7 +442,7 @@ async fn logout_disconnects_an_idle_receiver_without_another_publish() -> anyhow
         .sessions
         .lock()
         .unwrap()
-        .get(&1)
+        .get(&test_account(1))
         .unwrap()
         .samples
         .subscribe();
@@ -450,7 +452,7 @@ async fn logout_disconnects_an_idle_receiver_without_another_publish() -> anyhow
     let worker = tokio::spawn(stream(
         sender,
         state.clone(),
-        1,
+        test_account(1),
         "synthetic-login".into(),
         samples,
     ));
@@ -476,12 +478,12 @@ fn configure_accounts(state: &AppState) -> anyhow::Result<()> {
         bind: Ipv4Addr::LOCALHOST,
         receivers: vec![
             LivePositionReceiver {
-                account_id: 1,
+                account_id: test_account(1),
                 port: 10111,
                 peer: Ipv4Addr::LOCALHOST,
             },
             LivePositionReceiver {
-                account_id: 2,
+                account_id: test_account(2),
                 port: 10112,
                 peer: Ipv4Addr::new(127, 0, 0, 2),
             },
@@ -498,13 +500,13 @@ async fn mirror_stream_sends_atomic_guidance_and_route_then_revocation_closes_it
     configure_accounts(&state)?;
     state
         .store
-        .grant_privacy_consent(1, "live_position", "test")?;
-    let mut headers = headers(&state, 1, "mirror-login")?;
+        .grant_privacy_consent(test_account(1), "live_position", "test")?;
+    let mut headers = headers(&state, test_account(1), "mirror-login")?;
     let Json(created) = start(State(state.clone()), headers.clone()).await.unwrap();
     assert_eq!(created.receiver.navigation_version, VERSION);
     headers.insert("X-Live-Session", created.session.parse()?);
     let route = Route {
-        revision: 1,
+        revision: imu_nav_protocol::Revision::new(1).unwrap(),
         geometry: vec![[-50.5, -30.25], [-50.49, -30.24]],
         summary: "Synthetic".into(),
         destination: [-50.49, -30.24],
@@ -530,7 +532,7 @@ async fn mirror_stream_sends_atomic_guidance_and_route_then_revocation_closes_it
         .sessions
         .lock()
         .unwrap()
-        .get(&1)
+        .get(&test_account(1))
         .unwrap()
         .samples
         .subscribe();
@@ -540,7 +542,7 @@ async fn mirror_stream_sends_atomic_guidance_and_route_then_revocation_closes_it
     let worker = tokio::spawn(stream(
         sender,
         state.clone(),
-        1,
+        test_account(1),
         "mirror-login".into(),
         samples,
     ));
@@ -578,8 +580,8 @@ async fn mirror_stream_sends_atomic_guidance_and_route_then_revocation_closes_it
     }
     state
         .store
-        .withdraw_privacy_consent(1, "live_position", &state.policy())?;
-    state.live_position.stop(1);
+        .withdraw_privacy_consent(test_account(1), "live_position", &state.policy())?;
+    state.live_position.stop(test_account(1));
     line.clear();
     assert_eq!(
         tokio::time::timeout(Duration::from_secs(3), receiver.read_line(&mut line)).await??,
@@ -596,12 +598,12 @@ async fn mirror_routes_enforce_ownership_ordering_and_expiry() -> anyhow::Result
     configure_accounts(&state)?;
     state
         .store
-        .grant_privacy_consent(1, "live_position", "test")?;
-    let mut headers = headers(&state, 1, "route-login")?;
+        .grant_privacy_consent(test_account(1), "live_position", "test")?;
+    let mut headers = headers(&state, test_account(1), "route-login")?;
     let Json(created) = start(State(state.clone()), headers.clone()).await.unwrap();
     headers.insert("X-Live-Session", created.session.parse()?);
     let route = Route {
-        revision: 2,
+        revision: imu_nav_protocol::Revision::new(2).unwrap(),
         geometry: vec![[0.0, 0.0], [0.01, 0.01]],
         summary: String::new(),
         destination: [0.01, 0.01],
@@ -613,7 +615,7 @@ async fn mirror_routes_enforce_ownership_ordering_and_expiry() -> anyhow::Result
         .await
         .unwrap();
     let mut older = route.clone();
-    older.revision = 1;
+    older.revision = imu_nav_protocol::Revision::new(1).unwrap();
     assert_eq!(
         publish_route(State(state.clone()), headers.clone(), Json(older))
             .await
@@ -648,7 +650,7 @@ async fn mirror_routes_enforce_ownership_ordering_and_expiry() -> anyhow::Result
         .0,
         StatusCode::CONFLICT
     );
-    guidance.route_revision = Some(2);
+    guidance.route_revision = Some(imu_nav_protocol::Revision::new(2).unwrap());
     let _ = publish_navigation(
         State(state.clone()),
         headers.clone(),
@@ -661,7 +663,7 @@ async fn mirror_routes_enforce_ownership_ordering_and_expiry() -> anyhow::Result
     .unwrap();
     {
         let mut sessions = state.live_position.sessions.lock().unwrap();
-        let session = sessions.get_mut(&1).unwrap();
+        let session = sessions.get_mut(&test_account(1)).unwrap();
         let published = session.samples.borrow().as_ref().unwrap().clone();
         session.samples.send_replace(Some(Arc::new(Published {
             sample: published.sample.clone(),
@@ -677,7 +679,7 @@ async fn mirror_routes_enforce_ownership_ordering_and_expiry() -> anyhow::Result
             .sessions
             .lock()
             .unwrap()
-            .get(&1)
+            .get(&test_account(1))
             .unwrap()
             .route
             .is_none()

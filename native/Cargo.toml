@@ -1,5 +1,5 @@
 [workspace]
-members = ["nav-core", "nav-jni", "nav-sim", "nav-search", "nav-routing", "graphics-path"]
+members = ["nav-types", "nav-core", "nav-jni", "nav-sim", "nav-search", "nav-routing", "graphics-path"]
 resolver = "3"
 
 [workspace.package]

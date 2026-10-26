@@ -1,6 +1,10 @@
 //! Versioned, bounded navigation output shared by the desktop viewer and VPN relay.
 //! Coordinates and guidance are transient output, never positioning inputs.
 
+pub use imu_nav_types::{
+    DurationMs, ElapsedMs, GpsState, GpsVerdict, PositionSource, Revision, Sequence, TravelMode,
+    UnixMs,
+};
 use serde::{Deserialize, Serialize};
 
 pub const HANDSHAKE: &[u8] = b"IMUNAV NAV/1\r\n";
@@ -26,7 +30,7 @@ pub struct Maneuver {
 // These independent phone flags may coexist (for example off-route while rerouting).
 #[allow(clippy::struct_excessive_bools)]
 pub struct Guidance {
-    pub route_revision: Option<u64>,
+    pub route_revision: Option<Revision>,
     pub route_unavailable: bool,
     pub next: Option<Maneuver>,
     pub then: Option<Maneuver>,
@@ -34,12 +38,12 @@ pub struct Guidance {
     pub remaining_m: f64,
     pub remaining_s: f64,
     pub progress_m: f64,
-    pub travel_mode: String,
+    pub travel_mode: TravelMode,
     pub speed_limit_kmh: Option<u32>,
     pub uncertainty_m: f64,
-    pub source: String,
-    pub gps_state: String,
-    pub gps_verdict: Option<String>,
+    pub source: PositionSource,
+    pub gps_state: GpsState,
+    pub gps_verdict: Option<GpsVerdict>,
     pub jammed: bool,
     pub off_route: bool,
     pub rerouting: bool,
@@ -50,26 +54,15 @@ impl Guidance {
     /// Validate untrusted publishers without treating navigation allowance as GPS accuracy.
     #[must_use]
     pub fn valid(&self) -> bool {
-        self.route_revision != Some(0)
-            && [
-                self.distance_to_next_m,
-                self.remaining_m,
-                self.remaining_s,
-                self.progress_m,
-                self.uncertainty_m,
-            ]
-            .iter()
-            .all(|value| value.is_finite() && *value >= 0.0)
-            && matches!(self.travel_mode.as_str(), "CAR" | "FOOT")
-            && matches!(
-                self.source.as_str(),
-                "GPS" | "GPS_SUSPECT" | "DR" | "DR_NET" | "DR_OBD" | "DR_STOPPED" | "CELL"
-            )
-            && matches!(self.gps_state.as_str(), "OK" | "DEGRADED" | "LOST")
-            && self
-                .gps_verdict
-                .as_deref()
-                .is_none_or(|verdict| matches!(verdict, "GOOD" | "SUSPECT" | "BAD"))
+        [
+            self.distance_to_next_m,
+            self.remaining_m,
+            self.remaining_s,
+            self.progress_m,
+            self.uncertainty_m,
+        ]
+        .iter()
+        .all(|value| value.is_finite() && *value >= 0.0)
             && self
                 .speed_limit_kmh
                 .is_none_or(|speed| speed > 0 && speed <= 1000)
@@ -91,10 +84,10 @@ impl Guidance {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct State {
-    pub sequence: u64,
-    pub elapsed_ms: u64,
-    pub utc_ms: i64,
-    pub age_ms: u64,
+    pub sequence: Sequence,
+    pub elapsed_ms: ElapsedMs,
+    pub utc_ms: UnixMs,
+    pub age_ms: DurationMs,
     pub nmea: String,
     pub guidance: Option<Guidance>,
 }
@@ -102,9 +95,8 @@ pub struct State {
 impl State {
     #[must_use]
     pub fn valid(&self) -> bool {
-        self.sequence > 0
-            && (0..=4_102_444_799_999).contains(&self.utc_ms)
-            && self.age_ms <= 5000
+        (0..=4_102_444_799_999).contains(&self.utc_ms.get())
+            && self.age_ms.get() <= 5000
             && parse_rmc(&self.nmea).is_ok()
             && self.guidance.as_ref().is_none_or(Guidance::valid)
     }
@@ -114,7 +106,7 @@ impl State {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Route {
-    pub revision: u64,
+    pub revision: Revision,
     pub geometry: Vec<[f64; 2]>,
     pub summary: String,
     pub destination: [f64; 2],
@@ -123,8 +115,7 @@ pub struct Route {
 impl Route {
     #[must_use]
     pub fn valid(&self) -> bool {
-        self.revision > 0
-            && (2..=MAX_ROUTE_POINTS).contains(&self.geometry.len())
+        (2..=MAX_ROUTE_POINTS).contains(&self.geometry.len())
             && self.summary.len() <= 1024
             && point_valid(&self.destination)
             && self.geometry.iter().all(point_valid)
@@ -175,23 +166,66 @@ pub enum Frame {
         state: Box<State>,
     },
     RouteStart {
-        revision: u64,
+        revision: Revision,
         points: usize,
         summary: String,
         destination: [f64; 2],
     },
     RouteChunk {
-        revision: u64,
+        revision: Revision,
         offset: usize,
         geometry: Vec<[f64; 2]>,
     },
     RouteEnd {
-        revision: u64,
+        revision: Revision,
     },
+}
+
+impl Frame {
+    /// Validate each frame independently; route sequencing belongs to `RouteAssembly`.
+    /// # Errors
+    /// Rejects unsupported versions, malformed guidance and invalid route payloads.
+    pub fn validate(&self) -> Result<(), ProtocolError> {
+        if matches!(self, Self::Hello { version } | Self::State { version, .. } if *version != VERSION)
+        {
+            return Err(ProtocolError::UnsupportedVersion);
+        }
+        let valid = match self {
+            Self::Hello { version } => *version == VERSION,
+            Self::State { version, state } => *version == VERSION && state.valid(),
+            Self::RouteStart {
+                points,
+                summary,
+                destination,
+                ..
+            } => {
+                (2..=MAX_ROUTE_POINTS).contains(points)
+                    && summary.len() <= 1024
+                    && point_valid(destination)
+            }
+            Self::RouteChunk {
+                offset, geometry, ..
+            } => {
+                !geometry.is_empty()
+                    && geometry.iter().all(point_valid)
+                    && offset
+                        .checked_add(geometry.len())
+                        .is_some_and(|end| end <= MAX_ROUTE_POINTS)
+            }
+            Self::RouteEnd { .. } => true,
+        };
+        if valid {
+            Ok(())
+        } else {
+            Err(ProtocolError::Invalid)
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProtocolError {
+    #[error("Unsupported navigation protocol version")]
+    UnsupportedVersion,
     #[error("Invalid navigation data")]
     Invalid,
     #[error("Navigation message exceeds limit")]
@@ -206,12 +240,15 @@ pub fn decode(bytes: &[u8]) -> Result<Frame, ProtocolError> {
     if bytes.len() > MAX_FRAME_BYTES {
         return Err(ProtocolError::Oversized);
     }
-    Ok(serde_json::from_slice(bytes)?)
+    let frame: Frame = serde_json::from_slice(bytes)?;
+    frame.validate()?;
+    Ok(frame)
 }
 
 /// # Errors
 /// Rejects frames exceeding the wire limit, including their newline delimiter.
 pub fn encode(frame: &Frame) -> Result<Vec<u8>, ProtocolError> {
+    frame.validate()?;
     let mut bytes = serde_json::to_vec(frame)?;
     bytes.push(b'\n');
     if bytes.len() > MAX_FRAME_BYTES {
@@ -254,6 +291,10 @@ impl RouteAssembly {
     /// # Errors
     /// Rejects mismatched revisions, missing chunks and resource-limit violations.
     pub fn accept(&mut self, frame: Frame) -> Result<Option<Route>, ProtocolError> {
+        if let Err(error) = frame.validate() {
+            self.pending = None;
+            return Err(error);
+        }
         match frame {
             Frame::RouteStart {
                 revision,
@@ -262,8 +303,7 @@ impl RouteAssembly {
                 destination,
             } => {
                 self.pending = None;
-                if revision == 0
-                    || !(2..=MAX_ROUTE_POINTS).contains(&points)
+                if !(2..=MAX_ROUTE_POINTS).contains(&points)
                     || summary.len() > 1024
                     || !point_valid(&destination)
                 {
