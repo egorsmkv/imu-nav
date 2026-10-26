@@ -8,6 +8,8 @@ COPY server/src ./src
 COPY server/templates ./templates
 COPY server/static ./static
 COPY desktop/protocol /src/desktop/protocol
+COPY native/Cargo.toml /src/native/Cargo.toml
+COPY native/nav-types /src/native/nav-types
 RUN cargo build --locked --release
 
 FROM debian:bookworm-slim

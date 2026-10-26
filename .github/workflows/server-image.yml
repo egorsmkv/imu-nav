@@ -9,6 +9,8 @@ on:
       - 'server/.dockerignore'
       - '.dockerignore'
       - 'desktop/protocol/**'
+      - 'native/Cargo.toml'
+      - 'native/nav-types/**'
       - 'server/Cargo.toml'
       - 'server/Cargo.lock'
       - 'server/build.rs'

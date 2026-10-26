@@ -17,3 +17,9 @@
 !desktop/protocol/src/**
 !desktop/protocol/fixtures/
 !desktop/protocol/fixtures/**
+!native/
+!native/Cargo.toml
+!native/nav-types/
+!native/nav-types/Cargo.toml
+!native/nav-types/src/
+!native/nav-types/src/**
