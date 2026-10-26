@@ -68,6 +68,9 @@ Builds:
     # TODO: create and push this tag on the exact release commit before fdroiddata submission.
     commit: v0.11.0
     subdir: app
+    # Gzipped CSV tower data, not code; CC BY-SA 4.0 provenance is in app/src/main/assets/cells/LICENSE.txt.
+    scanignore:
+      - app/src/main/assets/cells/bundled-cells.csv.gz
     sudo:
       - apt-get update
       - apt-get install -y gcc libc-dev make rustup

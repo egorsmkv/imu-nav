@@ -38,6 +38,11 @@ The application source is MIT-licensed in `LICENSE`. Data and third-party notice
 `NOTICE.md` and in the asset-specific licence files. The tracked
 `bundled-cells.csv.gz` is freely redistributable data compiled from OpenCellID (CC BY-SA 4.0) and
 the public-domain Mozilla Location Service export; it is not executable code.
+The source scanner rejects gzip archives by extension, so the current recipe has a single-file
+`scanignore` for `app/src/main/assets/cells/bundled-cells.csv.gz`. Its decompressed contents are
+CSV tower records; provenance and redistribution terms are in
+`app/src/main/assets/cells/LICENSE.txt`. The exception preserves the bundled data and leaves
+the rest of the source scan enabled.
 
 The only tracked JAR is the standard Gradle wrapper. No APK, AAB, AAR, native `.so`, signing key,
 or `google-services.json` is tracked. MapLibre's BSD-2-Clause Android artifact from Maven Central
@@ -128,10 +133,11 @@ its verified URL as `IssueTracker` in the metadata template.
 
 Copy `fdroid/metadata.yml` to a current `fdroiddata` checkout as
 `metadata/org.imunav.app.yml`. Replace the template's TODO tag with the real release tag if a
-different naming scheme was used. No `scanignore`, `scandelete`, secret or prebuilt binary is
-needed. From 0.8.0 the app compiles its JNI libraries from `native/` with Rust during the Gradle
-build (`buildRustAndroid`), so those recipes install a Rust toolchain and the NDK. The 0.6.0
-recipe predates the Rust core and keeps only the plain Gradle fields. A current build entry:
+different naming scheme was used. The only `scanignore` is the licensed CSV data archive described
+above; no `scandelete`, secret or prebuilt binary is needed. From 0.8.0 the app compiles its JNI
+libraries from `native/` with Rust during the Gradle build (`buildRustAndroid`), so those recipes
+install a Rust toolchain and the NDK. The 0.6.0 recipe predates the Rust core and keeps only the
+plain Gradle fields. A current build entry:
 
 ```yaml
 Builds:
@@ -139,6 +145,9 @@ Builds:
     versionCode: 11
     commit: v0.11.0
     subdir: app
+    # Gzipped CSV tower data, not code; CC BY-SA 4.0 provenance is in app/src/main/assets/cells/LICENSE.txt.
+    scanignore:
+      - app/src/main/assets/cells/bundled-cells.csv.gz
     sudo:
       - apt-get update
       - apt-get install -y gcc libc-dev make rustup
@@ -152,6 +161,8 @@ Builds:
 
 - `subdir: app` lets fdroidserver find the Android module output; `gradle: fdroid` selects
   `assembleFdroidRelease`.
+- `scanignore` names only the bundled CSV archive, relative to the repository root even with
+  `subdir: app`. Keep its licence justification when copying the recipe to fdroiddata.
 - `sudo` installs Debian's `rustup` package and a host C toolchain for Rust build scripts;
   `prebuild` selects Rust 1.99.0 (`native/Cargo.toml` requires 1.99) and adds the three Android
   targets. The build script compiles all three, even though release APKs ship only the ARM ABIs.
@@ -191,10 +202,10 @@ dispatch, and pull requests or merge-queue entries that change the recipe, Gradl
 Cargo manifests or build scripts, or the Rust build scripts (source changes are covered by the
 F-Droid workflow). When fdroiddata moves its pin, update `FDROIDSERVER_COMMIT`/`FDROIDSERVER_SINCE`.
 
-Review the source scanner output instead of suppressing findings. In particular, explain that the
-cell database is freely licensed non-executable data and MapLibre is a freely licensed dependency
-from a trusted Maven repository. Verify the built manifest and compare the fdroidserver APK with a
-second clean unsigned build using `diffoscope`.
+Review new source scanner findings individually. The exact CSV archive exception above is for
+freely licensed non-executable data; MapLibre is a freely licensed dependency from a trusted Maven
+repository and has no scanner exception. Verify the built manifest and compare the fdroidserver
+APK with a second clean unsigned build using `diffoscope`.
 
 The authoritative process and policy are documented by F-Droid:
 
