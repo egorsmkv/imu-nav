@@ -180,7 +180,11 @@ It uses fdroiddata's `buildserver-trixie` image and the fdroidserver commit fdro
 (`FDROIDSERVER_COMMIT`), takes `fdroid/metadata.yml` with only `Repo` (the checkout) and the latest
 entry's `commit` (the commit under test) replaced, and runs
 `fdroid build --verbose --test --refresh-scanner --on-server --no-tarball org.imunav.app:<versionCode>`
-as the `vagrant` user. The recipe's `sudo`, `prebuild` and `ndk` steps, Gradle and the source
+as the `vagrant` user. Before invoking `--on-server`, CI clones the local checkout into
+`build/org.imunav.app`, checks out the commit under test, and writes the matching
+`build/.fdroidvcs-org.imunav.app` repository marker. A real build VM receives this checkout
+from the host; fdroidserver needs its Git history to set `SOURCE_DATE_EPOCH` before source
+preparation. The recipe's `sudo`, `prebuild` and `ndk` steps, Gradle and the source
 scanner therefore run exactly as on F-Droid's servers. It fails if `app/build.gradle.kts` and the
 recipe disagree on the version, uploads the unsigned APK and build logs, and runs on tags, manual
 dispatch, and pull requests or merge-queue entries that change the recipe, Gradle build files,

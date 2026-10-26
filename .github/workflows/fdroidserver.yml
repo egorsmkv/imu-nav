@@ -98,6 +98,12 @@ jobs:
           for d in build logs tmp unsigned .android .gradle metadata; do
             mkdir -p "$d"
           done
+          # --on-server expects the source checkout normally copied into the build VM.
+          # It reads HEAD for SOURCE_DATE_EPOCH before prepare_source can clone the repo.
+          git clone --no-hardlinks "$GITHUB_WORKSPACE/source" "build/$APP_ID"
+          git -C "build/$APP_ID" checkout --detach "$GITHUB_SHA"
+          # Keep fdroidserver from discarding the checkout when it verifies the recipe's Repo.
+          printf 'git %s\n' "$GITHUB_WORKSPACE/source" > "build/.fdroidvcs-$APP_ID"
           chown -R vagrant "$home_vagrant"
           sysctl fs.inotify.max_user_watches=524288 || true
           sudo --preserve-env --user vagrant \
