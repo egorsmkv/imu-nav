@@ -12,6 +12,7 @@ import org.imunav.core.nav.PositionSource
 import org.imunav.core.record.RouteCodec
 import org.imunav.core.record.TripEvent
 import org.imunav.core.record.TripFormat
+import org.imunav.core.route.ManeuverType
 import org.imunav.core.route.Route
 import org.imunav.core.route.Step
 import kotlin.math.PI
@@ -38,7 +39,7 @@ class TerrainAndVehicleSpeedTest {
 
     private fun route(withElevation: Boolean): Route {
         val pts = (0..6000 step 20).map { proj.toGeo(0.0, it.toDouble()) }
-        val steps = listOf(Step("depart", null, "North", 6000.0, 430.0, 0), Step("arrive", null, "", 0.0, 0.0, pts.lastIndex))
+        val steps = listOf(Step(ManeuverType.DEPART, null, "North", 6000.0, 430.0, 0), Step(ManeuverType.ARRIVE, null, "", 0.0, 0.0, pts.lastIndex))
         val heights = if (withElevation) DoubleArray(pts.size) { heightAt(it * 20.0) } else null
         return Route(pts, steps, 430.0, maxspeedKmh = List(pts.size - 1) { 50 }, elevationM = heights)
     }
@@ -111,7 +112,7 @@ class TerrainAndVehicleSpeedTest {
     fun flatRoadNeverProducesATerrainFix() {
         // Barometer on, route "has elevation" but it is flat: every position fits, so nothing may be claimed.
         val pts = (0..3000 step 20).map { proj.toGeo(0.0, it.toDouble()) }
-        val flat = Route(pts, listOf(Step("depart", null, "", 3000.0, 200.0, 0)), 200.0, elevationM = DoubleArray(pts.size) { 120.0 })
+        val flat = Route(pts, listOf(Step(ManeuverType.DEPART, null, "", 3000.0, 200.0, 0)), 200.0, elevationM = DoubleArray(pts.size) { 120.0 })
         val matcher = ElevationMatcher()
         var odo = 0.0
         for (i in 0..200) {
@@ -221,7 +222,7 @@ class TerrainAndVehicleSpeedTest {
     fun periodicTerrainCannotIdentifyWhichRepeatedHillTheCarOccupies() {
         val points = (0..6000 step 20).map { proj.toGeo(0.0, it.toDouble()) }
         fun height(distance: Double) = 100.0 + 15.0 * sin(2 * PI * distance / 400.0)
-        val route = Route(points, listOf(Step("depart", null, "", 6000.0, 400.0, 0)), 400.0, elevationM = DoubleArray(points.size) { height(it * 20.0) })
+        val route = Route(points, listOf(Step(ManeuverType.DEPART, null, "", 6000.0, 400.0, 0)), 400.0, elevationM = DoubleArray(points.size) { height(it * 20.0) })
         val matcher = ElevationMatcher()
         for (distance in 0..2000 step 5) {
             val now = distance * 100L

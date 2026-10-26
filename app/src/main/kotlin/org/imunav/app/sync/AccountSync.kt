@@ -135,8 +135,12 @@ class AccountSync(private val context: Context, private val app: AppGraph) {
     private fun currentIdentity(): String = "${app.cells.diagnosticServerUrl()}:${app.cells.diagnosticAccountEmail()}:${app.cells.accountId()}:${app.cells.syncIdentity()}"
 
     private suspend fun persist() = withContext(Dispatchers.IO + NonCancellable) { disk.write(journal) }
+
+    /** Keep unknown settings with their profile, including while switching account ownership. */
+    private fun capturedSettings(owner: String): Map<String, String> = settings.capture(SyncDisk.values(profile(owner).optJSONObject("settings") ?: JSONObject()))
+
     private suspend fun localValues(): Map<String, String> {
-        val choices = settings.capture()
+        val choices = capturedSettings(active)
         val bookmarks = app.bookmarks.state.value.items
         return withContext(Dispatchers.Default) { choices + bookmarks.associate { "bookmark:${it.id}" to SyncCodec.bookmark(it) } }
     }
@@ -204,13 +208,13 @@ class AccountSync(private val context: Context, private val app: AppGraph) {
         }
         val next = if (key != "local" && (data.optBoolean("enabled") || data.optBoolean("created"))) key else "local"
         val previous = journal.optString("owner", "local")
-        if (!journal.has(previous)) profile(previous).put("settings", JSONObject(settings.capture()))
-        if (recovering || active == previous) profile(previous).put("settings", JSONObject(settings.capture()))
+        if (!journal.has(previous)) profile(previous).put("settings", JSONObject(capturedSettings(previous)))
+        if (recovering || active == previous) profile(previous).put("settings", JSONObject(capturedSettings(previous)))
         recovering = false
         if (active != next || previous != next) {
             selectProfile(next)
         }
-        if (journal.optString("owner", "local") == active) profile(active).put("settings", JSONObject(settings.capture()))
+        if (journal.optString("owner", "local") == active) profile(active).put("settings", JSONObject(capturedSettings(active)))
         _status.value = _status.value.copy(signedIn = signedIn, enabled = data.optBoolean("enabled"), lastSuccess = data.optLong("last_success"))
         persist()
         return data
@@ -220,7 +224,7 @@ class AccountSync(private val context: Context, private val app: AppGraph) {
         applying = true
         try {
             val target = profile(next)
-            val savedSettings = target.optJSONObject("settings") ?: profile("local").optJSONObject("settings") ?: JSONObject(settings.capture())
+            val savedSettings = target.optJSONObject("settings") ?: profile("local").optJSONObject("settings") ?: JSONObject(capturedSettings(active))
             val seed = if (next != "local" && !target.optBoolean("created") &&
                 withContext(Dispatchers.IO) { !context.getDatabasePath("bookmarks-$next.db").exists() }
             ) {
@@ -230,8 +234,7 @@ class AccountSync(private val context: Context, private val app: AppGraph) {
             }
             if (active != next) app.bookmarks.selectStore(BookmarkDatabase(context, if (next == "local") "bookmarks.db" else "bookmarks-$next.db"), seed)
             if (safeToRestore()) {
-                settings.validate(SyncDisk.values(savedSettings))
-                settings.apply(SyncDisk.values(savedSettings))
+                settings.apply(settings.decode(SyncDisk.values(savedSettings)))
                 journal.put("owner", next)
             }
             target.put("created", true).put("settings", savedSettings)
@@ -258,7 +261,7 @@ class AccountSync(private val context: Context, private val app: AppGraph) {
         val bookmarkRevision = app.bookmarks.state.first { !it.busy && it.loaded }.revision
         val entries = withContext(Dispatchers.Default) { SyncCodec.entries(remote.getJSONArray("entries")) }
         val values = SyncMerge.apply(entries, sent, localValues())
-        settings.validate(values)
+        settings.decode(values)
         val bookmarks =
             withContext(Dispatchers.Default) { values.filterKeys { it.startsWith("bookmark:") }.map { (key, value) -> SyncCodec.bookmark(key.substringAfter(':'), value) } }
         applying = true
@@ -268,9 +271,10 @@ class AccountSync(private val context: Context, private val app: AppGraph) {
                 wake() // Recompute against the completed local edit; never acknowledge a stale replacement.
                 return
             }
-            settings.apply(SyncMerge.apply(entries, sent, localValues()))
+            val finalValues = SyncMerge.apply(entries, sent, localValues())
+            settings.apply(settings.decode(finalValues))
             val acknowledged = withContext(Dispatchers.Default) { SyncCodec.entries(entries) }
-            data.put("settings", JSONObject(settings.capture())).put("baseline", acknowledged).put("restored", true).put("last_success", System.currentTimeMillis())
+            data.put("settings", JSONObject(settings.capture(finalValues))).put("baseline", acknowledged).put("restored", true).put("last_success", System.currentTimeMillis())
             persist()
             _status.value = _status.value.copy(enabled = true, unavailable = false, lastSuccess = data.getLong("last_success"))
         } finally {

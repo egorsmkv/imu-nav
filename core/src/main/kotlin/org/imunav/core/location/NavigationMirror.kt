@@ -149,9 +149,9 @@ class NavigationMirrorEncoder {
             return
         }
         writeStartObject()
-        writeStringField("kind", bounded(step.type, MAX_KIND_CHARS))
+        writeStringField("kind", bounded(step.type.wireValue, MAX_KIND_CHARS))
         writeFieldName("modifier")
-        step.modifier?.let { writeString(bounded(it, MAX_KIND_CHARS)) } ?: writeNull()
+        step.modifier?.let { writeString(bounded(it.wireValue, MAX_KIND_CHARS)) } ?: writeNull()
         writeStringField("name", bounded(step.name, MAX_NAME_CHARS))
         writeFieldName("roundabout_exit")
         step.roundaboutExit?.takeIf { it in 0..MAX_EXIT }?.let { writeNumber(it) } ?: writeNull()

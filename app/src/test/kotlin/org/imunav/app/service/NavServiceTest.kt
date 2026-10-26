@@ -13,6 +13,7 @@ import org.imunav.app.TestGraphApp
 import org.imunav.app.graph
 import org.imunav.core.geo.GeoPoint
 import org.imunav.core.geo.LocalProjection
+import org.imunav.core.route.ManeuverType
 import org.imunav.core.route.Route
 import org.imunav.core.route.Step
 import org.junit.Assert.assertEquals
@@ -36,7 +37,7 @@ class NavServiceTest {
     private val projection = LocalProjection(GeoPoint(50.45, 30.52))
     private val route = Route(
         (0..2000 step 20).map { projection.toGeo(0.0, it.toDouble()) },
-        listOf(Step("depart", null, "Khreshchatyk", 2000.0, 150.0, 0), Step("arrive", null, "", 0.0, 0.0, 100)),
+        listOf(Step(ManeuverType.DEPART, null, "Khreshchatyk", 2000.0, 150.0, 0), Step(ManeuverType.ARRIVE, null, "", 0.0, 0.0, 100)),
         150.0,
     )
 

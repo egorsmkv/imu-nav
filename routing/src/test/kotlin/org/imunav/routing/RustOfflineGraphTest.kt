@@ -1,6 +1,8 @@
 package org.imunav.routing
 
 import org.imunav.core.geo.GeoPoint
+import org.imunav.core.route.ManeuverModifier
+import org.imunav.core.route.ManeuverType
 import org.imunav.core.route.TravelMode
 import java.io.File
 import java.util.concurrent.CancellationException
@@ -34,9 +36,9 @@ class RustOfflineGraphTest {
                 val points = listOf(GeoPoint(50.4502, 30.5001), GeoPoint(50.4601, 30.5099))
                 val route = graph.route(points)
                 assertTrue(route.length in 1700.0..1900.0)
-                assertTrue(route.steps.any { it.type == "turn" && it.modifier == "right" && it.name == "Eastway" })
-                assertEquals("depart", route.steps.first().type)
-                assertEquals("arrive", route.steps.last().type)
+                assertTrue(route.steps.any { it.type == ManeuverType.TURN && it.modifier == ManeuverModifier.RIGHT && it.name == "Eastway" })
+                assertEquals(ManeuverType.DEPART, route.steps.first().type)
+                assertEquals(ManeuverType.ARRIVE, route.steps.last().type)
                 assertEquals(route.geometry.size - 1, route.segmentSpeedMps.size)
                 assertTrue(route.maxspeedKmh.containsAll(listOf(50, 30)))
                 assertTrue(graph.route(points, TravelMode.FOOT).durationS > route.durationS)

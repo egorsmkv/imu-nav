@@ -5,6 +5,7 @@ import org.imunav.core.geo.LocalProjection
 import org.imunav.core.gnss.PositioningHub
 import org.imunav.core.record.TripEvent
 import org.imunav.core.record.TripFormat
+import org.imunav.core.route.ManeuverType
 import org.imunav.core.route.Route
 import org.imunav.core.route.Step
 import kotlin.math.abs
@@ -21,7 +22,7 @@ class ManualPositionTest {
     /** 2 km straight north, then nothing else: no turns that could snap the marker. */
     private fun straightRoute(): Route {
         val points = (0..2000 step 20).map { projection.toGeo(0.0, it.toDouble()) }
-        val steps = listOf(Step("depart", null, "Khreshchatyk", 2000.0, 200.0, 0), Step("arrive", null, "", 0.0, 0.0, points.lastIndex))
+        val steps = listOf(Step(ManeuverType.DEPART, null, "Khreshchatyk", 2000.0, 200.0, 0), Step(ManeuverType.ARRIVE, null, "", 0.0, 0.0, points.lastIndex))
         return Route(points, steps, 200.0)
     }
 

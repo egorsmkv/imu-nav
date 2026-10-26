@@ -2,107 +2,70 @@ package org.imunav.app.sync
 
 import org.imunav.app.AppGraph
 import org.imunav.app.MapStartMode
-import org.imunav.app.power.PowerMode
 import org.imunav.core.cells.Radio
-import org.imunav.core.nav.NavigationEstimator
-import org.imunav.core.nav.NavigationMethod
-import org.imunav.core.route.TravelMode
-import org.json.JSONArray
-import org.json.JSONObject
 
 /** Allowlisted user choices, applied through normal setters after navigation becomes idle. */
 internal class PortableSettings(private val app: AppGraph) {
-    fun capture(): Map<String, String> = mapOf(
-        "language" to app.language.value,
-        "voice" to app.voiceEnabled.value,
-        "haptics" to app.haptics.enabled.value,
-        "travel_mode" to app.travelMode.value.name,
-        "navigation_method" to app.navigationMethod.value.name,
-        "navigation_estimator" to app.navigationEstimator.value.name,
-        "terrain" to app.tuning.value.terrainMatch,
-        "power_mode" to app.powerMode.value.name,
-        "screen_on" to app.keepScreenOn.value,
-        "offline_map" to app.offlineMap.status.value.useOffline,
-        "corridor" to app.offlineMap.status.value.corridor,
-        "online_routing" to app.offlineRouting.status.value.allowOnline,
-        "show_towers" to app.cells.status.value.showTowers,
-        "radios" to JSONArray(app.cells.enabledRadios().sortedBy { it.name }.map { it.name }),
-        "map_start" to JSONObject().put("mode", app.mapStartMode.value.name).put("point", app.mapStartFixed.value?.let(SyncCodec::point) ?: JSONObject.NULL),
-    ).mapKeys { "setting:${it.key}" }.mapValues { SyncCodec.canonical(it.value) }
+    fun capture(retained: Map<String, String> = emptyMap()): Map<String, String> = PortablePreferenceCodec.unknown(retained) + listOf(
+        PortablePreference.Language(PortableLanguage.parse(app.language.value)),
+        PortablePreference.Voice(app.voiceEnabled.value),
+        PortablePreference.Haptics(app.haptics.enabled.value),
+        PortablePreference.Travel(app.travelMode.value),
+        PortablePreference.Method(app.navigationMethod.value),
+        PortablePreference.Estimator(app.navigationEstimator.value),
+        PortablePreference.Terrain(app.tuning.value.terrainMatch),
+        PortablePreference.Power(app.powerMode.value),
+        PortablePreference.Screen(app.keepScreenOn.value),
+        PortablePreference.OfflineMap(app.offlineMap.status.value.useOffline),
+        PortablePreference.Corridor(app.offlineMap.status.value.corridor),
+        PortablePreference.OnlineRouting(app.offlineRouting.status.value.allowOnline),
+        PortablePreference.Towers(app.cells.status.value.showTowers),
+        PortablePreference.Radios(app.cells.enabledRadios().toSet()),
+        PortablePreference.MapStart(PortableMapStart.of(app.mapStartMode.value, app.mapStartFixed.value)),
+    ).associate { it.key to PortablePreferenceCodec.encode(it) }
 
-    /** Validate the entire snapshot before changing any runtime state. */
-    fun validate(values: Map<String, String>) {
-        values.filterKeys { it.startsWith("setting:") }.forEach { (key, text) ->
-            val value = SyncCodec.parse(text)
-            val valid = when (key.removePrefix("setting:")) {
-                "language" -> value in listOf("system", "en", "uk", "ru")
+    fun decode(values: Map<String, String>): List<DecodedPreference> = PortablePreferenceCodec.decode(values)
 
-                "travel_mode" -> TravelMode.entries.any { it.name == value }
-
-                "navigation_method" -> NavigationMethod.entries.any { it.name == value }
-
-                "navigation_estimator" -> NavigationEstimator.entries.any { it.name == value }
-
-                "power_mode" -> PowerMode.entries.any { it.name == value }
-
-                "radios" -> value is JSONArray && (0 until value.length()).all { index -> Radio.entries.any { it.name == value.get(index) } }
-
-                "map_start" -> value is JSONObject && MapStartMode.entries.any { it.name == value.getString("mode") } &&
-                    ((value.isNull("point") && value.getString("mode") == "GPS") || (!value.isNull("point") && SyncCodec.point(value.getJSONObject("point")).lat.isFinite()))
-
-                else -> value is Boolean
-            }
-            require(valid) { "Invalid synchronized preference" }
-        }
+    /** Changes are selected before any setters run; travel mode stays last because it can start planning. */
+    fun apply(values: List<DecodedPreference>) {
+        val byKey = values.associateBy { it.preference.key }
+        val encoded = values.associate { it.preference.key to it.encodedValue }
+        preferenceChanges(capture(), encoded).forEach { change -> apply(byKey.getValue(change.key).preference) }
     }
 
-    fun apply(values: Map<String, String>) {
-        val current = capture()
-        val changes = preferenceChanges(current, values)
-        changes.forEach { (key, text) ->
-            val value = SyncCodec.parse(text)
-            when (key.removePrefix("setting:")) {
-                "language" -> app.setLanguage(value as String)
+    private fun apply(value: PortablePreference) {
+        when (value) {
+            is PortablePreference.Language -> app.setLanguage(value.value.wireValue)
 
-                "voice" -> app.setVoiceEnabled(value as Boolean)
+            is PortablePreference.Voice -> app.setVoiceEnabled(value.value)
 
-                "haptics" -> app.haptics.setEnabled(value as Boolean)
+            is PortablePreference.Haptics -> app.haptics.setEnabled(value.value)
 
-                "travel_mode" -> app.setTravelMode(TravelMode.valueOf(value as String))
+            is PortablePreference.Travel -> app.setTravelMode(value.value)
 
-                "navigation_method" -> app.setNavigationMethod(NavigationMethod.valueOf(value as String))
+            is PortablePreference.Method -> app.setNavigationMethod(value.value)
 
-                "navigation_estimator" -> app.setNavigationEstimator(NavigationEstimator.valueOf(value as String))
+            is PortablePreference.Estimator -> app.setNavigationEstimator(value.value)
 
-                "terrain" -> app.setTerrainMatch(value as Boolean)
+            is PortablePreference.Terrain -> app.setTerrainMatch(value.value)
 
-                "power_mode" -> app.setPowerMode(PowerMode.valueOf(value as String))
+            is PortablePreference.Power -> app.setPowerMode(value.value)
 
-                "screen_on" -> app.setKeepScreenOn(value as Boolean)
+            is PortablePreference.Screen -> app.setKeepScreenOn(value.value)
 
-                "offline_map" -> app.offlineMap.setUseOffline(value as Boolean)
+            is PortablePreference.OfflineMap -> app.offlineMap.setUseOffline(value.value)
 
-                "corridor" -> app.offlineMap.setCorridorEnabled(value as Boolean)
+            is PortablePreference.Corridor -> app.offlineMap.setCorridorEnabled(value.value)
 
-                "online_routing" -> app.offlineRouting.setAllowOnline(value as Boolean)
+            is PortablePreference.OnlineRouting -> app.offlineRouting.setAllowOnline(value.value)
 
-                "show_towers" -> app.cells.setShowTowers(value as Boolean)
+            is PortablePreference.Towers -> app.cells.setShowTowers(value.value)
 
-                "radios" -> Radio.entries.forEach {
-                    app.cells.setRadioEnabled(
-                        it,
-                        (value as JSONArray).let { radios ->
-                            (0 until radios.length()).any { index ->
-                                radios.getString(index) ==
-                                    it.name
-                            }
-                        },
-                    )
-                }
+            is PortablePreference.Radios -> Radio.entries.forEach { app.cells.setRadioEnabled(it, it in value.value) }
 
-                "map_start" -> (value as JSONObject).let {
-                    app.setMapStart(MapStartMode.valueOf(it.getString("mode")), if (it.isNull("point")) null else SyncCodec.point(it.getJSONObject("point")))
-                }
+            is PortablePreference.MapStart -> when (val start = value.value) {
+                is PortableMapStart.Gps -> app.setMapStart(MapStartMode.GPS, start.savedPoint)
+                is PortableMapStart.Fixed -> app.setMapStart(MapStartMode.FIXED, start.point)
             }
         }
     }

@@ -8,6 +8,8 @@ import org.imunav.core.imu.eskf.InertialKind
 import org.imunav.core.imu.eskf.InertialSample
 import org.imunav.core.imu.eskf.Vector3
 import org.imunav.core.nav.NavigationEstimator
+import org.imunav.core.route.ManeuverModifier
+import org.imunav.core.route.ManeuverType
 import org.imunav.core.route.Route
 import org.imunav.core.route.Step
 import org.imunav.core.route.TravelMode
@@ -392,8 +394,8 @@ object RouteCodec {
         val geom = r.geometry.joinToString(";") { String.format(Locale.US, "%.6f:%.6f", it.lat, it.lon) }
         val steps = r.steps.joinToString(";") { s ->
             listOf(
-                esc(s.type),
-                esc(s.modifier.orEmpty()),
+                esc(s.type.wireValue),
+                esc(s.modifier?.wireValue.orEmpty()),
                 esc(s.name),
                 String.format(Locale.US, "%.1f", s.distanceM),
                 String.format(Locale.US, "%.1f", s.durationS),
@@ -416,7 +418,15 @@ object RouteCodec {
         }
         val steps = p[2].split(';').filter { it.isNotEmpty() }.map { st ->
             val f = st.split('~')
-            Step(unesc(f[0]), unesc(f[1]).ifEmpty { null }, unesc(f[2]), f[3].recordingDouble(), f[4].recordingDouble(), f[5].toInt(), f.getOrNull(6)?.toIntOrNull())
+            Step(
+                ManeuverType.parse(unesc(f[0])),
+                ManeuverModifier.parse(unesc(f[1])),
+                unesc(f[2]),
+                f[3].recordingDouble(),
+                f[4].recordingDouble(),
+                f[5].toInt(),
+                f.getOrNull(6)?.toIntOrNull(),
+            )
         }
         val limits = p.getOrNull(3).orEmpty().let { if (it.isEmpty()) emptyList() else it.split(':').map { v -> v.toIntOrNull() } }
         val signals = p.getOrNull(4).orEmpty().split(';').filter { it.isNotEmpty() }.map {

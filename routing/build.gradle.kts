@@ -30,7 +30,7 @@ dependencies {
     compileOnly(libs.sqlite.jdbc)
     builder(libs.sqlite.jdbc)
     testImplementation(libs.sqlite.jdbc)
-    testImplementation(libs.jackson.core)
+    implementation(libs.jackson.core)
     testImplementation(kotlin("test"))
     testImplementation(libs.junit)
 }

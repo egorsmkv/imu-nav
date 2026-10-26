@@ -7,6 +7,7 @@ import org.imunav.core.geo.LocalProjection
 import org.imunav.core.gnss.FixSource
 import org.imunav.core.gnss.RawFix
 import org.imunav.core.record.TripEvent
+import org.imunav.core.route.ManeuverType
 import org.imunav.core.route.Route
 import org.imunav.core.route.Step
 import org.imunav.core.route.TravelMode
@@ -18,7 +19,7 @@ import kotlin.test.assertTrue
 class NetworkComparisonTest {
     private val projection = LocalProjection(GeoPoint(50.45, 30.52))
     private val points = (0..6000 step 20).map { projection.toGeo(0.0, it.toDouble()) }
-    private val route = Route(points, listOf(Step("depart", null, "test", 6000.0, 400.0, 0), Step("arrive", null, "", 0.0, 0.0, points.lastIndex)), 400.0)
+    private val route = Route(points, listOf(Step(ManeuverType.DEPART, null, "test", 6000.0, 400.0, 0), Step(ManeuverType.ARRIVE, null, "", 0.0, 0.0, points.lastIndex)), 400.0)
 
     @Test
     fun noisyCellsBoundBlindPositionDrift() {

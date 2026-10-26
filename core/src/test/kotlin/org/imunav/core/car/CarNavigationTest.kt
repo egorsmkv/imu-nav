@@ -1,6 +1,7 @@
 package org.imunav.core.car
 
 import org.imunav.core.geo.GeoPoint
+import org.imunav.core.route.ManeuverType
 import org.imunav.core.route.Route
 import org.imunav.core.route.Step
 import org.junit.Assert.assertEquals
@@ -38,7 +39,7 @@ class CarNavigationTest {
     }
 
     @Test fun demonstrationProgressesAndArrivesWithoutModifyingItsRoute() {
-        val route = Route(listOf(GeoPoint(50.0, 30.0), GeoPoint(50.01, 30.0)), listOf(Step("depart"), Step("arrive", geometryIndex = 1)), 100.0)
+        val route = Route(listOf(GeoPoint(50.0, 30.0), GeoPoint(50.01, 30.0)), listOf(Step(ManeuverType.DEPART), Step(ManeuverType.ARRIVE, geometryIndex = 1)), 100.0)
         val demo = CarDemo(route, 1000)
         val start = demo.state(0)
         val middle = demo.state(51_000)
@@ -46,7 +47,7 @@ class CarNavigationTest {
         assertEquals(0.0, start.s, 0.0)
         assertEquals(route.length / 2, middle.s, 0.01)
         assertEquals(route.length / 2, middle.remainingM, 0.01)
-        assertEquals("arrive", middle.nextStep?.type)
+        assertEquals(ManeuverType.ARRIVE, middle.nextStep?.type)
         assertTrue(end.arrived)
         assertEquals(0f, end.speedKmh)
         assertEquals(0.0, end.remainingS, 0.0)

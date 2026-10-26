@@ -21,6 +21,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import org.imunav.app.R
 import org.imunav.core.nav.GuidanceState
 import org.imunav.core.nav.PositionSource
+import org.imunav.core.route.ManeuverModifier
+import org.imunav.core.route.ManeuverType
 import org.imunav.core.route.Route
 import org.imunav.core.route.Step
 import kotlin.math.roundToInt
@@ -46,32 +48,32 @@ enum class Maneuver(val icon: ImageVector, val text: Int) {
 
 /** Map an OSRM step (type + modifier) to what the driver should do. */
 fun maneuverOf(step: Step): Maneuver {
-    val mod = step.modifier.orEmpty()
-    val left = "left" in mod
-    val right = "right" in mod
+    val mod = step.modifier
+    val left = mod?.isLeft == true
+    val right = mod?.isRight == true
     return when (step.type) {
-        "arrive" -> Maneuver.ARRIVE
+        ManeuverType.ARRIVE -> Maneuver.ARRIVE
 
-        "roundabout", "rotary", "roundabout turn", "exit roundabout", "exit rotary" -> Maneuver.ROUNDABOUT
+        ManeuverType.ROUNDABOUT, ManeuverType.ROTARY, ManeuverType.ROUNDABOUT_TURN, ManeuverType.EXIT_ROUNDABOUT, ManeuverType.EXIT_ROTARY -> Maneuver.ROUNDABOUT
 
-        "fork" -> if (left) Maneuver.KEEP_LEFT else Maneuver.KEEP_RIGHT
+        ManeuverType.FORK -> if (left) Maneuver.KEEP_LEFT else Maneuver.KEEP_RIGHT
 
-        "off ramp", "on ramp" -> when {
+        ManeuverType.OFF_RAMP, ManeuverType.ON_RAMP -> when {
             left -> Maneuver.RAMP_LEFT
             right -> Maneuver.RAMP_RIGHT
             else -> Maneuver.STRAIGHT
         }
 
-        "merge" -> Maneuver.MERGE
+        ManeuverType.MERGE -> Maneuver.MERGE
 
         else -> when (mod) {
-            "uturn" -> Maneuver.UTURN
-            "left" -> Maneuver.LEFT
-            "right" -> Maneuver.RIGHT
-            "slight left" -> Maneuver.SLIGHT_LEFT
-            "slight right" -> Maneuver.SLIGHT_RIGHT
-            "sharp left" -> Maneuver.SHARP_LEFT
-            "sharp right" -> Maneuver.SHARP_RIGHT
+            ManeuverModifier.UTURN -> Maneuver.UTURN
+            ManeuverModifier.LEFT -> Maneuver.LEFT
+            ManeuverModifier.RIGHT -> Maneuver.RIGHT
+            ManeuverModifier.SLIGHT_LEFT -> Maneuver.SLIGHT_LEFT
+            ManeuverModifier.SLIGHT_RIGHT -> Maneuver.SLIGHT_RIGHT
+            ManeuverModifier.SHARP_LEFT -> Maneuver.SHARP_LEFT
+            ManeuverModifier.SHARP_RIGHT -> Maneuver.SHARP_RIGHT
             else -> Maneuver.STRAIGHT
         }
     }
@@ -87,7 +89,7 @@ fun maneuverText(res: Resources, step: Step): String {
 /** Full one-line instruction including the street, for notifications. */
 fun instructionLine(res: Resources, step: Step): String {
     val base = maneuverText(res, step)
-    return if (step.name.isNotBlank() && step.type != "arrive") "$base ${res.getString(R.string.mv_onto, step.name)}" else base
+    return if (step.name.isNotBlank() && step.type != ManeuverType.ARRIVE) "$base ${res.getString(R.string.mv_onto, step.name)}" else base
 }
 
 /** 40 m, 350 m, 1.2 km, 14 km — rounded the way drivers read distances. */

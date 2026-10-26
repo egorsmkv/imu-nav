@@ -6,6 +6,7 @@ import org.imunav.core.gnss.FixSource
 import org.imunav.core.gnss.RawFix
 import org.imunav.core.imu.ImuSample
 import org.imunav.core.record.TripEvent
+import org.imunav.core.route.ManeuverType
 import org.imunav.core.route.Route
 import org.imunav.core.route.Step
 import kotlin.math.abs
@@ -77,7 +78,8 @@ class MotionComparisonTest {
         val highway = scenario == Scenario.HIGHWAY_OBD_RETURN
         val lengthM = if (highway) 10_000 else 3000
         val points = (0..lengthM step 20).map { projection.toGeo(0.0, it.toDouble()) }
-        val route = Route(points, listOf(Step("depart", null, "test", lengthM.toDouble(), 300.0, 0), Step("arrive", null, "", 0.0, 0.0, points.lastIndex)), 300.0)
+        val route =
+            Route(points, listOf(Step(ManeuverType.DEPART, null, "test", lengthM.toDouble(), 300.0, 0), Step(ManeuverType.ARRIVE, null, "", 0.0, 0.0, points.lastIndex)), 300.0)
         return buildList {
             add(TripEvent.Start(START_MS, points.last(), emptyList(), 5.0))
             add(TripEvent.RouteSet(START_MS, route))

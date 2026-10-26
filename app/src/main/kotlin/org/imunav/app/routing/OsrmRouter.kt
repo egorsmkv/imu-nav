@@ -6,9 +6,12 @@ import org.imunav.core.geo.Geo
 import org.imunav.core.geo.GeoPoint
 import org.imunav.core.net.Http
 import org.imunav.core.net.HttpException
+import org.imunav.core.route.ManeuverModifier
+import org.imunav.core.route.ManeuverType
 import org.imunav.core.route.Route
 import org.imunav.core.route.Step
 import org.imunav.core.route.TravelMode
+import org.json.JSONException
 import org.json.JSONObject
 import java.io.IOException
 import java.util.Locale
@@ -46,7 +49,16 @@ class OsrmRouter(private val baseUrl: String = "https://router.project-osrm.org"
 
     companion object {
         /** Turn an OSRM JSON answer into a [Route] (steps, geometry, speed limits). */
-        fun parse(json: String): Route {
+        fun parse(json: String): Route = try {
+            decode(json)
+        } catch (_: IllegalArgumentException) {
+            throw IOException("OSRM: invalid route response")
+        } catch (_: JSONException) {
+            throw IOException("OSRM: invalid route response")
+        }
+
+        /** Keep server input errors at the same I/O boundary as routing failures. */
+        private fun decode(json: String): Route {
             val root = JSONObject(json)
             if (root.optString("code") != "Ok") throw IOException("OSRM: ${root.optString("code")} ${root.optString("message")}")
             val r = root.getJSONArray("routes").getJSONObject(0)
@@ -62,17 +74,17 @@ class OsrmRouter(private val baseUrl: String = "https://router.project-osrm.org"
                 for (i in 0 until legSteps.length()) {
                     val st = legSteps.getJSONObject(i)
                     val m = st.getJSONObject("maneuver")
-                    val type = m.getString("type")
+                    val type = ManeuverType.parse(m.getString("type"))
                     // Intermediate legs start with "depart" and end with "arrive" at waypoints; keep only the outer ones.
-                    if (type == "depart" && l > 0) continue
-                    if (type == "arrive" && l < legs.length() - 1) continue
+                    if (type == ManeuverType.DEPART && l > 0) continue
+                    if (type == ManeuverType.ARRIVE && l < legs.length() - 1) continue
                     val loc = m.getJSONArray("location")
                     val point = GeoPoint(loc.getDouble(1), loc.getDouble(0))
                     val idx = nearestIndex(geometry, point, searchFrom)
                     searchFrom = idx
                     steps += Step(
                         type = type,
-                        modifier = m.optString("modifier").ifEmpty { null },
+                        modifier = ManeuverModifier.parse(if (m.isNull("modifier")) null else m.getString("modifier")),
                         name = st.optString("ref").ifEmpty { st.optString("name") }.let { ref ->
                             val name = st.optString("name")
                             if (ref.isNotEmpty() && name.isNotEmpty() && ref != name) "$name ($ref)" else ref

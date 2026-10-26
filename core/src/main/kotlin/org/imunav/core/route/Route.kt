@@ -10,8 +10,8 @@ import kotlin.math.sqrt
  * fork, end of road, continue, roundabout, rotary, arrive...
  */
 data class Step(
-    val type: String,
-    val modifier: String? = null,
+    val type: ManeuverType,
+    val modifier: ManeuverModifier? = null,
     val name: String = "",
     val distanceM: Double = 0.0,
     val durationS: Double = 0.0,
@@ -19,7 +19,7 @@ data class Step(
     val geometryIndex: Int = 0,
     val roundaboutExit: Int? = null,
 ) {
-    val isDepartOrArrive: Boolean get() = type == "depart" || type == "arrive"
+    val isDepartOrArrive: Boolean get() = type == ManeuverType.DEPART || type == ManeuverType.ARRIVE
 }
 
 /** Things on the road that make cars slow down or stop. */
@@ -61,7 +61,7 @@ class Route(
     /** Cached retained-payload estimate for non-blocking recording admission; not a JVM heap measurement. */
     val recordingWeight: Long = 256L + 2L * summary.length + 64L * geometry.size + 64L * signals.size +
         32L * (maxspeedKmh.size + segmentSpeedMps.size) + 8L * (elevationM?.size ?: 0) +
-        steps.sumOf { 128L + 2L * (it.type.length + (it.modifier?.length ?: 0) + it.name.length) }
+        steps.sumOf { 128L + 2L * (it.type.wireValue.length + (it.modifier?.wireValue?.length ?: 0) + it.name.length) }
 
     /** Does this route know its height profile? */
     val hasElevation: Boolean get() = elevationM != null && geometry.size >= 2

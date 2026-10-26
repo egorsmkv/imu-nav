@@ -18,6 +18,8 @@ import org.imunav.core.nav.RouteEstimateProvider
 import org.imunav.core.record.TripEvent
 import org.imunav.core.record.TripFormat
 import org.imunav.core.record.TripReplayer
+import org.imunav.core.route.ManeuverModifier
+import org.imunav.core.route.ManeuverType
 import org.imunav.core.route.Route
 import org.imunav.core.route.Step
 import org.imunav.core.route.TravelMode
@@ -31,7 +33,7 @@ import kotlin.test.assertTrue
 /** State ownership must reach guidance, not just the map marker or a comparison log. */
 class NativeNavigationTest {
     private val points = listOf(GeoPoint(50.0, 30.0), GeoPoint(50.005, 30.0), GeoPoint(50.01, 30.0))
-    private val route = Route(points, listOf(Step("turn", "right", "Test", 0.0, 0.0, 1), Step("arrive", null, "", 0.0, 0.0, 2)), 100.0)
+    private val route = Route(points, listOf(Step(ManeuverType.TURN, ManeuverModifier.RIGHT, "Test", 0.0, 0.0, 1), Step(ManeuverType.ARRIVE, null, "", 0.0, 0.0, 2)), 100.0)
     private val empty = PositioningSnapshot(null, null, null, null, GpsState.LOST, false, null)
     private val alerts = mutableListOf<NavAlert>()
     private val listener = object : NavListener {

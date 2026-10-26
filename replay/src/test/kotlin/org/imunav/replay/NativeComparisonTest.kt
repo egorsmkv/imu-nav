@@ -7,6 +7,7 @@ import org.imunav.core.gnss.RawFix
 import org.imunav.core.record.TripEvent
 import org.imunav.core.record.TripFormat
 import org.imunav.core.record.TripRecorder
+import org.imunav.core.route.ManeuverType
 import org.imunav.core.route.Route
 import org.imunav.core.route.Step
 import org.imunav.core.route.TravelMode
@@ -149,7 +150,7 @@ class NativeComparisonTest {
     private fun drive(obdScale: Double, noisy: Boolean = false, stopStart: Boolean = false): List<TripEvent> {
         val projection = LocalProjection(GeoPoint(50.45, 30.52))
         val points = (0..7000 step 20).map { projection.toGeo(0.0, it.toDouble()) }
-        val route = Route(points, listOf(Step("depart", null, "test", 7000.0, 467.0, 0), Step("arrive", null, "", 0.0, 0.0, points.lastIndex)), 467.0)
+        val route = Route(points, listOf(Step(ManeuverType.DEPART, null, "test", 7000.0, 467.0, 0), Step(ManeuverType.ARRIVE, null, "", 0.0, 0.0, points.lastIndex)), 467.0)
         return buildList {
             add(TripEvent.Start(START_MS, points.last(), emptyList(), 5.0))
             add(TripEvent.RouteSet(START_MS, route))

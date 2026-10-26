@@ -120,8 +120,9 @@ The desktop HTTPS tile worker directly uses reqwest 0.13.5 (MIT/Apache 2.0), sha
 (MIT/Apache 2.0), and httpdate 1 (MIT/Apache 2.0) for bounded fetching and HTTP caching. These
 versions are already part of the desktop's resolved dependency graph.
 
-The Kotlin core declares Jackson Core 2.19.2 (Apache 2.0) directly for streaming mirror JSON.
-It is a direct dependency, not an APK version upgrade.
+The Kotlin core, routing and app modules declare Jackson Core 2.19.2 (Apache 2.0) directly for
+streaming mirror JSON and typed routing, search, metadata, export and synchronized preference codecs.
+These direct declarations use the existing resolved version; they do not upgrade the APK dependency.
 Online desktop maps use OpenStreetMap attribution and its public raster tile policy; offline map
 owners supply attribution through MBTiles metadata.
 

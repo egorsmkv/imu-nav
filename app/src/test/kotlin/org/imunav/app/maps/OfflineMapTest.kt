@@ -11,6 +11,7 @@ import mockwebserver3.MockWebServer
 import okio.Buffer
 import org.imunav.app.R
 import org.imunav.core.geo.GeoPoint
+import org.imunav.core.route.ManeuverType
 import org.imunav.core.route.Route
 import org.imunav.core.route.Step
 import org.junit.After
@@ -98,7 +99,7 @@ class OfflineMapTest {
         map.setCorridorEnabled(false)
         assertFalse(map.status.value.corridor)
         // With corridors off nothing is downloaded along a route.
-        map.saveCorridor(Route(listOf(GeoPoint(50.4, 30.5), GeoPoint(50.5, 30.6)), listOf(Step("depart", null, "", 0.0, 0.0, 0)), 100.0), dark = false)
+        map.saveCorridor(Route(listOf(GeoPoint(50.4, 30.5), GeoPoint(50.5, 30.6)), listOf(Step(ManeuverType.DEPART, null, "", 0.0, 0.0, 0)), 100.0), dark = false)
 
         map.remove()
         waitFor("removal") { map.status.value.busy == null && map.status.value.pack == null }

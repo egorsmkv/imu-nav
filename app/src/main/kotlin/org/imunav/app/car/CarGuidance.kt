@@ -12,6 +12,8 @@ import androidx.car.app.navigation.model.Trip
 import org.imunav.app.R
 import org.imunav.app.ui.instructionLine
 import org.imunav.core.nav.GuidanceState
+import org.imunav.core.route.ManeuverModifier
+import org.imunav.core.route.ManeuverType
 import java.time.ZonedDateTime
 import org.imunav.core.route.Step as RouteStep
 
@@ -58,32 +60,32 @@ class CarGuidance(private val context: Context) {
 
     private fun maneuver(step: RouteStep?, arrived: Boolean): Maneuver {
         val type = when {
-            arrived || step?.type == "arrive" -> Maneuver.TYPE_DESTINATION
+            arrived || step?.type == ManeuverType.ARRIVE -> Maneuver.TYPE_DESTINATION
 
-            step?.type == "depart" -> Maneuver.TYPE_DEPART
+            step?.type == ManeuverType.DEPART -> Maneuver.TYPE_DEPART
 
-            step?.type in listOf("roundabout", "rotary", "roundabout turn") -> {
+            step?.type in listOf(ManeuverType.ROUNDABOUT, ManeuverType.ROTARY, ManeuverType.ROUNDABOUT_TURN) -> {
                 if ((step?.roundaboutExit ?: 0) > 0) Maneuver.TYPE_ROUNDABOUT_ENTER_AND_EXIT_CCW else Maneuver.TYPE_ROUNDABOUT_ENTER_CCW
             }
 
-            step?.type in listOf("exit roundabout", "exit rotary") -> Maneuver.TYPE_ROUNDABOUT_EXIT_CCW
+            step?.type in listOf(ManeuverType.EXIT_ROUNDABOUT, ManeuverType.EXIT_ROTARY) -> Maneuver.TYPE_ROUNDABOUT_EXIT_CCW
 
-            step?.type == "merge" -> Maneuver.TYPE_MERGE_SIDE_UNSPECIFIED
+            step?.type == ManeuverType.MERGE -> Maneuver.TYPE_MERGE_SIDE_UNSPECIFIED
 
-            step?.type == "fork" -> when (step.modifier) {
-                "left", "slight left" -> Maneuver.TYPE_FORK_LEFT
-                "right", "slight right" -> Maneuver.TYPE_FORK_RIGHT
+            step?.type == ManeuverType.FORK -> when (step.modifier) {
+                ManeuverModifier.LEFT, ManeuverModifier.SLIGHT_LEFT -> Maneuver.TYPE_FORK_LEFT
+                ManeuverModifier.RIGHT, ManeuverModifier.SLIGHT_RIGHT -> Maneuver.TYPE_FORK_RIGHT
                 else -> Maneuver.TYPE_UNKNOWN
             }
 
             else -> when (step?.modifier) {
-                "left" -> Maneuver.TYPE_TURN_NORMAL_LEFT
-                "right" -> Maneuver.TYPE_TURN_NORMAL_RIGHT
-                "slight left" -> Maneuver.TYPE_TURN_SLIGHT_LEFT
-                "slight right" -> Maneuver.TYPE_TURN_SLIGHT_RIGHT
-                "sharp left" -> Maneuver.TYPE_TURN_SHARP_LEFT
-                "sharp right" -> Maneuver.TYPE_TURN_SHARP_RIGHT
-                "uturn" -> Maneuver.TYPE_U_TURN_LEFT
+                ManeuverModifier.LEFT -> Maneuver.TYPE_TURN_NORMAL_LEFT
+                ManeuverModifier.RIGHT -> Maneuver.TYPE_TURN_NORMAL_RIGHT
+                ManeuverModifier.SLIGHT_LEFT -> Maneuver.TYPE_TURN_SLIGHT_LEFT
+                ManeuverModifier.SLIGHT_RIGHT -> Maneuver.TYPE_TURN_SLIGHT_RIGHT
+                ManeuverModifier.SHARP_LEFT -> Maneuver.TYPE_TURN_SHARP_LEFT
+                ManeuverModifier.SHARP_RIGHT -> Maneuver.TYPE_TURN_SHARP_RIGHT
+                ManeuverModifier.UTURN -> Maneuver.TYPE_U_TURN_LEFT
                 else -> Maneuver.TYPE_STRAIGHT
             }
         }

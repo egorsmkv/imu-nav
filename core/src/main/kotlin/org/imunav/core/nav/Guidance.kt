@@ -1,6 +1,8 @@
 package org.imunav.core.nav
 
 import org.imunav.core.geo.GeoPoint
+import org.imunav.core.route.ManeuverModifier
+import org.imunav.core.route.ManeuverType
 import org.imunav.core.route.Route
 import org.imunav.core.route.Step
 import org.imunav.core.route.TravelMode
@@ -161,24 +163,24 @@ object UkrainianPhrases : Phrases {
 
     private fun action(step: Step): String {
         val dir = when (step.modifier) {
-            "left" -> "ліворуч"
-            "right" -> "праворуч"
-            "slight left" -> "плавно ліворуч"
-            "slight right" -> "плавно праворуч"
-            "sharp left" -> "різко ліворуч"
-            "sharp right" -> "різко праворуч"
-            "uturn" -> "розворот"
+            ManeuverModifier.LEFT -> "ліворуч"
+            ManeuverModifier.RIGHT -> "праворуч"
+            ManeuverModifier.SLIGHT_LEFT -> "плавно ліворуч"
+            ManeuverModifier.SLIGHT_RIGHT -> "плавно праворуч"
+            ManeuverModifier.SHARP_LEFT -> "різко ліворуч"
+            ManeuverModifier.SHARP_RIGHT -> "різко праворуч"
+            ManeuverModifier.UTURN -> "розворот"
             else -> "прямо"
         }
         val onto = if (step.name.isNotBlank()) " на ${step.name}" else ""
         return when (step.type) {
-            "roundabout", "rotary" -> "на кільці ${step.roundaboutExit?.let { "$it-й з'їзд" } ?: "з'їзд"}$onto"
-            "fork" -> "тримайтеся $dir$onto"
-            "off ramp" -> "з'їзд $dir$onto"
-            "on ramp", "merge" -> "виїзд $dir$onto"
-            "arrive" -> "пункт призначення"
-            "new name", "continue" -> if (step.modifier == null || step.modifier == "straight") "прямо$onto" else "тримайтеся $dir$onto"
-            else -> if (step.modifier == "uturn") "розворот$onto" else "поверніть $dir$onto"
+            ManeuverType.ROUNDABOUT, ManeuverType.ROTARY -> "на кільці ${step.roundaboutExit?.let { "$it-й з'їзд" } ?: "з'їзд"}$onto"
+            ManeuverType.FORK -> "тримайтеся $dir$onto"
+            ManeuverType.OFF_RAMP -> "з'їзд $dir$onto"
+            ManeuverType.ON_RAMP, ManeuverType.MERGE -> "виїзд $dir$onto"
+            ManeuverType.ARRIVE -> "пункт призначення"
+            ManeuverType.NEW_NAME, ManeuverType.CONTINUE -> if (step.modifier == null || step.modifier == ManeuverModifier.STRAIGHT) "прямо$onto" else "тримайтеся $dir$onto"
+            else -> if (step.modifier == ManeuverModifier.UTURN) "розворот$onto" else "поверніть $dir$onto"
         }
     }
 
@@ -203,24 +205,36 @@ object RussianPhrases : Phrases {
 
     private fun action(step: Step): String {
         val direction = when (step.modifier) {
-            "left" -> "налево"
-            "right" -> "направо"
-            "slight left" -> "плавно налево"
-            "slight right" -> "плавно направо"
-            "sharp left" -> "резко налево"
-            "sharp right" -> "резко направо"
-            "uturn" -> "разворот"
+            ManeuverModifier.LEFT -> "налево"
+            ManeuverModifier.RIGHT -> "направо"
+            ManeuverModifier.SLIGHT_LEFT -> "плавно налево"
+            ManeuverModifier.SLIGHT_RIGHT -> "плавно направо"
+            ManeuverModifier.SHARP_LEFT -> "резко налево"
+            ManeuverModifier.SHARP_RIGHT -> "резко направо"
+            ManeuverModifier.UTURN -> "разворот"
             else -> "прямо"
         }
         val onto = if (step.name.isNotBlank()) " на ${step.name}" else ""
         return when (step.type) {
-            "roundabout", "rotary" -> "на круговом движении выберите ${step.roundaboutExit?.let { "$it-й съезд" } ?: "съезд"}$onto"
-            "fork" -> "держитесь $direction$onto"
-            "off ramp" -> "съезд $direction$onto"
-            "on ramp", "merge" -> "выезд $direction$onto"
-            "arrive" -> "пункт назначения"
-            "new name", "continue" -> if (step.modifier == null || step.modifier == "straight") "продолжайте прямо$onto" else "держитесь $direction$onto"
-            else -> if (step.modifier == "uturn") "выполните разворот$onto" else "поверните $direction$onto"
+            ManeuverType.ROUNDABOUT, ManeuverType.ROTARY -> "на круговом движении выберите ${step.roundaboutExit?.let { "$it-й съезд" } ?: "съезд"}$onto"
+
+            ManeuverType.FORK -> "держитесь $direction$onto"
+
+            ManeuverType.OFF_RAMP -> "съезд $direction$onto"
+
+            ManeuverType.ON_RAMP, ManeuverType.MERGE -> "выезд $direction$onto"
+
+            ManeuverType.ARRIVE -> "пункт назначения"
+
+            ManeuverType.NEW_NAME, ManeuverType.CONTINUE -> if (step.modifier == null ||
+                step.modifier == ManeuverModifier.STRAIGHT
+            ) {
+                "продолжайте прямо$onto"
+            } else {
+                "держитесь $direction$onto"
+            }
+
+            else -> if (step.modifier == ManeuverModifier.UTURN) "выполните разворот$onto" else "поверните $direction$onto"
         }
     }
 
@@ -242,16 +256,17 @@ object EnglishPhrases : Phrases {
     private fun distance(m: Double): String = if (m >= 1000) "In ${String.format(Locale.US, "%.1f", m / 1000)} kilometres" else "In ${((m / 10).roundToInt() * 10)} metres"
 
     private fun action(step: Step): String {
-        val dir = step.modifier ?: "straight"
+        val dir = step.modifier ?: ManeuverModifier.STRAIGHT
+        val direction = dir.wireValue
         val onto = if (step.name.isNotBlank()) " onto ${step.name}" else ""
         return when (step.type) {
-            "roundabout", "rotary" -> "at the roundabout take ${step.roundaboutExit?.let { "exit $it" } ?: "the exit"}$onto"
-            "fork" -> "keep $dir$onto"
-            "off ramp" -> "take the ramp $dir$onto"
-            "on ramp", "merge" -> "merge $dir$onto"
-            "arrive" -> "you will arrive"
-            "new name", "continue" -> if (dir == "straight") "continue$onto" else "keep $dir$onto"
-            else -> if (dir == "uturn") "make a U-turn$onto" else "turn $dir$onto"
+            ManeuverType.ROUNDABOUT, ManeuverType.ROTARY -> "at the roundabout take ${step.roundaboutExit?.let { "exit $it" } ?: "the exit"}$onto"
+            ManeuverType.FORK -> "keep $direction$onto"
+            ManeuverType.OFF_RAMP -> "take the ramp $direction$onto"
+            ManeuverType.ON_RAMP, ManeuverType.MERGE -> "merge $direction$onto"
+            ManeuverType.ARRIVE -> "you will arrive"
+            ManeuverType.NEW_NAME, ManeuverType.CONTINUE -> if (dir == ManeuverModifier.STRAIGHT) "continue$onto" else "keep $direction$onto"
+            else -> if (dir == ManeuverModifier.UTURN) "make a U-turn$onto" else "turn $direction$onto"
         }
     }
 

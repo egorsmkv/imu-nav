@@ -10,6 +10,8 @@ import org.imunav.core.record.TripEvent
 import org.imunav.core.record.TripFormat
 import org.imunav.core.record.TripRecorder
 import org.imunav.core.record.TripReplayer
+import org.imunav.core.route.ManeuverModifier
+import org.imunav.core.route.ManeuverType
 import org.imunav.core.route.Route
 import org.imunav.core.route.Step
 import org.imunav.core.route.TravelMode
@@ -31,9 +33,9 @@ class ReplayTest {
         for (y in 0..800 step 20) pts += proj.toGeo(0.0, y.toDouble())
         for (x in 20..800 step 20) pts += proj.toGeo(x.toDouble(), 800.0)
         val steps = listOf(
-            Step("depart", null, "Північна", 800.0, 80.0, 0),
-            Step("turn", "right", "Східна, 5|~;", 800.0, 80.0, 40),
-            Step("arrive", null, "", 0.0, 0.0, pts.lastIndex),
+            Step(ManeuverType.DEPART, null, "Північна", 800.0, 80.0, 0),
+            Step(ManeuverType.TURN, ManeuverModifier.RIGHT, "Східна, 5|~;", 800.0, 80.0, 40),
+            Step(ManeuverType.ARRIVE, null, "", 0.0, 0.0, pts.lastIndex),
         )
         return Route(pts, steps, 160.0, maxspeedKmh = List(pts.size - 1) { if (it < 40) 50 else null }, summary = "test")
     }

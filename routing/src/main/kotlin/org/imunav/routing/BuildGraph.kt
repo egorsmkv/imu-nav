@@ -1,6 +1,5 @@
 package org.imunav.routing
 
-import org.imunav.core.search.SearchIndexJson
 import java.io.File
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
@@ -18,12 +17,7 @@ data class PackInfo(
     val searchFormat: String? = null,
     val routingFormat: String? = null,
 ) {
-    fun toJson(): String = SearchIndexJson.encode(
-        mapOf(
-            "name" to name, "builtAt" to builtAt, "source" to source, "bounds" to bounds.toList(), "sizeBytes" to sizeBytes,
-            "profiles" to profiles, "elevation" to elevation, "turnCosts" to turnCosts, "searchFormat" to searchFormat, "routingFormat" to routingFormat,
-        ),
-    )
+    fun toJson(): String = PackInfoJson.encode(this)
 
     companion object {
         const val FILE = "pack.json"
@@ -32,17 +26,7 @@ data class PackInfo(
         /** Parse metadata before native I/O; malformed bounds and unsupported profiles are rejected. */
         fun parse(json: String): PackInfo? = runCatching {
             require(json.length <= 65_536)
-            val data = SearchIndexJson.decode(json)
-            val bounds = (data["bounds"] as List<*>).map { (it as Number).toDouble() }.toDoubleArray()
-            require(bounds.size == 4 && bounds.all { it.isFinite() })
-            require(bounds[0] in -90.0..90.0 && bounds[1] in bounds[0]..90.0 && bounds[2] in -180.0..180.0 && bounds[3] in bounds[2]..180.0)
-            val profiles = (data["profiles"] as? List<*>)?.map { it as String } ?: listOf("car")
-            require(profiles.isNotEmpty() && profiles.distinct() == profiles && profiles.all { it == "car" || it == "foot" })
-            PackInfo(
-                data["name"] as String, data["builtAt"] as? String ?: "", data["source"] as? String ?: "", bounds,
-                (data["sizeBytes"] as? Number)?.toLong() ?: 0, profiles, data["elevation"] == true, data["turnCosts"] == true,
-                data["searchFormat"] as? String, data["routingFormat"] as? String,
-            )
+            PackInfoJson.decode(json)
         }.getOrNull()
     }
 }

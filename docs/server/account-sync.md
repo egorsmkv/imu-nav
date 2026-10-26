@@ -79,3 +79,15 @@ Matching revisions advance by one. Repeating an already accepted value is idempo
 entries are returned as `kind:key` identifiers while independent changes are accepted. The response
 includes the authoritative snapshot. Withdrawal increments `generation`, so stale requests remain
 invalid even if synchronization is enabled again.
+
+## Typed preference restoration
+
+The Android client decodes all known synchronized settings into typed values before invoking setters.
+Malformed known settings reject the snapshot without applying any preference setters. Travel mode
+is applied last because it can start route planning. After bookmark replacement, the client decodes
+the final merge again so local preference edits made during the operation are preserved.
+
+Unknown setting keys are retained verbatim in their account profile but are not applied by this
+version. They remain present in later sync captures, so an older client does not upload accidental
+deletions for settings introduced by a newer client. Keys, canonical JSON and protocol version 1
+remain unchanged.

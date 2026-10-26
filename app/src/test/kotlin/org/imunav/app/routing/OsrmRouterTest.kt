@@ -4,6 +4,8 @@ import kotlinx.coroutines.runBlocking
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import org.imunav.core.geo.GeoPoint
+import org.imunav.core.route.ManeuverModifier
+import org.imunav.core.route.ManeuverType
 import org.imunav.core.route.TravelMode
 import org.json.JSONArray
 import org.json.JSONObject
@@ -87,10 +89,10 @@ class OsrmRouterTest {
         assertTrue(request.target.startsWith("/route/v1/driving/30.000000,50.000000;30.000000,50.010000;30.010000,50.010000"))
 
         assertEquals(3, route.geometry.size)
-        assertEquals(listOf("depart", "roundabout", "arrive"), route.steps.map { it.type })
+        assertEquals(listOf(ManeuverType.DEPART, ManeuverType.ROUNDABOUT, ManeuverType.ARRIVE), route.steps.map { it.type })
         assertEquals("Main street (M06)", route.steps.first().name)
         assertEquals(2, route.steps[1].roundaboutExit)
-        assertEquals("right", route.steps[1].modifier)
+        assertEquals(ManeuverModifier.RIGHT, route.steps[1].modifier)
         assertEquals(1, route.steps[1].geometryIndex)
         assertEquals(listOf(50, 48), route.maxspeedKmh)
         assertEquals(listOf(13.9, 8.3), route.segmentSpeedMps)
@@ -109,6 +111,19 @@ class OsrmRouterTest {
         assertTrue(down.message!!.startsWith("OSRM"))
 
         assertThrows(IOException::class.java) { runBlocking { router().route(GeoPoint(50.0, 30.0), GeoPoint(51.0, 31.0), mode = TravelMode.FOOT) } }
+    }
+
+    @Test
+    fun unknownManeuversFailAtTheExistingRoutingErrorBoundary() {
+        for (field in listOf("type", "modifier")) {
+            val answer = JSONObject(twoLegAnswer())
+            val maneuver = answer.getJSONArray("routes").getJSONObject(0).getJSONArray("legs")
+                .getJSONObject(0).getJSONArray("steps").getJSONObject(0).getJSONObject("maneuver")
+            maneuver.put(field, "future")
+            val failure = assertThrows(IOException::class.java) { OsrmRouter.parse(answer.toString()) }
+            assertEquals("OSRM: invalid route response", failure.message)
+            assertNull(failure.cause)
+        }
     }
 
     @Test

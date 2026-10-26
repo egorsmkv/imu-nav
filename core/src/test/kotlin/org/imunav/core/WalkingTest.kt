@@ -11,6 +11,7 @@ import org.imunav.core.nav.EnglishPhrases
 import org.imunav.core.nav.NavListener
 import org.imunav.core.nav.NavigationEngine
 import org.imunav.core.nav.PositionSource
+import org.imunav.core.route.ManeuverType
 import org.imunav.core.route.Route
 import org.imunav.core.route.Step
 import org.imunav.core.route.TravelMode
@@ -30,7 +31,7 @@ class WalkingTest {
 
     private fun straightRoute(): Route {
         val points = (0..1000 step 10).map { proj.toGeo(0.0, it.toDouble()) }
-        val steps = listOf(Step("depart", null, "Deribasivska", 1000.0, 720.0, 0), Step("arrive", null, "", 0.0, 0.0, points.lastIndex))
+        val steps = listOf(Step(ManeuverType.DEPART, null, "Deribasivska", 1000.0, 720.0, 0), Step(ManeuverType.ARRIVE, null, "", 0.0, 0.0, points.lastIndex))
         return Route(points, steps, 720.0)
     }
 

@@ -13,6 +13,8 @@ import org.imunav.core.nav.NavListener
 import org.imunav.core.nav.NavigationEngine
 import org.imunav.core.nav.NavigationMethod
 import org.imunav.core.nav.PositionSource
+import org.imunav.core.route.ManeuverModifier
+import org.imunav.core.route.ManeuverType
 import org.imunav.core.route.Route
 import org.imunav.core.route.Step
 import kotlin.math.abs
@@ -34,9 +36,9 @@ class EngineSimulationTest {
         for (y in 0..800 step 20) pts += proj.toGeo(0.0, y.toDouble())
         for (x in 20..800 step 20) pts += proj.toGeo(x.toDouble(), 800.0)
         val steps = listOf(
-            Step("depart", null, "Northway", 800.0, 80.0, 0),
-            Step("turn", "right", "Eastway", 800.0, 80.0, 40),
-            Step("arrive", null, "", 0.0, 0.0, pts.lastIndex),
+            Step(ManeuverType.DEPART, null, "Northway", 800.0, 80.0, 0),
+            Step(ManeuverType.TURN, ManeuverModifier.RIGHT, "Eastway", 800.0, 80.0, 40),
+            Step(ManeuverType.ARRIVE, null, "", 0.0, 0.0, pts.lastIndex),
         )
         // Speed limit 50 everywhere: route prior = 50/3.6 × 0.8 ≈ 11.1 m/s.
         return Route(pts, steps, 160.0, maxspeedKmh = List(pts.size - 1) { 50 })
@@ -128,7 +130,7 @@ class EngineSimulationTest {
         assertTrue(r.logs.any { it.startsWith("turn_snap") && it.contains("src=hold") }, "gyro confirmed the turn: ${r.logs}")
         assertTrue(r.maxSBeforeTurn < 805.0, "marker never passed the junction before the car turned (max s=${r.maxSBeforeTurn})")
         assertEquals(PositionSource.DR, r.state.source)
-        assertEquals("arrive", r.state.nextStep?.type)
+        assertEquals(ManeuverType.ARRIVE, r.state.nextStep?.type)
         assertTrue(r.spoken.any { it.contains("GPS signal lost") }, "announced GPS loss: ${r.spoken}")
         // Every vibration goes with a voice phrase; the turn is signalled "soon" before "now".
         assertTrue(NavAlert.GPS_LOST in r.alerts, "vibrated on GPS loss: ${r.alerts}")

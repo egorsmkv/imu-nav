@@ -1,5 +1,7 @@
 package org.imunav.app.ui
 
+import org.imunav.core.route.ManeuverModifier
+import org.imunav.core.route.ManeuverType
 import org.imunav.core.route.Step
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -9,12 +11,12 @@ class ManeuverTest {
     @Test
     fun mapsJunctionsAndRampsToTheSideTheDriverMustTake() {
         val cases = listOf(
-            Step("fork", "slight left") to Maneuver.KEEP_LEFT,
-            Step("fork", "slight right") to Maneuver.KEEP_RIGHT,
-            Step("on ramp", "left") to Maneuver.RAMP_LEFT,
-            Step("off ramp", "right") to Maneuver.RAMP_RIGHT,
-            Step("on ramp") to Maneuver.STRAIGHT,
-            Step("merge", "right") to Maneuver.MERGE,
+            Step(ManeuverType.FORK, ManeuverModifier.SLIGHT_LEFT) to Maneuver.KEEP_LEFT,
+            Step(ManeuverType.FORK, ManeuverModifier.SLIGHT_RIGHT) to Maneuver.KEEP_RIGHT,
+            Step(ManeuverType.ON_RAMP, ManeuverModifier.LEFT) to Maneuver.RAMP_LEFT,
+            Step(ManeuverType.OFF_RAMP, ManeuverModifier.RIGHT) to Maneuver.RAMP_RIGHT,
+            Step(ManeuverType.ON_RAMP) to Maneuver.STRAIGHT,
+            Step(ManeuverType.MERGE, ManeuverModifier.RIGHT) to Maneuver.MERGE,
         )
         cases.forEach { (step, expected) -> assertEquals(step.toString(), expected, maneuverOf(step)) }
     }
@@ -22,17 +24,17 @@ class ManeuverTest {
     @Test
     fun mapsRoundaboutsArrivalsAndTurnModifiers() {
         val cases = listOf(
-            Step("roundabout") to Maneuver.ROUNDABOUT,
-            Step("exit rotary") to Maneuver.ROUNDABOUT,
-            Step("arrive") to Maneuver.ARRIVE,
-            Step("turn", "uturn") to Maneuver.UTURN,
-            Step("turn", "sharp left") to Maneuver.SHARP_LEFT,
-            Step("turn", "sharp right") to Maneuver.SHARP_RIGHT,
-            Step("turn", "slight left") to Maneuver.SLIGHT_LEFT,
-            Step("turn", "slight right") to Maneuver.SLIGHT_RIGHT,
-            Step("turn", "left") to Maneuver.LEFT,
-            Step("turn", "right") to Maneuver.RIGHT,
-            Step("continue") to Maneuver.STRAIGHT,
+            Step(ManeuverType.ROUNDABOUT) to Maneuver.ROUNDABOUT,
+            Step(ManeuverType.EXIT_ROTARY) to Maneuver.ROUNDABOUT,
+            Step(ManeuverType.ARRIVE) to Maneuver.ARRIVE,
+            Step(ManeuverType.TURN, ManeuverModifier.UTURN) to Maneuver.UTURN,
+            Step(ManeuverType.TURN, ManeuverModifier.SHARP_LEFT) to Maneuver.SHARP_LEFT,
+            Step(ManeuverType.TURN, ManeuverModifier.SHARP_RIGHT) to Maneuver.SHARP_RIGHT,
+            Step(ManeuverType.TURN, ManeuverModifier.SLIGHT_LEFT) to Maneuver.SLIGHT_LEFT,
+            Step(ManeuverType.TURN, ManeuverModifier.SLIGHT_RIGHT) to Maneuver.SLIGHT_RIGHT,
+            Step(ManeuverType.TURN, ManeuverModifier.LEFT) to Maneuver.LEFT,
+            Step(ManeuverType.TURN, ManeuverModifier.RIGHT) to Maneuver.RIGHT,
+            Step(ManeuverType.CONTINUE) to Maneuver.STRAIGHT,
         )
         cases.forEach { (step, expected) -> assertEquals(step.toString(), expected, maneuverOf(step)) }
     }

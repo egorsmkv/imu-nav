@@ -6,6 +6,7 @@ import org.imunav.core.nav.NavListener
 import org.imunav.core.nav.NavigationEngine
 import org.imunav.core.nav.NetSample
 import org.imunav.core.nav.NetworkTracker
+import org.imunav.core.route.ManeuverType
 import org.imunav.core.route.Route
 import org.imunav.core.route.Step
 import org.imunav.core.route.TravelMode
@@ -23,7 +24,7 @@ class MotionEvidenceTest {
 
     private fun start(mode: TravelMode = TravelMode.CAR) {
         val points = listOf(GeoPoint(50.45, 30.52), GeoPoint(50.48, 30.52))
-        val route = Route(points, listOf(Step("depart", null, "test", 3000.0, 300.0, 0), Step("arrive", null, "", 0.0, 0.0, 1)), 300.0)
+        val route = Route(points, listOf(Step(ManeuverType.DEPART, null, "test", 3000.0, 300.0, 0), Step(ManeuverType.ARRIVE, null, "", 0.0, 0.0, 1)), 300.0)
         engine.start(route, points.last(), nowMs = 1000, mode = mode)
         for (time in 1020L..31_000L step 20) quietSample(time)
     }

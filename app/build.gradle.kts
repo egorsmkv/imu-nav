@@ -230,6 +230,7 @@ tasks.matching {
 
 dependencies {
     implementation(project(":core"))
+    implementation(libs.jackson.core)
     implementation(project(":routing"))
 
     implementation(libs.androidx.car.app)

@@ -6,6 +6,7 @@ import org.imunav.core.gnss.FixSource
 import org.imunav.core.gnss.RawFix
 import org.imunav.core.imu.ImuSample
 import org.imunav.core.record.TripEvent
+import org.imunav.core.route.ManeuverType
 import org.imunav.core.route.Route
 import org.imunav.core.route.Step
 import kotlin.test.Test
@@ -16,7 +17,7 @@ import kotlin.test.assertTrue
 class NetworkManeuverComparisonTest {
     private val projection = LocalProjection(GeoPoint(50.45, 30.52))
     private val points = (0..16_000 step 20).map { projection.toGeo(0.0, it.toDouble()) }
-    private val route = Route(points, listOf(Step("depart", null, "test", 16_000.0, 900.0, 0), Step("arrive", null, "", 0.0, 0.0, points.lastIndex)), 900.0)
+    private val route = Route(points, listOf(Step(ManeuverType.DEPART, null, "test", 16_000.0, 900.0, 0), Step(ManeuverType.ARRIVE, null, "", 0.0, 0.0, points.lastIndex)), 900.0)
 
     @Test
     fun changingMotionAndCellErrorsHavePairedPeakAndRecoveryMetrics() {

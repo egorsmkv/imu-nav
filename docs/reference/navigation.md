@@ -278,3 +278,11 @@ ticks. Android scheduling can still delay execution, so this is not a hard real-
 A non-reference-counted six-hour partial wake lock is renewed every three hours while the service
 runs. Acquisition and release are ordered on a control worker, and teardown releases the lease.
 The app remains a research prototype, not a safety system.
+
+## Typed route maneuvers
+
+Kotlin `Step` values use `ManeuverType` and nullable `ManeuverModifier` enums. Their explicit
+`wireValue` strings preserve the existing routing, recording and desktop-mirror protocols.
+Unknown maneuver types or nonempty modifiers reject the route at the input boundary. Missing
+or empty modifiers remain absent. Guidance for supported maneuvers is unchanged in all languages.
+An invalid recorded route event follows normal malformed-line recovery; other trip events remain readable.

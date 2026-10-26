@@ -43,7 +43,8 @@ The sharing server uses `zip` 8.6 (MIT) to validate user-uploaded profiling arch
 The desktop viewer uses eframe/egui, Walkers, image, rusqlite/SQLite and rfd under permissive
 licences; its GUI dependencies are separate from the APK and relay. The Windows artifact includes
 third-party notices. See the [desktop dependency reference](reference/licences.md#desktop-navigation-viewer).
-Kotlin's streaming mirror encoder directly uses the existing Jackson Core 2.19.2 (Apache 2.0).
+Kotlin's streaming mirror, typed routing/search boundaries and synchronized preference codecs use
+the existing Jackson Core 2.19.2 (Apache 2.0), declared directly by the core, routing and app modules.
 
 Offline address search uses Tantivy 0.26.1 (MIT), JNI 0.21.1 and Serde/serde_json
 (MIT/Apache-2.0). The read-only native library is included in Android APKs for

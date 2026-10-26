@@ -3,9 +3,7 @@ package org.imunav.routing
 import org.imunav.core.geo.Geo
 import org.imunav.core.geo.GeoPoint
 import org.imunav.core.route.Route
-import org.imunav.core.route.Step
 import org.imunav.core.route.TravelMode
-import org.imunav.core.search.SearchIndexJson
 import java.io.File
 import java.util.Locale
 import java.util.concurrent.locks.ReentrantReadWriteLock
@@ -67,7 +65,7 @@ class OfflineGraph private constructor(val dir: File, private val info: PackInfo
         check(!closed) { "Routing pack closed" }
         if (points.any { !covers(it) }) throw OfflineRoutingException("point outside offline map")
         if (!supports(mode)) throw OfflineRoutingException("profile unavailable")
-        val payload = SearchIndexJson.encode(mapOf("points" to points.map { listOf(it.lat, it.lon) }))
+        val payload = RoutingJson.request(RoutingQuery(points))
         val json = if (request !=
             null
         ) {
@@ -75,14 +73,14 @@ class OfflineGraph private constructor(val dir: File, private val info: PackInfo
         } else {
             RoutingRequest().use { RoutingNative.route(handle, it.handle, mode.profile, payload) }
         }
-        decodeRoute(SearchIndexJson.decode(json))
+        RoutingJson.route(json)
     }
 
     /** Viterbi road matching uses the native graph and retains request-scoped cancellation. */
     fun mapMatch(points: List<GeoPoint>, accuracyM: Double = 20.0, mode: TravelMode = TravelMode.CAR, request: RoutingRequest? = null): MatchedTrack = lock.read {
         check(!closed) { "Routing pack closed" }
         if (!supports(mode)) throw OfflineRoutingException("profile unavailable")
-        val payload = SearchIndexJson.encode(mapOf("points" to points.map { listOf(it.lat, it.lon) }, "accuracy" to accuracyM))
+        val payload = RoutingJson.request(RoutingQuery(points, accuracyM))
         val json = if (request !=
             null
         ) {
@@ -90,7 +88,7 @@ class OfflineGraph private constructor(val dir: File, private val info: PackInfo
         } else {
             RoutingRequest().use { RoutingNative.mapMatch(handle, it.handle, mode.profile, payload) }
         }
-        val route = decodeRoute(SearchIndexJson.decode(json))
+        val route = RoutingJson.route(json)
         MatchedTrack(route.geometry, route.length, points.zipWithNext().sumOf { (a, b) -> Geo.distance(a, b) })
     }
 
@@ -111,37 +109,6 @@ class OfflineGraph private constructor(val dir: File, private val info: PackInfo
             val info = PackInfo.parse(metadata.readText()) ?: throw OfflineRoutingException("invalid routing metadata")
             if (info.routingFormat != PackInfo.FORMAT) throw OfflineRoutingException("New Rust routing pack required; rebuild or download a current pack")
             return OfflineGraph(dir, info, RoutingNative.open(dir.absolutePath, validate))
-        }
-
-        private fun decodeRoute(data: Map<String, Any?>): Route {
-            fun numbers(name: String) = (data[name] as? List<*>)?.map { it as? Number }.orEmpty()
-            val geometry = (data["geometry"] as List<*>).map { item ->
-                val pair = item as List<*>
-                GeoPoint((pair[0] as Number).toDouble(), (pair[1] as Number).toDouble())
-            }
-            val steps = (data["steps"] as List<*>).map { item ->
-                val step = item as Map<*, *>
-                Step(
-                    step["type"] as String,
-                    step["modifier"] as? String,
-                    step["name"] as String,
-                    (step["distanceM"] as Number).toDouble(),
-                    (step["durationS"] as Number).toDouble(),
-                    (step["geometryIndex"] as Number).toInt(),
-                    (step["roundaboutExit"] as? Number)?.toInt(),
-                )
-            }
-            return Route(
-                geometry,
-                steps,
-                (data["durationS"] as Number).toDouble(),
-                numbers("maxspeedKmh").map { it?.toInt() },
-                summary = "offline",
-                segmentSpeedMps = numbers("segmentSpeedMps").map {
-                    it?.toDouble()
-                },
-                elevationM = numbers("elevationM").takeIf { it.isNotEmpty() }?.map { requireNotNull(it).toDouble() }?.toDoubleArray(),
-            )
         }
     }
 }

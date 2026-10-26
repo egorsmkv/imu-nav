@@ -7,6 +7,8 @@ import org.imunav.core.gnss.GpsState
 import org.imunav.core.gnss.TrustLevel
 import org.imunav.core.nav.GuidanceState
 import org.imunav.core.nav.PositionSource
+import org.imunav.core.route.ManeuverModifier
+import org.imunav.core.route.ManeuverType
 import org.imunav.core.route.Route
 import org.imunav.core.route.Step
 import org.junit.Assert.assertEquals
@@ -25,7 +27,7 @@ class NavigationMirrorTest {
     private val sample = NavigationPositionSample(GeoPoint(-50.5, -30.25), 10.0, 90.0, 80.0, PositionSource.DR, 1_000, 1_767_225_600_000)
     private val route = Route(listOf(sample.point, GeoPoint(-50.49, -30.24)), emptyList(), 120.0, summary = "Synthetic")
     private val state = GuidanceState(
-        active = true, route = route, position = sample.point, s = 20.0, nextStep = Step("turn", "left", "Example road"),
+        active = true, route = route, position = sample.point, s = 20.0, nextStep = Step(ManeuverType.TURN, ManeuverModifier.LEFT, "Example road"),
         distToNextM = 100.0, remainingM = 1_000.0, remainingS = 120.0, speedLimitKmh = 50, source = PositionSource.DR, uncertaintyM = 80.0,
     )
     private val input = NavigationMirrorInput(state, GpsState.LOST, TrustLevel.BAD, jammed = true)
@@ -100,7 +102,7 @@ class NavigationMirrorTest {
 
     @Test
     fun namesAreEscapedAndEveryEncodedFrameHasOneLine() {
-        val unusual = input.copy(guidance = state.copy(nextStep = Step("turn", "left", "Test \"road\"\nВулиця")))
+        val unusual = input.copy(guidance = state.copy(nextStep = Step(ManeuverType.TURN, ManeuverModifier.LEFT, "Test \"road\"\nВулиця")))
         val encoded = NavigationMirrorEncoder().encode(sample, unusual, true, sample.elapsedMs)
         assertEquals("Test \"road\"\nВулиця", fields(encoded.guidanceJson.orEmpty())["name"])
         assertFalse(encoded.publication.stateLine.dropLast(1).contains(10.toByte()))

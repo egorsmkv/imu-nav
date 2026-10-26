@@ -291,3 +291,15 @@ remain relevant only to legacy packs.
 
 The isolated [faster_paths CH benchmark](../benchmarks/faster-paths-2026-10-24.md) compares
 the historical parallel Rust CH experiment against GraphHopper; the current runtime now uses the Rust pack format described above.
+
+## Kotlin JSON boundaries
+
+Search requests, candidate snapshots, index-export rows, offline route responses and pack metadata
+use typed Kotlin models with Jackson streaming codecs. Decoders check JSON token types, required
+fields, numeric ranges and coordinate shapes before publishing values. Malformed or truncated input
+and trailing JSON values fail with payload-free diagnostics. Missing requested search stages remain
+errors; an explicitly empty stage is valid.
+
+The JSON field names, coordinate ordering, nullable fields, JNI signatures and pack versions are
+unchanged. Pack metadata retains its legacy defaults for omitted optional fields. These Kotlin
+checks do not require rebuilding existing valid routing or search packs.

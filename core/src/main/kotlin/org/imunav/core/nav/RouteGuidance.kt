@@ -1,5 +1,6 @@
 package org.imunav.core.nav
 
+import org.imunav.core.route.ManeuverType
 import org.imunav.core.route.RouteCursor
 import kotlin.math.max
 import kotlin.math.min
@@ -8,7 +9,7 @@ import kotlin.math.min
 internal fun GuidanceState.withRouteProgress(car: RouteCursor, arriveM: Double, ready: Boolean): GuidanceState {
     val route = car.route
     val point = route.pointAt(car.s)
-    val next = route.steps.indices.firstOrNull { route.steps[it].type != "depart" && route.stepS(it) > car.s + 8.0 } ?: -1
+    val next = route.steps.indices.firstOrNull { route.steps[it].type != ManeuverType.DEPART && route.stepS(it) > car.s + 8.0 } ?: -1
     val remaining = route.length - car.s
     return copy(
         active = true,
