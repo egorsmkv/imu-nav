@@ -2,6 +2,7 @@ package org.imunav.routing
 
 import org.imunav.core.geo.Geo
 import org.imunav.core.geo.GeoPoint
+import org.imunav.core.route.RoadPreference
 import org.imunav.core.route.Route
 import org.imunav.core.route.TravelMode
 import java.io.File
@@ -59,19 +60,27 @@ class OfflineGraph private constructor(val dir: File, private val info: PackInfo
     fun covers(point: GeoPoint): Boolean = coverage.covers(point)
 
     /** Locale is retained for source compatibility; maneuver vocabulary is translated by the app. */
-    fun route(points: List<GeoPoint>, mode: TravelMode = TravelMode.CAR, locale: Locale = Locale.getDefault(), request: RoutingRequest? = null): Route = lock.read {
+    fun route(
+        points: List<GeoPoint>,
+        mode: TravelMode = TravelMode.CAR,
+        locale: Locale = Locale.getDefault(),
+        request: RoutingRequest? = null,
+        preference: RoadPreference = RoadPreference.MAIN_ROADS,
+    ): Route = lock.read {
         // Native maneuvers use language-independent types; the existing UI localizes them.
         locale.toLanguageTag()
         check(!closed) { "Routing pack closed" }
         if (points.any { !covers(it) }) throw OfflineRoutingException("point outside offline map")
         if (!supports(mode)) throw OfflineRoutingException("profile unavailable")
+        val profile = if (mode == TravelMode.CAR) preference.profile else mode.profile
+        if (profile !in profiles) throw OfflineRoutingException("road preference unavailable; rebuild the routing pack")
         val payload = RoutingJson.request(RoutingQuery(points))
         val json = if (request !=
             null
         ) {
-            RoutingNative.route(handle, request.handle, mode.profile, payload)
+            RoutingNative.route(handle, request.handle, profile, payload)
         } else {
-            RoutingRequest().use { RoutingNative.route(handle, it.handle, mode.profile, payload) }
+            RoutingRequest().use { RoutingNative.route(handle, it.handle, profile, payload) }
         }
         RoutingJson.route(json)
     }

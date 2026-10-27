@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="road_preference_title">Выбор дорог</string>
+    <string name="road_preference_main">Предпочитать главные дороги</string>
+    <string name="road_preference_balanced">Сбалансированный маршрут</string>
+    <string name="road_preference_hint">Главные дороги помогают избегать сокращений через дворы и парковки. Подъезд к вашим остановкам сохраняется.</string>
+    <string name="road_preference_online_hint">Для главных дорог нужен актуальный офлайн-пакет. Сбалансированный маршрут может использовать онлайн-маршруты с настройками сервера.</string>
+    <string name="road_preference_needs_pack">Для главных дорог нужен офлайн-пакет маршрутизации для этой поездки. Установите актуальный пакет или выберите сбалансированный маршрут для онлайн-маршрутизации.</string>
     <string name="notification_channel">Навигация</string>
     <string name="notification_title">Навигация продолжается</string>
 

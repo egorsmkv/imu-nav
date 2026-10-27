@@ -93,6 +93,7 @@ fun BookmarkSaveActions(ui: UiState, mode: TravelMode, bookmarks: Bookmarks) {
                         start?.let { BookmarkOrigin.Fixed(it) } ?: BookmarkOrigin.Automatic,
                         destination,
                         mode,
+                        ui.roadPreference,
                     ),
                 )
             }) { Text(stringResource(R.string.bookmark_save_route)) }

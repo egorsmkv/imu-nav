@@ -11,7 +11,7 @@ data class PackInfo(
     val source: String,
     val bounds: DoubleArray,
     val sizeBytes: Long,
-    val profiles: List<String> = listOf("car"),
+    val profiles: List<String> = listOf("car", "car_balanced"),
     val elevation: Boolean = false,
     val turnCosts: Boolean = false,
     val searchFormat: String? = null,
@@ -21,7 +21,7 @@ data class PackInfo(
 
     companion object {
         const val FILE = "pack.json"
-        const val FORMAT = "rust-ch-2"
+        const val FORMAT = "rust-ch-3"
 
         /** Parse metadata before native I/O; malformed bounds and unsupported profiles are rejected. */
         fun parse(json: String): PackInfo? = runCatching {

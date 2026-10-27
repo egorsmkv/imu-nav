@@ -349,7 +349,18 @@ fn valid_bookmark(value: &Value) -> bool {
     match value["type"].as_str() {
         Some("place") => object.len() == 3 && valid_endpoint(&value["endpoint"]),
         Some("route") => {
-            object.len() == 5
+            (object.len() == 5 && !object.contains_key("roadPreference")
+                || object.len() == 6
+                    && matches!(
+                        value["roadPreference"].as_str(),
+                        Some("MAIN_ROADS" | "BALANCED")
+                    ))
+                && object.keys().all(|key| {
+                    matches!(
+                        key.as_str(),
+                        "type" | "name" | "origin" | "destination" | "mode" | "roadPreference"
+                    )
+                })
                 && valid_endpoint(&value["destination"])
                 && (value["origin"].is_null() || valid_endpoint(&value["origin"]))
                 && matches!(value["mode"].as_str(), Some("CAR" | "FOOT"))
@@ -468,6 +479,13 @@ mod tests {
         assert!(!valid_bookmark(&json!({"type":"unknown","name":"x"})));
         let mut route = json!({"type":"route","name":"Work","origin":null,"destination":{"point":{"lat":50.0,"lon":30.0},"label":"Work"},"mode":"CAR"});
         assert!(valid_bookmark(&route));
+        route["roadPreference"] = json!("BALANCED");
+        assert!(valid_bookmark(&route));
+        route["roadPreference"] = json!("MAIN_ROADS");
+        assert!(valid_bookmark(&route));
+        route["roadPreference"] = json!("future");
+        assert!(!valid_bookmark(&route));
+        route.as_object_mut().unwrap().remove("roadPreference");
         route["origin"] = json!({"point":{"lat":49.0,"lon":29.0},"label":null});
         assert!(valid_bookmark(&route));
         route["destination"]["point"]["lat"] = json!(91);

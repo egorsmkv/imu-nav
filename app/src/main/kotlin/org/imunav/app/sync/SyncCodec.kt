@@ -6,6 +6,7 @@ import org.imunav.core.bookmarks.BookmarkPoint
 import org.imunav.core.bookmarks.SavedPlace
 import org.imunav.core.bookmarks.SavedRoute
 import org.imunav.core.geo.GeoPoint
+import org.imunav.core.route.RoadPreference
 import org.imunav.core.route.TravelMode
 import org.imunav.core.sync.SyncEntry
 import org.json.JSONArray
@@ -26,6 +27,10 @@ internal object SyncCodec {
                 is SavedPlace -> put("type", "place").put("endpoint", endpoint(value.endpoint))
 
                 is SavedRoute -> put("type", "route").put("destination", endpoint(value.destination)).put("mode", value.mode.name)
+                    .apply {
+                        // Omitting the default keeps ordinary recipes compatible with older servers.
+                        if (value.roadPreference != RoadPreference.MAIN_ROADS) put("roadPreference", value.roadPreference.name)
+                    }
                     .put("origin", (value.origin as? BookmarkOrigin.Fixed)?.let { endpoint(it.endpoint) } ?: JSONObject.NULL)
             }
         },
@@ -42,6 +47,7 @@ internal object SyncCodec {
                 if (value.isNull("origin")) BookmarkOrigin.Automatic else BookmarkOrigin.Fixed(endpoint(value.getJSONObject("origin"))),
                 endpoint(value.getJSONObject("destination")),
                 TravelMode.valueOf(value.getString("mode")),
+                RoadPreference.valueOf(value.optString("roadPreference", RoadPreference.MAIN_ROADS.name)),
             )
 
             else -> error("Unsupported bookmark")

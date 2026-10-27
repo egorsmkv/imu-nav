@@ -75,7 +75,7 @@ fn mmap_ch_matches_independent_dijkstra_on_both_profiles() {
     std::fs::write(&osm, fixture()).unwrap();
     let out = tmp.path().join("pack");
     builder::build(&osm, &out, "Test", 0, false, false).unwrap();
-    for profile in ["car", "foot"] {
+    for profile in ["car", "car_balanced", "foot"] {
         let network = Network::open(&out.join(format!("{profile}.routing"))).unwrap();
         let mut original = vec![vec![]; network.graph_count];
         for dir in 0..2 {
@@ -229,7 +229,7 @@ fn dateline_same_road_projection_does_not_take_the_long_way() {
     std::fs::write(&input,r#"<osm version="0.6"><node id="1" lat="0" lon="179.999"/><node id="2" lat="0" lon="-179.999"/><way id="1"><nd ref="1"/><nd ref="2"/><tag k="highway" v="residential"/></way></osm>"#).unwrap();
     let output = tmp.path().join("pack");
     builder::build(&input, &output, "Test", 0, false, false).unwrap();
-    for profile in ["car", "foot"] {
+    for profile in ["car", "car_balanced", "foot"] {
         let network = Network::open(&output.join(format!("{profile}.routing"))).unwrap();
         let result = route(
             &network,
@@ -330,7 +330,7 @@ fn compact_pack_shares_geometry_and_preserves_point_order_and_precision() {
     assert_eq!(read(24), 3); // No point simplification.
     assert_eq!(read(40), 0); // No absent-elevation array.
     let pack = imu_nav_routing::pack::Pack::open(&output).unwrap();
-    for profile in ["car", "foot"] {
+    for profile in ["car", "car_balanced", "foot"] {
         let network = pack.profile(profile.parse().unwrap()).unwrap();
         assert_eq!(network.count, 2);
         let a = network.state(imu_nav_routing::ids::StateId::new(0));
@@ -440,7 +440,7 @@ fn trusted_open_skips_record_scan_but_keeps_layout_checks_and_routes() {
     let flag = AtomicBool::new(false);
     let full = imu_nav_routing::pack::Pack::open(&output).unwrap();
     let trusted = imu_nav_routing::pack::Pack::open_trusted(&output).unwrap();
-    for profile in ["car", "foot"] {
+    for profile in ["car", "car_balanced", "foot"] {
         let expected = route(
             full.profile(profile.parse().unwrap()).unwrap(),
             &request,
@@ -488,7 +488,17 @@ fn single_mode_packs_trim_shared_data_and_preserve_routes_and_search() {
     for profile in ["car", "foot"] {
         let output = tmp.path().join(profile);
         let info = builder::subset::create(&combined, &output, profile).unwrap();
-        assert_eq!(info["profiles"], serde_json::json!([profile]));
+        assert_eq!(
+            info["profiles"],
+            if profile == "car" {
+                serde_json::json!(["car", "car_balanced"])
+            } else {
+                serde_json::json!(["foot"])
+            }
+        );
+        if profile == "car" {
+            assert!(output.join("car_balanced.routing").is_file());
+        }
         let selected = imu_nav_routing::pack::Pack::open(&output).unwrap();
         let other = if profile == "car" { "foot" } else { "car" };
         assert!(selected.profile(other.parse().unwrap()).is_err());

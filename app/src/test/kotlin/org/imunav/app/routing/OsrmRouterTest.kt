@@ -6,6 +6,7 @@ import mockwebserver3.MockWebServer
 import org.imunav.core.geo.GeoPoint
 import org.imunav.core.route.ManeuverModifier
 import org.imunav.core.route.ManeuverType
+import org.imunav.core.route.RoadPreference
 import org.imunav.core.route.TravelMode
 import org.json.JSONArray
 import org.json.JSONObject
@@ -36,6 +37,14 @@ class OsrmRouterTest {
     fun stop() = server.close()
 
     private fun router() = OsrmRouter(server.url("/").toString().trimEnd('/'))
+
+    @Test
+    fun mainRoadPreferenceNeverSilentlyUsesTheOnlineServer() {
+        assertThrows(IOException::class.java) {
+            runBlocking { router().route(GeoPoint(0.0, 0.0), GeoPoint(0.01, 0.01), preference = RoadPreference.MAIN_ROADS) }
+        }
+        assertEquals(0, server.requestCount)
+    }
 
     /** Google's encoded polyline at 6 decimals, as OSRM sends it. */
     private fun encode(points: List<GeoPoint>): String = buildString {
@@ -84,7 +93,7 @@ class OsrmRouterTest {
     @Test
     fun twoLegAnswerBecomesOneRouteWithOuterDepartAndArriveOnly() {
         server.enqueue(MockResponse.Builder().code(200).body(twoLegAnswer()).build())
-        val route = runBlocking { router().route(GeoPoint(50.0, 30.0), GeoPoint(50.01, 30.01), listOf(GeoPoint(50.01, 30.0)), TravelMode.CAR) }
+        val route = runBlocking { router().route(GeoPoint(50.0, 30.0), GeoPoint(50.01, 30.01), listOf(GeoPoint(50.01, 30.0)), TravelMode.CAR, RoadPreference.BALANCED) }
         val request = server.takeRequest()
         assertTrue(request.target.startsWith("/route/v1/driving/30.000000,50.000000;30.000000,50.010000;30.010000,50.010000"))
 
@@ -103,11 +112,11 @@ class OsrmRouterTest {
     @Test
     fun unusableAnswersAndWalkingAreReportedAsIOExceptions() {
         server.enqueue(MockResponse.Builder().code(200).body("{\"code\":\"NoRoute\",\"message\":\"Impossible route\"}").build())
-        val noRoute = assertThrows(IOException::class.java) { runBlocking { router().route(GeoPoint(50.0, 30.0), GeoPoint(51.0, 31.0)) } }
+        val noRoute = assertThrows(IOException::class.java) { runBlocking { router().route(GeoPoint(50.0, 30.0), GeoPoint(51.0, 31.0), preference = RoadPreference.BALANCED) } }
         assertTrue(noRoute.message!!.contains("NoRoute"))
 
         server.enqueue(MockResponse.Builder().code(503).body("busy").build())
-        val down = assertThrows(IOException::class.java) { runBlocking { router().route(GeoPoint(50.0, 30.0), GeoPoint(51.0, 31.0)) } }
+        val down = assertThrows(IOException::class.java) { runBlocking { router().route(GeoPoint(50.0, 30.0), GeoPoint(51.0, 31.0), preference = RoadPreference.BALANCED) } }
         assertTrue(down.message!!.startsWith("OSRM"))
 
         assertThrows(IOException::class.java) { runBlocking { router().route(GeoPoint(50.0, 30.0), GeoPoint(51.0, 31.0), mode = TravelMode.FOOT) } }

@@ -24,11 +24,11 @@ class BuildGraphCliTest {
             val metadata = assertNotNull(PackInfo.parse(File(output, PackInfo.FILE).readText()))
             assertEquals("Region", metadata.name)
             assertEquals(PackInfo.FORMAT, metadata.routingFormat)
-            assertEquals(listOf("car", "foot"), metadata.profiles)
+            assertEquals(listOf("car", "car_balanced", "foot"), metadata.profiles)
             assertFalse(File(output, "search.tantivy").exists())
             val extracted = File(temporary, "extracted")
             ZipFile(File(output.path + ".zip")).use { archive ->
-                assertEquals(setOf("pack.json", "shared.routing", "car.routing", "foot.routing"), archive.entries().asSequence().map { it.name }.toSet())
+                assertEquals(setOf("pack.json", "shared.routing", "car.routing", "car_balanced.routing", "foot.routing"), archive.entries().asSequence().map { it.name }.toSet())
                 archive.entries().asSequence().forEach { entry ->
                     val destination = File(extracted, entry.name)
                     destination.parentFile.mkdirs()

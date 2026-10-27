@@ -1,6 +1,7 @@
 package org.imunav.core.bookmarks
 
 import org.imunav.core.geo.GeoPoint
+import org.imunav.core.route.RoadPreference
 import org.imunav.core.route.TravelMode
 import java.util.Locale
 
@@ -34,7 +35,14 @@ data class SavedPlace(override val id: String, override val name: String, val en
 }
 
 /** A route recipe: routing data may change, so geometry and instructions are recalculated. */
-data class SavedRoute(override val id: String, override val name: String, val origin: BookmarkOrigin, val destination: BookmarkPoint, val mode: TravelMode) : Bookmark {
+data class SavedRoute(
+    override val id: String,
+    override val name: String,
+    val origin: BookmarkOrigin,
+    val destination: BookmarkPoint,
+    val mode: TravelMode,
+    val roadPreference: RoadPreference = RoadPreference.MAIN_ROADS,
+) : Bookmark {
     init {
         validateBookmark(id, name)
     }

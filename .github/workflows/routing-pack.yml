@@ -56,9 +56,9 @@ jobs:
             ~/.cargo/registry/src
             native/target/release
           # Keep compiler/profile/dependency changes separate; Cargo rebuilds changed source on a fallback hit.
-          key: routing-rust-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.RUSTUP_TOOLCHAIN }}-${{ hashFiles('native/Cargo.lock', 'native/Cargo.toml', 'native/nav-search/Cargo.toml', 'native/nav-routing/Cargo.toml') }}-${{ hashFiles('native/nav-search/src/**', 'native/nav-search/build.rs', 'native/nav-routing/**') }}
+          key: routing-rust-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.RUSTUP_TOOLCHAIN }}-${{ hashFiles('native/Cargo.lock', 'native/Cargo.toml', 'native/nav-search/Cargo.toml', 'native/nav-routing/Cargo.toml') }}-${{ hashFiles('native/nav-search/src/**', 'native/nav-search/build.rs', 'native/nav-routing/**') }}
           restore-keys: |
-            routing-rust-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.RUSTUP_TOOLCHAIN }}-${{ hashFiles('native/Cargo.lock', 'native/Cargo.toml', 'native/nav-search/Cargo.toml', 'native/nav-routing/Cargo.toml') }}-
+            routing-rust-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.RUSTUP_TOOLCHAIN }}-${{ hashFiles('native/Cargo.lock', 'native/Cargo.toml', 'native/nav-search/Cargo.toml', 'native/nav-routing/Cargo.toml') }}-
       - name: Install native routing builder toolchain
         if: steps.changes.outputs.run == 'true'
         run: rustup toolchain install 1.99.0 --profile minimal
@@ -110,9 +110,9 @@ jobs:
             ~/.cargo/registry/src
             native/target/release
           # Keep compiler/profile/dependency changes separate; Cargo rebuilds changed source on a fallback hit.
-          key: routing-rust-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.RUSTUP_TOOLCHAIN }}-${{ hashFiles('native/Cargo.lock', 'native/Cargo.toml', 'native/nav-search/Cargo.toml', 'native/nav-routing/Cargo.toml') }}-${{ hashFiles('native/nav-search/src/**', 'native/nav-search/build.rs', 'native/nav-routing/**') }}
+          key: routing-rust-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.RUSTUP_TOOLCHAIN }}-${{ hashFiles('native/Cargo.lock', 'native/Cargo.toml', 'native/nav-search/Cargo.toml', 'native/nav-routing/Cargo.toml') }}-${{ hashFiles('native/nav-search/src/**', 'native/nav-search/build.rs', 'native/nav-routing/**') }}
           restore-keys: |
-            routing-rust-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.RUSTUP_TOOLCHAIN }}-${{ hashFiles('native/Cargo.lock', 'native/Cargo.toml', 'native/nav-search/Cargo.toml', 'native/nav-routing/Cargo.toml') }}-
+            routing-rust-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.RUSTUP_TOOLCHAIN }}-${{ hashFiles('native/Cargo.lock', 'native/Cargo.toml', 'native/nav-search/Cargo.toml', 'native/nav-routing/Cargo.toml') }}-
       - name: Install native routing builder toolchain
         run: rustup toolchain install 1.99.0 --profile minimal
       - name: Validate inputs and report runner capacity
@@ -150,7 +150,7 @@ jobs:
           /usr/bin/time -v -o build/routing-compile-time.txt \
             cargo build --locked --release --manifest-path native/Cargo.toml -p imu-nav-routing --features builder
       # Profiles run sequentially to bound peak memory; each CH preparation uses Rayon workers.
-      - name: Build car (with turn costs), foot and address-search pack
+      - name: Build both car preferences, foot and address-search pack
         run: |
           # Compile has finished; reserve runner memory for native graph preparation.
           /usr/bin/time -v -o build/routing-build-time.txt native/target/release/build-routing \

@@ -3,6 +3,7 @@ package org.imunav.routing
 import org.imunav.core.geo.GeoPoint
 import org.imunav.core.route.ManeuverModifier
 import org.imunav.core.route.ManeuverType
+import org.imunav.core.route.RoadPreference
 import org.imunav.core.route.TravelMode
 import java.io.File
 import java.util.concurrent.CancellationException
@@ -35,6 +36,8 @@ class RustOfflineGraphTest {
             OfflineGraph.load(pack).use { graph ->
                 val points = listOf(GeoPoint(50.4502, 30.5001), GeoPoint(50.4601, 30.5099))
                 val route = graph.route(points)
+                assertTrue("car_balanced" in graph.profiles)
+                assertEquals(route.geometry, graph.route(points, preference = RoadPreference.BALANCED).geometry)
                 assertTrue(route.length in 1700.0..1900.0)
                 assertTrue(route.steps.any { it.type == ManeuverType.TURN && it.modifier == ManeuverModifier.RIGHT && it.name == "Eastway" })
                 assertEquals(ManeuverType.DEPART, route.steps.first().type)
@@ -68,8 +71,20 @@ class RustOfflineGraphTest {
                 combined.copyRecursively(selected)
                 val other = if (mode == TravelMode.CAR) TravelMode.FOOT else TravelMode.CAR
                 assertTrue(File(selected, "${other.profile}.routing").delete())
+                if (mode == TravelMode.FOOT) assertTrue(File(selected, "car_balanced.routing").delete())
                 val size = selected.walkTopDown().filter { it.isFile && it.name != PackInfo.FILE }.sumOf { it.length() }
-                File(selected, PackInfo.FILE).writeText(info.copy(profiles = listOf(mode.profile), sizeBytes = size).toJson())
+                File(selected, PackInfo.FILE).writeText(
+                    info.copy(
+                        profiles = if (mode ==
+                            TravelMode.CAR
+                        ) {
+                            listOf("car", "car_balanced")
+                        } else {
+                            listOf("foot")
+                        },
+                        sizeBytes = size,
+                    ).toJson(),
+                )
                 OfflineGraph.load(selected).use { graph ->
                     assertTrue(graph.supports(mode))
                     assertTrue(!graph.supports(other))
@@ -87,7 +102,7 @@ class RustOfflineGraphTest {
     fun oldPacksAreRejectedBeforeOpeningNativeFiles() {
         val temporary = createTempDirectory().toFile()
         try {
-            for (format in listOf(null, "rust-ch-1")) {
+            for (format in listOf(null, "rust-ch-1", "rust-ch-2")) {
                 File(temporary, PackInfo.FILE).writeText(PackInfo("old", "", "", doubleArrayOf(50.0, 51.0, 30.0, 31.0), 0, routingFormat = format).toJson())
                 assertFailsWith<OfflineRoutingException> { OfflineGraph.load(temporary) }
             }

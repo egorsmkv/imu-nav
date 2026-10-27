@@ -13,24 +13,24 @@ from verify_routing_pack import verify  # noqa: E402
 
 def write_pack(path: Path, native: bool = False, **overrides) -> None:
     """A minimal flat archive with a valid pack.json; [overrides] replace pack.json fields."""
-    files = {"shared.routing": b"IMUGEO02", "car.routing": b"IMURT002", "foot.routing": b"IMURT002", "search.db": b"SQLite format 3\x00" + b"index"}
+    files = {"shared.routing": b"IMUGEO02", "car.routing": b"IMURT003", "car_balanced.routing": b"IMURT003", "foot.routing": b"IMURT003", "search.db": b"SQLite format 3\x00" + b"index"}
     if native:
-        files = {"shared.routing": b"IMUGEO02", "car.routing": b"IMURT002", "foot.routing": b"IMURT002", "search.tantivy/search-format": b"imu-nav-tantivy-1\n", "search.tantivy/meta.json": b'{"segments": [], "schema": []}'}
+        files = {"shared.routing": b"IMUGEO02", "car.routing": b"IMURT003", "car_balanced.routing": b"IMURT003", "foot.routing": b"IMURT003", "search.tantivy/search-format": b"imu-nav-tantivy-1\n", "search.tantivy/meta.json": b'{"segments": [], "schema": []}'}
     info = {
         "name": "Test",
         "builtAt": "2026-10-24T00:00:00Z",
         "source": "test.osm.pbf",
-        "routingFormat": "rust-ch-2",
+        "routingFormat": "rust-ch-3",
         "bounds": [44.0, 52.0, 22.0, 40.0],
         "sizeBytes": sum(len(data) for data in files.values()),
-        "profiles": ["car", "foot"],
+        "profiles": ["car", "car_balanced", "foot"],
         "elevation": False,
         "turnCosts": True,
         "searchFormat": "tantivy-1" if native else None,
     }
     info.update(overrides)
     if "profiles" in overrides:
-        for profile in ("car", "foot"):
+        for profile in ("car", "car_balanced", "foot"):
             if profile not in info["profiles"]:
                 files.pop(f"{profile}.routing")
         info["sizeBytes"] = sum(len(data) for data in files.values())
@@ -48,14 +48,14 @@ class VerifyRoutingPackTests(unittest.TestCase):
             self.assertTrue(verify(archive)["turnCosts"])
 
     def test_single_mode_archives_are_valid(self):
-        for profiles in (["car"], ["foot"]):
+        for profiles in (["car", "car_balanced"], ["foot"]):
             with self.subTest(profiles=profiles), tempfile.TemporaryDirectory() as temporary:
                 archive = Path(temporary) / "routing.zip"
                 write_pack(archive, native=True, profiles=profiles)
                 self.assertEqual(verify(archive)["profiles"], profiles)
                 with zipfile.ZipFile(archive, "a") as pack:
-                    other = "foot" if profiles == ["car"] else "car"
-                    pack.writestr(f"{other}.routing", b"IMURT002")
+                    other = "foot" if "car" in profiles else "car"
+                    pack.writestr(f"{other}.routing", b"IMURT003")
                 with self.assertRaisesRegex(ValueError, "declared profiles"):
                     verify(archive)
 

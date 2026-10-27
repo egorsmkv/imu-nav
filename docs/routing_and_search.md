@@ -6,8 +6,9 @@ A routing pack lets the phone calculate routes and search addresses without inte
 
 In **Settings → Maps and routes**, the app shows storage available for the packs, including cache space Android can reclaim.
 Allow room for the ZIP, its extracted contents, and the currently installed pack during replacement.
-Measured Ukraine routing downloads are about 909 MB for car, 667 MB for walking, or 1.34 GB for both.
+Earlier v2 Ukraine routing downloads were about 909 MB for car, 667 MB for walking, or 1.34 GB for both.
 Their installed payloads are about 1.68 GB, 1.22 GB, and 2.53 GB respectively; display maps need additional space.
+Current v3 car packs contain two car hierarchies and need new size measurements.
 Use **Check again** after freeing space.
 
 The app accepts locations worldwide. Install packs for the region you will use; only one map pack and one routing pack are active at a time. Outside a map pack's bounds, the map uses online tiles when available.
@@ -25,10 +26,20 @@ The app accepts locations worldwide. Install packs for the region you will use; 
    older version, the next start validates fully again and writes a new stamp; Settings shows
    **Opening the pack…** meanwhile. Only a pack that really fails to open is reported as
    **Installed, but the pack could not be loaded**.
-2. In **Where to?**, choose **Car** or **Walk**. Install a current Rust pack; old GraphHopper and v1 Rust packs must be replaced.
+2. In **Where to?**, choose **Car** or **Walk**. Install a current Rust pack; old GraphHopper and v1/v2 Rust packs must be replaced.
 3. Search for a destination and, if needed, a starting address. Review the route before tapping **Start**.
 
-Walking routes require an offline pack with a foot profile. If you allow online routing, the app can use an online fallback for car routes when offline routing is unavailable.
+For **Car**, choose **Prefer main roads** (default) or **Balanced** in the route preview.
+Main roads discourages shortcuts through courtyards, parking areas and small access roads,
+while retaining access to your start, stops and destination. Balanced permits useful public-road
+shortcuts. Review distance and estimated time on the route cards when alternatives differ;
+the blue route is selected and the grey route is the alternative. The choice is remembered
+and retained during rerouting and in saved route bookmarks. You can also add a stop on a
+specific street to route through it.
+
+Main roads requires a current offline pack covering the trip. Balanced can use the allowed
+online fallback, whose server chooses road preferences. Walking stays offline-only. Both
+offline car choices honor local-only access; delivery-only roads are excluded for cars.
 At the bottom of **Settings → Community links**, the Telegram group link points to map and routing ZIP archives. It opens <https://t.me/imu_nav> in every interface language.
 
 ## Search for an address
@@ -51,7 +62,7 @@ native/target/release/build-routing --osm ukraine-latest.osm.pbf --out graph-ukr
 Import the resulting ZIP in the app. Java and the Android SDK are not needed for this builder.
 Country-scale graphs still need several GB of RAM and temporary disk space. For local HGT road
 heights, pack bundling and routing policy, see the [detailed reference](reference/routing_and_search.md).
-The new app requires newly built Rust packs; previous GraphHopper and v1 Rust archives cannot be imported.
+The new app requires newly built Rust packs; previous GraphHopper and v1/v2 Rust archives cannot be imported.
 
 ## Build an offline routing pack in CI
 
@@ -71,7 +82,7 @@ in the artifact. Each download includes a
 checksum and a report listing the sizes of all three choices. You can also upload a ZIP to
 your own HTTPS server and enter its URL in the app's **Download** field. CI does not publish
 archives to a server. Only one routing pack is installed at a time: choose the combined pack
-if you want both modes. Single-mode packs contain only their selected hierarchy and referenced
+if you want both modes. Car packs include both road preferences; walking packs contain the foot hierarchy and referenced
 shared geometry; their Tantivy address index is unchanged.
 
 The workflow checks the ZIP and opens its extracted graph with the phone's routing rules before

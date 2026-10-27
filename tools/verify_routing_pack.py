@@ -22,13 +22,13 @@ def verify(archive_path: Path) -> dict:
         if "pack.json" not in names or archive.getinfo("pack.json").file_size > 65536:
             raise ValueError("missing or oversized routing metadata")
         info = json.loads(archive.read("pack.json"))
-        if not isinstance(info, dict) or not info.get("name") or info.get("routingFormat") != "rust-ch-2":
+        if not isinstance(info, dict) or not info.get("name") or info.get("routingFormat") != "rust-ch-3":
             raise ValueError("pack.json has invalid name or Rust routing format")
         profiles = info.get("profiles")
-        if profiles not in (["car"], ["foot"], ["car", "foot"]) or not isinstance(info.get("elevation"), bool):
+        if profiles not in (["car", "car_balanced"], ["foot"], ["car", "car_balanced", "foot"]) or not isinstance(info.get("elevation"), bool):
             raise ValueError("pack.json must declare car, foot, or both profiles and elevation flag")
         profile_files = {f"{profile}.routing" for profile in profiles}
-        if set(names) & {"car.routing", "foot.routing"} != profile_files:
+        if set(names) & {"car.routing", "car_balanced.routing", "foot.routing"} != profile_files:
             raise ValueError("routing files do not match declared profiles")
         native = any(name.startswith("search.tantivy/") for name in names)
         required = {"pack.json", "shared.routing"} | profile_files | (
@@ -54,14 +54,14 @@ def verify(archive_path: Path) -> dict:
             raise ValueError("routing metadata exceeds size limit")
         for profile in profiles:
             with archive.open(f"{profile}.routing") as graph:
-                if graph.read(8) != b"IMURT002":
+                if graph.read(8) != b"IMURT003":
                     raise ValueError("unsupported Rust routing data")
         if isinstance(info, dict) and (info.get("searchFormat") not in (None, "tantivy-1") or (native and info.get("searchFormat") != "tantivy-1") or (not native and info.get("searchFormat") is not None)):
             raise ValueError("pack.json searchFormat does not match the search index")
         with archive.open("shared.routing") as shared:
             if shared.read(8) != b"IMUGEO02":
                 raise ValueError("unsupported shared routing data")
-        if not isinstance(info, dict) or not info.get("name") or info.get("routingFormat") != "rust-ch-2":
+        if not isinstance(info, dict) or not info.get("name") or info.get("routingFormat") != "rust-ch-3":
             raise ValueError("pack.json has invalid name or Rust routing format")
         # Current builders store turn restrictions and turn penalties; a pack without them is stale.
         if info.get("turnCosts") is not True:

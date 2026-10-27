@@ -6,7 +6,7 @@
     clippy::cast_sign_loss,
     clippy::cast_precision_loss
 )]
-use super::Road;
+use super::{Road, Variant};
 use crate::{
     Result, geo,
     storage::{NONE, cell_key, cell_of},
@@ -25,7 +25,7 @@ use std::{
 pub fn stage(
     path: &Path,
     roads: &[Road],
-    variants: &[(u32, usize)],
+    variants: &[Variant],
     order: &[usize],
     edges: &[WeightedEdge<u64>],
     node_based: bool,
@@ -35,7 +35,7 @@ pub fn stage(
     let mut name_offsets = HashMap::new();
     let mut point_count = 0u64;
     for &old in order {
-        let road = &roads[variants[old].0 as usize];
+        let road = &roads[variants[old].physical as usize];
         point_count += road.geometry.len() as u64;
         if let Entry::Vacant(entry) = name_offsets.entry(road.name.as_str()) {
             let offset = u32::try_from(names.len())?;
@@ -49,9 +49,9 @@ pub fn stage(
     let originals: HashMap<_, _> = order
         .iter()
         .enumerate()
-        .filter(|(_, old)| **old < roads.len())
+        .filter(|(_, old)| variants[**old].initial)
         .map(|(id, &old)| {
-            let road = &roads[variants[old].0 as usize];
+            let road = &roads[variants[old].physical as usize];
             ((road.from, road.to, road.way), id as u32)
         })
         .collect();
@@ -71,7 +71,7 @@ pub fn stage(
     }
     let mut point_offset = 0u32;
     for &old in order {
-        let road = &roads[variants[old].0 as usize];
+        let road = &roads[variants[old].physical as usize];
         for value in [
             nodes[&road.from],
             nodes[&road.to],
@@ -88,7 +88,16 @@ pub fn stage(
             out.write_all(&value.to_le_bytes())?;
         }
         out.write_all(&road.maxspeed.to_le_bytes())?;
-        out.write_all(&(road.flags | if old >= roads.len() { 16 } else { 0 }).to_le_bytes())?;
+        out.write_all(
+            &(road.flags
+                | if variants[old].initial { 0 } else { 16 }
+                | if variants[old].local_exit {
+                    crate::storage::LOCAL_EXIT
+                } else {
+                    0
+                })
+            .to_le_bytes(),
+        )?;
         out.write_all(&0u32.to_le_bytes())?;
         out.write_all(&road.weight.to_le_bytes())?;
         out.write_all(
@@ -98,7 +107,7 @@ pub fn stage(
         point_offset += road.geometry.len() as u32;
     }
     for &old in order {
-        for point in &roads[variants[old].0 as usize].geometry {
+        for point in &roads[variants[old].physical as usize].geometry {
             for value in [point.lat, point.lon, point.elevation] {
                 out.write_all(&value.to_le_bytes())?;
             }
@@ -134,10 +143,10 @@ pub fn node_ids(roads: &[Road]) -> HashMap<i64, u32> {
         .collect()
 }
 
-fn snap_grid(roads: &[Road], variants: &[(u32, usize)], order: &[usize]) -> Vec<(u64, u32)> {
+fn snap_grid(roads: &[Road], variants: &[Variant], order: &[usize]) -> Vec<(u64, u32)> {
     let mut grid = vec![];
     for (id, &old) in order.iter().enumerate() {
-        let road = &roads[variants[old].0 as usize];
+        let road = &roads[variants[old].physical as usize];
         for pair in road.geometry.windows(2) {
             let count = ((pair[1].lat - pair[0].lat)
                 .abs()

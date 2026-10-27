@@ -11,7 +11,7 @@ use crate::{
     Result, check,
     geo::{self, Point},
     query::{self, Snap},
-    storage::Network,
+    storage::{LOCAL_ACCESS, LOCAL_EXIT, Network},
 };
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::AtomicBool;
@@ -262,7 +262,28 @@ pub fn route(network: &Network, request: &Request, cancel: &AtomicBool) -> Resul
         )?;
         let (path, source, target) = query::between(network, &start, &end, cancel)?;
         append(network, &mut result, &path, &source, &target, cancel)?;
-        start = vec![target];
+        // An explicit stop authorizes leaving its local-access component. Its adjacent twin
+        // retains exactly the same restriction history, geometry and clipping fraction.
+        let mut departure = target;
+        let state = network.state(departure.state);
+        if state.flags & LOCAL_ACCESS != 0 && state.flags & LOCAL_EXIT == 0 {
+            departure.state = StateId::new(
+                departure
+                    .state
+                    .get()
+                    .checked_add(1)
+                    .ok_or("local-access state overflow")?,
+            );
+            let twin = network.state(departure.state);
+            if state.flags ^ twin.flags != LOCAL_EXIT
+                || state.from != twin.from
+                || state.to != twin.to
+                || state.geometry != twin.geometry
+            {
+                return Err("invalid local-access twin".into());
+            }
+        }
+        start = vec![departure];
     }
     result.step("arrive", None, "", None);
     result.lengths();

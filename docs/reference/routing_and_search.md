@@ -4,7 +4,7 @@
 
 ## Offline routing
 
-The [v2 binary format](routing-pack-format.md) shares compact geometry between profiles. Both v1 Rust packs and GraphHopper packs require rebuilding; Tantivy is unchanged.
+The [v3 binary format](routing-pack-format.md) shares compact geometry between profiles. Both v1/v2 Rust packs and GraphHopper packs require rebuilding; Tantivy is unchanged.
 
 See the [Rust migration validation report](../benchmarks/rust-routing-2026-10-25.md) for measured pack builds and validation limits.
 
@@ -13,7 +13,7 @@ The app uses `imu-nav-routing`, our Rust runtime, with contraction hierarchies p
 matching are implemented in Rust. GraphHopper has been removed from the project; it is not
 an app or pack-builder dependency. The navigation engine still receives the existing Kotlin `Route`.
 
-**Compatibility:** only packs declaring `"routingFormat":"rust-ch-2"` are accepted. Rebuild or
+**Compatibility:** only packs declaring `"routingFormat":"rust-ch-3"` are accepted. Rebuild or
 download a current pack after upgrading. Existing GraphHopper packs are rejected with a localized
 message and are not rewritten. Import validation completes before replacing the installed pack.
 Display-map archives are unchanged. This remains a research prototype, not a safety system.
@@ -37,18 +37,18 @@ basic builds and calls the same Rust importer through host JNI.
 The CI workflow `.github/workflows/routing-pack.yml` builds this Rust binary directly, downloads
 and checks the public extract, builds the pack, verifies the ZIP and runs the actual native loader.
 Its existing `ch_threads` input now selects **Rayon workers within each profile** (1, 2 or 4;
-default 2). Car and foot preparation run sequentially. Import geometry/transitions are staged on
+default 2). Both car metrics and foot preparation run sequentially. Import geometry/transitions are staged on
 disk and OSM/search-builder memory is released before contraction. Cargo dependencies and build
 outputs are cached; generated packs are rebuilt. The workflow derives car-only and walking-only packs from the combined graph, trimming unused shared data.
 It uploads three separate ZIP artifacts (`car`, `walk`, `car-walk`), each with SHA-256 and a build report,
 plus process timing/memory diagnostics; it does not publish to a server.
 
-A pack contains `pack.json`, `shared.routing`, the declared `car.routing` and/or `foot.routing` profile files, and normally `search.tantivy/`.
+A pack contains `pack.json`, `shared.routing`, the declared `car.routing`, `car_balanced.routing` and/or `foot.routing` profile files, and normally `search.tantivy/`.
 The shared file contains geometry and names. Profile files contain access-specific directed roads,
 references to that shared data, a snap grid and an immutable CH. They do not contain OSM PBFs, display-map tiles, GraphHopper files or downloaded DEM
 tiles. Route data is memory-mapped instead of deserializing the benchmark's bincode hierarchy.
 The loader checks offsets, sizes, coordinates, CSR ranges, hierarchy acyclicity and shortcut costs.
-The `IMURT002` profile header and all numeric records are explicitly little-endian and versioned.
+The `IMURT003` profile header and all numeric records are explicitly little-endian and versioned.
 
 To bundle a pack in Play builds, copy its ZIP to `app/src/play/assets/routing/pack.zip` and its
 metadata to `app/src/play/assets/routing/pack.json`. Both are gitignored. The F-Droid flavor does not
@@ -65,8 +65,11 @@ respects `oneway:foot`, and prefers footways and paths. Incomplete restriction r
 are absent from an extract cannot be applied; use relation-complete regional extracts.
 
 Car turn weights remain 60 s for U-turns, 2/5 s for right turns of 25–80°/80°+, and 8/12 s for
-left turns. The route objective includes distance influence (90 s/km car, 70 s/km walking) and
-walking preference. Travel duration comes from road distance and modeled speed, separately from
+left turns. The main-road car objective adds 15 s/km and penalizes residential streets (priority 0.8),
+service roads (0.4), alleys (0.3), driveways/parking aisles/drive-throughs (0.2), living streets
+(0.4), and tracks/unknown roads (0.5). Cost is travel time divided by priority, plus distance
+influence and turns. Balanced retains 90 s/km and priority 1; walking retains 70 s/km and its
+walking preference. Unclassified roads retain priority 1 for rural connectivity. Travel duration comes from road distance and modeled speed, separately from
 turn penalties. Posted speed limits are carried per geometry segment; missing limits remain unknown.
 The importer has an explicit versioned policy in `builder/profile.rs`; it is **not a bit-for-bit
 reimplementation of GraphHopper's OSM parser**. Speeds, access interpretation and chosen alternatives
@@ -83,7 +86,31 @@ history. Guidance carries road names, turn direction, ramp/merge records and rou
 existing OSRM-style vocabulary. Track matching uses Viterbi candidate selection with GPS-distance
 emissions and routed transition lengths. Requests are bounded and cancellable; cancellation does not
 trigger online fallback. Pack replacement waits for active readers. Disk work stays off the main thread.
-OSRM remains an optional car-routing fallback; walking stays offline-only.
+OSRM remains an optional fallback for Balanced car routes; its server controls road preferences.
+Prefer main roads and walking stay offline-only. Main-road routing failures never silently
+fall back to an online route with a different policy.
+
+### Car preferences and local access
+
+The car/walk editor offers **Prefer main roads** (default) and **Balanced**. Each uses a separate
+prepared hierarchy; speeds and displayed durations are independent of preference penalties.
+Distinct results appear as selectable cards and a grey alternative beneath the selected blue
+route. Equal geometry is shown once. The preference is remembered, saved with route bookmarks,
+and passed to navigation startup and rerouting. Preview identity includes preference and pack
+identity so geometry from an earlier selection or pack is not reused.
+
+Destination/customer-only roads have adjacent approach/exit state twins with the same turn
+restriction history. Public roads may enter approach states, which cannot exit onto a public
+road. A trip originating within the local component can start in an exit state. At an explicit
+stop, the matched approach state changes to its adjacent exit twin without resetting restriction
+history. This permits local visits and prevents through-routing across multi-edge local areas.
+Selecting a customer-only road as a stop represents the user's intended visit; the app cannot
+verify customer status or missing map restrictions. Delivery-only roads are excluded for cars.
+Access precedence and directional overrides apply independently in both metrics.
+
+v3 packs require rebuilding v2 data. Both car hierarchies share geometry and names. Country-scale
+size/build-time costs and real urban detours need fresh regional measurements; earlier v2 pack
+sizes do not measure this version. Host fixtures exercise the policy separately from real trips.
 
 ### Elevation
 

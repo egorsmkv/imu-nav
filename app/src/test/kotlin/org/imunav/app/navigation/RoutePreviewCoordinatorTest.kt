@@ -6,6 +6,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import org.imunav.app.routing.Router
 import org.imunav.core.geo.GeoPoint
+import org.imunav.core.route.RoadPreference
 import org.imunav.core.route.Route
 import org.imunav.core.route.TravelMode
 import org.junit.Assert.assertEquals
@@ -19,6 +20,65 @@ import kotlin.coroutines.resumeWithException
 import kotlin.coroutines.suspendCoroutine
 
 class RoutePreviewCoordinatorTest {
+    @Test
+    fun preferenceAndPackChangesRejectCachedGeometry() {
+        val dispatcher = QueuedDispatcher()
+        val scope = CoroutineScope(SupervisorJob() + dispatcher)
+        val pending = mutableListOf<Continuation<Route>>()
+        val coordinator = RoutePreviewCoordinator(scope, pendingRouter(pending))
+        val origin = GeoPoint(0.0, 0.0)
+        val destination = GeoPoint(0.01, 0.01)
+        val result = route(origin, destination)
+        coordinator.update(origin, destination, emptyList(), TravelMode.CAR, {}, RoadPreference.BALANCED, "pack-1")
+        dispatcher.drain()
+        pending.single().resume(result)
+        dispatcher.drain()
+        val matching = RoutePreviewRequest(origin, destination, TravelMode.CAR, preference = RoadPreference.BALANCED, packKey = "pack-1")
+        assertSame(result, coordinator.reusableRoute(result, matching))
+        assertNull(coordinator.reusableRoute(result, matching.copy(preference = RoadPreference.MAIN_ROADS)))
+        assertNull(coordinator.reusableRoute(result, matching.copy(packKey = "pack-2")))
+        scope.cancel()
+    }
+
+    @Test
+    fun alternativeCardsAreOnlyPublishedForDistinctRoads() {
+        val origin = GeoPoint(0.0, 0.0)
+        val destination = GeoPoint(0.01, 0.01)
+        val main = route(origin, destination)
+        val shortcut = Route(listOf(origin, GeoPoint(0.005, 0.006), destination), emptyList(), 50.0)
+        for (other in listOf(main, shortcut)) {
+            val dispatcher = QueuedDispatcher()
+            val scope = CoroutineScope(SupervisorJob() + dispatcher)
+            val calls = mutableListOf<RoadPreference>()
+            val router = object : Router {
+                override suspend fun route(from: GeoPoint, to: GeoPoint, via: List<GeoPoint>, mode: TravelMode, preference: RoadPreference): Route {
+                    calls += preference
+                    return if (preference == RoadPreference.MAIN_ROADS) main else other
+                }
+            }
+            val coordinator = RoutePreviewCoordinator(scope, router, dispatcher)
+            val events = mutableListOf<PreviewResult>()
+            coordinator.update(origin, destination, emptyList(), TravelMode.CAR, {
+                events += it
+            }, alternatives = true, packKey = "pack")
+            dispatcher.drain()
+            if (other === shortcut) {
+                val ready = events.filterIsInstance<PreviewResult.Ready>().last()
+                assertEquals(mapOf(RoadPreference.MAIN_ROADS to main, RoadPreference.BALANCED to shortcut), ready.alternatives)
+                assertSame(shortcut, coordinator.selectAlternative(RoadPreference.BALANCED, ready.alternatives, "pack"))
+                assertSame(
+                    shortcut,
+                    coordinator.reusableRoute(shortcut, RoutePreviewRequest(origin, destination, TravelMode.CAR, preference = RoadPreference.BALANCED, packKey = "pack")),
+                )
+                assertNull(coordinator.selectAlternative(RoadPreference.MAIN_ROADS, ready.alternatives, "new-pack"))
+            } else {
+                assertEquals(1, events.filterIsInstance<PreviewResult.Ready>().size)
+            }
+            assertEquals(listOf(RoadPreference.MAIN_ROADS, RoadPreference.BALANCED), calls)
+            scope.cancel()
+        }
+    }
+
     @Test
     fun lateRouteCannotReplaceLatestPreviewAndOnlyMatchingRequestCanReuseIt() {
         val dispatcher = QueuedDispatcher()
@@ -79,7 +139,7 @@ class RoutePreviewCoordinatorTest {
     }
 
     private fun pendingRouter(pending: MutableList<Continuation<Route>>) = object : Router {
-        override suspend fun route(from: GeoPoint, to: GeoPoint, via: List<GeoPoint>, mode: TravelMode): Route = suspendCoroutine { pending += it }
+        override suspend fun route(from: GeoPoint, to: GeoPoint, via: List<GeoPoint>, mode: TravelMode, preference: RoadPreference): Route = suspendCoroutine { pending += it }
     }
 
     private fun route(from: GeoPoint, to: GeoPoint) = Route(listOf(from, to), emptyList(), 60.0)

@@ -13,6 +13,7 @@ import org.imunav.core.bookmarks.SavedRoute
 import org.imunav.core.geo.GeoPoint
 import org.imunav.core.net.ProxyConfig
 import org.imunav.core.net.ProxyMode
+import org.imunav.core.route.RoadPreference
 import org.imunav.core.route.TravelMode
 import org.imunav.core.search.ResultKind
 import org.imunav.core.search.SearchResult
@@ -38,7 +39,37 @@ class StorageCodecsTest {
         BookmarkPoint(GeoPoint(50.50, 30.40), "Office"),
         TravelMode.FOOT,
     )
-    private val anywhere = SavedRoute("r2", "Anywhere", BookmarkOrigin.Automatic, BookmarkPoint(GeoPoint(49.84, 24.03)), TravelMode.CAR)
+    private val anywhere = SavedRoute("r2", "Anywhere", BookmarkOrigin.Automatic, BookmarkPoint(GeoPoint(49.84, 24.03)), TravelMode.CAR, RoadPreference.BALANCED)
+
+    @Test
+    fun olderRouteBookmarksMigrateWithoutLosingEndpoints() {
+        val name = "bookmarks-v1.db"
+        context.deleteDatabase(name)
+        context.openOrCreateDatabase(name, Context.MODE_PRIVATE, null).use { db ->
+            db.execSQL(
+                "CREATE TABLE bookmarks (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, kind TEXT NOT NULL, lat REAL NOT NULL, lon REAL NOT NULL, label TEXT, automatic INTEGER, start_lat REAL, start_lon REAL, start_label TEXT, mode TEXT)",
+            )
+            db.execSQL("INSERT INTO bookmarks (id, name, kind, lat, lon, automatic, mode) VALUES ('old', 'Old route', 'route', 1, 2, 1, 'CAR')")
+            db.version = 1
+        }
+        BookmarkDatabase(context, name).use { db ->
+            val old = db.load().single() as SavedRoute
+            assertEquals(GeoPoint(1.0, 2.0), old.destination.point)
+            assertEquals(RoadPreference.MAIN_ROADS, old.roadPreference)
+            db.save(old.copy(roadPreference = RoadPreference.BALANCED))
+        }
+        BookmarkDatabase(context, name).use { db -> assertEquals(RoadPreference.BALANCED, (db.load().single() as SavedRoute).roadPreference) }
+        val legacyWire = JSONObject(SyncCodec.bookmark(anywhere)).apply { remove("roadPreference") }
+        assertEquals(RoadPreference.MAIN_ROADS, (SyncCodec.bookmark("legacy", legacyWire.toString()) as SavedRoute).roadPreference)
+    }
+
+    @Test
+    fun roadPreferenceIsRememberedAcrossAppStarts() {
+        val preferences = NavigationPreferences(context)
+        preferences.setRoadPreference(RoadPreference.BALANCED)
+        assertEquals(RoadPreference.BALANCED, NavigationPreferences(context).roadPreference.value)
+        preferences.setRoadPreference(RoadPreference.MAIN_ROADS)
+    }
 
     @Test
     fun bookmarksSurviveReopeningAndReplacingTheDatabase() {

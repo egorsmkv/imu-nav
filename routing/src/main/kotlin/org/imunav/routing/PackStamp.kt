@@ -15,7 +15,7 @@ object PackStamp {
     const val FILE = "validated.stamp"
 
     /** Bump when native validation gains checks that installed packs must pass again. */
-    private const val VERSION = 1
+    private const val VERSION = 2
 
     /** Record that [dir]'s current files were fully validated. */
     fun write(dir: File) {

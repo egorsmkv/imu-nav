@@ -63,7 +63,7 @@ private const val HEADING_ALPHA_NEAR = 0x99
 
 /** Create the map's own layers once (route, position, destination, towers), drawn above the base map. */
 fun addNavigationLayers(s: Style) {
-    for (id in listOf("route", "route-passed", "marker", "heading", "dest", "via", "towers", "towers-visible")) s.addSource(GeoJsonSource(id))
+    for (id in listOf("route", "route-alternatives", "route-passed", "marker", "heading", "dest", "via", "towers", "towers-visible")) s.addSource(GeoJsonSource(id))
     s.addImage(HEADING_IMAGE, headingBeam())
     s.addLayer(
         CircleLayer("towers-dot", "towers").withProperties(
@@ -92,6 +92,8 @@ fun addNavigationLayers(s: Style) {
         ),
     )
     // Route with a darker casing, like native map apps; the part already driven is grey on top.
+    s.addLayer(routeLine("route-alternative-casing", "route-alternatives", PASSED_CASING, casing = true))
+    s.addLayer(routeLine("route-alternative-line", "route-alternatives", PASSED_LINE, casing = false))
     s.addLayer(routeLine("route-casing", "route", "#0B3D91", casing = true))
     s.addLayer(routeLine("route-line", "route", ROUTE_BLUE, casing = false))
     s.addLayer(routeLine("route-passed-casing", "route-passed", PASSED_CASING, casing = true))

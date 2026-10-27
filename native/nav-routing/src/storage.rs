@@ -13,7 +13,23 @@ use crate::{Result, geo::Point};
 use std::{path::Path, sync::Arc as Owner};
 pub(crate) const NONE: u32 = u32::MAX;
 pub const STATE_BYTES: usize = 40;
-pub const MAGIC: &[u8; 8] = b"IMURT002";
+pub const MAGIC: &[u8; 8] = b"IMURT003";
+/// A purpose-limited road can be used to reach a selected endpoint, never for through traffic.
+pub const LOCAL_ACCESS: u16 = 64;
+/// Paired local-access states distinguish leaving an origin from approaching a destination.
+pub const LOCAL_EXIT: u16 = 128;
+/// Graph transitions cannot turn a local visit into permission for through traffic.
+#[must_use]
+pub const fn local_transition_allowed(from: u16, to: u16) -> bool {
+    if from & LOCAL_ACCESS != 0 && from & LOCAL_EXIT == 0 && to & LOCAL_ACCESS == 0 {
+        return false;
+    }
+    if to & LOCAL_ACCESS != 0 {
+        let exit = from & LOCAL_ACCESS != 0 && from & LOCAL_EXIT != 0;
+        return (to & LOCAL_EXIT != 0) == exit;
+    }
+    true
+}
 #[derive(Clone, Copy, Debug)]
 pub struct State {
     pub from: NodeId,
@@ -283,9 +299,32 @@ impl Network {
             }
             if !(s.speed > 0. && s.speed.is_finite() && s.distance >= 0. && s.distance.is_finite())
                 || s.weight > 1_000_000_000_000
-                || s.flags & !63 != 0
+                || s.flags & !255 != 0
+                || s.flags & LOCAL_EXIT != 0 && s.flags & LOCAL_ACCESS == 0
             {
                 return Err("invalid road state".into());
+            }
+            if s.flags & LOCAL_ACCESS != 0 {
+                let twin = if s.flags & LOCAL_EXIT == 0 {
+                    id.checked_add(1)
+                } else {
+                    id.checked_sub(1)
+                }
+                .filter(|&twin| (twin as usize) < self.count)
+                .ok_or("missing local-access twin")?;
+                let other = self.state(StateId::new(twin));
+                if s.from != other.from
+                    || s.to != other.to
+                    || s.geometry != other.geometry
+                    || s.name_id != other.name_id
+                    || s.flags ^ other.flags != LOCAL_EXIT
+                    || s.weight != other.weight
+                    || s.speed.to_bits() != other.speed.to_bits()
+                    || s.maxspeed != other.maxspeed
+                    || s.distance.to_bits() != other.distance.to_bits()
+                {
+                    return Err("invalid local-access twin".into());
+                }
             }
         }
         self.validate_hierarchy()?;
@@ -395,6 +434,10 @@ impl Network {
                             self.state(StateId::new(from.get())).to
                                 != self.state(StateId::new(to.get())).from
                                 || a.weight < self.state(StateId::new(to.get())).weight
+                                || !local_transition_allowed(
+                                    self.state(StateId::new(from.get())).flags,
+                                    self.state(StateId::new(to.get())).flags,
+                                )
                         } {
                             return Err("disconnected transition".into());
                         }

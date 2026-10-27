@@ -1,8 +1,8 @@
-# Rust routing pack format v2
+# Rust routing pack format v3
 
-`pack.json` declares `routingFormat: rust-ch-2`. The app rejects v1 and GraphHopper packs;
+`pack.json` declares `routingFormat: rust-ch-3`. The app rejects v1/v2 and GraphHopper packs;
 rebuild them. The metadata's declared profiles each have a `<profile>.routing` file, and
-both profiles reference one `shared.routing`. Tantivy remains `tantivy-1` and is unchanged.
+all profiles reference one `shared.routing`. Tantivy remains `tantivy-1` and is unchanged.
 All integers are little-endian. Bounds, checked section arithmetic, IDs, CSR ranges,
 hierarchy invariants and UTF-8 names are validated before queries can access records.
 
@@ -24,7 +24,7 @@ retain distinct topology IDs, access permissions, weights and speed limits.
 
 ## Profile file
 
-The 72-byte header is magic `IMURT002` followed by eight u64 values: state count, graph vertex
+The 72-byte header is magic `IMURT003` followed by eight u64 values: state count, graph vertex
 count, node-based flag (walking=1, car=0), up/down arc counts, width flags, spatial-cell count,
 and spatial-posting count. Width bits 0/1 select 64-bit up/down CSR offsets; bits 2/3 select
 64-bit up/down arc weights. A cleared bit selects 32-bit storage. Writers check actual maxima;
@@ -32,7 +32,11 @@ weights are never rescaled and arithmetic remains u64 in the query engine.
 
 Each state is 40 bytes: u32 from, to, geometry ID, name ID, f32 speed, u16 maxspeed, u16 flags,
 u64 weight and f64 distance. Existing flags retain their meanings; bit 5 indicates reverse
-traversal of shared geometry. Geometry count is read from its descriptor. Unused reverse-road
+traversal of shared geometry. Bit 6 marks destination/customer local access; bit 7 marks the
+exit twin. Each approach twin immediately precedes its exit twin, with matching physical road,
+restriction-history flag, geometry, name, speed, limit and costs. Load validation checks both
+pairing and original-edge phase transitions; shortcuts must decompose into legal children.
+Geometry count is read from its descriptor. Unused reverse-road
 IDs, precomputed milliseconds and alignment padding have been removed.
 
 After states: up/down CSR offsets (vertex count + 1 each), up/down arcs (u32 head, u32 skipped
@@ -71,7 +75,7 @@ fixed-vertex routing costs and sequences exactly. No road simplification is perf
 The internal walking profile remains `foot`. The command retains topology IDs, costs, hierarchy
 sections and snapping postings exactly, remaps shared geometry/name IDs, and writes only
 referenced shared records. Tantivy files are copied byte-for-byte. It does not import OSM or
-run contraction again. Metadata declares only the selected profile; the loader and validator
+run contraction again. Car downloads retain `car` and `car_balanced`; walking downloads retain `foot`. Metadata declares the selected profiles; the loader and validator
 reject missing or undeclared profile files. The output directory and ZIP must be new and
 outside the source pack.
 

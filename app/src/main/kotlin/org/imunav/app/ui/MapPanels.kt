@@ -71,6 +71,7 @@ import org.imunav.app.R
 import org.imunav.app.UiState
 import org.imunav.app.bookmarks.Bookmarks
 import org.imunav.core.nav.GuidanceState
+import org.imunav.core.route.RoadPreference
 import org.imunav.core.route.TravelMode
 import org.imunav.core.search.ResultKind
 import org.imunav.core.search.SearchResult
@@ -111,6 +112,8 @@ internal fun IdlePanel(
     /** Search for a stop: null adds a new one, an index replaces that stop. */
     onSearchStop: (Int?) -> Unit = {},
     onRemoveStop: (Int) -> Unit = {},
+    onRoadPreferenceChange: (RoadPreference) -> Unit = {},
+    offlineCarAvailable: Boolean = true,
 ) {
     val res = LocalResources.current
     val startValue = when {
@@ -163,6 +166,9 @@ internal fun IdlePanel(
         if (!compact && ui.destination == null) IconLine(Icons.Filled.Navigation, stringResource(R.string.idle_hint_long_press))
         Spacer(Modifier.size(if (compact) 8.dp else 12.dp))
         TravelModeSelector(mode, walkingAvailable, onModeChange)
+        if (mode == TravelMode.CAR) {
+            RoadPreferencePicker(ui, !ui.startingNavigation, offlineCarAvailable, onRoadPreferenceChange)
+        }
         if (!walkingAvailable) {
             Text(
                 stringResource(R.string.mode_walk_needs_pack),

@@ -250,6 +250,7 @@ fun MapScreen(
             dark = dark,
             buildings3d = mapOptions.buildings3d,
             route = nav.route ?: ui.previewRoute,
+            alternativeRoutes = if (nav.active) emptyList() else ui.routeAlternatives.filterKeys { it != ui.roadPreference }.values.toList(),
             position = ui.currentPosition,
             accuracyM = accuracy,
             bearingDeg = nav.bearingDeg,
@@ -509,6 +510,11 @@ fun MapScreen(
                                 bookmarks = app.bookmarks,
                                 mode = travelMode,
                                 walkingAvailable = routing.walking,
+                                offlineCarAvailable = routing.loaded && TravelMode.CAR in routing.modes,
+                                onRoadPreferenceChange = { preference ->
+                                    haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                    app.setRoadPreference(preference)
+                                },
                                 onModeChange = { mode ->
                                     haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
                                     app.setTravelMode(mode)

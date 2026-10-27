@@ -30,8 +30,17 @@ impl Pack {
             return Err("new Rust routing pack required".into());
         }
         let profiles = metadata["profiles"].as_array().ok_or("missing profiles")?;
-        if profiles.is_empty() || profiles.len() > 2 {
+        if profiles.is_empty() || profiles.len() > 3 {
             return Err("invalid profile count".into());
+        }
+        let declared = |name: &str| profiles.iter().any(|profile| profile == name);
+        if declared("car") != declared("car_balanced") {
+            return Err("both car preferences are required".into());
+        }
+        for name in ["car", "car_balanced", "foot"] {
+            if directory.join(format!("{name}.routing")).is_file() != declared(name) {
+                return Err("routing files do not match declared profiles".into());
+            }
         }
         let shared = Arc::new(Shared::open_checked(
             &directory.join(crate::shared::FILE),

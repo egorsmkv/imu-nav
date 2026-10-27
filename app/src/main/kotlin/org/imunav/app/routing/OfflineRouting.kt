@@ -24,6 +24,7 @@ import org.imunav.app.setup.Preparation
 import org.imunav.app.setup.bundledRoutingPreparation
 import org.imunav.core.cells.ResumableHttpInputStream
 import org.imunav.core.geo.GeoPoint
+import org.imunav.core.route.RoadPreference
 import org.imunav.core.route.Route
 import org.imunav.core.route.TravelMode
 import org.imunav.core.search.SearchResult
@@ -51,6 +52,8 @@ data class OfflineRoutingStatus(
     val bundled: PackInfo? = null,
     /** The installed pack was loaded successfully and can route. */
     val loaded: Boolean = false,
+    /** Changes even when a replacement pack reuses its metadata timestamp and size. */
+    val revision: Long = 0,
     /**
      * The installed pack is being opened. Opening validates every routing record, which takes
      * seconds for a country pack; until it ends `loaded == false` means "not yet", not "failed".
@@ -242,6 +245,7 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
             it.copy(
                 pack = info,
                 loaded = g != null,
+                revision = it.revision + 1,
                 walking = g?.supports(TravelMode.FOOT) == true,
                 searchAvailable = searchDb != null,
                 coverage = g?.coverage,
@@ -264,8 +268,8 @@ class OfflineRouting(private val context: Context, private val scope: CoroutineS
     fun covers(points: List<GeoPoint>): Boolean = _status.value.coverage?.let { coverage -> points.all(coverage::covers) } == true
 
     /** Route holds read ownership throughout Rust access. */
-    suspend fun route(points: List<GeoPoint>, mode: TravelMode = TravelMode.CAR): Route = nativeRequest { request ->
-        resources.read { (graph ?: throw IOException("no offline routing pack")).route(points, mode, request = request) }
+    suspend fun route(points: List<GeoPoint>, mode: TravelMode = TravelMode.CAR, preference: RoadPreference = RoadPreference.MAIN_ROADS): Route = nativeRequest { request ->
+        resources.read { (graph ?: throw IOException("no offline routing pack")).route(points, mode, request = request, preference = preference) }
     }
 
     fun supports(mode: TravelMode): Boolean = mode in _status.value.modes
@@ -520,18 +524,22 @@ class SmartRouter(
     private val noOfflineMessage: () -> String,
     /** Message when a walking route is asked for but the offline pack cannot give one. */
     private val noWalkingMessage: () -> String,
+    private val noMainRoadsMessage: () -> String,
 ) : Router {
-    override suspend fun route(from: GeoPoint, to: GeoPoint, via: List<GeoPoint>, mode: TravelMode): Route {
+    override suspend fun route(from: GeoPoint, to: GeoPoint, via: List<GeoPoint>, mode: TravelMode, preference: RoadPreference): Route {
         val points = listOf(from) + via + to
-        val plan = routingPlan(mode, offline.covers(points), offline.supports(mode), offline.status.value.allowOnline)
-        when (plan) {
-            RoutingPlan.WALKING_UNAVAILABLE -> throw IOException(noWalkingMessage())
-            RoutingPlan.OFFLINE_UNAVAILABLE -> throw IOException(noOfflineMessage())
-            else -> Unit
+        val mainRoads = mode == TravelMode.CAR && preference == RoadPreference.MAIN_ROADS
+        val plan = routingPlan(mode, offline.covers(points), offline.supports(mode), offline.status.value.allowOnline && !mainRoads)
+        val unavailable = when {
+            mainRoads && (!offline.covers(points) || !offline.supports(mode)) -> noMainRoadsMessage()
+            plan == RoutingPlan.WALKING_UNAVAILABLE -> noWalkingMessage()
+            plan == RoutingPlan.OFFLINE_UNAVAILABLE -> noOfflineMessage()
+            else -> null
         }
+        if (unavailable != null) throw IOException(unavailable)
         if (plan == RoutingPlan.OFFLINE_ONLY || plan == RoutingPlan.OFFLINE_WITH_FALLBACK) {
             try {
-                return offline.route(points, mode).also { log("route_via offline len=${it.length.toInt()} mode=$mode") }
+                return offline.route(points, mode, preference).also { log("route_via offline len=${it.length.toInt()} mode=$mode preference=$preference") }
             } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
                 if (e is CancellationException) throw e
                 // Rust throws plain RuntimeExceptions (no path, point not found, …).
@@ -539,6 +547,6 @@ class SmartRouter(
                 if (plan != RoutingPlan.OFFLINE_WITH_FALLBACK) throw e
             }
         }
-        return online.route(from, to, via, mode).also { log("route_via osrm len=${it.length.toInt()}") }
+        return online.route(from, to, via, mode, preference).also { log("route_via osrm len=${it.length.toInt()}") }
     }
 }

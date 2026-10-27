@@ -91,3 +91,7 @@ Unknown setting keys are retained verbatim in their account profile but are not 
 version. They remain present in later sync captures, so an older client does not upload accidental
 deletions for settings introduced by a newer client. Keys, canonical JSON and protocol version 1
 remain unchanged.
+
+Route bookmark recipes optionally carry `roadPreference` (`MAIN_ROADS` or `BALANCED`).
+Missing values default to main roads in current apps. Update the server with the app to
+synchronize recipes containing this field; earlier servers reject unknown recipe fields.

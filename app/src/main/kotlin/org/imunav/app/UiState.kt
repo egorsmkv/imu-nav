@@ -7,6 +7,7 @@ import org.imunav.core.gnss.GnssSnapshot
 import org.imunav.core.gnss.GpsState
 import org.imunav.core.gnss.Verdict
 import org.imunav.core.nav.GuidanceState
+import org.imunav.core.route.RoadPreference
 import org.imunav.core.route.Route
 
 /**
@@ -50,6 +51,9 @@ data class UiState(
     val startingNavigation: Boolean = false,
     /** Route shown before navigation starts, so the user can review the proposed way. */
     val previewRoute: Route? = null,
+    /** Distinct offline alternatives, keyed by the policy used for later rerouting. */
+    val routeAlternatives: Map<RoadPreference, Route> = emptyMap(),
+    val roadPreference: RoadPreference = RoadPreference.MAIN_ROADS,
     /** A message to show once in a snackbar (then cleared with [AppGraph.clearError]). */
     val error: String? = null,
     /** Debug switch: pretend GPS is jammed. */

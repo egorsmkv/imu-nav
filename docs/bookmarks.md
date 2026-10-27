@@ -8,7 +8,7 @@ Bookmarks keep places and routes on this phone so you can use them again, even w
 
 1. Tap the bookmark button on the map to open **Places** and **Routes**.
 2. Save a place from a search result or use **Save start** or **Save destination** in the route editor. Give it a name.
-3. To save both endpoints and the travel mode, choose **Save route**.
+3. To save both endpoints, the travel mode and the car road preference, choose **Save route**.
 4. Open a saved place to use it as a route endpoint. Open a saved route to see a fresh route preview, then tap **Start** only if you want to navigate.
 5. Filter the list to find a bookmark, or use its menu to rename or delete it.
 

@@ -130,6 +130,8 @@ fun NavMap(
     directionArrow: Boolean = true,
     /** Route length or distance left, shown above [destination]; null hides it. */
     destinationLabel: String? = null,
+    /** Unselected offline choices are drawn beneath the selected blue route. */
+    alternativeRoutes: List<Route> = emptyList(),
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current.density
@@ -287,6 +289,17 @@ fun NavMap(
         if (currentlyRenderable && !disposed && readyStyle === target) {
             target.getSourceAs<GeoJsonSource>("route")?.setGeoJson(features)
             appliedRoute = target to route
+        }
+    }
+
+    LaunchedEffect(renderable, readyStyle, alternativeRoutes) {
+        if (!renderable) return@LaunchedEffect
+        val target = readyStyle ?: return@LaunchedEffect
+        val features = withContext(Dispatchers.Default) {
+            FeatureCollection.fromFeatures(alternativeRoutes.flatMap { routeFeatures(it).features().orEmpty() })
+        }
+        if (currentlyRenderable && !disposed && readyStyle === target) {
+            target.getSourceAs<GeoJsonSource>("route-alternatives")?.setGeoJson(features)
         }
     }
 

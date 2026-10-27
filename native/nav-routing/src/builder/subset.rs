@@ -38,25 +38,32 @@ pub fn create(source: &Path, output: &Path, profile: &str) -> Result<serde_json:
     {
         return Err("source does not contain the requested current-format profile".into());
     }
-    let input_path = source.join(format!("{profile}.routing"));
-    let network = Network::open(&input_path)?;
+    let selected = if profile == "car" {
+        vec!["car", "car_balanced"]
+    } else {
+        vec!["foot"]
+    };
     let elevation = info["elevation"]
         .as_bool()
         .ok_or("missing elevation flag")?;
-    if elevation != network.has_elevation() {
-        return Err("elevation metadata mismatch".into());
-    }
     std::fs::create_dir(output)?;
     let mut dictionary = Dictionary::new(output, elevation)?;
-    rewrite(
-        &input_path,
-        &output.join(format!("{profile}.routing")),
-        &network,
-        &mut dictionary,
-    )?;
+    for name in &selected {
+        let input_path = source.join(format!("{name}.routing"));
+        let network = Network::open(&input_path)?;
+        if elevation != network.has_elevation() {
+            return Err("elevation metadata mismatch".into());
+        }
+        rewrite(
+            &input_path,
+            &output.join(format!("{name}.routing")),
+            &network,
+            &mut dictionary,
+        )?;
+    }
     dictionary.finish(output)?;
     copy_search(source, output)?;
-    info["profiles"] = serde_json::json!([profile]);
+    info["profiles"] = serde_json::json!(selected);
     info["sizeBytes"] = serde_json::json!(super::directory_size(output)?);
     std::fs::write(output.join("pack.json"), serde_json::to_vec_pretty(&info)?)?;
     Ok(info)

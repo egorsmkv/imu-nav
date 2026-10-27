@@ -85,6 +85,7 @@ import org.imunav.core.nav.NavigationEstimator
 import org.imunav.core.nav.NavigationMethod
 import org.imunav.core.nav.RussianPhrases
 import org.imunav.core.nav.UkrainianPhrases
+import org.imunav.core.route.RoadPreference
 import org.imunav.core.route.TravelMode
 import org.imunav.core.speed.SpeedProfile
 import org.json.JSONObject
@@ -178,6 +179,7 @@ class AppGraph(private val context: Context) {
         tripLog::write,
         noOfflineMessage = { context.getString(R.string.routing_no_coverage) },
         noWalkingMessage = { context.getString(R.string.routing_no_walking) },
+        noMainRoadsMessage = { context.getString(R.string.road_preference_needs_pack) },
     )
 
     // ---------------------------------------------------------------- travel mode
@@ -187,6 +189,16 @@ class AppGraph(private val context: Context) {
 
     /** Car or on foot, chosen before starting (remembered between app starts). */
     val travelMode = navigationPreferences.travelMode
+    val roadPreference = navigationPreferences.roadPreference
+
+    /** Freeze the routing policy during a journey so rerouting uses the previewed choice. */
+    fun setRoadPreference(preference: RoadPreference) {
+        if (engine.state.active || _ui.value.startingNavigation) return
+        navigationPreferences.setRoadPreference(preference)
+        val prepared = routePreview.selectAlternative(preference, _ui.value.routeAlternatives, routingPackKey())
+        _ui.value = _ui.value.copy(roadPreference = preference, previewRoute = prepared ?: _ui.value.previewRoute)
+        if (prepared == null) planRoutePreview()
+    }
 
     fun setTravelMode(mode: TravelMode) {
         if (engine.state.active || _ui.value.startingNavigation) return
@@ -270,7 +282,7 @@ class AppGraph(private val context: Context) {
                 // Includes a router that cancels itself: permit a later reroute attempt.
                 engine.rerouteFailed()
             }) {
-                val route = router.route(from, destination, via, engine.mode)
+                val route = router.route(from, destination, via, engine.mode, roadPreference.value)
                 ensureCurrent()
                 withPreparedResource(create = { NativeRouteGeometry.create(route) }) { prepared ->
                     ensureCurrent()
@@ -332,7 +344,7 @@ class AppGraph(private val context: Context) {
     }
 
     // Kotlin convention: a private mutable flow (_ui) and a public read-only view (ui) of it.
-    private val _ui = MutableStateFlow(UiState())
+    private val _ui = MutableStateFlow(UiState(roadPreference = roadPreference.value))
 
     /** The latest preview calculation; replacing it prevents an old result winning a race. */
     private val routePreview = RoutePreviewCoordinator(scope, router)
@@ -590,6 +602,7 @@ class AppGraph(private val context: Context) {
         if (engine.state.active || _ui.value.startingNavigation) return false
         val start = (route.origin as? BookmarkOrigin.Fixed)?.endpoint
         navigationPreferences.setTravelMode(route.mode)
+        navigationPreferences.setRoadPreference(route.roadPreference)
         tripLog.write("travel_mode ${route.mode}")
         _ui.value = _ui.value.copy(
             manualStart = start?.point,
@@ -599,6 +612,7 @@ class AppGraph(private val context: Context) {
             waypoints = emptyList(),
             mapFocusRequest = route.destination.point,
             error = null,
+            roadPreference = route.roadPreference,
         )
         planRoutePreview()
         return true
@@ -622,14 +636,20 @@ class AppGraph(private val context: Context) {
         if (engine.state.active || _ui.value.startingNavigation) return
         val destination = _ui.value.destination
         val from = _ui.value.manualStart ?: currentPosition()
-        routePreview.update(from, destination, _ui.value.waypoints.map { it.point }, travelMode.value) { result ->
+        routePreview.update(from, destination, _ui.value.waypoints.map { it.point }, travelMode.value, publish = { result ->
             _ui.value = when (result) {
-                PreviewResult.Cleared -> _ui.value.copy(previewRoute = null, planning = false)
-                PreviewResult.Loading -> _ui.value.copy(previewRoute = null, planning = true, error = null)
-                is PreviewResult.Ready -> _ui.value.copy(previewRoute = result.route, planning = false)
-                is PreviewResult.Failed -> _ui.value.copy(previewRoute = null, planning = false, error = result.message)
+                PreviewResult.Cleared -> _ui.value.copy(previewRoute = null, routeAlternatives = emptyMap(), planning = false)
+                PreviewResult.Loading -> _ui.value.copy(previewRoute = null, routeAlternatives = emptyMap(), planning = true, error = null)
+                is PreviewResult.Ready -> _ui.value.copy(previewRoute = result.route, routeAlternatives = result.alternatives, planning = false)
+                is PreviewResult.Failed -> _ui.value.copy(previewRoute = null, routeAlternatives = emptyMap(), planning = false, error = result.message)
             }
-        }
+        }, preference = roadPreference.value, packKey = routingPackKey(), alternatives = offlineRouting.supports(TravelMode.CAR))
+    }
+
+    /** A replaced or reopened pack cannot reuse geometry from a previous provider snapshot. */
+    private fun routingPackKey(): String {
+        val status = offlineRouting.status.value
+        return "${status.revision}:${status.loaded}:${status.pack?.builtAt}:${status.pack?.sizeBytes}:${status.pack?.routingFormat}"
     }
 
     /**
@@ -658,6 +678,7 @@ class AppGraph(private val context: Context) {
         restorationJob?.cancel()
         routePreview.cancel()
         val mode = travelMode.value
+        val preference = roadPreference.value
         val via = _ui.value.waypoints.map { it.point }
         _ui.value = _ui.value.copy(planning = true, startingNavigation = true, error = null)
         navigationWork.launch(onFailure = {
@@ -678,8 +699,8 @@ class AppGraph(private val context: Context) {
                 return@launch
             }
             ensureCurrent()
-            val request = RoutePreviewRequest(from, dest, mode, via)
-            val route = routePreview.reusableRoute(_ui.value.previewRoute, request) ?: router.route(from, dest, via, mode)
+            val request = RoutePreviewRequest(from, dest, mode, via, preference, routingPackKey())
+            val route = routePreview.reusableRoute(_ui.value.previewRoute, request) ?: router.route(from, dest, via, mode, preference)
             ensureCurrent()
             withPreparedResource(create = { NativeRouteGeometry.create(route) }) { prepared ->
                 ensureCurrent()
@@ -689,7 +710,7 @@ class AppGraph(private val context: Context) {
                 }, selectedEstimator = navigationEstimator.value)
             }
             routePreview.clear()
-            _ui.value = _ui.value.copy(planning = false, startingNavigation = false, previewRoute = null)
+            _ui.value = _ui.value.copy(planning = false, startingNavigation = false, previewRoute = null, routeAlternatives = emptyMap())
             refresh()
             // These optional effects do not own the startup transaction.
             runCatching { offlineMap.saveCorridor(route, darkTheme()) }.onFailure { tripLog.write("corridor_save_failed ${it.message}") }
@@ -826,6 +847,16 @@ class AppGraph(private val context: Context) {
 
     init {
         initializeTripRecovery()
+        scope.launch {
+            var previous = routingPackKey()
+            offlineRouting.status.collect {
+                val current = routingPackKey()
+                if (current != previous) {
+                    previous = current
+                    planRoutePreview()
+                }
+            }
+        }
     }
 
     /** Prepare saved state asynchronously; only a promoted service may own its live engine. */

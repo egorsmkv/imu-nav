@@ -8,6 +8,7 @@ import org.imunav.core.net.Http
 import org.imunav.core.net.HttpException
 import org.imunav.core.route.ManeuverModifier
 import org.imunav.core.route.ManeuverType
+import org.imunav.core.route.RoadPreference
 import org.imunav.core.route.Route
 import org.imunav.core.route.Step
 import org.imunav.core.route.TravelMode
@@ -21,7 +22,13 @@ import kotlin.math.pow
 /** Something that computes routes: the offline Rust routing pack, the online OSRM server, or both ([SmartRouter]). */
 interface Router {
     /** A route from [from] to [to] through [via] for [mode]; throws an IOException when there is none. */
-    suspend fun route(from: GeoPoint, to: GeoPoint, via: List<GeoPoint> = emptyList(), mode: TravelMode = TravelMode.CAR): Route
+    suspend fun route(
+        from: GeoPoint,
+        to: GeoPoint,
+        via: List<GeoPoint> = emptyList(),
+        mode: TravelMode = TravelMode.CAR,
+        preference: RoadPreference = RoadPreference.MAIN_ROADS,
+    ): Route
 }
 
 /**
@@ -31,8 +38,9 @@ interface Router {
  */
 class OsrmRouter(private val baseUrl: String = "https://router.project-osrm.org") : Router {
 
-    override suspend fun route(from: GeoPoint, to: GeoPoint, via: List<GeoPoint>, mode: TravelMode): Route = withContext(Dispatchers.IO) {
+    override suspend fun route(from: GeoPoint, to: GeoPoint, via: List<GeoPoint>, mode: TravelMode, preference: RoadPreference): Route = withContext(Dispatchers.IO) {
         if (mode != TravelMode.CAR) throw IOException("OSRM: only driving routes are available online")
+        if (preference == RoadPreference.MAIN_ROADS) throw IOException("Main-road preference requires an offline routing pack")
         val coords = (listOf(from) + via + to).joinToString(";") { String.format(Locale.US, "%.6f,%.6f", it.lon, it.lat) }
         val url = "$baseUrl/route/v1/driving/$coords?overview=full&geometries=polyline6&steps=true&annotations=true"
         parse(fetch(url))

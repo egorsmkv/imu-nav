@@ -46,9 +46,9 @@ position, uncertainty and duration. Speed regression offers typed `add` and expl
 Routing APIs distinguish `StateId`, `VertexId`, `NodeId`, `GeometryId`, `NameId` and `ArcIndex`.
 They prevent cross-domain arguments; owning-network bounds checks are still necessary. A
 `Direction` selects a CSR graph. Absent shortcut vertices use `Option<VertexId>`, translating the
-existing `u32::MAX` only in storage code. `Profile` represents the existing lowercase `car`/`foot`
-metadata vocabulary. Routing format `rust-ch-2`, binary record sizes and dictionary encodings are
-unchanged; packs need no rebuild for these changes.
+existing `u32::MAX` only in storage code. `Profile` represents the lowercase `car`, `car_balanced` and `foot` metadata vocabulary.
+The ID wrappers alone did not require rebuilding packs. Current car preferences and local-access
+state phases require `rust-ch-3` packs; see the [pack format](routing-pack-format.md).
 
 Search row kinds use `SearchKind`, and nonzero `SearchId` values replace document/reference
 primitives. Imported rows, stored rows and query reference points are checked against geographic

@@ -1,4 +1,4 @@
-//! The two supported pack profiles, independent of the host-only builder feature.
+//! Travel modes and independently prepared car cost variants.
 use serde::{Deserialize, Serialize};
 use std::{fmt, str::FromStr};
 
@@ -6,6 +6,8 @@ use std::{fmt, str::FromStr};
 #[serde(rename_all = "lowercase")]
 pub enum Profile {
     Car,
+    #[serde(rename = "car_balanced")]
+    CarBalanced,
     Foot,
 }
 
@@ -14,8 +16,15 @@ impl Profile {
     pub const fn name(self) -> &'static str {
         match self {
             Self::Car => "car",
+            Self::CarBalanced => "car_balanced",
             Self::Foot => "foot",
         }
+    }
+
+    /// Both car variants share access rules, turn restrictions and the motion model.
+    #[must_use]
+    pub const fn is_car(self) -> bool {
+        !matches!(self, Self::Foot)
     }
 }
 
@@ -24,6 +33,7 @@ impl FromStr for Profile {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "car" => Ok(Self::Car),
+            "car_balanced" => Ok(Self::CarBalanced),
             "foot" => Ok(Self::Foot),
             _ => Err(crate::ProfileError),
         }

@@ -12,7 +12,7 @@ impl Mode {
     /// Most specific access first; static directional keys avoid allocations for every OSM way.
     fn access_keys(self) -> &'static [AccessKey] {
         match self {
-            Self::Car => &[
+            Self::Car | Self::CarBalanced => &[
                 ("motorcar", ["motorcar:forward", "motorcar:backward"]),
                 (
                     "motor_vehicle",
@@ -61,9 +61,9 @@ pub fn access(tags: &Tags, mode: Mode, reverse: bool) -> Option<(f32, u16, f64)>
     if tags.iter().any(|(key, value)| {
         key.ends_with(":conditional")
             && (key.starts_with("access")
-                || key.starts_with("vehicle") && mode == Mode::Car
-                || key.starts_with("motor_vehicle") && mode == Mode::Car
-                || key.starts_with("motorcar") && mode == Mode::Car
+                || key.starts_with("vehicle") && mode.is_car()
+                || key.starts_with("motor_vehicle") && mode.is_car()
+                || key.starts_with("motorcar") && mode.is_car()
                 || key.starts_with("foot") && mode == Mode::Foot)
             && value
                 .split(';')
@@ -79,6 +79,9 @@ pub fn access(tags: &Tags, mode: Mode, reverse: bool) -> Option<(f32, u16, f64)>
         return None;
     }
     if denied(explicit) {
+        return None;
+    }
+    if mode.is_car() && explicit == "delivery" {
         return None;
     }
     let base = default_speed(highway, ferry, mode_access, mode)?;
@@ -105,7 +108,7 @@ pub fn access(tags: &Tags, mode: Mode, reverse: bool) -> Option<(f32, u16, f64)>
         .or_else(|| tags.get("maxspeed"))
         .and_then(|value| speed(value));
     let mut speed = base;
-    if mode == Mode::Car {
+    if mode.is_car() {
         if let Some(limit) = limit {
             speed = f64::min(speed, limit * 0.9);
         }
@@ -125,20 +128,56 @@ pub fn access(tags: &Tags, mode: Mode, reverse: bool) -> Option<(f32, u16, f64)>
             }
         }
     }
-    let priority = if mode == Mode::Foot {
+    Some((
+        (speed / 3.6) as f32,
+        limit.map_or(0, |v| v.round().clamp(1., 300.) as u16),
+        priority(tags, mode),
+    ))
+}
+/// Preference costs must not change modeled speeds or the duration shown to the driver.
+fn priority(tags: &Tags, mode: Mode) -> f64 {
+    let highway = tag(tags, "highway");
+    if mode == Mode::Foot {
         match highway {
             "footway" | "path" | "pedestrian" => 1.2,
             "primary" | "secondary" => 0.7,
             _ => 1.,
         }
+    } else if mode == Mode::Car {
+        match highway {
+            "residential" => 0.8,
+            "living_street" => 0.4,
+            "service" => match tag(tags, "service") {
+                "driveway" | "parking_aisle" | "drive-through" => 0.2,
+                "alley" => 0.3,
+                _ => 0.4,
+            },
+            "track" | "road" => 0.5,
+            _ => 1.,
+        }
     } else {
         1.
-    };
-    Some((
-        (speed / 3.6) as f32,
-        limit.map_or(0, |v| v.round().clamp(1., 300.) as u16),
-        priority,
-    ))
+    }
+}
+
+/// Preserve purpose-limited access in graph topology instead of treating it as a soft preference.
+#[must_use]
+pub fn local_access(tags: &Tags, mode: Mode, reverse: bool) -> bool {
+    mode.is_car()
+        && matches!(
+            access_value(tags, mode.access_keys(), reverse),
+            "destination" | "customers"
+        )
+}
+
+/// Keep the balanced distance influence while letting the main-road metric favor through streets.
+#[must_use]
+pub const fn distance_influence(mode: Mode) -> f64 {
+    match mode {
+        Mode::Car => 0.015,
+        Mode::CarBalanced => 0.09,
+        Mode::Foot => 0.07,
+    }
 }
 /// Resolve the most specific vehicle tag before falling back to its general access tag.
 fn access_value<'a>(tags: &'a Tags, keys: &[AccessKey], reverse: bool) -> &'a str {
@@ -176,7 +215,7 @@ pub fn barrier(tags: &Tags, mode: Mode) -> bool {
             return true;
         }
     }
-    if mode == Mode::Car {
+    if mode.is_car() {
         matches!(
             tag(tags, "barrier"),
             "bollard"
@@ -196,7 +235,7 @@ pub fn barrier(tags: &Tags, mode: Mode) -> bool {
 }
 
 fn default_speed(highway: &str, ferry: bool, explicit: &str, mode: Mode) -> Option<f64> {
-    Some(if mode == Mode::Car {
+    Some(if mode.is_car() {
         match highway {
             "motorway" => 100.,
             "motorway_link" | "secondary" => 60.,
@@ -235,7 +274,7 @@ fn direction_allowed(tags: &Tags, mode: Mode, reverse: bool, highway: &str) -> b
     if directional.is_some_and(|value| denied(value)) {
         return false;
     }
-    let oneway = if mode == Mode::Car {
+    let oneway = if mode.is_car() {
         tags.get("oneway:motorcar")
             .or_else(|| tags.get("oneway:motor_vehicle"))
             .or_else(|| tags.get("oneway"))
@@ -250,7 +289,7 @@ fn direction_allowed(tags: &Tags, mode: Mode, reverse: bool, highway: &str) -> b
     } else {
         tag(tags, "oneway:foot")
     };
-    if mode == Mode::Car && matches!(oneway, "reversible" | "alternating") {
+    if mode.is_car() && matches!(oneway, "reversible" | "alternating") {
         return false;
     }
     if !directional.is_some_and(|value| allowed(value))

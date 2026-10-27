@@ -8,7 +8,7 @@ Long-pressing the map selects a destination that can then be saved. Give each bo
 the library supports filtering, renaming and confirmed deletion. Saved places also appear above
 recent searches and can fill either route endpoint without an address-search pack or network.
 
-A saved route remembers the endpoints and car/walking mode, then calculates a fresh preview when
+A saved route remembers the endpoints, car/walking mode and car road preference, then calculates a fresh preview when
 opened. **My location** remains automatic and uses the permitted position available at that time;
 a manually selected start stays fixed. Without a usable position, select a manual start or wait for
 positioning. Opening a bookmark never starts navigation. Stop an active trip before applying a
@@ -21,3 +21,7 @@ any route.
 Optional [account synchronization](../server/account-sync.md) merges bookmarks with the sharing
 server. Each account has a separate local database; signing out restores the original local profile.
 File import/export and Android backups remain disabled.
+
+The bookmark database migrates version 1 to version 2 by adding `road_preference`, retaining
+all saved endpoints. Old records and synchronized recipes without the field default to main
+roads. New recipes round-trip the choice through SQLite and account synchronization.

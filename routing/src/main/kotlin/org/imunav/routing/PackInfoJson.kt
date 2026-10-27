@@ -59,7 +59,9 @@ internal object PackInfoJson {
         val box = requireNotNull(bounds)
         require(box.size == 4)
         require(box[0] in -90.0..90.0 && box[1] in box[0]..90.0 && box[2] in -180.0..180.0 && box[3] in box[2]..180.0)
-        require(profiles.isNotEmpty() && profiles.distinct() == profiles && profiles.all { it == "car" || it == "foot" })
+        require(profiles.isNotEmpty() && profiles.distinct() == profiles && profiles.all { it in setOf("car", "car_balanced", "foot") })
+        require("car_balanced" !in profiles || "car" in profiles)
+        if (routingFormat == PackInfo.FORMAT) require(("car" in profiles) == ("car_balanced" in profiles))
         PackInfo(requireNotNull(name), builtAt, source, box.toDoubleArray(), sizeBytes, profiles, elevation, turnCosts, searchFormat, routingFormat)
     }
 }

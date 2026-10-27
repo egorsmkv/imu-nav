@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="road_preference_title">Road preference</string>
+    <string name="road_preference_main">Prefer main roads</string>
+    <string name="road_preference_balanced">Balanced</string>
+    <string name="road_preference_hint">Main roads avoids courtyard and parking shortcuts where practical. Local access to your stops is kept.</string>
+    <string name="road_preference_online_hint">Main roads needs a current offline pack. Balanced can use online routes with the server’s road preferences.</string>
+    <string name="road_preference_needs_pack">Prefer main roads needs an offline routing pack covering this trip. Install a current pack or choose Balanced for online routing.</string>
     <string name="app_name" translatable="false">IMU Nav</string>
     <string name="notification_channel">Navigation</string>
     <string name="notification_title">Navigating</string>

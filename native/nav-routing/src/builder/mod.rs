@@ -15,6 +15,7 @@ mod restrictions;
 mod search;
 pub mod subset;
 mod write;
+use crate::storage::LOCAL_ACCESS;
 use crate::{
     Result,
     geo::{self, Point},
@@ -96,7 +97,7 @@ pub fn build_with_elevation(
     } = read_source(input, with_search, addresses)?;
     let mut bounds = [90f64, -90f64, 180f64, -180f64];
     let mut profiles = vec![];
-    for mode in [Mode::Car, Mode::Foot] {
+    for mode in [Mode::Car, Mode::CarBalanced, Mode::Foot] {
         let mut roads = roads_for(&ways, &nodes, &usage, mode, &mut terrain)?;
         if mode == Mode::Foot {
             // Split a blocked node into one terminal per incident road; users can reach either side,
@@ -365,12 +366,17 @@ fn roads_for(
                     (ids[0], *ids.last().unwrap())
                 };
                 let weight = ((distance / f64::from(speed) / priority
-                    + distance * if mode == Mode::Car { 0.09 } else { 0.07 })
+                    + distance * profile::distance_influence(mode))
                     * 1000.)
                     .round()
                     .max(1.) as u64;
                 let highway = way.tags.get("highway").map_or("", String::as_str);
                 let flags = u16::from(way.tags.get("junction").is_some_and(|s| s == "roundabout"))
+                    | if profile::local_access(&way.tags, mode, reverse) {
+                        LOCAL_ACCESS
+                    } else {
+                        0
+                    }
                     | if highway == "motorway" { 2 } else { 0 }
                     | if highway.ends_with("_link") { 4 } else { 0 }
                     | if way.tags.get("route").is_some_and(|s| s == "ferry") {
@@ -452,7 +458,7 @@ fn prepare_profile(
     let (variants, mut edges) = expand_states(mode, roads, nodes, outgoing, relations)?;
     // Persist states in node order so the runtime can find outgoing roads without an extra heap index.
     let mut order: Vec<_> = (0..variants.len()).collect();
-    order.sort_by_key(|&id| (roads[variants[id].0 as usize].from, id));
+    order.sort_by_key(|&id| (roads[variants[id].physical as usize].from, id));
     let mut remap = vec![0u32; order.len()];
     for (new, &old) in order.iter().enumerate() {
         remap[old] = new as u32;
@@ -468,7 +474,7 @@ fn prepare_profile(
             })
             .collect();
     }
-    for edge in edges.iter_mut().filter(|_| mode == Mode::Car) {
+    for edge in edges.iter_mut().filter(|_| mode.is_car()) {
         edge.tail = Vertex::new(remap[edge.tail.as_usize()]);
         edge.head = Vertex::new(remap[edge.head.as_usize()]);
     }
@@ -489,8 +495,45 @@ fn prepare_profile(
     Ok(())
 }
 
-type Expanded = (Vec<(u32, usize)>, Vec<WeightedEdge<u64>>);
-/// Expand only restriction-history prefixes; unrestricted roads keep one state per direction.
+/// Local roads have adjacent approach/exit twins with identical turn-restriction history.
+pub(super) struct Variant {
+    physical: u32,
+    context: usize,
+    local_exit: bool,
+    initial: bool,
+}
+type Expanded = (Vec<Variant>, Vec<WeightedEdge<u64>>);
+type VariantIds = HashMap<(u32, usize, bool), u32>;
+
+/// Allocate both twins together so a stop can grant local exit without resetting turn history.
+fn variant(
+    variants: &mut Vec<Variant>,
+    ids: &mut VariantIds,
+    roads: &[Road],
+    physical: u32,
+    context: usize,
+    local_exit: bool,
+    initial: bool,
+) -> u32 {
+    if let Some(&id) = ids.get(&(physical, context, local_exit)) {
+        return id;
+    }
+    for exit in [false, true] {
+        if exit && roads[physical as usize].flags & LOCAL_ACCESS == 0 {
+            continue;
+        }
+        ids.insert((physical, context, exit), variants.len() as u32);
+        variants.push(Variant {
+            physical,
+            context,
+            local_exit: exit,
+            initial,
+        });
+    }
+    ids[&(physical, context, local_exit)]
+}
+
+/// Expand restriction prefixes and local entry/exit phases before preparing either car hierarchy.
 fn expand_states(
     mode: Mode,
     roads: &[Road],
@@ -498,45 +541,61 @@ fn expand_states(
     outgoing: &HashMap<i64, Vec<u32>>,
     relations: &[Restriction],
 ) -> Result<Expanded> {
-    let restrictions = if mode == Mode::Car {
+    let restrictions = if mode.is_car() {
         restrictions::forbidden(roads, outgoing, relations)?
     } else {
         vec![]
     };
     let automaton = Automaton::new(restrictions);
-    let mut variants: Vec<(u32, usize)> = roads
-        .iter()
-        .enumerate()
-        .map(|(id, _)| (id as u32, automaton.advance(0, id as u32).unwrap_or(0)))
-        .collect();
-    let mut ids: HashMap<_, _> = variants
-        .iter()
-        .enumerate()
-        .map(|(id, &state)| (state, id as u32))
-        .collect();
+    let mut variants = Vec::new();
+    let mut ids = HashMap::new();
+    for physical in 0..roads.len() as u32 {
+        variant(
+            &mut variants,
+            &mut ids,
+            roads,
+            physical,
+            automaton.advance(0, physical).unwrap_or(0),
+            false,
+            true,
+        );
+    }
     let mut edges = Vec::new();
     let mut cursor = 0;
-    while mode == Mode::Car && cursor < variants.len() {
+    while mode.is_car() && cursor < variants.len() {
         if variants.len() > 30_000_000 {
             return Err("too many restriction states".into());
         }
-        let (physical, context) = variants[cursor];
+        let Variant {
+            physical,
+            context,
+            local_exit,
+            ..
+        } = variants[cursor];
         let from = &roads[physical as usize];
         if !nodes
             .get(&from.to)
             .is_some_and(|node| profile::barrier(&node.tags, mode))
         {
             for &next in outgoing.get(&from.to).into_iter().flatten() {
+                let to = &roads[next as usize];
+                let from_local = from.flags & LOCAL_ACCESS != 0;
+                let to_local = to.flags & LOCAL_ACCESS != 0;
+                if from_local && !local_exit && !to_local {
+                    continue;
+                }
                 let Some(next_context) = automaton.advance(context, next) else {
                     continue;
                 };
-                let key = (next, next_context);
-                let target = *ids.entry(key).or_insert_with(|| {
-                    let id = variants.len() as u32;
-                    variants.push(key);
-                    id
-                });
-                let to = &roads[next as usize];
+                let target = variant(
+                    &mut variants,
+                    &mut ids,
+                    roads,
+                    next,
+                    next_context,
+                    to_local && from_local && local_exit,
+                    false,
+                );
                 let penalty = if mode == Mode::Foot {
                     0.
                 } else if from.from == to.to && from.way == to.way {
