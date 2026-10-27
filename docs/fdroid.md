@@ -8,6 +8,19 @@ Manual and version-tag CI runs sign a separate release copy for direct downloads
 developer release identity. See [CI release signing](release_signing.md) for `RELEASE_*` setup.
 Pull-request validation releases remain unsigned; official F-Droid signatures are independent.
 
+After these workflow changes are included in a tag, publishing a GitHub Release for a `v*` tag
+automatically builds that tag and attaches `app-fdroid-release.apk` to its **Assets**. Published
+prereleases are included. A signed `app-fdroid-benchmark.apk` is also attached when the independent
+benchmark signing key is configured; unsigned benchmark builds stay in Actions artifacts.
+`fdroid-SHA256SUMS` contains checksums for the attached APKs. Upload waits for the build, lint,
+alignment and update-compatibility checks to pass. Creating a draft or pushing a tag alone
+keeps the existing Actions artifacts; the release upload starts when the Release is published.
+
+The build uses the protected `android-distribution` environment and its existing approval rules.
+Configure the `RELEASE_*` signing settings there as described in [CI release signing](release_signing.md).
+The separate upload job has release-write permission and receives no signing keys. Reruns preserve
+existing release assets: duplicate filenames fail instead of replacing an already published APK.
+
 The CI **benchmark** APK is a separate diagnostics build. Its private signing identity and update
 compatibility are described in [benchmark signing](benchmark_signing.md). Download its **signed**
 artifact for installation; an **unsigned** validation artifact cannot be installed directly.

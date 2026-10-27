@@ -35,8 +35,12 @@ outputs; changing the verifier selects both Android and F-Droid jobs.
 It selects app, core, routing, native, runner and Gradle changes and always reports its build gate.
 
 Server Docker smoke builds retain their `main` path filters and manual dispatch. Native
-formal verification and full regional pack generation remain manual. No release is published
-by these workflows. F-Droid tags continue to build regardless of path selection, and tags also
+formal verification and full regional pack generation remain manual. Publishing a GitHub Release
+for a `v*` tag also runs the F-Droid workflow and attaches its signed APKs and checksums to that
+existing Release after the build and update-compatibility jobs pass. The workflow does not create
+Releases; tag pushes and manual builds retain their Actions artifacts. Signing credentials stay in
+the protected build environment; only the separate upload job receives `contents: write`.
+F-Droid tags and published Releases build regardless of path selection, and tag pushes also
 run the F-Droid recipe build (see [F-Droid](fdroid.md#testing-with-fdroidserver)).
 
 ## Diff and failure semantics
@@ -48,7 +52,7 @@ run the F-Droid recipe build (see [F-Droid](fdroid.md#testing-with-fdroidserver)
   Filenames are NUL-separated and there is no 300-file API/native-filter cutoff.
 - Merge-queue entries compare the queue base with the queued head, which contains every PR
   ahead of it in the queue; a malformed merge-group payload selects all work.
-- Missing history, new-branch zero SHAs, manual runs and tags select all work
+- Missing history, new-branch zero SHAs, manual runs, tags and release events select all work
   conservatively. Malformed event JSON or a script error fails the selector step.
 - Selected compilation/test failures remain failures; no `continue-on-error` is used.
 

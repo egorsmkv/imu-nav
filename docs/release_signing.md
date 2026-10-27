@@ -3,9 +3,16 @@
 [Documentation index](../README.md)
 
 The **F-Droid build** workflow produces a developer-signed release for direct installation on
-manual runs and pushes of `v*` tags. Its artifact is named
+manual runs, pushes of `v*` tags and published GitHub Releases for those tags. Its artifact is named
 `imu-nav-fdroid-release-signed-<commit>` and contains `app-fdroid-release.apk`, the R8 mapping,
 and `release-signing.json` with public APK and certificate SHA-256 hashes.
+
+Publishing a GitHub Release (including a prerelease) additionally attaches the signed release APK
+and `fdroid-SHA256SUMS` to that Release's **Assets** after the build and update checks succeed.
+The signed benchmark APK is included when its own key is configured. This upload runs in a
+separate job with `contents: write`, without the signing environment or private keys. It uploads
+to the existing Release for the event's tag and preserves its notes, prerelease status and existing
+assets; a duplicate filename fails rather than overwriting an existing download.
 
 Pull-request and merge-queue builds produce explicitly **unsigned** validation artifacts and
 never receive the release credentials. Manual/tag builds fail when release credentials are

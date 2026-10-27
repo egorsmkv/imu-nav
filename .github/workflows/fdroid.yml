@@ -4,6 +4,8 @@ on:
   workflow_dispatch:
   push:
     tags: ['v*']
+  release:
+    types: [published]
   pull_request:
   merge_group:
 
@@ -17,10 +19,13 @@ permissions:
 
 jobs:
   fdroid:
+    if: github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v')
     runs-on: ubuntu-latest
     timeout-minutes: 60
     # Move RELEASE_* and BENCHMARK_* keys here; ci-validation has no private keys.
-    environment: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'push') && 'android-distribution' || 'ci-validation' }}
+    environment: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event_name == 'release') && 'android-distribution' || 'ci-validation' }}
+    outputs:
+      release_mode: ${{ steps.release_signing.outputs.mode }}
     env:
       ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/28.2.13676358
     steps:
@@ -80,7 +85,7 @@ jobs:
       # Release credentials are never passed to code built for a PR or merge queue.
       - name: Sign direct-download release with the persistent release identity
         id: release_signing
-        if: steps.changes.outputs.run == 'true' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')))
+        if: steps.changes.outputs.run == 'true' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || github.event_name == 'release')
         env:
           IMUNAV_RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
           IMUNAV_RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
@@ -105,7 +110,7 @@ jobs:
 
       - name: Sign benchmark with the persistent private identity
         id: signing
-        if: steps.changes.outputs.run == 'true' && (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
+        if: steps.changes.outputs.run == 'true' && (github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event_name == 'release')
         env:
           IMUNAV_BENCHMARK_KEYSTORE_BASE64: ${{ secrets.BENCHMARK_KEYSTORE_BASE64 }}
           IMUNAV_BENCHMARK_STORE_PASSWORD: ${{ secrets.BENCHMARK_STORE_PASSWORD }}
@@ -168,8 +173,30 @@ jobs:
           path: build/android-pages.json
           if-no-files-found: warn
 
+      - name: Prepare installable GitHub Release assets
+        if: github.event_name == 'release' && steps.release_signing.outputs.mode == 'signed'
+        env:
+          BENCHMARK_MODE: ${{ steps.signing.outputs.mode }}
+        run: |
+          mkdir -p build/github-release
+          cp build/release-distribution/app-fdroid-release.apk build/github-release/
+          if [[ "$BENCHMARK_MODE" == signed ]]; then
+            cp build/benchmark-distribution/app-fdroid-benchmark.apk build/github-release/
+          fi
+          (cd build/github-release && sha256sum *.apk > fdroid-SHA256SUMS)
+
+      - name: Upload verified GitHub Release assets for publication
+        if: github.event_name == 'release' && steps.release_signing.outputs.mode == 'signed'
+        uses: actions/upload-artifact@v4
+        with:
+          name: imu-nav-fdroid-release-assets-${{ github.sha }}
+          path: build/github-release/
+          if-no-files-found: error
+          retention-days: 14
+
   updates:
     name: Benchmark update compatibility API ${{ matrix.api-level }}
+    if: github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -219,3 +246,29 @@ jobs:
           path: build/benchmark-update-evidence/
           if-no-files-found: warn
           retention-days: 14
+
+  publish:
+    name: Attach F-Droid APKs to the GitHub Release
+    needs: [fdroid, updates]
+    if: github.event_name == 'release' && startsWith(github.event.release.tag_name, 'v') && needs.fdroid.outputs.release_mode == 'signed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # This job receives verified APKs and a release-upload token, never signing credentials.
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified release assets from this run
+        uses: actions/download-artifact@v4
+        with:
+          name: imu-nav-fdroid-release-assets-${{ github.sha }}
+          path: release-assets
+      - name: Verify downloaded APK checksums
+        working-directory: release-assets
+        run: sha256sum --check fdroid-SHA256SUMS
+      - name: Attach APKs and checksums to the published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        # Preserve existing assets on reruns: a name collision fails instead of replacing a download.
+        run: gh release upload "$RELEASE_TAG" release-assets/*.apk release-assets/fdroid-SHA256SUMS --repo "$GH_REPO"

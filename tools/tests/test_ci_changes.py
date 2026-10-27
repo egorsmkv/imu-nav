@@ -91,7 +91,7 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(self.selected('native/graphics-path/src/conic.rs'), {'native', 'kotlin', 'fdroid', 'android'})
 
     def test_unknown_history_manual_tags_and_malformed_merge_queues_run_all(self):
-        for name, event in [('workflow_dispatch', {}), ('merge_group', {}),
+        for name, event in [('workflow_dispatch', {}), ('release', {'release': {'tag_name': 'v1.0'}}), ('merge_group', {}),
                             ('merge_group', {'merge_group': {'base_sha': 'x', 'head_sha': 'a' * 40}}),
                             ('push', {'ref': 'refs/tags/v1.0'}), ('push', {}),
                             ('push', {'before': '0' * 40, 'after': 'a' * 40})]:

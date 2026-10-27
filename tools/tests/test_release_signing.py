@@ -135,7 +135,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
         signing_step = next(step for step in steps if step.startswith('Sign direct-download release'))
         condition = next(line.strip() for line in signing_step.splitlines() if line.strip().startswith('if:'))
         self.assertEqual(condition, "if: steps.changes.outputs.run == 'true' && (github.event_name == 'workflow_dispatch' || "
-                                   "(github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')))")
+                                   "(github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || github.event_name == 'release')")
         self.assertNotIn('--allow-unsigned', signing_step)
         self.assertNotIn('BENCHMARK_', signing_step)
         for variable in signing.credential_variables('release'):
