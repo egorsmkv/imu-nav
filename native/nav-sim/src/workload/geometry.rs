@@ -73,7 +73,7 @@ impl GeometryFixture {
                 let local = route
                     .project(point, 0.0, 0.0, 0.0, f64::MAX)
                     .map_err(|error| anyhow!("local: {error:?}"))?;
-                outcome.fallback_queries += u64::from(local.offset_m > 120.0);
+                outcome.fallback_queries += u64::from(local.offset().get() > 120.0);
                 let projection = route
                     .project(point, 0.0, 0.0, 0.0, 120.0)
                     .map_err(|error| anyhow!("global: {error:?}"))?;
