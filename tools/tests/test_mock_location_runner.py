@@ -196,6 +196,26 @@ class InstrumentationResultsTest(unittest.TestCase):
             self.assertFalse(any(c.args[0] == 'install' for c in adb.call_args_list))
             instrumentation.assert_not_called()
 
+    def test_page_size_suite_runs_only_native_classes_without_recovery_stages(self):
+        records = ''.join(f'INSTRUMENTATION_STATUS: class={name}\nINSTRUMENTATION_STATUS: test=test0\nINSTRUMENTATION_STATUS_CODE: 0\n'
+                          for name in runner.PAGE_SIZE_CLASSES) + 'INSTRUMENTATION_CODE: -1\n'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for relative in ('apks/fdroid/debug/app.apk', 'apks/androidTest/fdroid/debug/test.apk'):
+                apk = root / relative
+                apk.parent.mkdir(parents=True, exist_ok=True)
+                apk.write_bytes(b'synthetic APK fixture')
+            argv = ['runner', '--apk-directory', str(root / 'apks'), '--output', str(root / 'reports'),
+                    '--expected-page-size', '16384', '--suite', 'page-size']
+            with patch.object(sys, 'argv', argv), patch.object(runner, 'adb', return_value='16384'), \
+                    patch.object(runner, 'instrumentation', return_value=records) as instrumentation, patch('builtins.print'):
+                with self.assertRaises(SystemExit) as raised:
+                    runner.main()
+            self.assertEqual(raised.exception.code, 0)
+            instrumentation.assert_called_once_with(','.join(runner.PAGE_SIZE_CLASSES))
+        # A full-suite transcript missing location classes must not pass the default suite.
+        self.assertFalse(runner.parse_results(records)[1])
+
 
 if __name__ == '__main__':
     unittest.main()

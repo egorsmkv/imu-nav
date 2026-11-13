@@ -145,7 +145,8 @@ jobs:
           ram-size: ${{ matrix.page-size == 16384 && '6144M' || '4096M' }}
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
-          script: python3 tools/run_mock_location_tests.py --apk-directory gps-test-apks --output build/gps-instrumentation --expected-page-size ${{ matrix.page-size }}
+          # The 16 KB job checks native page-size compatibility only; see docs/mock_location_testing.md.
+          script: python3 tools/run_mock_location_tests.py --apk-directory gps-test-apks --output build/gps-instrumentation --expected-page-size ${{ matrix.page-size }} --suite ${{ matrix.page-size == 16384 && 'page-size' || 'full' }}
       - name: Upload test evidence even on failure
         if: always() && needs.build.outputs.run == 'true'
         uses: actions/upload-artifact@v4

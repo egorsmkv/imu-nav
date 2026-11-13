@@ -21,6 +21,15 @@ and Android's low-memory killer terminated instrumentation before any tests
 completed. A `Process crashed` result still fails the job; inspect `logcat.txt`
 to distinguish a low-memory kill from an application exception.
 
+The 16 KB job runs `--suite page-size`: only `GraphicsPathNativeTest` and
+`SearchRestorationTest` (the production activity, which loads the Rust core and
+MapLibre), without the whole-app recovery stages. With the full suite the x86_64
+16 KB image failed intermittently in ways the same APKs never showed on the 4 KB
+API 35 image: `system_server` crashed (`System has crashed`), and ART rejected
+valid MapLibre bytecode (`VerifyError` in `StandardScaleGestureDetector$1`).
+Page size only affects native code. The location and service tests do not depend
+on it and still run on every 4 KB image.
+
 ## What is exercised
 
 Nine ordinary tests and two host-orchestrated recovery stages under `app/src/androidTest/kotlin/org/imunav/app/location/` exercise the production
