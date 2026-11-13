@@ -9,7 +9,7 @@ prototype, not a safety system or a replacement for driver attention.
 
 ## Build and run
 
-Install Rust 1.99+ and the Visual Studio C++ build tools, then run from the repository root:
+Install Rust 1.100+ and the Visual Studio C++ build tools, then run from the repository root:
 
 ```powershell
 cargo build --manifest-path desktop/Cargo.toml -p imu-nav-desktop --release --locked

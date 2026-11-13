@@ -92,7 +92,7 @@ fn path_iteration_matches_cpp_in_both_skia_layouts() {
         };
         // Before Android 11 Skia stores verbs in reverse memory order.
         let verbs: Vec<u8> = if direction == VerbDirection::Forward {
-            logical.clone()
+            logical
         } else {
             logical.iter().rev().copied().collect()
         };

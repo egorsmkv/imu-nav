@@ -18,7 +18,7 @@ python3 tools/verify_native.py
 ```
 
 Kani 0.68.0 uses `nightly-2026-08-21` (`rustc 1.100.0-nightly`, commit `8925ea358`),
-which satisfies the workspace's Rust 1.99 minimum. This is separate from the pinned Rust coverage
+which satisfies the workspace's Rust 1.100 minimum. This is separate from the pinned Rust coverage
 toolchain. Use the compiler, CBMC and solvers bundled with that pinned release, rather than external
 replacements. Most harnesses use default CaDiCaL; the recent/old three-source fusion harnesses
 explicitly select bundled Kissat 4.0.1 with `#[kani::solver(kissat)]`. Kani is a developer tool,

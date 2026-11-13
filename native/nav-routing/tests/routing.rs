@@ -41,6 +41,28 @@ fn independent_import_routes_geometry_profiles_and_guidance() {
     flag.store(true, std::sync::atomic::Ordering::Relaxed);
     assert!(route(&car, &request, &flag).is_err());
 }
+
+/// XML dependency upgrades must preserve OSM names rather than normalize their attribute text.
+#[test]
+fn xml_names_preserve_unicode_entities_and_whitespace() {
+    let tmp = tempfile::tempdir().unwrap();
+    let osm = tmp.path().join("names.osm");
+    let name = "Парк &amp; &quot;сад&quot;&#9;стежка";
+    std::fs::write(&osm, fixture().replace("Parkpath", name)).unwrap();
+    let out = tmp.path().join("pack");
+    builder::build(&osm, &out, "Names", 0, false, false).unwrap();
+    let foot = Network::open(&out.join("foot.routing")).unwrap();
+    let request = Request {
+        points: vec![[50.4502, 30.5001], [50.4601, 30.5099]],
+    };
+    let walk = route(&foot, &request, &AtomicBool::new(false)).unwrap();
+    assert!(
+        walk.steps
+            .iter()
+            .any(|step| step.name == "Парк & \"сад\"\tстежка")
+    );
+}
+
 #[test]
 fn truncated_and_malformed_packs_are_rejected() {
     let tmp = tempfile::tempdir().unwrap();

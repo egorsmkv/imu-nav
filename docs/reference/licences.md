@@ -48,12 +48,12 @@ These are not in the APK.
 | Tokio Util, Tempfile         | 0.7 / 3.x        | streamed administrator exports and temporary imports          | MIT                                           |
 | tikv-jemallocator / jemalloc | 0.7 / 5.3.1      | optional Linux native replay heap allocator                   | MIT / Apache 2.0; jemalloc BSD 2-Clause       |
 | pprof-rs                     | 0.15             | native simulation CPU profiles and flamegraphs (desktop only) | Apache 2.0                                    |
-| hotpath-rs                   | 0.28.4           | optional native-core and cell-server function timing          | MIT                                           |
+| hotpath-rs                   | 0.31.2           | optional native-core and cell-server function timing          | MIT                                           |
 | jemalloc_pprof               | 0.9              | optional Linux native heap export to pprof                    | Apache 2.0                                    |
-| Rusqlite + SQLite            | 0.40 / bundled   | persistent cell server database                               | MIT / public domain                           |
+| Rusqlite + SQLite            | 0.42 / bundled   | persistent cell server database                               | MIT / public domain                           |
 | PostgreSQL, r2d2 and native TLS | 0.19 / 0.8 / 0.2 | optional pooled PostgreSQL cell server database             | MIT or MIT / Apache 2.0                       |
-| TOML                         | 0.9              | server configuration file                                     | MIT / Apache 2.0                              |
-| Argon2, Rand, SHA-2          | 0.5 / 0.9 / 0.10 | password hashes and opaque account tokens                     | MIT or MIT/Apache 2.0                         |
+| TOML                         | 1.2              | server configuration file                                     | MIT / Apache 2.0                              |
+| Argon2, Rand, SHA-2          | 0.6 / 0.10 / 0.11 | password hashes and opaque account tokens                     | MIT or MIT/Apache 2.0                         |
 | rpassword                    | 7.5              | hidden administrator password prompt on the cell server       | Apache 2.0                                    |
 | Lettre                       | 0.11             | password-reset and email-verification messages over SMTP      | MIT                                           |
 | time                         | 0.3              | UTC timestamps in the cell server account panel               | MIT / Apache 2.0                              |
@@ -109,19 +109,19 @@ UI or assets are included; the only data carried over is the coarse Ukraine bord
 
 The sharing server vendors MapLibre GL JS 5.20.0 under BSD-3-Clause. Its distribution licence and bundled third-party notices are in `server/static/maplibre/license.txt` and the distributed JavaScript. OpenFreeMap supplies map data with on-map attribution. The pinned assets are reproduced by `tools/vendor_trip_map.py`.
 
-The sharing server uses `zip` 8.6 (MIT) to validate user-uploaded profiling archives. It enables only DEFLATE support; this dependency is not included in the Android app.
+The sharing server uses `zip` 9.5 (MIT) to validate user-uploaded profiling archives. It enables only DEFLATE support; this dependency is not included in the Android app.
 
 ## Desktop navigation viewer
 
-The independent desktop workspace uses eframe/egui 0.36.2 (MIT/Apache 2.0), Walkers 0.60.0 (MIT),
-rusqlite 0.40 (MIT, bundled SQLite public domain), image 0.25.10 (MIT/Apache 2.0), rfd 0.17
+The independent desktop workspace uses eframe/egui 0.37.0 (MIT/Apache 2.0), Walkers 0.65.0 (MIT),
+rusqlite 0.42 (MIT, bundled SQLite public domain), image 0.25.10 (MIT/Apache 2.0), rfd 0.18
 (MIT), serde/serde_json (MIT/Apache 2.0), time (MIT/Apache 2.0) and thiserror (MIT/Apache 2.0).
 Its exact resolved dependencies are pinned in `desktop/Cargo.lock`. The portable artifact includes
 dependency licence files collected from Cargo metadata by `desktop/tools/notices.py`. These GUI
 dependencies are not included in the Android APK or relay; the shared protocol crate contains only
 Serde, time and thiserror dependencies.
 
-The desktop HTTPS tile worker directly uses reqwest 0.13.5 (MIT/Apache 2.0), sha2 0.10
+The desktop HTTPS tile worker directly uses reqwest 0.13.5 (MIT/Apache 2.0), sha2 0.11
 (MIT/Apache 2.0), and httpdate 1 (MIT/Apache 2.0) for bounded fetching and HTTP caching. These
 versions are already part of the desktop's resolved dependency graph.
 
@@ -149,8 +149,11 @@ faster_paths is used by the production Rust builder (see below).
 
 
 The production Rust routing builder now uses `faster_paths` 0.1.0 (MIT OR Apache-2.0),
-`osmpbfreader` 0.19.1 (WTFPL), quick-xml 0.38 (MIT), ZIP 4.6 (MIT), Rayon (MIT OR Apache-2.0)
+`osmpbfreader` 0.19.1 (WTFPL), quick-xml 0.42 (MIT), ZIP 9.5 (MIT), Rayon (MIT OR Apache-2.0)
 and time (MIT OR Apache-2.0). These importer/preparation dependencies are host-only optional
 features. Android's `imu-nav-routing` runtime uses memmap2, JNI, Serde and serde_json under
 MIT/Apache-2.0 terms. It implements its own checked memory-mapped query/geometry adapter;
 no Janino, HPPC, OSM PBF reader or bincode dependency is added to the APK.
+
+The Rust server and desktop viewer use `hex` 0.4.3 (MIT/Apache-2.0) to encode SHA-256
+digests after the sha2 0.11 API update. It is not included in Android APKs.

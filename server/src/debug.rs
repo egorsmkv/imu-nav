@@ -198,7 +198,7 @@ async fn batch(
     {
         return Err(bad_request());
     }
-    let digest = format!("{:x}", Sha256::digest(&body));
+    let digest = hex::encode(Sha256::digest(&body));
     let store = state.store.clone();
     let _gate = state.write_gate.read().await;
     let notice_version = state

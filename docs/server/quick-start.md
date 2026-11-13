@@ -9,7 +9,7 @@ protocol and create an administrator account. Run the commands from the reposito
 The reference sharing server preserves the Android app's gzip-CSV sync protocol while storing every
 per-device contribution and materialized consensus in SQLite or PostgreSQL. SQLite is the default
 and runs in WAL mode, so downloads and management reads can continue during uploads. Building the
-server requires Rust 1.99 or newer.
+server requires Rust 1.100 or newer.
 
 ```bash
 cargo build --release --manifest-path server/Cargo.toml

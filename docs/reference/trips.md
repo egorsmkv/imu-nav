@@ -115,7 +115,7 @@ diagnostics retains the existing explicit unsent-data deletion behavior.
   For deterministic app-like native workloads without recordings, use the [simulation and profiling crate](../core/sim/readme.md).
   Its twelve scenarios cover GPS loss/delay, walking, session lifecycles, dense OBD inputs, curved routes,
   crossings, parallel returns and global reacquisition; `--scenario advanced` selects the five focused stress cases.
-  Rust 1.99+ is required; `:replay:test` also builds the host library and runs synthetic JNI comparisons.
+  Rust 1.100+ is required; `:replay:test` also builds the host library and runs synthetic JNI comparisons.
 
   Native car dead reckoning now uses the shared IMU stop/resume detector when fresh GPS/OBD speed
   and confident cell movement do not contradict it. Add `--no-native-motion` to disable these hints

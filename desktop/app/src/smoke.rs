@@ -68,40 +68,31 @@ impl Smoke {
             context.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
         }
-        let screenshot = context.input(|input| {
-            input.events.iter().find_map(|event| {
-                if let egui::Event::Screenshot { image, .. } = event {
-                    Some(image.clone())
-                } else {
-                    None
-                }
-            })
-        });
-        if let Some(image) = screenshot {
+        if !self.requested && self.started.elapsed() > Duration::from_secs(1) {
+            self.requested = true;
             let path = self.path.clone();
-            let context = context.clone();
+            let worker_context = context.clone();
             let (sender, receiver) = mpsc::sync_channel(1);
             self.saved = Some(receiver);
-            std::thread::spawn(move || {
-                let bytes: Vec<_> = image
-                    .pixels
-                    .iter()
-                    .flat_map(egui::Color32::to_array)
-                    .collect();
-                let size = image
-                    .size
-                    .map(|value| u32::try_from(value).expect("window dimensions"));
-                let image = image::RgbaImage::from_raw(size[0], size[1], bytes)
-                    .expect("screenshot dimensions");
-                if let Some(parent) = path.parent() {
-                    _ = std::fs::create_dir_all(parent);
-                }
-                _ = sender.send(image.save(path).is_ok());
-                context.request_repaint();
+            context.request_screenshot(move |image| {
+                std::thread::spawn(move || {
+                    let bytes: Vec<_> = image
+                        .pixels
+                        .iter()
+                        .flat_map(egui::Color32::to_array)
+                        .collect();
+                    let size = image
+                        .size
+                        .map(|value| u32::try_from(value).expect("window dimensions"));
+                    let image = image::RgbaImage::from_raw(size[0], size[1], bytes)
+                        .expect("screenshot dimensions");
+                    if let Some(parent) = path.parent() {
+                        _ = std::fs::create_dir_all(parent);
+                    }
+                    _ = sender.send(image.save(path).is_ok());
+                    worker_context.request_repaint();
+                });
             });
-        } else if !self.requested && self.started.elapsed() > Duration::from_secs(1) {
-            self.requested = true;
-            context.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
         }
         context.request_repaint_after(Duration::from_millis(100));
     }

@@ -32,7 +32,7 @@ permissions:
   contents: read
 
 env:
-  RUSTUP_TOOLCHAIN: 1.99.0
+  RUSTUP_TOOLCHAIN: 1.100.0
 
 jobs:
   fixture:
@@ -61,7 +61,7 @@ jobs:
             routing-rust-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.RUSTUP_TOOLCHAIN }}-${{ hashFiles('native/Cargo.lock', 'native/Cargo.toml', 'native/nav-search/Cargo.toml', 'native/nav-routing/Cargo.toml') }}-
       - name: Install native routing builder toolchain
         if: steps.changes.outputs.run == 'true'
-        run: rustup toolchain install 1.99.0 --profile minimal
+        run: rustup toolchain install 1.100.0 --profile minimal
       - name: Test the archive validator
         if: steps.changes.outputs.run == 'true'
         run: python3 -m unittest discover -s tools/tests -p test_verify_routing_pack.py -v
@@ -114,7 +114,7 @@ jobs:
           restore-keys: |
             routing-rust-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.RUSTUP_TOOLCHAIN }}-${{ hashFiles('native/Cargo.lock', 'native/Cargo.toml', 'native/nav-search/Cargo.toml', 'native/nav-routing/Cargo.toml') }}-
       - name: Install native routing builder toolchain
-        run: rustup toolchain install 1.99.0 --profile minimal
+        run: rustup toolchain install 1.100.0 --profile minimal
       - name: Validate inputs and report runner capacity
         run: |
           if [[ ! "$PACK_NAME" =~ ^[A-Za-z][A-Za-z0-9_-]{0,31}$ ]]; then

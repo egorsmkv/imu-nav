@@ -15,7 +15,7 @@ Long JSON macro bodies should be written with one field per line because rustfmt
 reliably expand macro token bodies. See the separate [copy/allocation audit](../rust-allocation-audit.md)
 for borrowing boundaries, remaining allocation sites and the additional Clippy commands.
 
-With Rust 1.99+ installed, run the host-side Rust workspace checks from the repository root.
+With Rust 1.100+ installed, run the host-side Rust workspace checks from the repository root.
 These checks do not need a JDK, Android SDK or NDK:
 
 ```bash
@@ -31,6 +31,24 @@ JNI crate and simulator; look for successful test results and no Clippy warnings
 `--locked`; the commands above make the lockfile requirement explicit for a manual run.
 
 Before building an Android APK, complete the [Android tool setup](../build_and_test.md#prepare-the-tools).
+
+### Rust 1.100 migration
+
+The native, server and desktop workspaces require Rust 1.100. Release CI and the server container
+use the same version. Cargo's new `unused_dependencies` lint is denied in each package; the graphics
+bridge dependencies are Android-only so host checks do not report them as unused. Simulator route
+fixtures use the newly stabilized `Vec::from_fn`; their deterministic scenario tests check that the
+generated navigation inputs remain consistent. The core avoids APIs unavailable in Kani's bundled
+compiler, and coverage continues to use its independently pinned nightly.
+The PowerShell math-audit runner reads Cargo's JSON artifact messages for the core library and
+dependency search paths, accommodating Cargo 1.100's new intermediate build layout.
+
+Direct dependencies and all three lockfiles were refreshed together. JNI remains on 0.21 and
+Tantivy on 0.26.1: upgrading those requires a separate Android bridge migration and search-index
+compatibility review. The routing pack layout and import policy are unchanged. The XML importer
+uses quick-xml's UTF-8 attribute representation while retaining entity unescaping without adding
+attribute whitespace normalization. Server and desktop migrations retain lowercase SHA-256 keys;
+server tests check a legacy Argon2 password hash as well as the current password parameters.
 
 Android builds invoke [`scripts/build-rust-android.sh`](../../scripts/build-rust-android.sh) through
 Bash on Linux/macOS, or [`scripts/build-rust-android.ps1`](../../scripts/build-rust-android.ps1)
@@ -55,7 +73,7 @@ The JVM replay tool can load this exact JNI implementation alongside the Kotlin 
 ./gradlew :replay:test
 ```
 
-Both require Rust 1.99+ and JDK 17+. They use host JNI and do not build Android native libraries.
+Both require Rust 1.100+ and JDK 17+. They use host JNI and do not build Android native libraries.
 The replay module compiles the app's pure-JVM
 JNI wrappers directly, preserving their exported JNI names. Gradle tracks the host library as a
 test input so Rust changes invalidate the JNI integration tests.

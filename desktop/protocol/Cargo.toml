@@ -3,7 +3,7 @@ name = "imu-nav-protocol"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-rust-version = "1.99"
+rust-version = "1.100"
 
 [dependencies]
 imu-nav-types = { path = "../../native/nav-types", features = ["serde"] }
@@ -11,3 +11,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 time = { version = "0.3", features = ["parsing", "macros"] }
 thiserror = "2"
+
+[lints.cargo]
+unused_dependencies = "deny"

@@ -56,7 +56,7 @@ Start with [getting started](docs/getting_started.md). Look up unfamiliar terms 
 
 From a complete source checkout, follow [build and test](docs/build_and_test.md#prepare-the-tools)
 to set up JDK 21+ (required for Android host unit tests), Android SDK platform 36, build-tools 36.0.0,
-the Android NDK and Rust 1.99+ with all three Android targets. Build a debug-signed APK with offline-routing support:
+the Android NDK and Rust 1.100+ with all three Android targets. Build a debug-signed APK with offline-routing support:
 
 ```bash
 ./gradlew :app:assemblePlayBenchmark
@@ -68,7 +68,7 @@ The APK is written under `app/build/outputs/apk/play/benchmark/` and installs as
 but cannot load offline routing packs.
 
 For a host-only starting point, run the [Rust checks](docs/core/build-and-replay.md#building-and-testing)
-with Rust 1.99+; they do not need a JDK, Android SDK or NDK. Contributors should also run
+with Rust 1.100+; they do not need a JDK, Android SDK or NDK. Contributors should also run
 `./gradlew check` in a configured Android development environment.
 
 Google Play AAB preparation, protected signing and publication checklist: [Google Play guide](docs/google_play.md).

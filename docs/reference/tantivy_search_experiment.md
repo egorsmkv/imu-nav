@@ -52,7 +52,7 @@ reader. The reproduction commands below use this integrated adapter.
 ## Reproduce on a host
 
 Use the repository's JDK/SDK/Rust requirements. Set `JAVA_HOME`, `ANDROID_HOME`
-and, when needed, `RUSTUP_TOOLCHAIN=1.99.0`. Allow a few GB for Cargo output.
+and, when needed, `RUSTUP_TOOLCHAIN=1.100.0`. Allow a few GB for Cargo output.
 
 ```sh
 python3 tools/benchmark_search.py \

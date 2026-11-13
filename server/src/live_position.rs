@@ -7,7 +7,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use imu_nav_protocol::{Frame, Guidance, MAX_ROUTE_BYTES, Route, VERSION};
-use rand::RngCore;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
@@ -353,8 +353,7 @@ async fn eligible(
         .config
         .privacy
         .as_ref()
-        .map(|notice| notice.version.clone())
-        .unwrap_or_default();
+        .map_or_default(|notice| notice.version.clone());
     run_db(move || {
         let connection = store.connection()?;
         let valid: bool = connection.query_row(

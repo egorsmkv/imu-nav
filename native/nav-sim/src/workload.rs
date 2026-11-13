@@ -145,11 +145,10 @@ impl Fixture {
         }
         let ticks = config.duration_s * 2;
         let route_length = f64::from(config.duration_s) * 25.0 + 1000.0;
-        let points: Vec<_> = (0..config.route_points)
-            .map(|index| {
-                point(route_length * f64::from(index) / f64::from(config.route_points - 1))
-            })
-            .collect();
+        let points = Vec::from_fn(config.route_points as usize, |index| {
+            let index = u32::try_from(index).expect("route size is bounded by u32");
+            point(route_length * f64::from(index) / f64::from(config.route_points - 1))
+        });
         let replacement = points
             .iter()
             .enumerate()

@@ -8,17 +8,21 @@ description = "Display-only desktop mirror of IMU Nav Android navigation"
 
 [dependencies]
 imu-nav-protocol = { path = "../protocol" }
-eframe = { version = "=0.36.2", default-features = false, features = ["glow", "default_fonts", "x11", "wayland", "persistence"] }
-egui = "=0.36.2"
-walkers = { version = "=0.60.0", default-features = false }
+eframe = { version = "=0.37.0", default-features = false, features = ["glow", "default_fonts", "x11", "wayland", "persistence"] }
+egui = "=0.37.0"
+walkers = { version = "=0.65.0", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-rusqlite = { version = "0.40", features = ["bundled"] }
+rusqlite = { version = "0.42", features = ["bundled"] }
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg"] }
-rfd = "0.17"
+rfd = "0.18"
 reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "rustls"] }
-sha2 = "0.10"
+sha2 = "0.11"
 httpdate = "1"
+hex = "0.4"
 
 [dev-dependencies]
 tempfile = "3"
+
+[lints.cargo]
+unused_dependencies = "deny"

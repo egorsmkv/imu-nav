@@ -154,7 +154,7 @@ Builds:
     gradle:
       - fdroid
     prebuild:
-      - rustup default 1.99.0
+      - rustup default 1.100.0
       - rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
     ndk: r28c
 ```
@@ -164,7 +164,7 @@ Builds:
 - `scanignore` names only the bundled CSV archive, relative to the repository root even with
   `subdir: app`. Keep its licence justification when copying the recipe to fdroiddata.
 - `sudo` installs Debian's `rustup` package and a host C toolchain for Rust build scripts;
-  `prebuild` selects Rust 1.99.0 (`native/Cargo.toml` requires 1.99) and adds the three Android
+  `prebuild` selects Rust 1.100.0 (`native/Cargo.toml` requires 1.100) and adds the three Android
   targets. The build script compiles all three, even though release APKs ship only the ARM ABIs.
 - `ndk: r28c` is NDK 28.2.13676358, the `ndkVersion` pinned in `app/build.gradle.kts`; the Rust
   libraries link with its API 26 clang.

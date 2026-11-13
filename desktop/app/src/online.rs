@@ -60,7 +60,7 @@ impl Fetcher {
             .replace("{z}", &tile.zoom.to_string())
             .replace("{x}", &tile.x.to_string())
             .replace("{y}", &tile.y.to_string());
-        let key = format!("{:x}", Sha256::digest(url.as_bytes()));
+        let key = hex::encode(Sha256::digest(url.as_bytes()));
         let path = self.cache.join(&key);
         let metadata_path = self.cache.join(format!("{key}.json"));
         let metadata: Option<CacheEntry> = bounded_file(&metadata_path, MAX_METADATA_BYTES)

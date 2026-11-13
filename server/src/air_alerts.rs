@@ -710,6 +710,8 @@ mod tests {
 
     #[tokio::test]
     async fn provider_failure_marks_status_stale_without_sending_a_false_all_clear() {
+        // This tests state transitions, not latency; allow for HTTP client setup on busy CI hosts.
+        let event_timeout = Duration::from_secs(15);
         let body = Arc::new(RwLock::new(
             r#"[{"regionId":"14","regionType":"State","regionName":"Київська","regionEngName":"Kyiv","activeAlerts":[{"type":"AIR"}]}]"#.to_owned(),
         ));
@@ -718,7 +720,7 @@ mod tests {
         *hub.config.write().unwrap() = Some(test_config(base));
         let mut events = hub.events.subscribe();
         let worker = tokio::spawn(run_provider(hub.clone()));
-        let initial = tokio::time::timeout(Duration::from_secs(3), events.recv())
+        let initial = tokio::time::timeout(event_timeout, events.recv())
             .await
             .unwrap()
             .unwrap();
@@ -728,7 +730,7 @@ mod tests {
 
         *body.write().unwrap() = "broken".to_owned();
         hub.refresh.notify_one();
-        let failed = tokio::time::timeout(Duration::from_secs(3), events.recv())
+        let failed = tokio::time::timeout(event_timeout, events.recv())
             .await
             .unwrap()
             .unwrap();
@@ -738,7 +740,7 @@ mod tests {
 
         *body.write().unwrap() = "[]".to_owned();
         hub.refresh.notify_one();
-        let clear = tokio::time::timeout(Duration::from_secs(3), events.recv())
+        let clear = tokio::time::timeout(event_timeout, events.recv())
             .await
             .unwrap()
             .unwrap();

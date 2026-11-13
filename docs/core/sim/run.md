@@ -6,7 +6,7 @@ Run these commands from the repository root on Linux. The simulator is a desktop
 Android and JNI are not needed. A complete run writes separate measurement results and a copy of
 the executable into a fresh capture directory.
 
-Use Rust 1.99+ and a C/C++ build toolchain. The custom Cargo profile keeps optimized code and debug
+Use Rust 1.100+ and a C/C++ build toolchain. The custom Cargo profile keeps optimized code and debug
 symbols. Forced frame pointers preserve allocator backtraces through optimized Rust code. The
 stripped Android release profile does not contain the symbols needed for these measurements.
 

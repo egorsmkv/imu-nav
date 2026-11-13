@@ -95,7 +95,7 @@ Builds:
     gradle:
       - fdroid
     prebuild:
-      - rustup default 1.99.0
+      - rustup default 1.100.0
       - rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
     ndk: r28c
 

@@ -42,7 +42,7 @@ The existing command now builds native indexes automatically:
 python3 tools/verify_routing_pack.py graph-region.zip
 ```
 
-JDK 17+ and Rust 1.99+ are required. Gradle builds the desktop native library with
+JDK 17+ and Rust 1.100+ are required. Gradle builds the desktop native library with
 its `builder` feature, which exposes the JNI writer. Distributed builder scripts
 include the host library; a distribution is specific to the host OS/architecture.
 Android builds omit the writer entry point and package reader libraries for the

@@ -125,7 +125,8 @@ fn validate_archive(body: &[u8]) -> Result<Value, ()> {
     let mut manifest = None;
     for index in 0..zip.len() {
         let mut file = zip.by_index(index).map_err(|_| ())?;
-        let limit: u64 = match file.name() {
+        let name = file.name().map_err(|_| ())?.into_owned();
+        let limit: u64 = match name.as_str() {
             "manifest.json" => 16 * 1024,
             "memory.csv" => 1024 * 1024,
             "native-timings.json" => 64 * 1024,
@@ -133,11 +134,8 @@ fn validate_archive(body: &[u8]) -> Result<Value, ()> {
             "trip-events.rec" | "methods.trace" => 16 * 1024 * 1024,
             _ => return Err(()),
         };
-        if !names.insert(file.name().to_owned())
-            || file.is_dir()
-            || file.is_symlink()
-            || file.size() > limit
-        {
+        let is_manifest = name == "manifest.json";
+        if !names.insert(name) || file.is_dir() || file.is_symlink() || file.size() > limit {
             return Err(());
         }
         // Some ZIP readers use local filenames rather than the central directory.
@@ -152,7 +150,6 @@ fn validate_archive(body: &[u8]) -> Result<Value, ()> {
         {
             return Err(());
         }
-        let is_manifest = file.name() == "manifest.json";
         let declared = file.size();
         let read = if is_manifest {
             let mut bytes = Vec::new();
@@ -210,7 +207,7 @@ fn save(
     body: &[u8],
     manifest: &Value,
 ) -> anyhow::Result<Result<Value, ApiError>> {
-    let client_id = format!("profile:{:x}", Sha256::digest(body));
+    let client_id = format!("profile:{}", hex::encode(Sha256::digest(body)));
     let mut connection = store.connection()?;
     let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     if let Some(id) = tx.query_row(

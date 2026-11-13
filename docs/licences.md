@@ -40,7 +40,7 @@ the AndroidTest APK and does not change production dependencies.
 App host unit tests use Robolectric 4.17 (MIT), AndroidX Test Core 1.6.1 and OkHttp MockWebServer 3
 5.4.0 (both Apache 2.0). They run only on the build machine and are not part of any APK.
 
-The sharing server uses `zip` 8.6 (MIT) to validate user-uploaded profiling archives. It enables only DEFLATE support; this dependency is not included in the Android app.
+The sharing server uses `zip` 9.5 (MIT) to validate user-uploaded profiling archives. It enables only DEFLATE support; this dependency is not included in the Android app.
 
 The desktop viewer uses eframe/egui, Walkers, image, rusqlite/SQLite and rfd under permissive
 licences; its GUI dependencies are separate from the APK and relay. The Windows artifact includes
@@ -59,8 +59,11 @@ Bincode remains experiment-only. faster_paths is now also used by the production
 
 
 The production Rust routing builder now uses `faster_paths` 0.1.0 (MIT OR Apache-2.0),
-`osmpbfreader` 0.19.1 (WTFPL), quick-xml 0.38 (MIT), ZIP 4.6 (MIT), Rayon (MIT OR Apache-2.0)
+`osmpbfreader` 0.19.1 (WTFPL), quick-xml 0.42 (MIT), ZIP 9.5 (MIT), Rayon (MIT OR Apache-2.0)
 and time (MIT OR Apache-2.0). These importer/preparation dependencies are host-only optional
 features. Android's `imu-nav-routing` runtime uses memmap2, JNI, Serde and serde_json under
 MIT/Apache-2.0 terms. It implements its own checked memory-mapped query/geometry adapter;
 no Janino, HPPC, OSM PBF reader or bincode dependency is added to the APK.
+
+The Rust server and desktop viewer use `hex` 0.4.3 (MIT/Apache-2.0) to encode SHA-256
+digests after the sha2 0.11 API update. It is not included in Android APKs.

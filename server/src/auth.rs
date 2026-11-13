@@ -4,7 +4,7 @@ use crate::CellStore;
 use crate::api::{ApiError, AppState, client_ip, run_db};
 use crate::db::params;
 use argon2::Argon2;
-use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
+use argon2::password_hash::{PasswordHasher, PasswordVerifier};
 use axum::Json;
 use axum::Router;
 use axum::extract::{ConnectInfo, State};
@@ -15,7 +15,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::{Message, SmtpTransport, Transport};
-use rand::RngCore;
+use rand::Rng;
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -221,26 +221,22 @@ pub(crate) fn token() -> String {
 }
 
 pub(crate) fn digest(value: &str) -> String {
-    format!("{:x}", Sha256::digest(value.as_bytes()))
+    hex::encode(Sha256::digest(value.as_bytes()))
 }
 
 fn hash_password(password: &str) -> anyhow::Result<String> {
     let mut salt_bytes = [0u8; 16];
     rand::rng().fill_bytes(&mut salt_bytes);
-    let salt =
-        SaltString::encode_b64(&salt_bytes).map_err(|error| anyhow::anyhow!(error.to_string()))?;
     Argon2::default()
-        .hash_password(password.as_bytes(), &salt)
+        .hash_password_with_salt(password.as_bytes(), &salt_bytes)
         .map(|hash| hash.to_string())
         .map_err(|error| anyhow::anyhow!(error.to_string()))
 }
 
 fn verify_password(password: &str, stored: &str) -> bool {
-    PasswordHash::new(stored).is_ok_and(|hash| {
-        Argon2::default()
-            .verify_password(password.as_bytes(), &hash)
-            .is_ok()
-    })
+    Argon2::default()
+        .verify_password(password.as_bytes(), stored)
+        .is_ok()
 }
 
 pub(crate) fn rate_limit(
@@ -968,6 +964,25 @@ pub fn create_admin(store: &CellStore, email: &str, password: &str) -> anyhow::R
 mod tests {
     use super::*;
     use crate::Policy;
+
+    /// Accounts created before the Argon2 upgrade must still accept their stored PHC hashes.
+    #[test]
+    fn legacy_password_hashes_and_token_digests_remain_compatible() {
+        // Argon2 0.5.3's public known-answer vector uses this synthetic password and salt.
+        let stored =
+            "$argon2id$v=19$m=256,t=2,p=1$c29tZXNhbHQ$nf65EOgLrQMR/uIPnA4rEsF5h7TKyQwu9U1bMCHGi/4";
+        assert!(verify_password("password", stored));
+        assert!(!verify_password("wrong password", stored));
+        assert!(!verify_password("password", "invalid PHC"));
+        assert_eq!(
+            digest("abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+
+        let generated = hash_password("synthetic test password").unwrap();
+        assert!(generated.starts_with("$argon2id$v=19$m=19456,t=2,p=1$"));
+        assert!(verify_password("synthetic test password", &generated));
+    }
 
     #[test]
     fn account_attempts_are_bounded_by_email_and_ip() {

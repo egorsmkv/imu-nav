@@ -20,7 +20,7 @@ Display-map archives are unchanged. This remains a research prototype, not a saf
 
 ### Build and install
 
-The production builder requires Rust 1.99+, not Java or an Android SDK:
+The production builder requires Rust 1.100+, not Java or an Android SDK:
 
 ```bash
 cargo build --locked --release --manifest-path native/Cargo.toml -p imu-nav-routing --features builder

@@ -91,8 +91,8 @@ fn read_xml(path: &Path, mut consume: impl FnMut(Object) -> Result<()>) -> Resul
                     .map(|a| {
                         let a = a?;
                         Ok((
-                            String::from_utf8(a.key.as_ref().to_vec())?,
-                            a.decode_and_unescape_value(reader.decoder())?.into_owned(),
+                            a.key.as_ref().to_owned(),
+                            quick_xml::escape::unescape(&a.value)?.into_owned(),
                         ))
                     })
                     .collect::<Result<_>>()?;
@@ -102,7 +102,7 @@ fn read_xml(path: &Path, mut consume: impl FnMut(Object) -> Result<()>) -> Resul
                         .ok_or_else(|| format!("missing XML attribute {key}"))
                 };
                 match e.name().as_ref() {
-                    b"node" => {
+                    "node" => {
                         current = Some(Object::Node {
                             id: field("id")?.parse()?,
                             lat: field("lat")?.parse()?,
@@ -110,25 +110,25 @@ fn read_xml(path: &Path, mut consume: impl FnMut(Object) -> Result<()>) -> Resul
                             tags: Tags::new(),
                         });
                     }
-                    b"way" => {
+                    "way" => {
                         current = Some(Object::Way {
                             id: field("id")?.parse()?,
                             nodes: vec![],
                             tags: Tags::new(),
                         });
                     }
-                    b"relation" => {
+                    "relation" => {
                         current = Some(Object::Relation {
                             members: vec![],
                             tags: Tags::new(),
                         });
                     }
-                    b"nd" => {
+                    "nd" => {
                         if let Some(Object::Way { nodes, .. }) = &mut current {
                             nodes.push(field("ref")?.parse()?);
                         }
                     }
-                    b"member" => {
+                    "member" => {
                         if let Some(Object::Relation { members, .. }) = &mut current {
                             members.push((
                                 field("type")?.clone(),
@@ -137,7 +137,7 @@ fn read_xml(path: &Path, mut consume: impl FnMut(Object) -> Result<()>) -> Resul
                             ));
                         }
                     }
-                    b"tag" => {
+                    "tag" => {
                         if let Some(object) = &mut current {
                             let tags = match object {
                                 Object::Node { tags, .. }
@@ -150,14 +150,14 @@ fn read_xml(path: &Path, mut consume: impl FnMut(Object) -> Result<()>) -> Resul
                     _ => {}
                 }
                 if empty
-                    && matches!(e.name().as_ref(), b"node" | b"way" | b"relation")
+                    && matches!(e.name().as_ref(), "node" | "way" | "relation")
                     && let Some(object) = current.take()
                 {
                     consume(object)?;
                 }
             }
             Event::End(ref e) => {
-                if matches!(e.name().as_ref(), b"node" | b"way" | b"relation")
+                if matches!(e.name().as_ref(), "node" | "way" | "relation")
                     && let Some(object) = current.take()
                 {
                     consume(object)?;

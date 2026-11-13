@@ -39,7 +39,7 @@ GRAPH_DIR=/path/to/graph-ukraine ./gradlew :routing:test --tests '*PackSmokeTest
 cargo run --release --manifest-path native/Cargo.toml -p imu-nav-routing --features builder --bin build-routing -- --osm ukraine-latest.osm.pbf --out graph-ukraine --name Ukraine --threads 2
 ```
 
-Requirements: JDK 17+, Android SDK platform 36, build-tools 36.0.0, NDK 28.2.13676358 and Rust 1.99+.
+Requirements: JDK 17+, Android SDK platform 36, build-tools 36.0.0, NDK 28.2.13676358 and Rust 1.100+.
 Use the SDK's `platform-tools/adb`; its path depends on the development host.
 
 ## Definition of done

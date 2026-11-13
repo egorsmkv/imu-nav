@@ -23,3 +23,6 @@ heap-profile = ["dep:tikv-jemallocator", "dep:jemalloc_pprof"]
 # Keep malloc symbols prefixed: this library must not replace the JVM's allocator.
 tikv-jemallocator = { version = "0.7", features = ["profiling", "disable_initial_exec_tls"], optional = true }
 jemalloc_pprof = { version = "0.9", optional = true }
+
+[lints.cargo]
+unused_dependencies = "deny"
